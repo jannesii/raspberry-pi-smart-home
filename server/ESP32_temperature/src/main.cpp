@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <WiFi.h>
+#include <time.h>
 
 // ---- WiFi config ----
 const char* ssid     = "REDACTED_WIFI_SSID";
@@ -12,6 +13,15 @@ const char* server_path = "/temperature";   // <-- change to your endpoint path
 
 WiFiServer server(80);
 
+// ---- Time/NTP config ----
+// Use UTC to align all devices at the same minute boundaries
+const char* ntp1 = "pool.ntp.org";
+const char* ntp2 = "time.nist.gov";
+const char* ntp3 = "time.google.com";
+bool timeSynced = false;
+time_t nextPostEpoch = 0;           // next UTC epoch second to post (aligned to minute)
+unsigned long nextPostMillis = 0;   // fallback if no time sync yet
+
 // ---- DHT config ----
 #include <Adafruit_Sensor.h>
 #include <DHT.h>
@@ -21,11 +31,7 @@ WiFiServer server(80);
 #define DHTTYPE DHT22
 
 DHT_Unified dht(DHTPIN, DHTTYPE);
-uint32_t delayMS = 60000;   // will be adjusted from sensor.min_delay if desired
-
-// Post immediately once after boot, then every delayMS
-bool firstPostSent = false;
-unsigned long lastDHT = 0;
+// NOTE: We will sync to the clock: boot -> one measurement -> then every minute at :00
 
 // ---- helper: send JSON via HTTP POST ----
 bool postReading(float temperatureC, float humidityPct) {
@@ -37,7 +43,7 @@ bool postReading(float temperatureC, float humidityPct) {
     return false;
   }
 
-  const char* location = "Tietokonepöytä";
+  const char* location = "Makuuhuone";
 
   // Build JSON body
   String body;
@@ -81,6 +87,32 @@ bool postReading(float temperatureC, float humidityPct) {
   return true;
 }
 
+// ---- helper: read DHT and POST once ----
+bool readAndPost() {
+  sensors_event_t event;
+  float t = NAN, h = NAN;
+
+  dht.temperature().getEvent(&event);
+  if (!isnan(event.temperature)) t = event.temperature;
+
+  dht.humidity().getEvent(&event);
+  if (!isnan(event.relative_humidity)) h = event.relative_humidity;
+
+  if (isnan(t) || isnan(h)) {
+    Serial.println(F("Sensor read failed"));
+    return false;
+  }
+
+  Serial.print(F("Temperature: ")); Serial.print(t, 2); Serial.println(F(" °C"));
+  Serial.print(F("Humidity: "));    Serial.print(h, 2); Serial.println(F(" %"));
+
+  bool ok = postReading(t, h);
+  if (!ok) {
+    Serial.println(F("POST failed"));
+  }
+  return ok;
+}
+
 // ---- Setup ----
 void setup() {
   Serial.begin(115200);
@@ -102,21 +134,45 @@ void setup() {
   Serial.println(WiFi.localIP());
   server.begin();
 
+  // NTP time sync (UTC)
+  configTime(0 /*gmtOffset*/, 0 /*dstOffset*/, ntp1, ntp2, ntp3);
+  Serial.print(F("Syncing time via NTP"));
+  struct tm timeinfo;
+  for (int i = 0; i < 20; ++i) {          // try for up to ~20 seconds
+    if (getLocalTime(&timeinfo, 1000)) {  // wait up to 1s per try
+      timeSynced = true;
+      break;
+    }
+    Serial.print('.');
+  }
+  Serial.println();
+  if (timeSynced) {
+    Serial.println(F("Time synchronized."));
+  } else {
+    Serial.println(F("Time sync failed; will retry in background."));
+  }
+
   // DHT
   dht.begin();
   Serial.println(F("DHT sensor initialized"));
 
   sensor_t sensor;
   dht.temperature().getSensor(&sensor);
-  /* If you want to honor sensor's min_delay:
-  if (sensor.min_delay > 0) {
-    delayMS = max<uint32_t>(1000, sensor.min_delay / 1000); // min_delay in µs
-  } */
-  Serial.print(F("DHT interval: "));
-  Serial.print(delayMS);
-  Serial.println(F(" ms"));
+  (void)sensor; // not used further, but keep call to ensure sensor is reachable
 
-  // We will post immediately in loop() by leaving firstPostSent=false.
+  // Take one immediate measurement after boot
+  (void)readAndPost();
+
+  // Schedule next measurement on the next minute boundary (UTC),
+  // or fallback to a 60s cadence if time not yet synced.
+  if (timeSynced) {
+    time_t now = time(nullptr);
+    nextPostEpoch = ((now / 60) + 1) * 60;   // next mm:00
+    Serial.print(F("Next measurement (epoch): "));
+    Serial.println((long)nextPostEpoch);
+  } else {
+    nextPostMillis = millis() + 60000UL;
+  }
 }
 
 // ---- Loop ----
@@ -153,36 +209,31 @@ void loop() {
     Serial.println(F("Client Disconnected."));
   }
 
-  // --- Read DHT sensor and POST to server ---
-  // Post immediately once after boot (firstPostSent == false), then every delayMS
-  if (!firstPostSent || (millis() - lastDHT >= delayMS)) {
-    sensors_event_t event;
-    float t = NAN, h = NAN;
-
-    dht.temperature().getEvent(&event);
-    if (!isnan(event.temperature)) t = event.temperature;
-
-    dht.humidity().getEvent(&event);
-    if (!isnan(event.relative_humidity)) h = event.relative_humidity;
-
-    if (isnan(t) || isnan(h)) {
-      Serial.println(F("Sensor read failed"));
-      // Don't mark firstPostSent so we retry soon
-      delay(250);
-      return;
+  // --- Read DHT sensor and POST on minute boundaries (UTC) ---
+  if (timeSynced) {
+    time_t now = time(nullptr);
+    if (now >= nextPostEpoch) {
+      (void)readAndPost();
+      nextPostEpoch += 60;  // strictly keep minute alignment
+    }
+  } else {
+    // Fallback cadence until time sync is available
+    if (millis() >= nextPostMillis) {
+      (void)readAndPost();
+      nextPostMillis += 60000UL;
     }
 
-    Serial.print(F("Temperature: ")); Serial.print(t, 2); Serial.println(F(" °C"));
-    Serial.print(F("Humidity: "));    Serial.print(h, 2); Serial.println(F(" %"));
-
-    bool ok = postReading(t, h);
-    if (ok) {
-      firstPostSent = true;           // we have posted at least once
-      lastDHT = millis();             // start the interval after a post
-    } else {
-      Serial.println(F("POST failed"));
-      // Keep firstPostSent as-is so we retry quickly if it's the first post
-      delay(500);
+    // Retry time sync occasionally without blocking the loop
+    static unsigned long lastSyncTry = 0;
+    if (WiFi.status() == WL_CONNECTED && millis() - lastSyncTry > 10000UL) {
+      lastSyncTry = millis();
+      struct tm ti;
+      if (getLocalTime(&ti, 1)) { // quick check
+        timeSynced = true;
+        time_t now = time(nullptr);
+        nextPostEpoch = ((now / 60) + 1) * 60;
+        Serial.println(F("Time synchronized (late); switching to minute boundaries."));
+      }
     }
   }
 }
