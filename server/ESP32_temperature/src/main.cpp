@@ -31,13 +31,6 @@ unsigned long nextPostMillis = 0;   // fallback if no time sync yet
 #include <DHT.h>
 #include <DHT_U.h>
 
-// DHT config (pin/type can be overridden in config)
-#ifndef DHTPIN
-#define DHTPIN 10
-#endif
-#ifndef DHTTYPE
-#define DHTTYPE DHT22
-#endif
 
 DHT_Unified dht(DHTPIN, DHTTYPE);
 // NOTE: We will sync to the clock: boot -> one measurement -> then every minute at :00
