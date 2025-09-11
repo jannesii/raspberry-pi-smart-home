@@ -1,17 +1,21 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <time.h>
+#include "config.h"
 
-// ---- WiFi config ----
-const char* ssid     = "REDACTED_WIFI_SSID";
-const char* password = "REDACTED_WIFI_PASSWORD";
+// ---- WiFi config (moved to config) ----
+const char* ssid     = WIFI_SSID;
+const char* password = WIFI_PASSWORD;
 
-// ---- Upstream HTTP server to send readings to ----
-const char* server_host = "192.168.10.50";  // <-- change to your server/IP or domain
-const uint16_t server_port = 8080;          // <-- change to your server port
-const char* server_path = "/temperature";   // <-- change to your endpoint path
+// ---- Upstream HTTP server to send readings to (from config) ----
+const char* server_host = HTTP_SERVER_HOST;  // server/IP or domain
+const uint16_t server_port = HTTP_SERVER_PORT;          // server port
+const char* server_path = HTTP_SERVER_PATH;   // endpoint path
 
 WiFiServer server(80);
+
+// Logical location of this device (from config)
+static const char* kLocation = DEVICE_LOCATION;
 
 // ---- Time/NTP config ----
 // Use UTC to align all devices at the same minute boundaries
@@ -27,11 +31,117 @@ unsigned long nextPostMillis = 0;   // fallback if no time sync yet
 #include <DHT.h>
 #include <DHT_U.h>
 
+// DHT config (pin/type can be overridden in config)
+#ifndef DHTPIN
 #define DHTPIN 10
+#endif
+#ifndef DHTTYPE
 #define DHTTYPE DHT22
+#endif
 
 DHT_Unified dht(DHTPIN, DHTTYPE);
 // NOTE: We will sync to the clock: boot -> one measurement -> then every minute at :00
+
+// Track DHT consecutive failures for gentle self-healing
+static uint8_t dhtFailCount = 0;
+
+// ---- helper: heap diagnostics ----
+static inline void logHeap(const char* tag) {
+  Serial.printf("[Heap][%s] Free:%u Min:%u\n", tag, ESP.getFreeHeap(), ESP.getMinFreeHeap());
+}
+
+// ---- helper: low-level HTTP JSON POST ----
+static bool postJSON(const String& body) {
+  if (WiFi.status() != WL_CONNECTED) return false;
+
+  WiFiClient client;
+  if (!client.connect(server_host, server_port)) {
+    Serial.println(F("HTTP connect failed"));
+    return false;
+  }
+
+  // Build and send HTTP/1.1 request
+  client.print(F("POST "));
+  client.print(server_path);
+  client.println(F(" HTTP/1.1"));
+  client.print(F("Host: "));
+  client.println(server_host);
+  client.println(F("Content-Type: application/json"));
+  client.print(F("Content-Length: "));
+  client.println(body.length());
+  client.println(F("Connection: close"));
+  client.println();
+  client.print(body);
+
+  // Optional: read minimal response (status line) to confirm
+  unsigned long start = millis();
+  while (!client.available() && millis() - start < 1500) {
+    delay(10);
+  }
+  if (client.available()) {
+    String statusLine = client.readStringUntil('\n');
+    statusLine.trim();
+    Serial.print(F("HTTP status: "));
+    Serial.println(statusLine);
+  } else {
+    Serial.println(F("No HTTP response"));
+  }
+
+  client.stop();
+  logHeap("postJSON");
+  return true;
+}
+
+// ---- helper: send error JSON with location ----
+bool postError(const char* message) {
+  if (WiFi.status() != WL_CONNECTED) return false;
+
+  WiFiClient client;
+  if (!client.connect(server_host, server_port)) {
+    Serial.println(F("HTTP connect failed"));
+    return false;
+  }
+
+  // Build JSON body
+  String body;
+  body.reserve(128);
+  body += F("{\"location\":\"");
+  body += kLocation;
+  body += F("\",\"error\":\"");
+  body += message;
+  body += F("\"}");
+
+  // Build and send HTTP/1.1 request
+  client.print(F("POST "));
+  client.print(server_path);
+  client.println(F(" HTTP/1.1"));
+  client.print(F("Host: "));
+  client.println(server_host);
+  client.println(F("Content-Type: application/json"));
+  client.print(F("Content-Length: "));
+  client.println(body.length());
+  client.println(F("Connection: close"));
+  client.println();
+  client.print(body);
+
+  // Optional: read minimal response (status line) to confirm
+  unsigned long start = millis();
+  while (!client.available() && millis() - start < 1500) {
+    delay(10);
+  }
+  if (client.available()) {
+    String statusLine = client.readStringUntil('\n');
+    statusLine.trim();
+    Serial.print(F("HTTP status: "));
+    Serial.println(statusLine);
+  } else {
+    Serial.println(F("No HTTP response"));
+  }
+
+  client.stop();
+  logHeap("postError");
+  return true;
+}
 
 // ---- helper: send JSON via HTTP POST ----
 bool postReading(float temperatureC, float humidityPct) {
@@ -43,7 +153,7 @@ bool postReading(float temperatureC, float humidityPct) {
     return false;
   }
 
-  const char* location = "Makuuhuone";
+  const char* location = kLocation;
 
   // Build JSON body
   String body;
@@ -84,6 +194,7 @@ bool postReading(float temperatureC, float humidityPct) {
   }
 
   client.stop();
+  logHeap("postReading");
   return true;
 }
 
@@ -99,18 +210,28 @@ bool readAndPost() {
   if (!isnan(event.relative_humidity)) h = event.relative_humidity;
 
   if (isnan(t) || isnan(h)) {
-    Serial.println(F("Sensor read failed"));
+    dhtFailCount++;
+    String err;
+    err.reserve(64);
+    err += F("DHT read failed: ");
+    if (isnan(t) && isnan(h))      err += F("temp+hum");
+    else if (isnan(t))             err += F("temp");
+    else if (isnan(h))             err += F("hum");
+    Serial.println(err);
+    if ((dhtFailCount % 3) == 0) {
+      Serial.println(F("Reinitializing DHT sensor..."));
+      dht.begin();
+    }
+    (void)postError(err.c_str());
     return false;
   }
 
   Serial.print(F("Temperature: ")); Serial.print(t, 2); Serial.println(F(" °C"));
   Serial.print(F("Humidity: "));    Serial.print(h, 2); Serial.println(F(" %"));
 
-  bool ok = postReading(t, h);
-  if (!ok) {
-    Serial.println(F("POST failed"));
-  }
-  return ok;
+  // Successful read resets failure counter
+  dhtFailCount = 0;
+  return postReading(t, h);
 }
 
 // ---- Setup ----
@@ -133,6 +254,7 @@ void setup() {
   Serial.print(F("IP address: "));
   Serial.println(WiFi.localIP());
   server.begin();
+  logHeap("after WiFi");
 
   // NTP time sync (UTC)
   configTime(0 /*gmtOffset*/, 0 /*dstOffset*/, ntp1, ntp2, ntp3);
@@ -155,6 +277,7 @@ void setup() {
   // DHT
   dht.begin();
   Serial.println(F("DHT sensor initialized"));
+  logHeap("after DHT begin");
 
   sensor_t sensor;
   dht.temperature().getSensor(&sensor);
@@ -182,9 +305,12 @@ void loop() {
   if (client) {
     Serial.println(F("New Client."));
     String currentLine;
+    client.setTimeout(1000);
+    unsigned long lastActivity = millis();
     while (client.connected()) {
       if (client.available()) {
         char c = client.read();
+        lastActivity = millis();
         if (c == '\n') {
           if (currentLine.length() == 0) {
             client.println(F("HTTP/1.1 200 OK"));
@@ -203,6 +329,12 @@ void loop() {
         } else if (c != '\r') {
           currentLine += c;
         }
+      } else {
+        if (millis() - lastActivity > 2000UL) {
+          break;
+        }
+        delay(1);
+        yield();
       }
     }
     client.stop();
