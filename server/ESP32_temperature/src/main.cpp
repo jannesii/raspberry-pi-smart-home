@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <time.h>
 #include "config.h"
 
@@ -47,18 +48,34 @@ static inline void logHeap(const char* tag) {
 static bool postJSON(const String& body) {
   if (WiFi.status() != WL_CONNECTED) return false;
 
-  WiFiClient client;
+  WiFiClientSecure client;
+
+  client.setCACert(kHttpsRootCA);
+
   if (!client.connect(server_host, server_port)) {
     Serial.println(F("HTTP connect failed"));
     return false;
   }
 
-  // Build and send HTTP/1.1 request
+  // HTTP/1.1 request
   client.print(F("POST "));
   client.print(server_path);
   client.println(F(" HTTP/1.1"));
   client.print(F("Host: "));
-  client.println(server_host);
+  client.print(server_host);
+  if (server_port != 80 && server_port != 443) {
+    client.print(F(":"));
+    client.print(server_port);
+  }
+  client.println();
+  // Auth header (Bearer recommended); alternatively use X-API-Key
+#ifdef API_KEY
+  client.print(F("Authorization: Bearer "));
+  client.println(API_KEY);
+  // If your server expects X-API-Key instead, comment above and use:
+  // client.print(F("X-API-Key: "));
+  // client.println(API_KEY);
+#endif
   client.println(F("Content-Type: application/json"));
   client.print(F("Content-Length: "));
   client.println(body.length());
@@ -66,7 +83,6 @@ static bool postJSON(const String& body) {
   client.println();
   client.print(body);
 
-  // Optional: read minimal response (status line) to confirm
   unsigned long start = millis();
   while (!client.available() && millis() - start < 1500) {
     delay(10);
@@ -76,8 +92,6 @@ static bool postJSON(const String& body) {
     statusLine.trim();
     Serial.print(F("HTTP status: "));
     Serial.println(statusLine);
-  } else {
-    Serial.println(F("No HTTP response"));
   }
 
   client.stop();
@@ -87,14 +101,6 @@ static bool postJSON(const String& body) {
 
 // ---- helper: send error JSON with location ----
 bool postError(const char* message) {
-  if (WiFi.status() != WL_CONNECTED) return false;
-
-  WiFiClient client;
-  if (!client.connect(server_host, server_port)) {
-    Serial.println(F("HTTP connect failed"));
-    return false;
-  }
-
   // Build JSON body
   String body;
   body.reserve(128);
@@ -104,91 +110,27 @@ bool postError(const char* message) {
   body += message;
   body += F("\"}");
 
-  // Build and send HTTP/1.1 request
-  client.print(F("POST "));
-  client.print(server_path);
-  client.println(F(" HTTP/1.1"));
-  client.print(F("Host: "));
-  client.println(server_host);
-  client.println(F("Content-Type: application/json"));
-  client.print(F("Content-Length: "));
-  client.println(body.length());
-  client.println(F("Connection: close"));
-  client.println();
-  client.print(body);
+  bool ret = postJSON(body);
 
-  // Optional: read minimal response (status line) to confirm
-  unsigned long start = millis();
-  while (!client.available() && millis() - start < 1500) {
-    delay(10);
-  }
-  if (client.available()) {
-    String statusLine = client.readStringUntil('\n');
-    statusLine.trim();
-    Serial.print(F("HTTP status: "));
-    Serial.println(statusLine);
-  } else {
-    Serial.println(F("No HTTP response"));
-  }
-
-  client.stop();
-  logHeap("postError");
-  return true;
+  return ret;
 }
 
 // ---- helper: send JSON via HTTP POST ----
 bool postReading(float temperatureC, float humidityPct) {
-  if (WiFi.status() != WL_CONNECTED) return false;
-
-  WiFiClient client;
-  if (!client.connect(server_host, server_port)) {
-    Serial.println(F("HTTP connect failed"));
-    return false;
-  }
-
-  const char* location = kLocation;
-
   // Build JSON body
   String body;
   body.reserve(64);
   body += F("{\"location\":\"");
-  body += location;
+  body += kLocation;
   body += F("\",\"temperature_c\":");
   body += String(temperatureC, 2);
   body += F(",\"humidity_pct\":");
   body += String(humidityPct, 2);
   body += F("}");
 
-  // Build and send HTTP/1.1 request
-  client.print(F("POST "));
-  client.print(server_path);
-  client.println(F(" HTTP/1.1"));
-  client.print(F("Host: "));
-  client.println(server_host);
-  client.println(F("Content-Type: application/json"));
-  client.print(F("Content-Length: "));
-  client.println(body.length());
-  client.println(F("Connection: close"));
-  client.println();
-  client.print(body);
+  bool ret = postJSON(body);
 
-  // Optional: read minimal response (status line) to confirm
-  unsigned long start = millis();
-  while (!client.available() && millis() - start < 1500) {
-    delay(10);
-  }
-  if (client.available()) {
-    String statusLine = client.readStringUntil('\n');
-    statusLine.trim();
-    Serial.print(F("HTTP status: "));
-    Serial.println(statusLine);
-  } else {
-    Serial.println(F("No HTTP response"));
-  }
-
-  client.stop();
-  logHeap("postReading");
-  return true;
+  return ret;
 }
 
 // ---- helper: read DHT and POST once ----
@@ -211,7 +153,7 @@ bool readAndPost() {
     else if (isnan(t))             err += F("temp");
     else if (isnan(h))             err += F("hum");
     Serial.println(err);
-    if ((dhtFailCount % 3) == 0) {
+    if ((dhtFailCount % 1) == 0) {
       Serial.println(F("Reinitializing DHT sensor..."));
       dht.begin();
     }
