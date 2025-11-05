@@ -40,7 +40,7 @@ Architecture
 Configuration
 -------------
 
-Default configuration is defined in `include/config.h`. At boot, `AppConfig` loads these defaults and makes them available for runtime changes.
+Default configuration is defined in `include/config.h`. A template is provided at `include/config.h.example` — copy it to `include/config.h` and fill your values. The file `include/config.h` is intentionally `.gitignore`d to avoid committing secrets. At boot, `AppConfig` loads these defaults and makes them available for runtime changes.
 
 Key macros (examples):
 
