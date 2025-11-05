@@ -184,3 +184,9 @@ Maintenance
 -----------
 
 Whenever the code changes in ways that affect behavior, configuration, endpoints, or usage, update this README to keep it authoritative. This repository is maintained with the principle: documentation is part of the code.
+
+
+Roadmap / Ideas
+---------------
+
+See IDEAS.md for a prioritized list of potential features, improvements, and future work.
