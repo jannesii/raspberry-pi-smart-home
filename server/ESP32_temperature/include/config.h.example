@@ -1,0 +1,40 @@
+// Example configuration for ESP32 Temperature/Humidity Poster
+// Copy this file to include/config.h and fill with your values.
+// Do NOT commit include/config.h (it is in .gitignore).
+
+#pragma once
+
+// Device metadata
+#define DEVICE_LOCATION "kitchen"
+
+// DHT sensor configuration
+#define DHTPIN 4
+#define DHTTYPE DHT22
+
+// WiFi
+#define WIFI_SSID      "YourSSID"
+#define WIFI_PASSWORD  "YourPassword"
+
+// Upstream server (hostname only; no scheme)
+#define HTTP_SERVER_HOST "example.com"
+
+// HTTP/HTTPS configuration
+#define HTTP_USE_TLS 1              // 1 = HTTPS, 0 = HTTP
+#define HTTP_SERVER_PORT 443        // 80 for HTTP, 443 for HTTPS
+#define HTTP_SERVER_PATH "/api/esp32_temphum"
+
+// Certificate verification options for HTTPS
+#define HTTPS_INSECURE 0            // 1 to disable verification (development only)
+
+// Option A: Root CA certificate in PEM format (including BEGIN/END lines)
+// Replace with the appropriate Root CA for your server.
+#define HAS_HTTPS_ROOT_CA 1
+static const char kHttpsRootCA[] PROGMEM = R"PEM(
+-----BEGIN CERTIFICATE-----
+... your root CA ...
+-----END CERTIFICATE-----
+)PEM";
+
+// API key for protected endpoints (optional)
+#define API_KEY "sk_example_key"
+

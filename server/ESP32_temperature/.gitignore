@@ -3,3 +3,8 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+err.txt
+out.txt
+include/config.h
+include/config.local.h
+*.local
