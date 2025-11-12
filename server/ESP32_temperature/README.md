@@ -13,6 +13,7 @@ Features
 - Prometheus-style `/metrics` endpoint with posting/sensor counters and system gauges
 - TLS (HTTPS) posting with configurable Root CA or insecure mode for development
 - Runtime configuration via HTTP API (Wi‑Fi credentials, upstream host/path/port, TLS flags, API keys, device location)
+- Wi‑Fi manager with exponential reconnect backoff, optional static IP configuration, and mDNS hostname advertisement
 - Task status endpoint and task control (suspend, resume, restart)
 - NVS-backed configuration persistence with HTTP save/discard endpoints and optional factory-reset button
 
@@ -36,7 +37,7 @@ Architecture
   - `/config` (GET/POST): view/update configuration
   - `/task` (POST): control tasks (suspend/resume/restart)
 - `src/main.cpp` — Minimal bootstrap
-  - Serial, Wi‑Fi connect (using AppConfig defaults), NTP setup
+  - Serial, Wi‑Fi manager init (exponential reconnect, optional static IP/mDNS), NTP setup
   - Starts HTTP server and sensor tasks
 
 
@@ -62,6 +63,9 @@ Key macros (examples):
   - `DHTTYPE` — DHT model (e.g., `DHT22`)
 - Wi‑Fi
   - `WIFI_SSID`, `WIFI_PASSWORD`
+  - `WIFI_HOSTNAME` — station/DHCP hostname advertised to the network (defaults to `DEVICE_LOCATION`)
+  - `MDNS_HOSTNAME` — override for `.local` mDNS name (leave blank to reuse `WIFI_HOSTNAME`)
+  - `WIFI_STATIC_IP_ENABLED` (0/1) plus `WIFI_STATIC_IP`, `WIFI_STATIC_GATEWAY`, `WIFI_STATIC_NETMASK`, `WIFI_STATIC_DNS1`, `WIFI_STATIC_DNS2` for optional static network configuration
 - Upstream server
   - `HTTP_SERVER_HOST` — Hostname only (no scheme)
   - `HTTP_SERVER_PORT` — Usually 80 (HTTP) or 443 (HTTPS)
@@ -99,7 +103,7 @@ All endpoints are on port 80 (plain HTTP) and return JSON unless otherwise state
   - Returns current runtime configuration plus `persisted` flag indicating whether NVS has data. Sensitive fields (Wi‑Fi password, API keys) are included for full visibility — protect network access accordingly.
 
 - GET `/metrics`
-  - Exposes Prometheus text-format metrics (`text/plain; version=0.0.4`) covering sensor read success/failure counts, posting counters, last readings, heap usage, uptime, and Wi-Fi signal strength.
+  - Exposes Prometheus text-format metrics (`text/plain; version=0.0.4`) covering sensor read success/failure counts, posting counters, Wi‑Fi link health (RSSI, connection attempts, backoff, session duration), last readings, and heap usage/uptime.
 
 - POST `/config`
   - Updates any subset of configuration. Body: JSON object. Example:
@@ -111,13 +115,20 @@ All endpoints are on port 80 (plain HTTP) and return JSON unless otherwise state
       "use_tls": true,
       "https_insecure": false,
       "api_key": "sk_abc",
-  "http_api_key": "sk_local",
+      "http_api_key": "sk_local",
       "wifi_ssid": "MyWiFi",
       "wifi_password": "secret",
+      "wifi_hostname": "kitchen-sensor",
+      "mdns_hostname": "kitchen-sensor",
+      "wifi_static_ip_enabled": true,
+      "wifi_static_ip": "192.168.10.123",
+      "wifi_static_gateway": "192.168.10.1",
+      "wifi_static_netmask": "255.255.255.0",
+      "wifi_static_dns1": "1.1.1.1",
       "post_interval_sec": 300,
       "align_to_minute": true
     }
-  - If SSID/password change, the device attempts to reconnect immediately.
+  - Wi‑Fi changes (SSID/password, hostname, mDNS name, or static IP parameters) trigger the Wi‑Fi manager to reapply settings with exponential backoff.
 
 - POST `/task`
   - Controls tasks. Body: { "name": "SensorPostTask" | "HttpServerTask", "action": "suspend" | "resume" | "restart" }

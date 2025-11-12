@@ -30,6 +30,14 @@ struct MetricsSnapshot
     uint32_t heapMinBytes;
     int32_t wifiRssiDbm;
     bool wifiConnected;
+    uint32_t wifiConnectAttempts;
+    uint32_t wifiReconnectEvents;
+    uint32_t wifiLastAttemptMillis;
+    uint32_t wifiLastConnectedMillis;
+    uint32_t wifiLastDisconnectedMillis;
+    uint32_t wifiCurrentBackoffMillis;
+    uint32_t wifiConnectionDurationMillis;
+    uint32_t wifiCurrentAttemptNumber;
 };
 
 namespace Metrics
@@ -42,5 +50,8 @@ namespace Metrics
 
     void recordSensorRead(bool success, float temperatureC, float humidityPct);
     void recordPostResult(PostKind kind, bool success);
+    void recordWifiAttempt(uint32_t attemptNumber, uint32_t backoffMs);
+    void recordWifiConnected();
+    void recordWifiDisconnected();
     MetricsSnapshot snapshot();
 }

@@ -8,6 +8,7 @@
 #include "AppConfig.h"
 #include "SensorTask.h"
 #include "Metrics.h"
+#include "WifiManager.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -163,6 +164,14 @@ static void handleGetMetrics()
   appendGauge(F("esp_heap_min_bytes"), F("Minimum observed free heap bytes"), String(snap.heapMinBytes));
   appendGauge(F("esp_wifi_connected"), F("WiFi link status (1=connected,0=disconnected)"), String(snap.wifiConnected ? 1 : 0));
   appendGauge(F("esp_wifi_rssi_dbm"), F("WiFi RSSI in dBm (only valid when connected)"), String(snap.wifiRssiDbm));
+  appendCounter(F("esp_wifi_connect_attempts_total"), F("Total WiFi station connection attempts"), snap.wifiConnectAttempts);
+  appendCounter(F("esp_wifi_reconnect_events_total"), F("Total times the WiFi link dropped after being established"), snap.wifiReconnectEvents);
+  appendGauge(F("esp_wifi_last_attempt_millis"), F("Millis timestamp of the most recent WiFi connect attempt"), String(snap.wifiLastAttemptMillis));
+  appendGauge(F("esp_wifi_last_connect_millis"), F("Millis timestamp of the most recent successful WiFi connection"), String(snap.wifiLastConnectedMillis));
+  appendGauge(F("esp_wifi_last_disconnect_millis"), F("Millis timestamp of the most recent WiFi disconnect event"), String(snap.wifiLastDisconnectedMillis));
+  appendGauge(F("esp_wifi_current_backoff_millis"), F("Current exponential backoff before the next WiFi reconnect attempt"), String(snap.wifiCurrentBackoffMillis));
+  appendGauge(F("esp_wifi_connection_duration_millis"), F("Duration in milliseconds of the current WiFi session"), String(snap.wifiConnectionDurationMillis));
+  appendGauge(F("esp_wifi_current_attempt_number"), F("Current reconnect attempt sequence number"), String(snap.wifiCurrentAttemptNumber));
 
   server.send(200, "text/plain; version=0.0.4", out);
 }
@@ -266,16 +275,43 @@ static void handlePostConfig()
   // Track WiFi change
   String oldSsid = AppConfig::get().getWifiSSID();
   String oldPass = AppConfig::get().getWifiPassword();
+  String oldHostname = AppConfig::get().getWifiHostname();
+  String oldMdns = AppConfig::get().getMdnsHostname();
+  bool oldStaticEnabled = AppConfig::get().getWifiStaticIpEnabled();
+  String oldStaticIp = AppConfig::get().getWifiStaticIp();
+  String oldStaticGateway = AppConfig::get().getWifiStaticGateway();
+  String oldStaticNetmask = AppConfig::get().getWifiStaticSubnet();
+  String oldStaticDns1 = AppConfig::get().getWifiStaticDns1();
+  String oldStaticDns2 = AppConfig::get().getWifiStaticDns2();
 
   AppConfig::get().updateFromJson(doc);
 
-  // Apply WiFi changes immediately if credentials changed
+  // Request WiFi reconfigure when any related field changed
   String newSsid = AppConfig::get().getWifiSSID();
   String newPass = AppConfig::get().getWifiPassword();
-  if (newSsid != oldSsid || newPass != oldPass)
+  String newHostname = AppConfig::get().getWifiHostname();
+  String newMdns = AppConfig::get().getMdnsHostname();
+  bool newStaticEnabled = AppConfig::get().getWifiStaticIpEnabled();
+  String newStaticIp = AppConfig::get().getWifiStaticIp();
+  String newStaticGateway = AppConfig::get().getWifiStaticGateway();
+  String newStaticNetmask = AppConfig::get().getWifiStaticSubnet();
+  String newStaticDns1 = AppConfig::get().getWifiStaticDns1();
+  String newStaticDns2 = AppConfig::get().getWifiStaticDns2();
+
+  bool wifiChanged = (newSsid != oldSsid) ||
+                     (newPass != oldPass) ||
+                     (newHostname != oldHostname) ||
+                     (newMdns != oldMdns) ||
+                     (newStaticEnabled != oldStaticEnabled) ||
+                     (newStaticIp != oldStaticIp) ||
+                     (newStaticGateway != oldStaticGateway) ||
+                     (newStaticNetmask != oldStaticNetmask) ||
+                     (newStaticDns1 != oldStaticDns1) ||
+                     (newStaticDns2 != oldStaticDns2);
+
+  if (wifiChanged)
   {
-    WiFi.disconnect(true);
-    WiFi.begin(newSsid.c_str(), newPass.c_str());
+    wifiManagerRequestReconnect(true);
   }
 
   // Return new config
@@ -310,19 +346,10 @@ static void handlePostConfigDiscard()
   if (!authorizeRequest())
     return;
 
-  String oldSsid = AppConfig::get().getWifiSSID();
-  String oldPass = AppConfig::get().getWifiPassword();
-
   AppConfig::get().loadDefaultsFromMacros();
   bool fromNvs = AppConfig::get().loadFromNvs();
 
-  String newSsid = AppConfig::get().getWifiSSID();
-  String newPass = AppConfig::get().getWifiPassword();
-  if (newSsid != oldSsid || newPass != oldPass)
-  {
-    WiFi.disconnect(true);
-    WiFi.begin(newSsid.c_str(), newPass.c_str());
-  }
+  wifiManagerRequestReconnect(true);
 
   JsonDocument doc;
   doc["ok"] = true;
@@ -341,18 +368,9 @@ static void handlePostFactoryReset()
   if (!authorizeRequest())
     return;
 
-  String oldSsid = AppConfig::get().getWifiSSID();
-  String oldPass = AppConfig::get().getWifiPassword();
-
   bool ok = AppConfig::get().factoryReset();
 
-  String newSsid = AppConfig::get().getWifiSSID();
-  String newPass = AppConfig::get().getWifiPassword();
-  if (newSsid != oldSsid || newPass != oldPass)
-  {
-    WiFi.disconnect(true);
-    WiFi.begin(newSsid.c_str(), newPass.c_str());
-  }
+  wifiManagerRequestReconnect(true);
 
   JsonDocument doc;
   doc["ok"] = ok;

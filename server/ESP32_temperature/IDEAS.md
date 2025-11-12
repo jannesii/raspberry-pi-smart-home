@@ -54,9 +54,8 @@ Reliability & Scheduling
   - Use vTaskDelayUntil() for accurate, low-jitter minute boundaries.
 - [RS-2] Watchdog and task health
   - Heartbeats per task; restart stuck tasks; log reset reason at boot.
-- [RS-3] Wi‑Fi robustness
-  - Multi-AP list with priorities; reconnect backoff; mDNS hostname; optional static IP configuration.
-
+- DONE [RS-3] Wi‑Fi robustness
+  - DONE Reconnect backoff, mDNS hostname, optional static IP configuration.
 
 Security
 --------

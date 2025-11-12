@@ -7,6 +7,7 @@
 #include "SensorTask.h"
 #include "HttpServerTask.h"
 #include "AppConfig.h"
+#include "WifiManager.h"
 
 // WiFi credentials come from AppConfig defaults, but can be updated at runtime
 
@@ -68,19 +69,24 @@ void setup()
 
   maybeFactoryResetOnBoot();
 
-  // Connect WiFi (blocking until connected)
-  Serial.print(F("Connecting to "));
-  Serial.println(AppConfig::get().getWifiSSID());
-  WiFi.begin(AppConfig::get().getWifiSSID().c_str(), AppConfig::get().getWifiPassword().c_str());
-  while (WiFi.status() != WL_CONNECTED)
+  wifiManagerInit();
+
+  const unsigned long wifiWaitMs = 15000UL;
+  unsigned long startWait = millis();
+  while (WiFi.status() != WL_CONNECTED && (millis() - startWait) < wifiWaitMs)
   {
-    delay(500);
-    Serial.print('.');
+    wifiManagerLoop();
+    delay(50);
   }
-  Serial.println();
-  Serial.println(F("WiFi connected."));
-  Serial.print(F("IP address: "));
-  Serial.println(WiFi.localIP());
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    Serial.print(F("Initial WiFi connection established: "));
+    Serial.println(WiFi.localIP());
+  }
+  else
+  {
+    Serial.println(F("Initial WiFi connect timed out; continuing without link."));
+  }
 
   // Configure NTP (UTC). Time sync attempts will be handled by tasks.
   configTime(0 /*gmtOffset*/, 0 /*dstOffset*/, ntp1, ntp2, ntp3);
@@ -92,6 +98,6 @@ void setup()
 
 void loop()
 {
-  // Nothing to do here; tasks handle all work.
-  delay(1000);
+  wifiManagerLoop();
+  delay(100);
 }

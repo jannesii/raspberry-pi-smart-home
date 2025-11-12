@@ -10,6 +10,8 @@ namespace
   constexpr const char kKeyDeviceLocation[] = "device_location";
   constexpr const char kKeyWifiSsid[] = "wifi_ssid";
   constexpr const char kKeyWifiPassword[] = "wifi_password";
+  constexpr const char kKeyWifiHostname[] = "wifi_host";
+  constexpr const char kKeyMdnsHostname[] = "mdns_host";
   constexpr const char kKeyServerHost[] = "server_host";
   constexpr const char kKeyServerPath[] = "server_path";
   constexpr const char kKeyApiKey[] = "api_key";
@@ -19,6 +21,12 @@ namespace
   constexpr const char kKeyHttpsInsecure[] = "https_insecure";
   constexpr const char kKeyPostInterval[] = "post_interval";
   constexpr const char kKeyAlignMinute[] = "align_minute";
+  constexpr const char kKeyWifiStaticIpEnabled[] = "wifi_st_en";
+  constexpr const char kKeyWifiStaticIp[] = "wifi_st_ip";
+  constexpr const char kKeyWifiStaticGateway[] = "wifi_st_gw";
+  constexpr const char kKeyWifiStaticMask[] = "wifi_st_msk";
+  constexpr const char kKeyWifiStaticDns1[] = "wifi_st_d1";
+  constexpr const char kKeyWifiStaticDns2[] = "wifi_st_d2";
 }
 
 AppConfig &AppConfig::get()
@@ -50,6 +58,16 @@ void AppConfig::loadDefaultsLocked()
   deviceLocation_ = DEVICE_LOCATION;
   wifiSSID_ = WIFI_SSID;
   wifiPassword_ = WIFI_PASSWORD;
+#ifdef WIFI_HOSTNAME
+  wifiHostname_ = WIFI_HOSTNAME;
+#else
+  wifiHostname_ = deviceLocation_;
+#endif
+#ifdef MDNS_HOSTNAME
+  mdnsHostname_ = MDNS_HOSTNAME;
+#else
+  mdnsHostname_ = "";
+#endif
   serverHost_ = HTTP_SERVER_HOST;
   serverPath_ = HTTP_SERVER_PATH;
   apiKey_ = API_KEY;
@@ -81,6 +99,36 @@ void AppConfig::loadDefaultsLocked()
 #else
   alignPostsToMinute_ = true;
 #endif
+#ifdef WIFI_STATIC_IP_ENABLED
+  wifiStaticIpEnabled_ = (WIFI_STATIC_IP_ENABLED != 0);
+#else
+  wifiStaticIpEnabled_ = false;
+#endif
+#ifdef WIFI_STATIC_IP
+  wifiStaticIp_ = WIFI_STATIC_IP;
+#else
+  wifiStaticIp_.clear();
+#endif
+#ifdef WIFI_STATIC_GATEWAY
+  wifiStaticGateway_ = WIFI_STATIC_GATEWAY;
+#else
+  wifiStaticGateway_.clear();
+#endif
+#ifdef WIFI_STATIC_NETMASK
+  wifiStaticSubnet_ = WIFI_STATIC_NETMASK;
+#else
+  wifiStaticSubnet_.clear();
+#endif
+#ifdef WIFI_STATIC_DNS1
+  wifiStaticDns1_ = WIFI_STATIC_DNS1;
+#else
+  wifiStaticDns1_.clear();
+#endif
+#ifdef WIFI_STATIC_DNS2
+  wifiStaticDns2_ = WIFI_STATIC_DNS2;
+#else
+  wifiStaticDns2_.clear();
+#endif
 }
 
 String AppConfig::getDeviceLocation()
@@ -101,6 +149,20 @@ String AppConfig::getWifiPassword()
 {
   xSemaphoreTake(mutex_, portMAX_DELAY);
   String v = wifiPassword_;
+  xSemaphoreGive(mutex_);
+  return v;
+}
+String AppConfig::getWifiHostname()
+{
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  String v = wifiHostname_;
+  xSemaphoreGive(mutex_);
+  return v;
+}
+String AppConfig::getMdnsHostname()
+{
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  String v = mdnsHostname_;
   xSemaphoreGive(mutex_);
   return v;
 }
@@ -167,6 +229,48 @@ bool AppConfig::getAlignPostsToMinute()
   xSemaphoreGive(mutex_);
   return v;
 }
+bool AppConfig::getWifiStaticIpEnabled()
+{
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  bool v = wifiStaticIpEnabled_;
+  xSemaphoreGive(mutex_);
+  return v;
+}
+String AppConfig::getWifiStaticIp()
+{
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  String v = wifiStaticIp_;
+  xSemaphoreGive(mutex_);
+  return v;
+}
+String AppConfig::getWifiStaticGateway()
+{
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  String v = wifiStaticGateway_;
+  xSemaphoreGive(mutex_);
+  return v;
+}
+String AppConfig::getWifiStaticSubnet()
+{
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  String v = wifiStaticSubnet_;
+  xSemaphoreGive(mutex_);
+  return v;
+}
+String AppConfig::getWifiStaticDns1()
+{
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  String v = wifiStaticDns1_;
+  xSemaphoreGive(mutex_);
+  return v;
+}
+String AppConfig::getWifiStaticDns2()
+{
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  String v = wifiStaticDns2_;
+  xSemaphoreGive(mutex_);
+  return v;
+}
 
 void AppConfig::setDeviceLocation(const String &v)
 {
@@ -184,6 +288,18 @@ void AppConfig::setWifiPassword(const String &v)
 {
   xSemaphoreTake(mutex_, portMAX_DELAY);
   wifiPassword_ = v;
+  xSemaphoreGive(mutex_);
+}
+void AppConfig::setWifiHostname(const String &v)
+{
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  wifiHostname_ = v;
+  xSemaphoreGive(mutex_);
+}
+void AppConfig::setMdnsHostname(const String &v)
+{
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  mdnsHostname_ = v;
   xSemaphoreGive(mutex_);
 }
 void AppConfig::setServerHost(const String &v)
@@ -242,6 +358,42 @@ void AppConfig::setAlignPostsToMinute(bool b)
   alignPostsToMinute_ = b;
   xSemaphoreGive(mutex_);
 }
+void AppConfig::setWifiStaticIpEnabled(bool b)
+{
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  wifiStaticIpEnabled_ = b;
+  xSemaphoreGive(mutex_);
+}
+void AppConfig::setWifiStaticIp(const String &v)
+{
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  wifiStaticIp_ = v;
+  xSemaphoreGive(mutex_);
+}
+void AppConfig::setWifiStaticGateway(const String &v)
+{
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  wifiStaticGateway_ = v;
+  xSemaphoreGive(mutex_);
+}
+void AppConfig::setWifiStaticSubnet(const String &v)
+{
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  wifiStaticSubnet_ = v;
+  xSemaphoreGive(mutex_);
+}
+void AppConfig::setWifiStaticDns1(const String &v)
+{
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  wifiStaticDns1_ = v;
+  xSemaphoreGive(mutex_);
+}
+void AppConfig::setWifiStaticDns2(const String &v)
+{
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  wifiStaticDns2_ = v;
+  xSemaphoreGive(mutex_);
+}
 
 bool AppConfig::loadFromNvsLocked()
 {
@@ -263,6 +415,16 @@ bool AppConfig::loadFromNvsLocked()
   if (prefs_.isKey(kKeyWifiPassword))
   {
     wifiPassword_ = prefs_.getString(kKeyWifiPassword, wifiPassword_);
+    loaded = true;
+  }
+  if (prefs_.isKey(kKeyWifiHostname))
+  {
+    wifiHostname_ = prefs_.getString(kKeyWifiHostname, wifiHostname_);
+    loaded = true;
+  }
+  if (prefs_.isKey(kKeyMdnsHostname))
+  {
+    mdnsHostname_ = prefs_.getString(kKeyMdnsHostname, mdnsHostname_);
     loaded = true;
   }
   if (prefs_.isKey(kKeyServerHost))
@@ -314,6 +476,36 @@ bool AppConfig::loadFromNvsLocked()
     alignPostsToMinute_ = prefs_.getBool(kKeyAlignMinute, alignPostsToMinute_);
     loaded = true;
   }
+  if (prefs_.isKey(kKeyWifiStaticIpEnabled))
+  {
+    wifiStaticIpEnabled_ = prefs_.getBool(kKeyWifiStaticIpEnabled, wifiStaticIpEnabled_);
+    loaded = true;
+  }
+  if (prefs_.isKey(kKeyWifiStaticIp))
+  {
+    wifiStaticIp_ = prefs_.getString(kKeyWifiStaticIp, wifiStaticIp_);
+    loaded = true;
+  }
+  if (prefs_.isKey(kKeyWifiStaticGateway))
+  {
+    wifiStaticGateway_ = prefs_.getString(kKeyWifiStaticGateway, wifiStaticGateway_);
+    loaded = true;
+  }
+  if (prefs_.isKey(kKeyWifiStaticMask))
+  {
+    wifiStaticSubnet_ = prefs_.getString(kKeyWifiStaticMask, wifiStaticSubnet_);
+    loaded = true;
+  }
+  if (prefs_.isKey(kKeyWifiStaticDns1))
+  {
+    wifiStaticDns1_ = prefs_.getString(kKeyWifiStaticDns1, wifiStaticDns1_);
+    loaded = true;
+  }
+  if (prefs_.isKey(kKeyWifiStaticDns2))
+  {
+    wifiStaticDns2_ = prefs_.getString(kKeyWifiStaticDns2, wifiStaticDns2_);
+    loaded = true;
+  }
 
   if (!hadHttpKey)
   {
@@ -345,6 +537,8 @@ bool AppConfig::saveToNvs()
   String deviceLocation;
   String wifiSsid;
   String wifiPassword;
+  String wifiHostname;
+  String mdnsHostname;
   String serverHost;
   String serverPath;
   String apiKey;
@@ -354,11 +548,19 @@ bool AppConfig::saveToNvs()
   bool httpsInsecure;
   uint32_t postInterval;
   bool alignMinute;
+  bool wifiStaticEnabled;
+  String wifiStaticIp;
+  String wifiStaticGateway;
+  String wifiStaticNetmask;
+  String wifiStaticDns1;
+  String wifiStaticDns2;
 
   xSemaphoreTake(mutex_, portMAX_DELAY);
   deviceLocation = deviceLocation_;
   wifiSsid = wifiSSID_;
   wifiPassword = wifiPassword_;
+  wifiHostname = wifiHostname_;
+  mdnsHostname = mdnsHostname_;
   serverHost = serverHost_;
   serverPath = serverPath_;
   apiKey = apiKey_;
@@ -370,11 +572,19 @@ bool AppConfig::saveToNvs()
   if (postInterval == 0)
     postInterval = 1;
   alignMinute = alignPostsToMinute_;
+  wifiStaticEnabled = wifiStaticIpEnabled_;
+  wifiStaticIp = wifiStaticIp_;
+  wifiStaticGateway = wifiStaticGateway_;
+  wifiStaticNetmask = wifiStaticSubnet_;
+  wifiStaticDns1 = wifiStaticDns1_;
+  wifiStaticDns2 = wifiStaticDns2_;
   xSemaphoreGive(mutex_);
 
   prefs_.putString(kKeyDeviceLocation, deviceLocation);
   prefs_.putString(kKeyWifiSsid, wifiSsid);
   prefs_.putString(kKeyWifiPassword, wifiPassword);
+  prefs_.putString(kKeyWifiHostname, wifiHostname);
+  prefs_.putString(kKeyMdnsHostname, mdnsHostname);
   prefs_.putString(kKeyServerHost, serverHost);
   prefs_.putString(kKeyServerPath, serverPath);
   prefs_.putString(kKeyApiKey, apiKey);
@@ -384,6 +594,12 @@ bool AppConfig::saveToNvs()
   prefs_.putBool(kKeyHttpsInsecure, httpsInsecure);
   prefs_.putUInt(kKeyPostInterval, postInterval);
   prefs_.putBool(kKeyAlignMinute, alignMinute);
+  prefs_.putBool(kKeyWifiStaticIpEnabled, wifiStaticEnabled);
+  prefs_.putString(kKeyWifiStaticIp, wifiStaticIp);
+  prefs_.putString(kKeyWifiStaticGateway, wifiStaticGateway);
+  prefs_.putString(kKeyWifiStaticMask, wifiStaticNetmask);
+  prefs_.putString(kKeyWifiStaticDns1, wifiStaticDns1);
+  prefs_.putString(kKeyWifiStaticDns2, wifiStaticDns2);
 
   return true;
 }
@@ -395,6 +611,8 @@ bool AppConfig::hasPersistedConfig()
   return prefs_.isKey(kKeyDeviceLocation) ||
          prefs_.isKey(kKeyWifiSsid) ||
          prefs_.isKey(kKeyWifiPassword) ||
+         prefs_.isKey(kKeyWifiHostname) ||
+         prefs_.isKey(kKeyMdnsHostname) ||
          prefs_.isKey(kKeyServerHost) ||
          prefs_.isKey(kKeyServerPath) ||
          prefs_.isKey(kKeyApiKey) ||
@@ -403,7 +621,13 @@ bool AppConfig::hasPersistedConfig()
          prefs_.isKey(kKeyUseTls) ||
          prefs_.isKey(kKeyHttpsInsecure) ||
          prefs_.isKey(kKeyPostInterval) ||
-         prefs_.isKey(kKeyAlignMinute);
+         prefs_.isKey(kKeyAlignMinute) ||
+         prefs_.isKey(kKeyWifiStaticIpEnabled) ||
+         prefs_.isKey(kKeyWifiStaticIp) ||
+         prefs_.isKey(kKeyWifiStaticGateway) ||
+         prefs_.isKey(kKeyWifiStaticMask) ||
+         prefs_.isKey(kKeyWifiStaticDns1) ||
+         prefs_.isKey(kKeyWifiStaticDns2);
 }
 
 bool AppConfig::factoryReset()

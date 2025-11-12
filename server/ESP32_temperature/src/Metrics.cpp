@@ -31,6 +31,14 @@ namespace
         uint32_t postErrorConsecutiveFailures = 0;
         uint32_t lastPostErrorMillis = 0;
         uint32_t lastPostErrorSuccessMillis = 0;
+
+        uint32_t wifiConnectAttempts = 0;
+        uint32_t wifiReconnectEvents = 0;
+        uint32_t wifiLastAttemptMillis = 0;
+        uint32_t wifiLastConnectedMillis = 0;
+        uint32_t wifiLastDisconnectedMillis = 0;
+        uint32_t wifiCurrentBackoffMillis = 0;
+        uint32_t wifiCurrentAttemptNumber = 0;
     };
 
     MetricsData gMetrics;
@@ -120,6 +128,14 @@ MetricsSnapshot Metrics::snapshot()
     snap.postErrorConsecutiveFailures = gMetrics.postErrorConsecutiveFailures;
     snap.lastPostErrorMillis = gMetrics.lastPostErrorMillis;
     snap.lastPostErrorSuccessMillis = gMetrics.lastPostErrorSuccessMillis;
+
+    snap.wifiConnectAttempts = gMetrics.wifiConnectAttempts;
+    snap.wifiReconnectEvents = gMetrics.wifiReconnectEvents;
+    snap.wifiLastAttemptMillis = gMetrics.wifiLastAttemptMillis;
+    snap.wifiLastConnectedMillis = gMetrics.wifiLastConnectedMillis;
+    snap.wifiLastDisconnectedMillis = gMetrics.wifiLastDisconnectedMillis;
+    snap.wifiCurrentBackoffMillis = gMetrics.wifiCurrentBackoffMillis;
+    snap.wifiCurrentAttemptNumber = gMetrics.wifiCurrentAttemptNumber;
     portEXIT_CRITICAL(&gMetricsMux);
 
     snap.uptimeMillis = millis();
@@ -129,5 +145,51 @@ MetricsSnapshot Metrics::snapshot()
     snap.wifiConnected = (status == WL_CONNECTED);
     snap.wifiRssiDbm = snap.wifiConnected ? WiFi.RSSI() : -127;
 
+    if (snap.wifiConnected && snap.wifiLastConnectedMillis != 0)
+    {
+        if (snap.uptimeMillis >= snap.wifiLastConnectedMillis)
+        {
+            snap.wifiConnectionDurationMillis = snap.uptimeMillis - snap.wifiLastConnectedMillis;
+        }
+        else
+        {
+            snap.wifiConnectionDurationMillis = 0;
+        }
+    }
+    else
+    {
+        snap.wifiConnectionDurationMillis = 0;
+    }
+
     return snap;
+}
+
+void Metrics::recordWifiAttempt(uint32_t attemptNumber, uint32_t backoffMs)
+{
+    const uint32_t now = millis();
+    portENTER_CRITICAL(&gMetricsMux);
+    gMetrics.wifiConnectAttempts++;
+    gMetrics.wifiCurrentAttemptNumber = attemptNumber;
+    gMetrics.wifiLastAttemptMillis = now;
+    gMetrics.wifiCurrentBackoffMillis = backoffMs;
+    portEXIT_CRITICAL(&gMetricsMux);
+}
+
+void Metrics::recordWifiConnected()
+{
+    const uint32_t now = millis();
+    portENTER_CRITICAL(&gMetricsMux);
+    gMetrics.wifiLastConnectedMillis = now;
+    gMetrics.wifiCurrentBackoffMillis = 0;
+    gMetrics.wifiCurrentAttemptNumber = 0;
+    portEXIT_CRITICAL(&gMetricsMux);
+}
+
+void Metrics::recordWifiDisconnected()
+{
+    const uint32_t now = millis();
+    portENTER_CRITICAL(&gMetricsMux);
+    gMetrics.wifiReconnectEvents++;
+    gMetrics.wifiLastDisconnectedMillis = now;
+    portEXIT_CRITICAL(&gMetricsMux);
 }
