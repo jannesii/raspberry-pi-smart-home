@@ -317,8 +317,10 @@ bool AppConfig::loadFromNvsLocked()
 
   if (!hadHttpKey)
   {
-    // Backward compatibility: default HTTP key to the upstream API key when not explicitly stored.
+#ifndef HTTP_API_KEY
+    // Backward compatibility: when no dedicated HTTP key is configured, mirror the upstream API key.
     httpApiKey_ = apiKey_;
+#endif
   }
 
   return loaded;

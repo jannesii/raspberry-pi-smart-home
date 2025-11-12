@@ -10,6 +10,7 @@ Features
 - DHT sensor readouts (temperature, humidity) using Adafruit DHT + Unified Sensor
 - Configurable posting cadence (interval + optional epoch alignment) with NTP time sync and fallback cadence
 - Bearer-token protection for every embedded HTTP endpoint with a dedicated HTTP API key (defaults to the upstream key)
+- Prometheus-style `/metrics` endpoint with posting/sensor counters and system gauges
 - TLS (HTTPS) posting with configurable Root CA or insecure mode for development
 - Runtime configuration via HTTP API (Wi‑Fi credentials, upstream host/path/port, TLS flags, API keys, device location)
 - Task status endpoint and task control (suspend, resume, restart)
@@ -50,7 +51,7 @@ Runtime changes made through the HTTP API remain in RAM until persisted. To keep
 - `POST /config/discard` — throw away unsaved edits and reload the last persisted configuration (or defaults if nothing has been saved yet).
 - `POST /config/factory_reset` — clear NVS and reload compile-time defaults; the response includes the fresh defaults and recommends a reboot.
 
-`GET /config` now includes a `persisted` flag so clients can tell whether values originate from NVS or only from compile-time defaults. You can also opt into a hardware-assisted factory reset by defining `FACTORY_RESET_PIN` (and optional level/mode/hold macros) in `config.h`. Holding that pin in the active state for `FACTORY_RESET_HOLD_MS` during boot clears NVS and restarts the device.
+`GET /config` now includes a `persisted` flag so clients can tell whether values originate from NVS or only from compile-time defaults. Note that pressing the module’s reset/boot buttons only restarts the MCU—it does **not** erase NVS. Use the HTTP factory-reset endpoint (or wire the optional hardware pin) whenever you need to clear stored credentials. You can opt into the hardware-assisted flow by defining `FACTORY_RESET_PIN` (and optional level/mode/hold macros) in `config.h`; holding that pin in the active state for `FACTORY_RESET_HOLD_MS` during boot clears NVS and restarts the device.
 
 Key macros (examples):
 
@@ -97,6 +98,9 @@ All endpoints are on port 80 (plain HTTP) and return JSON unless otherwise state
 - GET `/config`
   - Returns current runtime configuration plus `persisted` flag indicating whether NVS has data. Sensitive fields (Wi‑Fi password, API keys) are included for full visibility — protect network access accordingly.
 
+- GET `/metrics`
+  - Exposes Prometheus text-format metrics (`text/plain; version=0.0.4`) covering sensor read success/failure counts, posting counters, last readings, heap usage, uptime, and Wi-Fi signal strength.
+
 - POST `/config`
   - Updates any subset of configuration. Body: JSON object. Example:
     {
@@ -129,6 +133,7 @@ All endpoints are on port 80 (plain HTTP) and return JSON unless otherwise state
 
 - POST `/config/factory_reset`
   - Clears all persisted values and restores defaults. Useful for onboarding a new network or wiping secrets. A reboot is recommended afterward.
+  - Reminder: the on-board reset/boot buttons **do not** erase NVS. If you lose HTTP access, you can either trigger the configured factory-reset pin (if wired) or erase flash from the host (`pio run -t erase`) before reflashing.
 
 
 Posting Format
@@ -181,6 +186,7 @@ Security Notes
 - The embedded HTTP API is plain HTTP (no TLS) but protected with a bearer token.
   - Do not expose the device to untrusted networks without additional controls.
   - The `/config` endpoint includes sensitive fields; treat the HTTP API key like a secret.
+  - Keep a recovery plan handy: if you lose the HTTP key, use the hardware factory-reset pin (if wired) or perform a host-side flash erase before reflashing firmware.
 - Persisting secrets to NVS makes them survive reboots; remember to factory reset (`POST /config/factory_reset` or the hardware button, if configured) before decommissioning a device.
 - `use_tls` / `https_insecure` only affect upstream POSTs. They do not secure the embedded HTTP server.
 - For stronger protection, consider:

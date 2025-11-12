@@ -7,9 +7,11 @@
 
 #include "AppConfig.h"
 #include "SensorTask.h"
+#include "Metrics.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <math.h>
 
 static WebServer server(80);
 static TaskHandle_t gHttpTaskHandle = nullptr;
@@ -87,6 +89,82 @@ static void handleRoot()
   if (!authorizeRequest())
     return;
   server.send(200, "text/plain", "ok");
+}
+
+static void appendMetric(String &out,
+                         const __FlashStringHelper *name,
+                         const __FlashStringHelper *help,
+                         const __FlashStringHelper *type,
+                         const String &value)
+{
+  out += F("# HELP ");
+  out += name;
+  out += ' ';
+  out += help;
+  out += '\n';
+  out += F("# TYPE ");
+  out += name;
+  out += ' ';
+  out += type;
+  out += '\n';
+  out += name;
+  out += ' ';
+  out += value;
+  out += '\n';
+}
+
+static void handleGetMetrics()
+{
+  Serial.println(F("HTTP metrics request"));
+  if (!authorizeRequest())
+    return;
+
+  MetricsSnapshot snap = Metrics::snapshot();
+  String out;
+  out.reserve(1024);
+
+  auto appendCounter = [&](const __FlashStringHelper *name, const __FlashStringHelper *help, uint32_t value)
+  {
+    appendMetric(out, name, help, F("counter"), String(value));
+  };
+  auto appendGauge = [&](const __FlashStringHelper *name, const __FlashStringHelper *help, const String &value)
+  {
+    appendMetric(out, name, help, F("gauge"), value);
+  };
+  auto floatStr = [](float value, uint8_t decimals = 2) -> String
+  {
+    if (isnan(value))
+      return String("nan");
+    return String(value, static_cast<unsigned int>(decimals));
+  };
+
+  appendCounter(F("esp_sensor_readings_total"), F("Total DHT sensor read attempts"), snap.sensorReadTotal);
+  appendCounter(F("esp_sensor_readings_failed_total"), F("Failed DHT sensor reads"), snap.sensorReadFailed);
+  appendGauge(F("esp_sensor_read_consecutive_failures"), F("Current consecutive DHT read failures"), String(snap.sensorReadConsecutiveFailures));
+  appendGauge(F("esp_last_sensor_read_millis"), F("Millis timestamp of the most recent sensor read attempt"), String(snap.lastSensorReadMillis));
+  appendGauge(F("esp_last_sensor_read_success_millis"), F("Millis timestamp of the most recent successful sensor read"), String(snap.lastSensorReadSuccessMillis));
+  appendGauge(F("esp_last_temperature_celsius"), F("Most recent temperature reading in Celsius"), floatStr(snap.lastTemperatureC, 2));
+  appendGauge(F("esp_last_humidity_percent"), F("Most recent humidity reading (percent)"), floatStr(snap.lastHumidityPct, 2));
+
+  appendCounter(F("esp_post_reading_total"), F("Total attempts to post sensor readings upstream"), snap.postReadingTotal);
+  appendCounter(F("esp_post_reading_failed_total"), F("Failed attempts to post sensor readings upstream"), snap.postReadingFailed);
+  appendGauge(F("esp_post_reading_consecutive_failures"), F("Current consecutive failed posting attempts for sensor readings"), String(snap.postReadingConsecutiveFailures));
+  appendGauge(F("esp_last_post_reading_millis"), F("Millis timestamp of the most recent sensor reading post attempt"), String(snap.lastPostReadingMillis));
+  appendGauge(F("esp_last_post_reading_success_millis"), F("Millis timestamp of the most recent successful sensor reading post"), String(snap.lastPostReadingSuccessMillis));
+
+  appendCounter(F("esp_post_error_total"), F("Total attempts to post error payloads upstream"), snap.postErrorTotal);
+  appendCounter(F("esp_post_error_failed_total"), F("Failed attempts to post error payloads upstream"), snap.postErrorFailed);
+  appendGauge(F("esp_post_error_consecutive_failures"), F("Current consecutive failed error post attempts"), String(snap.postErrorConsecutiveFailures));
+  appendGauge(F("esp_last_post_error_millis"), F("Millis timestamp of the most recent error post attempt"), String(snap.lastPostErrorMillis));
+  appendGauge(F("esp_last_post_error_success_millis"), F("Millis timestamp of the most recent successful error post"), String(snap.lastPostErrorSuccessMillis));
+
+  appendGauge(F("esp_uptime_millis"), F("Device uptime in milliseconds"), String(snap.uptimeMillis));
+  appendGauge(F("esp_heap_free_bytes"), F("Free heap bytes at the time of metrics snapshot"), String(snap.heapFreeBytes));
+  appendGauge(F("esp_heap_min_bytes"), F("Minimum observed free heap bytes"), String(snap.heapMinBytes));
+  appendGauge(F("esp_wifi_connected"), F("WiFi link status (1=connected,0=disconnected)"), String(snap.wifiConnected ? 1 : 0));
+  appendGauge(F("esp_wifi_rssi_dbm"), F("WiFi RSSI in dBm (only valid when connected)"), String(snap.wifiRssiDbm));
+
+  server.send(200, "text/plain; version=0.0.4", out);
 }
 
 static void handleGetStatus()
@@ -379,6 +457,7 @@ static void HttpTask(void *pv)
   server.on("/config/discard", HTTP_POST, handlePostConfigDiscard);
   server.on("/config/factory_reset", HTTP_POST, handlePostFactoryReset);
   server.on("/task", HTTP_POST, handlePostTask);
+  server.on("/metrics", HTTP_GET, handleGetMetrics);
   server.begin();
   Serial.println(F("HTTP server started on port 80"));
 

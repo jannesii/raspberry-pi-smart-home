@@ -9,6 +9,7 @@
 #include "Poster.h"
 #include "config.h"
 #include "AppConfig.h"
+#include "Metrics.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -60,11 +61,13 @@ static bool takeReading(float &t, float &h, String &err)
       dht.begin();
     }
     xSemaphoreGive(gDhtMutex);
+    Metrics::recordSensorRead(false, t, h);
     return false;
   }
 
   dhtFailCount = 0;
   xSemaphoreGive(gDhtMutex);
+  Metrics::recordSensorRead(true, t, h);
   return true;
 }
 

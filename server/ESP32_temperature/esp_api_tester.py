@@ -6,6 +6,7 @@ Endpoints covered (see device firmware README):
   - GET  /status
   - GET  /read
   - GET  /config
+    - GET  /metrics
   - POST /config         (optional: via --config-json FILE or --config-inline JSON)
   - POST /task           (optional: via --task-tests to suspend/resume/restart SensorPostTask)
 
@@ -62,6 +63,10 @@ class EspApi:
     def get_config(self) -> requests.Response:
         return self.session.get(self._url("/config"), headers=self.headers, timeout=self.timeout)
 
+    def get_metrics(self) -> requests.Response:
+        headers = {**self.headers, "Accept": "text/plain"}
+        return self.session.get(self._url("/metrics"), headers=headers, timeout=self.timeout)
+
     # ---- POST endpoints ----
     def post_config(self, patch: Dict[str, Any]) -> requests.Response:
         return self.session.post(self._url("/config"), headers={**self.headers, "Content-Type": "application/json"},
@@ -110,6 +115,16 @@ def run_smoke_tests(api: EspApi,
         r.raise_for_status()
     except Exception as e:
         print(f"[ERROR] /config (GET) failed: {e}")
+        failures += 1
+
+    print("\n==> GET /metrics")
+    try:
+        r = api.get_metrics()
+        print(f"HTTP {r.status_code}")
+        print(r.text)
+        r.raise_for_status()
+    except Exception as e:
+        print(f"[ERROR] /metrics failed: {e}")
         failures += 1
 
     if config_patch:
