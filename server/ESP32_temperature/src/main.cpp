@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <time.h>
+#include <esp_system.h>
 
 #include "config.h"
 #include "Poster.h"
@@ -8,6 +9,7 @@
 #include "HttpServerTask.h"
 #include "AppConfig.h"
 #include "WifiManager.h"
+#include "TaskWatchdog.h"
 
 // WiFi credentials come from AppConfig defaults, but can be updated at runtime
 
@@ -60,14 +62,49 @@ static const char *ntp3 = "time.google.com";
 // Global poster instance
 static Poster gPoster;
 
+static const char *resetReasonLabel(esp_reset_reason_t reason)
+{
+  switch (reason)
+  {
+  case ESP_RST_UNKNOWN:
+    return "UNKNOWN";
+  case ESP_RST_POWERON:
+    return "POWERON";
+  case ESP_RST_EXT:
+    return "EXT";
+  case ESP_RST_SW:
+    return "SW";
+  case ESP_RST_PANIC:
+    return "PANIC";
+  case ESP_RST_INT_WDT:
+    return "INT_WDT";
+  case ESP_RST_TASK_WDT:
+    return "TASK_WDT";
+  case ESP_RST_WDT:
+    return "WDT";
+  case ESP_RST_DEEPSLEEP:
+    return "DEEPSLEEP";
+  case ESP_RST_BROWNOUT:
+    return "BROWNOUT";
+  case ESP_RST_SDIO:
+    return "SDIO";
+  default:
+    return "OTHER";
+  }
+}
+
 void setup()
 {
   Serial.begin(115200);
   delay(2000);
   Serial.println();
   Serial.println(F("Booting..."));
+  Serial.print(F("Reset reason: "));
+  Serial.println(resetReasonLabel(esp_reset_reason()));
 
   maybeFactoryResetOnBoot();
+
+  TaskWatchdog::init();
 
   wifiManagerInit();
 

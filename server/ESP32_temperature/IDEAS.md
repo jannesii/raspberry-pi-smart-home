@@ -52,10 +52,10 @@ Reliability & Scheduling
 
 - DONE [RS-1] Deterministic scheduling
   - Use vTaskDelayUntil() for accurate, low-jitter minute boundaries.
-- [RS-2] Watchdog and task health
+- DONE [RS-2] Watchdog and task health
   - Heartbeats per task; restart stuck tasks; log reset reason at boot.
 - DONE [RS-3] Wi‑Fi robustness
-  - DONE Reconnect backoff, mDNS hostname, optional static IP configuration.
+  - Reconnect backoff, mDNS hostname, optional static IP configuration.
 
 Security
 --------

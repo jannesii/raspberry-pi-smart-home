@@ -1,5 +1,5 @@
 @httpApiKey = sk_example_http_key
-@httpApiUrl = http://192.168.10.124
+@httpApiUrl = http://test.local
 
 ### GET status
 GET {{httpApiUrl}}/status
@@ -38,3 +38,12 @@ Authorization: Bearer {{httpApiKey}}
 ### reset
 POST {{httpApiUrl}}/config/factory_reset
 Authorization: Bearer {{httpApiKey}}
+
+### POST task
+POST {{httpApiUrl}}/task
+Authorization: Bearer {{httpApiKey}}    
+
+{
+    "name": "SensorPostTask", 
+    "action": "restart"
+}

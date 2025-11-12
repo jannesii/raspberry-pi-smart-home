@@ -9,6 +9,7 @@
 #include "SensorTask.h"
 #include "Metrics.h"
 #include "WifiManager.h"
+#include "TaskWatchdog.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -479,12 +480,16 @@ static void HttpTask(void *pv)
   server.begin();
   Serial.println(F("HTTP server started on port 80"));
 
+  TaskWatchdog::registerTask(TaskWatchdog::TaskId::HttpServer, "HttpServerTask", restartHttpServerTask, 10000);
+
   for (;;)
   {
     server.handleClient();
+    TaskWatchdog::heartbeat(TaskWatchdog::TaskId::HttpServer);
     if (gSelfRestartRequested)
     {
       gSelfRestartRequested = false;
+      TaskWatchdog::unregisterTask(TaskWatchdog::TaskId::HttpServer);
       // respawning a new task to take over loop
       startHttpServerTask();
       vTaskDelete(NULL);
@@ -511,6 +516,7 @@ extern "C"
   {
     TaskHandle_t h = gHttpTaskHandle;
     gHttpTaskHandle = nullptr;
+    TaskWatchdog::unregisterTask(TaskWatchdog::TaskId::HttpServer);
     if (h)
     {
       vTaskDelete(h);

@@ -11,6 +11,7 @@
 #include "config.h"
 #include "AppConfig.h"
 #include "Metrics.h"
+#include "TaskWatchdog.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -192,6 +193,8 @@ static void SensorTask(void *pv)
     gDhtMutex = xSemaphoreCreateMutex();
   Serial.println(F("DHT sensor initialized (task)"));
 
+  TaskWatchdog::registerTask(TaskWatchdog::TaskId::Sensor, "SensorPostTask", restartSensorTask, 60000);
+
   // Take one immediate measurement after boot
   (void)readAndPost();
 
@@ -210,6 +213,7 @@ static void SensorTask(void *pv)
 
   for (;;)
   {
+    TaskWatchdog::heartbeat(TaskWatchdog::TaskId::Sensor);
     // Refresh configuration periodically so runtime updates apply without reboot.
     uint32_t latestInterval = readIntervalSeconds();
     bool latestAlign = AppConfig::get().getAlignPostsToMinute();
@@ -283,6 +287,7 @@ extern "C"
   {
     TaskHandle_t h = gSensorTaskHandle;
     gSensorTaskHandle = nullptr;
+    TaskWatchdog::unregisterTask(TaskWatchdog::TaskId::Sensor);
     if (h)
     {
       vTaskDelete(h);

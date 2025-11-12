@@ -14,6 +14,7 @@ Features
 - TLS (HTTPS) posting with configurable Root CA or insecure mode for development
 - Runtime configuration via HTTP API (Wi‑Fi credentials, upstream host/path/port, TLS flags, API keys, device location)
 - Wi‑Fi manager with exponential reconnect backoff, optional static IP configuration, and mDNS hostname advertisement
+- Task watchdog with per-task heartbeats that restart stalled Sensor/HTTP tasks and log the reset reason at boot
 - Task status endpoint and task control (suspend, resume, restart)
 - NVS-backed configuration persistence with HTTP save/discard endpoints and optional factory-reset button
 
@@ -38,6 +39,7 @@ Architecture
   - `/task` (POST): control tasks (suspend/resume/restart)
 - `src/main.cpp` — Minimal bootstrap
   - Serial, Wi‑Fi manager init (exponential reconnect, optional static IP/mDNS), NTP setup
+  - Logs the last reset reason and starts the task watchdog monitor
   - Starts HTTP server and sensor tasks
 
 
