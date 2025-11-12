@@ -7,3 +7,4 @@ err.txt
 out.txt
 include/config.h
 *.local
+test-secret.http
