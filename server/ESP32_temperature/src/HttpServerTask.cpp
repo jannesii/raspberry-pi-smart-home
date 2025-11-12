@@ -9,6 +9,7 @@
 #include "SensorTask.h"
 #include "Metrics.h"
 #include "WifiManager.h"
+#include "StructuredLog.h"
 #include "TaskWatchdog.h"
 
 #include "freertos/FreeRTOS.h"
@@ -21,6 +22,8 @@ static volatile bool gSelfRestartRequested = false;
 static constexpr const char *kAuthHeader = "Authorization";
 static constexpr const char *kAuthScheme = "Bearer ";
 static constexpr size_t kAuthSchemeLen = 7;
+static constexpr size_t kLogSnapshotSize = 64;
+static StructuredLog::Entry gLogSnapshot[kLogSnapshotSize]; // static to avoid large stack frames
 
 static void sendAuthFailure(int statusCode, const __FlashStringHelper *message)
 {
@@ -85,9 +88,68 @@ static const char *stateToStr(eTaskState s)
   }
 }
 
+static inline char hexDigit(uint8_t nibble)
+{
+  return (nibble < 10) ? static_cast<char>('0' + nibble) : static_cast<char>('A' + (nibble - 10));
+}
+
+static void appendJsonEscaped(String &out, const char *text)
+{
+  if (!text)
+  {
+    return;
+  }
+  while (*text)
+  {
+    char c = *text++;
+    switch (c)
+    {
+    case '"':
+      out += F("\\\"");
+      break;
+    case '\\':
+      out += F("\\\\");
+      break;
+    case '\b':
+      out += F("\\b");
+      break;
+    case '\f':
+      out += F("\\f");
+      break;
+    case '\n':
+      out += F("\\n");
+      break;
+    case '\r':
+      out += F("\\r");
+      break;
+    case '\t':
+      out += F("\\t");
+      break;
+    default:
+      if (static_cast<uint8_t>(c) < 0x20)
+      {
+        char buf[7];
+        buf[0] = '\\';
+        buf[1] = 'u';
+        buf[2] = '0';
+        buf[3] = '0';
+        buf[4] = hexDigit((static_cast<uint8_t>(c) >> 4) & 0x0F);
+        buf[5] = hexDigit(static_cast<uint8_t>(c) & 0x0F);
+        buf[6] = '\0';
+        out += buf;
+      }
+      else
+      {
+        out += c;
+      }
+      break;
+    }
+  }
+}
+
 static void handleRoot()
 {
-  Serial.println(F("HTTP root request"));
+  LOG_DEBUG(F("HTTP root request"));
   if (!authorizeRequest())
     return;
   server.send(200, "text/plain", "ok");
@@ -117,7 +179,7 @@ static void appendMetric(String &out,
 
 static void handleGetMetrics()
 {
-  Serial.println(F("HTTP metrics request"));
+  LOG_DEBUG(F("HTTP metrics request"));
   if (!authorizeRequest())
     return;
 
@@ -177,9 +239,111 @@ static void handleGetMetrics()
   server.send(200, "text/plain; version=0.0.4", out);
 }
 
+static void handleGetLogs()
+{
+  LOG_DEBUG(F("HTTP logs request"));
+  if (!authorizeRequest())
+    return;
+
+  StructuredLog::Entry *entries = gLogSnapshot;
+  size_t count = StructuredLog::snapshot(entries, kLogSnapshotSize);
+
+  String out;
+  out.reserve((count * 160) + 64);
+  out += F("{\"current_level\":\"");
+  out += StructuredLog::levelName(StructuredLog::getLevel());
+  out += F("\",\"entries\":[");
+  for (size_t i = 0; i < count; ++i)
+  {
+    if (i > 0)
+      out += ',';
+    out += F("{\"timestamp_ms\":");
+    out += String(entries[i].timestampMs);
+    out += F(",\"level\":\"");
+    out += StructuredLog::levelName(entries[i].level);
+    out += F("\",\"message\":\"");
+    appendJsonEscaped(out, entries[i].message);
+    out += F("\"}");
+  }
+  out += F("]}");
+  server.send(200, "application/json", out);
+}
+
+static void handlePostLogs()
+{
+  LOG_DEBUG(F("HTTP logs control request"));
+  if (!authorizeRequest())
+    return;
+
+  if (!server.hasArg("plain"))
+  {
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"missing body\"}");
+    return;
+  }
+
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, server.arg("plain"));
+  if (err)
+  {
+    String msg = F("{\"ok\":false,\"error\":\"json error: ");
+    msg += err.c_str();
+    msg += F("\"}");
+    server.send(400, "application/json", msg);
+    return;
+  }
+
+  bool cleared = false;
+
+  if (!doc["action"].isNull())
+  {
+    if (!doc["action"].is<const char *>())
+    {
+      server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid action\"}");
+      return;
+    }
+    String action = doc["action"].as<String>();
+    action.trim();
+    action.toLowerCase();
+    if (!action.isEmpty())
+    {
+      if (action == "clear")
+      {
+        StructuredLog::clear();
+        cleared = true;
+        StructuredLog::log(StructuredLog::Level::Info, F("Log buffer cleared via HTTP API"));
+      }
+      else
+      {
+        server.send(400, "application/json", "{\"ok\":false,\"error\":\"unsupported action\"}");
+        return;
+      }
+    }
+  }
+
+  if (!doc["level"].isNull())
+  {
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"level must be changed via /config\"}");
+    return;
+  }
+
+  if (!cleared)
+  {
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"no changes requested\"}");
+    return;
+  }
+
+  String out;
+  out.reserve(64);
+  out += F("{\"ok\":true,\"cleared\":");
+  out += cleared ? F("true") : F("false");
+  out += '}';
+
+  server.send(200, "application/json", out);
+}
+
 static void handleGetStatus()
 {
-  Serial.println(F("HTTP status request"));
+  LOG_DEBUG(F("HTTP status request"));
   if (!authorizeRequest())
     return;
   JsonDocument doc;
@@ -219,7 +383,7 @@ static void handleGetStatus()
 
 static void handleGetRead()
 {
-  Serial.println(F("HTTP read request"));
+  LOG_DEBUG(F("HTTP read request"));
   if (!authorizeRequest())
     return;
   float t = NAN, h = NAN;
@@ -245,7 +409,7 @@ static void handleGetRead()
 
 static void handleGetConfig()
 {
-  Serial.println(F("HTTP config request"));
+  LOG_DEBUG(F("HTTP config request"));
   if (!authorizeRequest())
     return;
   JsonDocument doc;
@@ -257,7 +421,7 @@ static void handleGetConfig()
 
 static void handlePostConfig()
 {
-  Serial.println(F("HTTP config update"));
+  LOG_DEBUG(F("HTTP config update"));
   if (!authorizeRequest())
     return;
   if (!server.hasArg("plain"))
@@ -325,7 +489,7 @@ static void handlePostConfig()
 
 static void handlePostConfigSave()
 {
-  Serial.println(F("HTTP config save"));
+  LOG_DEBUG(F("HTTP config save"));
   if (!authorizeRequest())
     return;
   bool ok = AppConfig::get().saveToNvs();
@@ -343,7 +507,7 @@ static void handlePostConfigSave()
 
 static void handlePostConfigDiscard()
 {
-  Serial.println(F("HTTP config discard"));
+  LOG_DEBUG(F("HTTP config discard"));
   if (!authorizeRequest())
     return;
 
@@ -365,7 +529,7 @@ static void handlePostConfigDiscard()
 
 static void handlePostFactoryReset()
 {
-  Serial.println(F("HTTP factory reset"));
+  LOG_DEBUG(F("HTTP factory reset"));
   if (!authorizeRequest())
     return;
 
@@ -387,7 +551,7 @@ static void handlePostFactoryReset()
 
 static void handlePostTask()
 {
-  Serial.println(F("HTTP task control"));
+  LOG_DEBUG(F("HTTP task control"));
   if (!authorizeRequest())
     return;
   if (!server.hasArg("plain"))
@@ -466,7 +630,7 @@ static void handlePostTask()
 
 static void HttpTask(void *pv)
 {
-  Serial.println(F("Starting HTTP server..."));
+  LOG_INFO(F("Starting HTTP server..."));
   server.on("/", HTTP_GET, handleRoot);
   server.on("/status", HTTP_GET, handleGetStatus);
   server.on("/read", HTTP_GET, handleGetRead);
@@ -477,8 +641,10 @@ static void HttpTask(void *pv)
   server.on("/config/factory_reset", HTTP_POST, handlePostFactoryReset);
   server.on("/task", HTTP_POST, handlePostTask);
   server.on("/metrics", HTTP_GET, handleGetMetrics);
+  server.on("/logs", HTTP_GET, handleGetLogs);
+  server.on("/logs", HTTP_POST, handlePostLogs);
   server.begin();
-  Serial.println(F("HTTP server started on port 80"));
+  LOG_INFO(F("HTTP server started on port 80"));
 
   TaskWatchdog::registerTask(TaskWatchdog::TaskId::HttpServer, "HttpServerTask", restartHttpServerTask, 10000);
 

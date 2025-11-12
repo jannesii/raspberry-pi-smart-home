@@ -7,6 +7,7 @@
 
 #include "AppConfig.h"
 #include "Metrics.h"
+#include "StructuredLog.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -86,12 +87,13 @@ void wifiManagerLoop()
             IPAddress ip = WiFi.localIP();
             IPAddress gw = WiFi.gatewayIP();
             IPAddress mask = WiFi.subnetMask();
-            Serial.print(F("WiFi connected. IP: "));
-            Serial.print(ip);
-            Serial.print(F(" Gateway: "));
-            Serial.print(gw);
-            Serial.print(F(" Netmask: "));
-            Serial.println(mask);
+            String msg = F("WiFi connected. IP: ");
+            msg += ip.toString();
+            msg += F(" Gateway: ");
+            msg += gw.toString();
+            msg += F(" Netmask: ");
+            msg += mask.toString();
+            LOG_INFO(msg);
             Metrics::recordWifiConnected();
         }
 
@@ -103,7 +105,7 @@ void wifiManagerLoop()
     {
         gWasConnected = false;
         gNextAttemptMillis = 0;
-        Serial.println(F("WiFi link lost. Scheduling reconnect."));
+        LOG_WARN(F("WiFi link lost. Scheduling reconnect."));
         Metrics::recordWifiDisconnected();
     }
 
@@ -216,7 +218,7 @@ namespace
 
         if (!okIp || !okGw || !okMask)
         {
-            Serial.println(F("[WiFi] Static IP config incomplete or invalid; falling back to DHCP."));
+            LOG_WARN(F("[WiFi] Static IP config incomplete or invalid; falling back to DHCP."));
             s.enabled = false;
             return s;
         }
@@ -294,8 +296,9 @@ namespace
             if (!sanitized.isEmpty())
             {
                 WiFi.setHostname(sanitized.c_str());
-                Serial.print(F("[WiFi] Hostname set to "));
-                Serial.println(sanitized);
+                String msg = F("[WiFi] Hostname set to ");
+                msg += sanitized;
+                LOG_INFO(msg);
             }
             gAppliedHostname = sanitized;
         }
@@ -312,12 +315,13 @@ namespace
                                  gAppliedStaticSettings.dns2 == desired.dns2;
             if (!sameAsCurrent)
             {
-                Serial.print(F("[WiFi] Applying static IP "));
-                Serial.print(desired.ip);
-                Serial.print(F(" gateway "));
-                Serial.print(desired.gateway);
-                Serial.print(F(" netmask "));
-                Serial.println(desired.subnet);
+                String msg = F("[WiFi] Applying static IP ");
+                msg += desired.ip.toString();
+                msg += F(" gateway ");
+                msg += desired.gateway.toString();
+                msg += F(" netmask ");
+                msg += desired.subnet.toString();
+                LOG_INFO(msg);
                 WiFi.config(desired.ip, desired.gateway, desired.subnet, desired.dns1, desired.dns2);
                 gAppliedStaticSettings = desired;
             }
@@ -326,7 +330,7 @@ namespace
         {
             if (gAppliedStaticSettings.enabled)
             {
-                Serial.println(F("[WiFi] Returning to DHCP."));
+                LOG_INFO(F("[WiFi] Returning to DHCP."));
             }
             WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE, INADDR_NONE);
             gAppliedStaticSettings = StaticIpSettings{};
@@ -342,20 +346,21 @@ namespace
 
         if (ssid.isEmpty())
         {
-            Serial.println(F("[WiFi] SSID not configured; skipping connection attempt."));
+            LOG_WARN(F("[WiFi] SSID not configured; skipping connection attempt."));
             return;
         }
 
         applyStationConfig();
 
         ++gAttemptCounter;
-        Serial.print(F("[WiFi] Connecting to SSID '"));
-        Serial.print(ssid);
-        Serial.print(F("' (attempt #"));
-        Serial.print(gAttemptCounter);
-        Serial.print(F(", reason: "));
-        Serial.print(reason);
-        Serial.println(')');
+        String msg = F("[WiFi] Connecting to SSID '");
+        msg += ssid;
+        msg += F("' (attempt #");
+        msg += gAttemptCounter;
+        msg += F(", reason: ");
+        msg += String(reason);
+        msg += ')';
+        LOG_INFO(msg);
 
         WiFi.disconnect(false, false);
         if (pass.isEmpty())
@@ -375,7 +380,7 @@ namespace
             MDNS.end();
             gMdnsStarted = false;
             gAppliedMdnsHostname = String();
-            Serial.println(F("[mDNS] Stopped."));
+            LOG_INFO(F("[mDNS] Stopped."));
         }
     }
 
@@ -410,14 +415,16 @@ namespace
                 MDNS.addService("http", "tcp", 80);
                 gAppliedMdnsHostname = mdnsSanitized;
                 gMdnsStarted = true;
-                Serial.print(F("[mDNS] Advertised as "));
-                Serial.print(mdnsSanitized);
-                Serial.println(F(".local"));
+                String msg = F("[mDNS] Advertised as ");
+                msg += mdnsSanitized;
+                msg += F(".local");
+                LOG_INFO(msg);
             }
             else
             {
-                Serial.print(F("[mDNS] Failed to start for hostname "));
-                Serial.println(mdnsSanitized);
+                String msg = F("[mDNS] Failed to start for hostname ");
+                msg += mdnsSanitized;
+                LOG_WARN(msg);
             }
         }
     }

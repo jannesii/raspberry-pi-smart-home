@@ -9,6 +9,7 @@
 #include "HttpServerTask.h"
 #include "AppConfig.h"
 #include "WifiManager.h"
+#include "StructuredLog.h"
 #include "TaskWatchdog.h"
 
 // WiFi credentials come from AppConfig defaults, but can be updated at runtime
@@ -33,22 +34,22 @@ static void maybeFactoryResetOnBoot()
     return;
   }
 
-  Serial.println(F("Factory reset button held. Hold to confirm..."));
+  LOG_WARN(F("Factory reset button held. Hold to confirm..."));
   unsigned long start = millis();
   while (digitalRead(FACTORY_RESET_PIN) == FACTORY_RESET_ACTIVE_LEVEL)
   {
     if (millis() - start >= FACTORY_RESET_HOLD_MS)
     {
-      Serial.println(F("Factory reset triggered via button."));
+      LOG_WARN(F("Factory reset triggered via button."));
       AppConfig::get().factoryReset();
-      Serial.println(F("Restarting after factory reset..."));
+      LOG_WARN(F("Restarting after factory reset..."));
       delay(200);
       ESP.restart();
     }
     delay(25);
   }
 
-  Serial.println(F("Factory reset aborted (button released early)."));
+  LOG_INFO(F("Factory reset aborted (button released early)."));
 }
 #else
 static void maybeFactoryResetOnBoot() {}
@@ -97,10 +98,15 @@ void setup()
 {
   Serial.begin(115200);
   delay(2000);
-  Serial.println();
-  Serial.println(F("Booting..."));
-  Serial.print(F("Reset reason: "));
-  Serial.println(resetReasonLabel(esp_reset_reason()));
+  StructuredLog::init();
+  StructuredLog::setLevel(AppConfig::get().getLogLevel());
+
+  LOG_INFO(F("Booting..."));
+  {
+    String msg = F("Reset reason: ");
+    msg += resetReasonLabel(esp_reset_reason());
+    LOG_INFO(msg);
+  }
 
   maybeFactoryResetOnBoot();
 
@@ -117,12 +123,13 @@ void setup()
   }
   if (WiFi.status() == WL_CONNECTED)
   {
-    Serial.print(F("Initial WiFi connection established: "));
-    Serial.println(WiFi.localIP());
+    String msg = F("Initial WiFi connection established: ");
+    msg += WiFi.localIP().toString();
+    LOG_INFO(msg);
   }
   else
   {
-    Serial.println(F("Initial WiFi connect timed out; continuing without link."));
+    LOG_WARN(F("Initial WiFi connect timed out; continuing without link."));
   }
 
   // Configure NTP (UTC). Time sync attempts will be handled by tasks.

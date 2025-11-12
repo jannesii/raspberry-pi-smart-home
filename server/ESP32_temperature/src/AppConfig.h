@@ -6,6 +6,8 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 
+#include "StructuredLog.h"
+
 // Central runtime configuration with thread-safe access
 class AppConfig
 {
@@ -35,6 +37,7 @@ public:
   String getWifiStaticSubnet();
   String getWifiStaticDns1();
   String getWifiStaticDns2();
+  StructuredLog::Level getLogLevel();
 
   // setters (update one or more fields)
   void setDeviceLocation(const String &v);
@@ -57,6 +60,7 @@ public:
   void setWifiStaticSubnet(const String &v);
   void setWifiStaticDns1(const String &v);
   void setWifiStaticDns2(const String &v);
+  void setLogLevel(StructuredLog::Level level);
 
   // JSON helpers (ArduinoJson Document)
   template <typename TDoc>
@@ -83,6 +87,7 @@ public:
     doc["wifi_static_netmask"] = wifiStaticSubnet_;
     doc["wifi_static_dns1"] = wifiStaticDns1_;
     doc["wifi_static_dns2"] = wifiStaticDns2_;
+    doc["log_level"] = StructuredLog::levelName(logLevel_);
     doc["persisted"] = hasPersistedConfig();
     xSemaphoreGive(mutex_);
   }
@@ -90,7 +95,12 @@ public:
   template <typename TDoc>
   void updateFromJson(const TDoc &doc)
   {
+    bool logLevelChanged = false;
+    StructuredLog::Level newLogLevel = StructuredLog::Level::Info;
+
     xSemaphoreTake(mutex_, portMAX_DELAY);
+
+    newLogLevel = logLevel_;
 
     // Strings
     if (doc["device_location"].template is<const char *>())
@@ -169,7 +179,31 @@ public:
     if (doc["wifi_static_dns2"].template is<const char *>())
       wifiStaticDns2_ = doc["wifi_static_dns2"].template as<String>();
 
+    if (doc["log_level"].template is<const char *>())
+    {
+      String levelText = doc["log_level"].template as<String>();
+      levelText.trim();
+      StructuredLog::Level parsed;
+      if (StructuredLog::levelFromString(levelText, parsed))
+      {
+        if (logLevel_ != parsed)
+        {
+          logLevel_ = parsed;
+          newLogLevel = parsed;
+          logLevelChanged = true;
+        }
+      }
+    }
+
     xSemaphoreGive(mutex_);
+
+    if (logLevelChanged)
+    {
+      StructuredLog::setLevel(newLogLevel);
+      String msg = F("Log level set to ");
+      msg += StructuredLog::levelName(newLogLevel);
+      StructuredLog::log(newLogLevel, msg);
+    }
   }
 
   // Persistence helpers (NVS)
@@ -209,4 +243,5 @@ private:
   String wifiStaticSubnet_;
   String wifiStaticDns1_;
   String wifiStaticDns2_;
+  StructuredLog::Level logLevel_;
 };

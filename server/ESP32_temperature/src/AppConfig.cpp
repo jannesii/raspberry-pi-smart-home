@@ -27,6 +27,7 @@ namespace
   constexpr const char kKeyWifiStaticMask[] = "wifi_st_msk";
   constexpr const char kKeyWifiStaticDns1[] = "wifi_st_d1";
   constexpr const char kKeyWifiStaticDns2[] = "wifi_st_d2";
+  constexpr const char kKeyLogLevel[] = "log_level";
 }
 
 AppConfig &AppConfig::get()
@@ -35,7 +36,7 @@ AppConfig &AppConfig::get()
   return inst;
 }
 
-AppConfig::AppConfig() : prefsReady_(false)
+AppConfig::AppConfig() : prefsReady_(false), logLevel_(StructuredLog::Level::Info)
 {
   mutex_ = xSemaphoreCreateMutex();
   prefsReady_ = prefs_.begin(kPrefsNamespace, false);
@@ -51,6 +52,7 @@ void AppConfig::loadDefaultsFromMacros()
   xSemaphoreTake(mutex_, portMAX_DELAY);
   loadDefaultsLocked();
   xSemaphoreGive(mutex_);
+  StructuredLog::setLevel(logLevel_);
 }
 
 void AppConfig::loadDefaultsLocked()
@@ -128,6 +130,22 @@ void AppConfig::loadDefaultsLocked()
   wifiStaticDns2_ = WIFI_STATIC_DNS2;
 #else
   wifiStaticDns2_.clear();
+#endif
+
+#ifdef DEFAULT_LOG_LEVEL
+  {
+    StructuredLog::Level parsed = StructuredLog::Level::Info;
+    if (StructuredLog::levelFromString(String(DEFAULT_LOG_LEVEL), parsed))
+    {
+      logLevel_ = parsed;
+    }
+    else
+    {
+      logLevel_ = StructuredLog::Level::Info;
+    }
+  }
+#else
+  logLevel_ = StructuredLog::Level::Info;
 #endif
 }
 
@@ -272,6 +290,14 @@ String AppConfig::getWifiStaticDns2()
   return v;
 }
 
+StructuredLog::Level AppConfig::getLogLevel()
+{
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  StructuredLog::Level v = logLevel_;
+  xSemaphoreGive(mutex_);
+  return v;
+}
+
 void AppConfig::setDeviceLocation(const String &v)
 {
   xSemaphoreTake(mutex_, portMAX_DELAY);
@@ -395,6 +421,22 @@ void AppConfig::setWifiStaticDns2(const String &v)
   xSemaphoreGive(mutex_);
 }
 
+void AppConfig::setLogLevel(StructuredLog::Level level)
+{
+  bool changed = false;
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  if (logLevel_ != level)
+  {
+    logLevel_ = level;
+    changed = true;
+  }
+  xSemaphoreGive(mutex_);
+  if (changed)
+  {
+    StructuredLog::setLevel(level);
+  }
+}
+
 bool AppConfig::loadFromNvsLocked()
 {
   if (!prefsReady_)
@@ -506,6 +548,15 @@ bool AppConfig::loadFromNvsLocked()
     wifiStaticDns2_ = prefs_.getString(kKeyWifiStaticDns2, wifiStaticDns2_);
     loaded = true;
   }
+  if (prefs_.isKey(kKeyLogLevel))
+  {
+    uint8_t stored = prefs_.getUChar(kKeyLogLevel, static_cast<uint8_t>(logLevel_));
+    if (stored <= static_cast<uint8_t>(StructuredLog::Level::Debug))
+    {
+      logLevel_ = static_cast<StructuredLog::Level>(stored);
+    }
+    loaded = true;
+  }
 
   if (!hadHttpKey)
   {
@@ -522,9 +573,15 @@ bool AppConfig::loadFromNvs()
 {
   if (!prefsReady_)
     return false;
+  StructuredLog::Level levelAfterLoad = logLevel_;
   xSemaphoreTake(mutex_, portMAX_DELAY);
   bool loaded = loadFromNvsLocked();
+  levelAfterLoad = logLevel_;
   xSemaphoreGive(mutex_);
+  if (loaded)
+  {
+    StructuredLog::setLevel(levelAfterLoad);
+  }
   return loaded;
 }
 
@@ -554,6 +611,7 @@ bool AppConfig::saveToNvs()
   String wifiStaticNetmask;
   String wifiStaticDns1;
   String wifiStaticDns2;
+  StructuredLog::Level logLevel;
 
   xSemaphoreTake(mutex_, portMAX_DELAY);
   deviceLocation = deviceLocation_;
@@ -578,6 +636,7 @@ bool AppConfig::saveToNvs()
   wifiStaticNetmask = wifiStaticSubnet_;
   wifiStaticDns1 = wifiStaticDns1_;
   wifiStaticDns2 = wifiStaticDns2_;
+  logLevel = logLevel_;
   xSemaphoreGive(mutex_);
 
   prefs_.putString(kKeyDeviceLocation, deviceLocation);
@@ -600,6 +659,7 @@ bool AppConfig::saveToNvs()
   prefs_.putString(kKeyWifiStaticMask, wifiStaticNetmask);
   prefs_.putString(kKeyWifiStaticDns1, wifiStaticDns1);
   prefs_.putString(kKeyWifiStaticDns2, wifiStaticDns2);
+  prefs_.putUChar(kKeyLogLevel, static_cast<uint8_t>(logLevel));
 
   return true;
 }
@@ -627,7 +687,8 @@ bool AppConfig::hasPersistedConfig()
          prefs_.isKey(kKeyWifiStaticGateway) ||
          prefs_.isKey(kKeyWifiStaticMask) ||
          prefs_.isKey(kKeyWifiStaticDns1) ||
-         prefs_.isKey(kKeyWifiStaticDns2);
+         prefs_.isKey(kKeyWifiStaticDns2) ||
+         prefs_.isKey(kKeyLogLevel);
 }
 
 bool AppConfig::factoryReset()

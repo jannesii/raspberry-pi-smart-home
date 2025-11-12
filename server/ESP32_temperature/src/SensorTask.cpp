@@ -11,6 +11,7 @@
 #include "config.h"
 #include "AppConfig.h"
 #include "Metrics.h"
+#include "StructuredLog.h"
 #include "TaskWatchdog.h"
 
 #include "freertos/FreeRTOS.h"
@@ -56,10 +57,10 @@ static bool takeReading(float &t, float &h, String &err)
       err += F("temp");
     else if (isnan(h))
       err += F("hum");
-    Serial.println(err);
+    LOG_WARN(err);
     if ((dhtFailCount % 1) == 0)
     {
-      Serial.println(F("Reinitializing DHT sensor..."));
+      LOG_INFO(F("Reinitializing DHT sensor..."));
       dht.begin();
     }
     xSemaphoreGive(gDhtMutex);
@@ -85,12 +86,14 @@ static bool readAndPost()
     return false;
   }
 
-  Serial.print(F("Temperature: "));
-  Serial.print(t, 2);
-  Serial.println(F(" °C"));
-  Serial.print(F("Humidity: "));
-  Serial.print(h, 2);
-  Serial.println(F(" %"));
+  {
+    String msg = F("Temperature: ");
+    msg += String(t, 2);
+    msg += F(" °C, Humidity: ");
+    msg += String(h, 2);
+    msg += F(" %");
+    LOG_INFO(msg);
+  }
 
   if (gPoster)
     return gPoster->postReading(t, h);
@@ -167,11 +170,12 @@ static void SensorTask(void *pv)
 
       if (logReason)
       {
-        Serial.print(F("Next measurement (epoch): "));
-        Serial.println((long)nextPostEpoch);
+        String msg = F("Next measurement (epoch): ");
+        msg += static_cast<long>(nextPostEpoch);
+        LOG_DEBUG(msg);
         if (message)
         {
-          Serial.println(message);
+          LOG_DEBUG(message);
         }
       }
     }
@@ -180,7 +184,7 @@ static void SensorTask(void *pv)
       nextPostEpoch = 0;
       if (logReason && message)
       {
-        Serial.println(message);
+        LOG_DEBUG(message);
       }
     }
 
@@ -191,7 +195,7 @@ static void SensorTask(void *pv)
   dht.begin();
   if (!gDhtMutex)
     gDhtMutex = xSemaphoreCreateMutex();
-  Serial.println(F("DHT sensor initialized (task)"));
+  LOG_INFO(F("DHT sensor initialized (task)"));
 
   TaskWatchdog::registerTask(TaskWatchdog::TaskId::Sensor, "SensorPostTask", restartSensorTask, 60000);
 

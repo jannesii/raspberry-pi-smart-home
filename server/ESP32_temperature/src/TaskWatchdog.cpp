@@ -6,6 +6,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
+#include "StructuredLog.h"
 
 namespace TaskWatchdog
 {
@@ -135,8 +136,9 @@ namespace TaskWatchdog
                     {
                         if (markTaskUnregistered(i, slot.lastHeartbeat))
                         {
-                            Serial.print(F("[Watchdog] Restarting task: "));
-                            Serial.println(slot.name ? slot.name : "<unnamed>");
+                            String msg = F("[Watchdog] Restarting task: ");
+                            msg += (slot.name ? slot.name : "<unnamed>");
+                            LOG_WARN(msg);
                             if (slot.restartFn)
                             {
                                 slot.restartFn();
@@ -193,8 +195,9 @@ namespace TaskWatchdog
         slot.registered = true;
         xSemaphoreGive(gMutex);
 
-        Serial.print(F("[Watchdog] Registered task: "));
-        Serial.println(name ? name : "<unnamed>");
+        String msg = F("[Watchdog] Registered task: ");
+        msg += (name ? name : "<unnamed>");
+        LOG_INFO(msg);
     }
 
     void heartbeat(TaskId id)

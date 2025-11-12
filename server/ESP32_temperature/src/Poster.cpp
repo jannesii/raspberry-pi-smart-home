@@ -7,10 +7,11 @@
 #include "config.h"
 #include "AppConfig.h"
 #include "Metrics.h"
+#include "StructuredLog.h"
 
 static inline void logHeap(const char *tag)
 {
-  Serial.printf("[Heap][%s] Free:%u Min:%u\n", tag, ESP.getFreeHeap(), ESP.getMinFreeHeap());
+  LOGF_DEBUG("[Heap][%s] Free:%u Min:%u", tag, ESP.getFreeHeap(), ESP.getMinFreeHeap());
 }
 
 Poster::Poster() {}
@@ -67,7 +68,7 @@ bool Poster::postJSON(const String &body)
     }
     if (!client.connect(host.c_str(), port))
     {
-      Serial.println(F("HTTP connect failed (TLS)"));
+      LOG_WARN(F("HTTP connect failed (TLS)"));
       return false;
     }
     sendRequest(client);
@@ -78,8 +79,9 @@ bool Poster::postJSON(const String &body)
     {
       String statusLine = client.readStringUntil('\n');
       statusLine.trim();
-      Serial.print(F("HTTP status: "));
-      Serial.println(statusLine);
+      String msg = F("HTTP status: ");
+      msg += statusLine;
+      LOG_INFO(msg);
     }
     client.stop();
   }
@@ -88,7 +90,7 @@ bool Poster::postJSON(const String &body)
     WiFiClient client;
     if (!client.connect(host.c_str(), port))
     {
-      Serial.println(F("HTTP connect failed"));
+      LOG_WARN(F("HTTP connect failed"));
       return false;
     }
     sendRequest(client);
@@ -99,8 +101,9 @@ bool Poster::postJSON(const String &body)
     {
       String statusLine = client.readStringUntil('\n');
       statusLine.trim();
-      Serial.print(F("HTTP status: "));
-      Serial.println(statusLine);
+      String msg = F("HTTP status: ");
+      msg += statusLine;
+      LOG_INFO(msg);
     }
     client.stop();
   }

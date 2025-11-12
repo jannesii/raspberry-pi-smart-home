@@ -80,7 +80,7 @@ Performance & Memory
 Observability
 -------------
 
-- [OBS-1] Structured logging
+- DONE [OBS-1] Structured logging
   - Log levels (ERROR/WARN/INFO/DEBUG) with runtime toggles; ring buffer of recent logs accessible via /logs and serial.
 - [OBS-2] Sensor analytics
   - Track min/max/avg over a sliding window; compute dew point/heat index; expose via /status and include in posts.

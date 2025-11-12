@@ -11,6 +11,7 @@ Features
 - Configurable posting cadence (interval + optional epoch alignment) with deterministic `vTaskDelayUntil` scheduling and NTP-aware fallback
 - Bearer-token protection for every embedded HTTP endpoint with a dedicated HTTP API key (defaults to the upstream key)
 - Prometheus-style `/metrics` endpoint with posting/sensor counters and system gauges
+- Structured logging with adjustable verbosity, ring buffer retention, `/logs` JSON endpoint, and serial mirroring
 - TLS (HTTPS) posting with configurable Root CA or insecure mode for development
 - Runtime configuration via HTTP API (Wi‑Fi credentials, upstream host/path/port, TLS flags, API keys, device location)
 - Wi‑Fi manager with exponential reconnect backoff, optional static IP configuration, and mDNS hostname advertisement
@@ -28,6 +29,9 @@ Architecture
 - `src/Poster.*` — Upstream HTTP(S) client
   - Builds JSON body and posts to configured host/path/port
   - Respects `use_tls` and `https_insecure`; uses `kHttpsRootCA` when validating
+- `src/StructuredLog.*` — Lightweight structured logger
+  - Maintains a fixed-size ring buffer of recent log entries with millisecond timestamps
+  - Streams log lines to the serial console and exposes level control + retrieval helpers
 - `src/SensorTask.*` — FreeRTOS task for reading DHT and posting
   - Immediate read on boot, then cadence defined by `post_interval_sec` and `align_to_minute`
   - Uses wall-clock alignment when time is available; otherwise falls back to interval-based scheduling
@@ -81,6 +85,8 @@ Key macros (examples):
 - Posting cadence
   - `POST_INTERVAL_SECONDS` — Interval between automatic posts (seconds)
   - `ALIGN_POSTS_TO_MINUTE` — 1 to align to epoch boundaries (cron-like), 0 for relative timing
+- Logging
+  - `DEFAULT_LOG_LEVEL` — Optional compile-time default for the structured logger (`"error"`, `"warn"`, `"info"`, or `"debug"`). Runtime changes are exposed via the `log_level` field in `/config`.
 
 Runtime updates via the HTTP API override the in-memory config until reboot. Persist them with `POST /config/save` if you need them to survive power cycles.
 
@@ -102,10 +108,14 @@ All endpoints are on port 80 (plain HTTP) and return JSON unless otherwise state
     { "ok": false, "location": "...", "error": "DHT read failed: temp" }
 
 - GET `/config`
-  - Returns current runtime configuration plus `persisted` flag indicating whether NVS has data. Sensitive fields (Wi‑Fi password, API keys) are included for full visibility — protect network access accordingly.
+  - Returns current runtime configuration plus `persisted` flag indicating whether NVS has data. Includes the active `log_level`. Sensitive fields (Wi‑Fi password, API keys) are included for full visibility — protect network access accordingly.
 
 - GET `/metrics`
   - Exposes Prometheus text-format metrics (`text/plain; version=0.0.4`) covering sensor read success/failure counts, posting counters, Wi‑Fi link health (RSSI, connection attempts, backoff, session duration), last readings, and heap usage/uptime.
+- GET `/logs`
+  - Returns the most recent structured log entries as JSON along with the current log level. Useful for remote debugging without serial access.
+- POST `/logs`
+  - Currently limited to clearing the in-memory log buffer. Send `{ "action": "clear" }` to wipe recent entries. Change the log level through `/config` instead.
 
 - POST `/config`
   - Updates any subset of configuration. Body: JSON object. Example:

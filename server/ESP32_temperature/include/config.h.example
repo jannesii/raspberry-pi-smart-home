@@ -55,6 +55,9 @@ static const char kHttpsRootCA[] PROGMEM = R"PEM(
 // Optional: dedicated key for the embedded HTTP endpoints. Defaults to API_KEY if left undefined.
 #define HTTP_API_KEY "sk_example_http_key"
 
+// Optional: default structured log level at boot ("error", "warn", "info", or "debug"). Defaults to "info" if omitted.
+// #define DEFAULT_LOG_LEVEL "debug"
+
 // Optional: factory reset button (hold active state for FACTORY_RESET_HOLD_MS at boot)
 // Uncomment and adjust to enable hardware-triggered factory reset.
 // #define FACTORY_RESET_PIN 0

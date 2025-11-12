@@ -13,6 +13,19 @@ Authorization: Bearer {{httpApiKey}}
 GET {{httpApiUrl}}/metrics
 Authorization: Bearer {{httpApiKey}}
 
+### GET logs
+GET {{httpApiUrl}}/logs
+Authorization: Bearer {{httpApiKey}}
+
+### POST logs clear
+POST {{httpApiUrl}}/logs
+Content-Type: application/json
+Authorization: Bearer {{httpApiKey}}
+
+{
+    "action": "clear"
+}
+
 ### GET config
 GET {{httpApiUrl}}/config
 Authorization: Bearer {{httpApiKey}}
@@ -23,8 +36,7 @@ Content-Type: application/json
 Authorization: Bearer {{httpApiKey}}
 
 {
-      "api_key": "sk_example_key",
-      "http_api_key": "sk_example_http_key"
+    "log_level": "info"
 }
 
 ### save config
