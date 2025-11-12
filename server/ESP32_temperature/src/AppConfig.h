@@ -2,13 +2,15 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <Preferences.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 
 // Central runtime configuration with thread-safe access
-class AppConfig {
+class AppConfig
+{
 public:
-  static AppConfig& get();
+  static AppConfig &get();
 
   void loadDefaultsFromMacros();
 
@@ -24,19 +26,20 @@ public:
   bool getHttpsInsecure();
 
   // setters (update one or more fields)
-  void setDeviceLocation(const String& v);
-  void setWifiSSID(const String& v);
-  void setWifiPassword(const String& v);
-  void setServerHost(const String& v);
-  void setServerPath(const String& v);
-  void setApiKey(const String& v);
+  void setDeviceLocation(const String &v);
+  void setWifiSSID(const String &v);
+  void setWifiPassword(const String &v);
+  void setServerHost(const String &v);
+  void setServerPath(const String &v);
+  void setApiKey(const String &v);
   void setServerPort(uint16_t p);
   void setUseTls(bool b);
   void setHttpsInsecure(bool b);
 
   // JSON helpers (ArduinoJson Document)
   template <typename TDoc>
-  void toJson(TDoc& doc) {
+  void toJson(TDoc &doc)
+  {
     xSemaphoreTake(mutex_, portMAX_DELAY);
     doc["device_location"] = deviceLocation_;
     doc["wifi_ssid"] = wifiSSID_;
@@ -47,27 +50,29 @@ public:
     doc["use_tls"] = useTls_;
     doc["https_insecure"] = httpsInsecure_;
     doc["api_key"] = apiKey_;
+    doc["persisted"] = hasPersistedConfig();
     xSemaphoreGive(mutex_);
   }
 
   template <typename TDoc>
-  void updateFromJson(const TDoc& doc) {
+  void updateFromJson(const TDoc &doc)
+  {
     xSemaphoreTake(mutex_, portMAX_DELAY);
 
     // Strings
-    if (doc["device_location"].template is<const char*>())
+    if (doc["device_location"].template is<const char *>())
       deviceLocation_ = doc["device_location"].template as<String>();
 
-    if (doc["wifi_ssid"].template is<const char*>())
+    if (doc["wifi_ssid"].template is<const char *>())
       wifiSSID_ = doc["wifi_ssid"].template as<String>();
 
-    if (doc["wifi_password"].template is<const char*>())
+    if (doc["wifi_password"].template is<const char *>())
       wifiPassword_ = doc["wifi_password"].template as<String>();
 
-    if (doc["server_host"].template is<const char*>())
+    if (doc["server_host"].template is<const char *>())
       serverHost_ = doc["server_host"].template as<String>();
 
-    if (doc["server_path"].template is<const char*>())
+    if (doc["server_path"].template is<const char *>())
       serverPath_ = doc["server_path"].template as<String>();
 
     // Numbers / bools
@@ -80,16 +85,28 @@ public:
     if (doc["https_insecure"].template is<bool>())
       httpsInsecure_ = doc["https_insecure"].template as<bool>();
 
-    if (doc["api_key"].template is<const char*>())
+    if (doc["api_key"].template is<const char *>())
       apiKey_ = doc["api_key"].template as<String>();
 
     xSemaphoreGive(mutex_);
   }
 
+  // Persistence helpers (NVS)
+  bool saveToNvs();
+  bool loadFromNvs();
+  bool hasPersistedConfig();
+  bool factoryReset();
+
 private:
   AppConfig();
 
+  void loadDefaultsLocked();
+  bool loadFromNvsLocked();
+
   SemaphoreHandle_t mutex_;
+
+  Preferences prefs_;
+  bool prefsReady_;
 
   String deviceLocation_;
   String wifiSSID_;

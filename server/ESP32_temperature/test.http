@@ -1,0 +1,25 @@
+### status
+GET http://192.168.10.124/status
+
+### read
+GET http://192.168.10.124/read
+
+### config
+GET http://192.168.10.124/config
+
+### POST config
+POST http://192.168.10.124/config
+Content-Type: application/json
+
+{
+    "device_location": "Living Room"
+}
+
+### save config
+POST http://192.168.10.124/config/save
+
+### discard config
+POST http://192.168.10.124/config/discard
+
+### reset
+POST http://192.168.10.124/config/factory_reset

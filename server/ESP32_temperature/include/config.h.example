@@ -38,3 +38,10 @@ static const char kHttpsRootCA[] PROGMEM = R"PEM(
 // API key for protected endpoints (optional)
 #define API_KEY "sk_example_key"
 
+// Optional: factory reset button (hold active state for FACTORY_RESET_HOLD_MS at boot)
+// Uncomment and adjust to enable hardware-triggered factory reset.
+// #define FACTORY_RESET_PIN 0
+// #define FACTORY_RESET_ACTIVE_LEVEL LOW   // or HIGH depending on wiring
+// #define FACTORY_RESET_PIN_MODE INPUT_PULLUP
+// #define FACTORY_RESET_HOLD_MS 3000
+
