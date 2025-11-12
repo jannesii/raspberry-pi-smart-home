@@ -8,7 +8,7 @@ Features
 --------
 
 - DHT sensor readouts (temperature, humidity) using Adafruit DHT + Unified Sensor
-- Minute-aligned posting schedule in UTC with NTP time sync and fallback cadence
+- Configurable posting cadence (interval + optional epoch alignment) with NTP time sync and fallback cadence
 - TLS (HTTPS) posting with configurable Root CA or insecure mode for development
 - Runtime configuration via HTTP API (Wi‑Fi credentials, upstream host/path/port, TLS flags, API key, device location)
 - Task status endpoint and task control (suspend, resume, restart)
@@ -25,8 +25,8 @@ Architecture
   - Builds JSON body and posts to configured host/path/port
   - Respects `use_tls` and `https_insecure`; uses `kHttpsRootCA` when validating
 - `src/SensorTask.*` — FreeRTOS task for reading DHT and posting
-  - Immediate read on boot, then every minute at `mm:00` (UTC) after time sync
-  - Fallback to a 60s interval until NTP sync is available
+  - Immediate read on boot, then cadence defined by `post_interval_sec` and `align_to_minute`
+  - Uses wall-clock alignment when time is available; otherwise falls back to interval-based scheduling
   - Gentle recovery on DHT failures (re-init sensor) and posts error JSON
 - `src/HttpServerTask.*` - HTTP server (port 80) exposing JSON endpoints
   - `/status` (GET): runtime status and task metrics
@@ -69,8 +69,11 @@ Key macros (examples):
   - `kHttpsRootCA` — PEM-encoded Root CA used for TLS validation when not insecure
 - API key
   - `API_KEY` — Sent as `Authorization: Bearer <API_KEY>` when present
+- Posting cadence
+  - `POST_INTERVAL_SECONDS` — Interval between automatic posts (seconds)
+  - `ALIGN_POSTS_TO_MINUTE` — 1 to align to epoch boundaries (cron-like), 0 for relative timing
 
-Note: Runtime updates via the HTTP API override the in-memory config until reboot. Persistence to NVS is not implemented yet.
+Runtime updates via the HTTP API override the in-memory config until reboot. Persist them with `POST /config/save` if you need them to survive power cycles.
 
 
 HTTP API
@@ -101,7 +104,9 @@ All endpoints are on port 80 (plain HTTP) and return JSON unless otherwise state
       "https_insecure": false,
       "api_key": "sk_abc",
       "wifi_ssid": "MyWiFi",
-      "wifi_password": "secret"
+      "wifi_password": "secret",
+      "post_interval_sec": 300,
+      "align_to_minute": true
     }
   - If SSID/password change, the device attempts to reconnect immediately.
 
@@ -157,7 +162,7 @@ Usage Flow
    - `GET http://<esp-ip>/config`
    - `POST http://<esp-ip>/config` (update runtime config)
    - `POST http://<esp-ip>/task` (control tasks)
-5. The device posts a reading immediately on boot, then at each UTC minute (or every 60s before time sync is available).
+5. The device posts a reading immediately on boot, then according to the configured cadence (default: 60s, aligned to wall-clock minutes once time is synced).
 
 Optional polling-only mode: suspend the posting task and poll via HTTP
 - Suspend auto-posting: `POST /task` with `{ "name": "SensorPostTask", "action": "suspend" }`

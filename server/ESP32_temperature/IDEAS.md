@@ -24,7 +24,7 @@ Format: [GROUP-N], where GROUP is one of:
 Core Features
 -------------
 
-- [CF-1] Config persistence (NVS)
+- DONE [CF-1] Config persistence (NVS)
   - Persist AppConfig to NVS; load on boot; endpoint to save/discard; factory-reset endpoint/button.
 - [CF-2] Offline buffering and backfill
   - Queue readings in RAM and NVS; backfill on reconnect with exponential backoff and jitter.

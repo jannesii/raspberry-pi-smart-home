@@ -160,7 +160,7 @@ static void handlePostConfigSave()
   JsonDocument doc;
   doc["ok"] = ok;
   doc["persisted"] = AppConfig::get().hasPersistedConfig();
-  JsonObject cfg = doc.createNestedObject("config");
+  JsonObject cfg = doc["config"].to<JsonObject>();
   AppConfig::get().toJson(cfg);
 
   String out;
@@ -189,7 +189,7 @@ static void handlePostConfigDiscard()
   JsonDocument doc;
   doc["ok"] = true;
   doc["source"] = fromNvs ? "nvs" : "defaults";
-  JsonObject cfg = doc.createNestedObject("config");
+  JsonObject cfg = doc["config"].to<JsonObject>();
   AppConfig::get().toJson(cfg);
 
   String out;
@@ -218,7 +218,7 @@ static void handlePostFactoryReset()
   doc["ok"] = ok;
   doc["persisted"] = AppConfig::get().hasPersistedConfig();
   doc["reboot_recommended"] = true;
-  JsonObject cfg = doc.createNestedObject("config");
+  JsonObject cfg = doc["config"].to<JsonObject>();
   AppConfig::get().toJson(cfg);
 
   String out;

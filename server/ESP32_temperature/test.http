@@ -12,7 +12,8 @@ POST http://192.168.10.124/config
 Content-Type: application/json
 
 {
-    "device_location": "Living Room"
+      "post_interval_sec": 60,
+      "align_to_minute": true
 }
 
 ### save config

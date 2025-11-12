@@ -16,6 +16,8 @@ namespace
   constexpr const char kKeyServerPort[] = "server_port";
   constexpr const char kKeyUseTls[] = "use_tls";
   constexpr const char kKeyHttpsInsecure[] = "https_insecure";
+  constexpr const char kKeyPostInterval[] = "post_interval";
+  constexpr const char kKeyAlignMinute[] = "align_minute";
 }
 
 AppConfig &AppConfig::get()
@@ -60,6 +62,18 @@ void AppConfig::loadDefaultsLocked()
   httpsInsecure_ = (HTTPS_INSECURE != 0);
 #else
   httpsInsecure_ = false;
+#endif
+#ifdef POST_INTERVAL_SECONDS
+  postIntervalSeconds_ = POST_INTERVAL_SECONDS;
+#else
+  postIntervalSeconds_ = 60;
+#endif
+  if (postIntervalSeconds_ == 0)
+    postIntervalSeconds_ = 60;
+#ifdef ALIGN_POSTS_TO_MINUTE
+  alignPostsToMinute_ = (ALIGN_POSTS_TO_MINUTE != 0);
+#else
+  alignPostsToMinute_ = true;
 #endif
 }
 
@@ -126,6 +140,20 @@ bool AppConfig::getHttpsInsecure()
   xSemaphoreGive(mutex_);
   return v;
 }
+uint32_t AppConfig::getPostIntervalSeconds()
+{
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  auto v = postIntervalSeconds_;
+  xSemaphoreGive(mutex_);
+  return v;
+}
+bool AppConfig::getAlignPostsToMinute()
+{
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  auto v = alignPostsToMinute_;
+  xSemaphoreGive(mutex_);
+  return v;
+}
 
 void AppConfig::setDeviceLocation(const String &v)
 {
@@ -181,6 +209,20 @@ void AppConfig::setHttpsInsecure(bool b)
   httpsInsecure_ = b;
   xSemaphoreGive(mutex_);
 }
+void AppConfig::setPostIntervalSeconds(uint32_t s)
+{
+  if (s == 0)
+    s = 1;
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  postIntervalSeconds_ = s;
+  xSemaphoreGive(mutex_);
+}
+void AppConfig::setAlignPostsToMinute(bool b)
+{
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  alignPostsToMinute_ = b;
+  xSemaphoreGive(mutex_);
+}
 
 bool AppConfig::loadFromNvsLocked()
 {
@@ -233,6 +275,19 @@ bool AppConfig::loadFromNvsLocked()
     httpsInsecure_ = prefs_.getBool(kKeyHttpsInsecure, httpsInsecure_);
     loaded = true;
   }
+  if (prefs_.isKey(kKeyPostInterval))
+  {
+    uint32_t v = prefs_.getUInt(kKeyPostInterval, postIntervalSeconds_);
+    if (v == 0)
+      v = 1;
+    postIntervalSeconds_ = v;
+    loaded = true;
+  }
+  if (prefs_.isKey(kKeyAlignMinute))
+  {
+    alignPostsToMinute_ = prefs_.getBool(kKeyAlignMinute, alignPostsToMinute_);
+    loaded = true;
+  }
 
   return loaded;
 }
@@ -262,6 +317,8 @@ bool AppConfig::saveToNvs()
   uint16_t serverPort;
   bool useTls;
   bool httpsInsecure;
+  uint32_t postInterval;
+  bool alignMinute;
 
   xSemaphoreTake(mutex_, portMAX_DELAY);
   deviceLocation = deviceLocation_;
@@ -273,6 +330,10 @@ bool AppConfig::saveToNvs()
   serverPort = serverPort_;
   useTls = useTls_;
   httpsInsecure = httpsInsecure_;
+  postInterval = postIntervalSeconds_;
+  if (postInterval == 0)
+    postInterval = 1;
+  alignMinute = alignPostsToMinute_;
   xSemaphoreGive(mutex_);
 
   prefs_.putString(kKeyDeviceLocation, deviceLocation);
@@ -284,6 +345,8 @@ bool AppConfig::saveToNvs()
   prefs_.putUShort(kKeyServerPort, serverPort);
   prefs_.putBool(kKeyUseTls, useTls);
   prefs_.putBool(kKeyHttpsInsecure, httpsInsecure);
+  prefs_.putUInt(kKeyPostInterval, postInterval);
+  prefs_.putBool(kKeyAlignMinute, alignMinute);
 
   return true;
 }
@@ -300,7 +363,9 @@ bool AppConfig::hasPersistedConfig()
          prefs_.isKey(kKeyApiKey) ||
          prefs_.isKey(kKeyServerPort) ||
          prefs_.isKey(kKeyUseTls) ||
-         prefs_.isKey(kKeyHttpsInsecure);
+         prefs_.isKey(kKeyHttpsInsecure) ||
+         prefs_.isKey(kKeyPostInterval) ||
+         prefs_.isKey(kKeyAlignMinute);
 }
 
 bool AppConfig::factoryReset()
