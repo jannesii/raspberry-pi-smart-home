@@ -1,26 +1,35 @@
+@httpApiKey = sk_example_http_key
+
 ### status
 GET http://192.168.10.124/status
+Authorization: Bearer {{httpApiKey}}
 
 ### read
 GET http://192.168.10.124/read
+Authorization: Bearer {{httpApiKey}}
 
 ### config
 GET http://192.168.10.124/config
+Authorization: Bearer {{httpApiKey}}
 
 ### POST config
 POST http://192.168.10.124/config
 Content-Type: application/json
+Authorization: Bearer {{httpApiKey}}
 
 {
-      "post_interval_sec": 60,
-      "align_to_minute": true
+      "api_key": "sk_example_key",
+      "http_api_key": "sk_example_http_key"
 }
 
 ### save config
 POST http://192.168.10.124/config/save
+Authorization: Bearer {{httpApiKey}}
 
 ### discard config
 POST http://192.168.10.124/config/discard
+Authorization: Bearer {{httpApiKey}}
 
 ### reset
 POST http://192.168.10.124/config/factory_reset
+Authorization: Bearer {{httpApiKey}}

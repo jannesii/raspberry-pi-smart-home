@@ -9,8 +9,9 @@ Features
 
 - DHT sensor readouts (temperature, humidity) using Adafruit DHT + Unified Sensor
 - Configurable posting cadence (interval + optional epoch alignment) with NTP time sync and fallback cadence
+- Bearer-token protection for every embedded HTTP endpoint with a dedicated HTTP API key (defaults to the upstream key)
 - TLS (HTTPS) posting with configurable Root CA or insecure mode for development
-- Runtime configuration via HTTP API (Wi‑Fi credentials, upstream host/path/port, TLS flags, API key, device location)
+- Runtime configuration via HTTP API (Wi‑Fi credentials, upstream host/path/port, TLS flags, API keys, device location)
 - Task status endpoint and task control (suspend, resume, restart)
 - NVS-backed configuration persistence with HTTP save/discard endpoints and optional factory-reset button
 
@@ -67,8 +68,9 @@ Key macros (examples):
   - `HTTP_USE_TLS` — 1 to use TLS; 0 for plain HTTP
   - `HTTPS_INSECURE` — 1 to disable certificate validation (development only)
   - `kHttpsRootCA` — PEM-encoded Root CA used for TLS validation when not insecure
-- API key
-  - `API_KEY` — Sent as `Authorization: Bearer <API_KEY>` when present
+- API keys
+  - `API_KEY` — Sent as `Authorization: Bearer <API_KEY>` when posting upstream
+  - `HTTP_API_KEY` — Optional override for the embedded HTTP API; defaults to `API_KEY` if unset
 - Posting cadence
   - `POST_INTERVAL_SECONDS` — Interval between automatic posts (seconds)
   - `ALIGN_POSTS_TO_MINUTE` — 1 to align to epoch boundaries (cron-like), 0 for relative timing
@@ -81,6 +83,8 @@ HTTP API
 
 All endpoints are on port 80 (plain HTTP) and return JSON unless otherwise stated.
 
+> **Authentication:** every request must include `Authorization: Bearer <HTTP_API_KEY>`. A missing or incorrect key results in `401 Unauthorized`.
+
 - GET `/status`
   - Returns Wi-Fi state, IP, heap usage, uptime, and task list with state/stack watermark/priority.
 
@@ -91,7 +95,7 @@ All endpoints are on port 80 (plain HTTP) and return JSON unless otherwise state
     { "ok": false, "location": "...", "error": "DHT read failed: temp" }
 
 - GET `/config`
-  - Returns current runtime configuration plus `persisted` flag indicating whether NVS has data. Sensitive fields (Wi‑Fi password, API key) are included for full visibility — protect network access accordingly.
+  - Returns current runtime configuration plus `persisted` flag indicating whether NVS has data. Sensitive fields (Wi‑Fi password, API keys) are included for full visibility — protect network access accordingly.
 
 - POST `/config`
   - Updates any subset of configuration. Body: JSON object. Example:
@@ -103,6 +107,7 @@ All endpoints are on port 80 (plain HTTP) and return JSON unless otherwise state
       "use_tls": true,
       "https_insecure": false,
       "api_key": "sk_abc",
+  "http_api_key": "sk_local",
       "wifi_ssid": "MyWiFi",
       "wifi_password": "secret",
       "post_interval_sec": 300,
@@ -157,11 +162,12 @@ Usage Flow
 2. Build and flash the firmware.
 3. Check the serial monitor for the assigned IP address.
 4. Query API:
-   - `GET http://<esp-ip>/status`
-   - `GET http://<esp-ip>/read`
-   - `GET http://<esp-ip>/config`
-   - `POST http://<esp-ip>/config` (update runtime config)
-   - `POST http://<esp-ip>/task` (control tasks)
+  - `GET http://<esp-ip>/status`
+  - `GET http://<esp-ip>/read`
+  - `GET http://<esp-ip>/config`
+  - `POST http://<esp-ip>/config` (update runtime config)
+  - `POST http://<esp-ip>/task` (control tasks)
+  - Include `Authorization: Bearer <HTTP_API_KEY>` with every request.
 5. The device posts a reading immediately on boot, then according to the configured cadence (default: 60s, aligned to wall-clock minutes once time is synced).
 
 Optional polling-only mode: suspend the posting task and poll via HTTP
@@ -172,9 +178,9 @@ Optional polling-only mode: suspend the posting task and poll via HTTP
 Security Notes
 --------------
 
-- The embedded HTTP API is plain HTTP and unauthenticated.
-  - Do not expose the device to untrusted networks.
-  - The `/config` endpoint includes sensitive fields; protect access.
+- The embedded HTTP API is plain HTTP (no TLS) but protected with a bearer token.
+  - Do not expose the device to untrusted networks without additional controls.
+  - The `/config` endpoint includes sensitive fields; treat the HTTP API key like a secret.
 - Persisting secrets to NVS makes them survive reboots; remember to factory reset (`POST /config/factory_reset` or the hardware button, if configured) before decommissioning a device.
 - `use_tls` / `https_insecure` only affect upstream POSTs. They do not secure the embedded HTTP server.
 - For stronger protection, consider:

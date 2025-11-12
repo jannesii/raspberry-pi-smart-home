@@ -14,6 +14,52 @@
 static WebServer server(80);
 static TaskHandle_t gHttpTaskHandle = nullptr;
 static volatile bool gSelfRestartRequested = false;
+static constexpr const char *kAuthHeader = "Authorization";
+static constexpr const char *kAuthScheme = "Bearer ";
+static constexpr size_t kAuthSchemeLen = 7;
+
+static void sendAuthFailure(int statusCode, const __FlashStringHelper *message)
+{
+  JsonDocument doc;
+  doc["ok"] = false;
+  doc["error"] = message;
+  String out;
+  serializeJson(doc, out);
+  server.sendHeader("WWW-Authenticate", "Bearer realm=\"esp32\"");
+  server.send(statusCode, "application/json", out);
+}
+
+static bool authorizeRequest()
+{
+  String configuredKey = AppConfig::get().getHttpApiKey();
+  configuredKey.trim();
+  if (configuredKey.isEmpty())
+  {
+    sendAuthFailure(503, F("HTTP API key not configured"));
+    return false;
+  }
+
+  if (!server.hasHeader(kAuthHeader))
+  {
+    sendAuthFailure(401, F("Missing Authorization header"));
+    return false;
+  }
+
+  String presented = server.header(kAuthHeader);
+  presented.trim();
+  if (presented.startsWith(kAuthScheme))
+  {
+    presented.remove(0, kAuthSchemeLen);
+  }
+
+  if (presented == configuredKey)
+  {
+    return true;
+  }
+
+  sendAuthFailure(401, F("Invalid API key"));
+  return false;
+}
 
 // Map FreeRTOS state to string
 static const char *stateToStr(eTaskState s)
@@ -38,12 +84,16 @@ static const char *stateToStr(eTaskState s)
 static void handleRoot()
 {
   Serial.println(F("HTTP root request"));
+  if (!authorizeRequest())
+    return;
   server.send(200, "text/plain", "ok");
 }
 
 static void handleGetStatus()
 {
   Serial.println(F("HTTP status request"));
+  if (!authorizeRequest())
+    return;
   JsonDocument doc;
   doc["wifi_connected"] = (WiFi.status() == WL_CONNECTED);
   doc["ip"] = WiFi.localIP().toString();
@@ -82,6 +132,8 @@ static void handleGetStatus()
 static void handleGetRead()
 {
   Serial.println(F("HTTP read request"));
+  if (!authorizeRequest())
+    return;
   float t = NAN, h = NAN;
   String err;
   bool ok = sensorTakeReading(t, h, err);
@@ -106,6 +158,8 @@ static void handleGetRead()
 static void handleGetConfig()
 {
   Serial.println(F("HTTP config request"));
+  if (!authorizeRequest())
+    return;
   JsonDocument doc;
   AppConfig::get().toJson(doc);
   String out;
@@ -116,6 +170,8 @@ static void handleGetConfig()
 static void handlePostConfig()
 {
   Serial.println(F("HTTP config update"));
+  if (!authorizeRequest())
+    return;
   if (!server.hasArg("plain"))
   {
     server.send(400, "text/plain", "missing body");
@@ -155,6 +211,8 @@ static void handlePostConfig()
 static void handlePostConfigSave()
 {
   Serial.println(F("HTTP config save"));
+  if (!authorizeRequest())
+    return;
   bool ok = AppConfig::get().saveToNvs();
 
   JsonDocument doc;
@@ -171,6 +229,8 @@ static void handlePostConfigSave()
 static void handlePostConfigDiscard()
 {
   Serial.println(F("HTTP config discard"));
+  if (!authorizeRequest())
+    return;
 
   String oldSsid = AppConfig::get().getWifiSSID();
   String oldPass = AppConfig::get().getWifiPassword();
@@ -200,6 +260,8 @@ static void handlePostConfigDiscard()
 static void handlePostFactoryReset()
 {
   Serial.println(F("HTTP factory reset"));
+  if (!authorizeRequest())
+    return;
 
   String oldSsid = AppConfig::get().getWifiSSID();
   String oldPass = AppConfig::get().getWifiPassword();
@@ -229,6 +291,8 @@ static void handlePostFactoryReset()
 static void handlePostTask()
 {
   Serial.println(F("HTTP task control"));
+  if (!authorizeRequest())
+    return;
   if (!server.hasArg("plain"))
   {
     server.send(400, "text/plain", "missing body");

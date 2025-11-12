@@ -30,14 +30,14 @@ Core Features
   - Queue readings in RAM and NVS; backfill on reconnect with exponential backoff and jitter.
 - [CF-3] Optional MQTT publishing
   - MQTT output alongside HTTP; Home Assistant discovery support; topic structure + retain options.
-- [CF-4] Adjustable cadence
+-  DONE[CF-4] Adjustable cadence
   - Make interval configurable (seconds/minutes); toggle cron-like minute alignment.
 
 
 API & Control
 -------------
 
-- [API-1] HTTP API authentication
+- DONE [API-1] HTTP API authentication
   - Bearer token for all endpoints; separate admin token for POST /config and /task; CORS disabled by default.
 - [API-2] Mask secrets by default
   - GET /config masks wifi_password and api_key; add `?reveal=1` to explicitly reveal.

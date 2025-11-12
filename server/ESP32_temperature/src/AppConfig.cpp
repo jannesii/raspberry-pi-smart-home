@@ -13,6 +13,7 @@ namespace
   constexpr const char kKeyServerHost[] = "server_host";
   constexpr const char kKeyServerPath[] = "server_path";
   constexpr const char kKeyApiKey[] = "api_key";
+  constexpr const char kKeyHttpApiKey[] = "http_api_key";
   constexpr const char kKeyServerPort[] = "server_port";
   constexpr const char kKeyUseTls[] = "use_tls";
   constexpr const char kKeyHttpsInsecure[] = "https_insecure";
@@ -52,6 +53,11 @@ void AppConfig::loadDefaultsLocked()
   serverHost_ = HTTP_SERVER_HOST;
   serverPath_ = HTTP_SERVER_PATH;
   apiKey_ = API_KEY;
+#ifdef HTTP_API_KEY
+  httpApiKey_ = HTTP_API_KEY;
+#else
+  httpApiKey_ = apiKey_;
+#endif
   serverPort_ = HTTP_SERVER_PORT;
 #ifdef HTTP_USE_TLS
   useTls_ = (HTTP_USE_TLS != 0);
@@ -116,6 +122,13 @@ String AppConfig::getApiKey()
 {
   xSemaphoreTake(mutex_, portMAX_DELAY);
   String v = apiKey_;
+  xSemaphoreGive(mutex_);
+  return v;
+}
+String AppConfig::getHttpApiKey()
+{
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  String v = httpApiKey_;
   xSemaphoreGive(mutex_);
   return v;
 }
@@ -191,6 +204,12 @@ void AppConfig::setApiKey(const String &v)
   apiKey_ = v;
   xSemaphoreGive(mutex_);
 }
+void AppConfig::setHttpApiKey(const String &v)
+{
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  httpApiKey_ = v;
+  xSemaphoreGive(mutex_);
+}
 void AppConfig::setServerPort(uint16_t p)
 {
   xSemaphoreTake(mutex_, portMAX_DELAY);
@@ -229,6 +248,7 @@ bool AppConfig::loadFromNvsLocked()
   if (!prefsReady_)
     return false;
   bool loaded = false;
+  bool hadHttpKey = false;
 
   if (prefs_.isKey(kKeyDeviceLocation))
   {
@@ -260,6 +280,12 @@ bool AppConfig::loadFromNvsLocked()
     apiKey_ = prefs_.getString(kKeyApiKey, apiKey_);
     loaded = true;
   }
+  if (prefs_.isKey(kKeyHttpApiKey))
+  {
+    httpApiKey_ = prefs_.getString(kKeyHttpApiKey, httpApiKey_);
+    loaded = true;
+    hadHttpKey = true;
+  }
   if (prefs_.isKey(kKeyServerPort))
   {
     serverPort_ = prefs_.getUShort(kKeyServerPort, serverPort_);
@@ -289,6 +315,12 @@ bool AppConfig::loadFromNvsLocked()
     loaded = true;
   }
 
+  if (!hadHttpKey)
+  {
+    // Backward compatibility: default HTTP key to the upstream API key when not explicitly stored.
+    httpApiKey_ = apiKey_;
+  }
+
   return loaded;
 }
 
@@ -314,6 +346,7 @@ bool AppConfig::saveToNvs()
   String serverHost;
   String serverPath;
   String apiKey;
+  String httpApiKey;
   uint16_t serverPort;
   bool useTls;
   bool httpsInsecure;
@@ -327,6 +360,7 @@ bool AppConfig::saveToNvs()
   serverHost = serverHost_;
   serverPath = serverPath_;
   apiKey = apiKey_;
+  httpApiKey = httpApiKey_;
   serverPort = serverPort_;
   useTls = useTls_;
   httpsInsecure = httpsInsecure_;
@@ -342,6 +376,7 @@ bool AppConfig::saveToNvs()
   prefs_.putString(kKeyServerHost, serverHost);
   prefs_.putString(kKeyServerPath, serverPath);
   prefs_.putString(kKeyApiKey, apiKey);
+  prefs_.putString(kKeyHttpApiKey, httpApiKey);
   prefs_.putUShort(kKeyServerPort, serverPort);
   prefs_.putBool(kKeyUseTls, useTls);
   prefs_.putBool(kKeyHttpsInsecure, httpsInsecure);
@@ -361,6 +396,7 @@ bool AppConfig::hasPersistedConfig()
          prefs_.isKey(kKeyServerHost) ||
          prefs_.isKey(kKeyServerPath) ||
          prefs_.isKey(kKeyApiKey) ||
+         prefs_.isKey(kKeyHttpApiKey) ||
          prefs_.isKey(kKeyServerPort) ||
          prefs_.isKey(kKeyUseTls) ||
          prefs_.isKey(kKeyHttpsInsecure) ||

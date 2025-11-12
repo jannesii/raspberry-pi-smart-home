@@ -21,6 +21,7 @@ public:
   String getServerHost();
   String getServerPath();
   String getApiKey();
+  String getHttpApiKey();
   uint16_t getServerPort();
   bool getUseTls();
   bool getHttpsInsecure();
@@ -34,6 +35,7 @@ public:
   void setServerHost(const String &v);
   void setServerPath(const String &v);
   void setApiKey(const String &v);
+  void setHttpApiKey(const String &v);
   void setServerPort(uint16_t p);
   void setUseTls(bool b);
   void setHttpsInsecure(bool b);
@@ -54,6 +56,7 @@ public:
     doc["use_tls"] = useTls_;
     doc["https_insecure"] = httpsInsecure_;
     doc["api_key"] = apiKey_;
+    doc["http_api_key"] = httpApiKey_;
     doc["post_interval_sec"] = postIntervalSeconds_;
     doc["align_to_minute"] = alignPostsToMinute_;
     doc["persisted"] = hasPersistedConfig();
@@ -93,6 +96,9 @@ public:
 
     if (doc["api_key"].template is<const char *>())
       apiKey_ = doc["api_key"].template as<String>();
+
+    if (doc["http_api_key"].template is<const char *>())
+      httpApiKey_ = doc["http_api_key"].template as<String>();
 
     if (!doc["post_interval_sec"].isNull())
     {
@@ -136,6 +142,7 @@ private:
   String serverHost_;
   String serverPath_;
   String apiKey_;
+  String httpApiKey_;
   uint16_t serverPort_;
   bool useTls_;
   bool httpsInsecure_;

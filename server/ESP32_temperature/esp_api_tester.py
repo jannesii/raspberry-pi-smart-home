@@ -10,10 +10,10 @@ Endpoints covered (see device firmware README):
   - POST /task           (optional: via --task-tests to suspend/resume/restart SensorPostTask)
 
 Usage examples:
-  python esp_api_tester.py --base-url http://192.168.10.42
-  python esp_api_tester.py --base-url http://esp.local --task-tests
-  python esp_api_tester.py --base-url http://192.168.10.42 --config-inline '{"device_location":"lab"}'
-  python esp_api_tester.py --base-url http://192.168.10.42 --config-json ./patch.json
+    python esp_api_tester.py --base-url http://192.168.10.42 --api-key sk_http_local
+    python esp_api_tester.py --base-url http://esp.local --api-key sk_http_local --task-tests
+    python esp_api_tester.py --base-url http://192.168.10.42 --api-key sk_http_local --config-inline '{"device_location":"lab"}'
+    python esp_api_tester.py --base-url http://192.168.10.42 --api-key sk_http_local --config-json ./patch.json
 
 Requires: requests (pip install requests)
 """
@@ -45,8 +45,7 @@ class EspApi:
         self.timeout = timeout
         self.session = requests.Session()
         self.headers = {"Accept": "application/json"}
-        # Firmware posts upstream using Authorization: Bearer, and the embedded API is unauthenticated,
-        # but we support sending the header here just in case you've added auth later.
+        # Embedded HTTP API requires the bearer token; allow callers to supply it.
         if api_key:
             self.headers["Authorization"] = f"Bearer {api_key}"
 
@@ -83,7 +82,8 @@ def run_smoke_tests(api: EspApi,
     try:
         r = api.get_status()
         print(f"HTTP {r.status_code}")
-        print(pretty(r.json() if r.headers.get("Content-Type","").startswith("application/json") else r.text))
+        print(pretty(r.json() if r.headers.get("Content-Type",
+              "").startswith("application/json") else r.text))
         r.raise_for_status()
     except Exception as e:
         print(f"[ERROR] /status failed: {e}")
@@ -93,7 +93,8 @@ def run_smoke_tests(api: EspApi,
     try:
         r = api.get_read()
         print(f"HTTP {r.status_code}")
-        print(pretty(r.json() if r.headers.get("Content-Type","").startswith("application/json") else r.text))
+        print(pretty(r.json() if r.headers.get("Content-Type",
+              "").startswith("application/json") else r.text))
         r.raise_for_status()
     except Exception as e:
         print(f"[ERROR] /read failed: {e}")
@@ -103,7 +104,8 @@ def run_smoke_tests(api: EspApi,
     try:
         r = api.get_config()
         print(f"HTTP {r.status_code}")
-        cfg = r.json() if r.headers.get("Content-Type","").startswith("application/json") else r.text
+        cfg = r.json() if r.headers.get("Content-Type",
+                                        "").startswith("application/json") else r.text
         print(pretty(cfg))
         r.raise_for_status()
     except Exception as e:
@@ -115,7 +117,8 @@ def run_smoke_tests(api: EspApi,
         try:
             r = api.post_config(config_patch)
             print(f"HTTP {r.status_code}")
-            print(pretty(r.json() if r.headers.get("Content-Type","").startswith("application/json") else r.text))
+            print(pretty(r.json() if r.headers.get("Content-Type",
+                  "").startswith("application/json") else r.text))
             r.raise_for_status()
         except Exception as e:
             print(f"[ERROR] /config (POST) failed: {e}")
@@ -129,7 +132,8 @@ def run_smoke_tests(api: EspApi,
             try:
                 r = api.post_task(task_name, action)
                 print(f"HTTP {r.status_code}")
-                print(pretty(r.json() if r.headers.get("Content-Type","").startswith("application/json") else r.text))
+                print(pretty(r.json() if r.headers.get("Content-Type",
+                      "").startswith("application/json") else r.text))
                 r.raise_for_status()
             except Exception as e:
                 print(f"[ERROR] /task {action} failed: {e}")
@@ -145,11 +149,14 @@ def run_smoke_tests(api: EspApi,
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Quick tester for ESP32-C3 HTTP API endpoints")
+    p = argparse.ArgumentParser(
+        description="Quick tester for ESP32-C3 HTTP API endpoints")
     p.add_argument("--base-url", default="http://esp.local",
                    help="Base URL to the ESP (e.g., http://192.168.10.42) [default: %(default)s]")
-    p.add_argument("--api-key", default=None, help="Optional API key for Authorization header")
-    p.add_argument("--timeout", type=float, default=5.0, help="HTTP timeout in seconds [default: %(default)s]")
+    p.add_argument("--api-key", default=None,
+                   help="HTTP API key for Authorization header (Bearer token)")
+    p.add_argument("--timeout", type=float, default=5.0,
+                   help="HTTP timeout in seconds [default: %(default)s]")
     p.add_argument("--task-tests", action="store_true",
                    help="Also exercise /task suspend/resume/restart for SensorPostTask")
     p.add_argument("--config-json", type=str, default=None,

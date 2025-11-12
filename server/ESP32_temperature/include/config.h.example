@@ -39,8 +39,11 @@ static const char kHttpsRootCA[] PROGMEM = R"PEM(
 -----END CERTIFICATE-----
 )PEM";
 
-// API key for protected endpoints (optional)
+// API key for upstream posting (Authorization: Bearer when calling the remote server)
 #define API_KEY "sk_example_key"
+
+// Optional: dedicated key for the embedded HTTP endpoints. Defaults to API_KEY if left undefined.
+#define HTTP_API_KEY "sk_example_http_key"
 
 // Optional: factory reset button (hold active state for FACTORY_RESET_HOLD_MS at boot)
 // Uncomment and adjust to enable hardware-triggered factory reset.
