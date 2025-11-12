@@ -6,5 +6,4 @@
 err.txt
 out.txt
 include/config.h
-include/config.local.h
 *.local

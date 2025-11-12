@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <ArduinoJson.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 
@@ -52,15 +53,36 @@ public:
   template <typename TDoc>
   void updateFromJson(const TDoc& doc) {
     xSemaphoreTake(mutex_, portMAX_DELAY);
-    if (doc.containsKey("device_location")) deviceLocation_ = (const char*)doc["device_location"];
-    if (doc.containsKey("wifi_ssid")) wifiSSID_ = (const char*)doc["wifi_ssid"];
-    if (doc.containsKey("wifi_password")) wifiPassword_ = (const char*)doc["wifi_password"];
-    if (doc.containsKey("server_host")) serverHost_ = (const char*)doc["server_host"];
-    if (doc.containsKey("server_path")) serverPath_ = (const char*)doc["server_path"];
-    if (doc.containsKey("server_port")) serverPort_ = (uint16_t)doc["server_port"].template as<uint16_t>();
-    if (doc.containsKey("use_tls")) useTls_ = doc["use_tls"].template as<bool>();
-    if (doc.containsKey("https_insecure")) httpsInsecure_ = doc["https_insecure"].template as<bool>();
-    if (doc.containsKey("api_key")) apiKey_ = (const char*)doc["api_key"];
+
+    // Strings
+    if (doc["device_location"].template is<const char*>())
+      deviceLocation_ = doc["device_location"].template as<String>();
+
+    if (doc["wifi_ssid"].template is<const char*>())
+      wifiSSID_ = doc["wifi_ssid"].template as<String>();
+
+    if (doc["wifi_password"].template is<const char*>())
+      wifiPassword_ = doc["wifi_password"].template as<String>();
+
+    if (doc["server_host"].template is<const char*>())
+      serverHost_ = doc["server_host"].template as<String>();
+
+    if (doc["server_path"].template is<const char*>())
+      serverPath_ = doc["server_path"].template as<String>();
+
+    // Numbers / bools
+    if (doc["server_port"].template is<uint16_t>())
+      serverPort_ = doc["server_port"].template as<uint16_t>();
+
+    if (doc["use_tls"].template is<bool>())
+      useTls_ = doc["use_tls"].template as<bool>();
+
+    if (doc["https_insecure"].template is<bool>())
+      httpsInsecure_ = doc["https_insecure"].template as<bool>();
+
+    if (doc["api_key"].template is<const char*>())
+      apiKey_ = doc["api_key"].template as<String>();
+
     xSemaphoreGive(mutex_);
   }
 

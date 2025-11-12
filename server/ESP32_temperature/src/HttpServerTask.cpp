@@ -28,23 +28,25 @@ static const char* stateToStr(eTaskState s) {
 }
 
 static void handleRoot() {
+  Serial.println(F("HTTP root request"));
   server.send(200, "text/plain", "ok");
 }
 
 static void handleGetStatus() {
-  DynamicJsonDocument doc(1024);
+  Serial.println(F("HTTP status request"));
+  JsonDocument doc;
   doc["wifi_connected"] = (WiFi.status() == WL_CONNECTED);
   doc["ip"] = WiFi.localIP().toString();
   doc["heap_free"] = ESP.getFreeHeap();
   doc["heap_min"] = ESP.getMinFreeHeap();
   doc["uptime_ms"] = millis();
 
-  JsonArray tasks = doc.createNestedArray("tasks");
+  JsonArray tasks = doc["tasks"].to<JsonArray>();
 
   // Sensor task
   TaskHandle_t sh = sensorTaskHandle();
   if (sh) {
-    JsonObject t = tasks.createNestedObject();
+    JsonObject t = tasks.add<JsonObject>();
     t["name"] = "SensorPostTask";
     t["state"] = stateToStr(eTaskGetState(sh));
     t["stack_hwm_words"] = uxTaskGetStackHighWaterMark(sh);
@@ -53,7 +55,7 @@ static void handleGetStatus() {
   // HTTP server task (self)
   TaskHandle_t hh = httpServerTaskHandle();
   if (hh) {
-    JsonObject t = tasks.createNestedObject();
+    JsonObject t = tasks.add<JsonObject>();
     t["name"] = "HttpServerTask";
     t["state"] = stateToStr(eTaskGetState(hh));
     t["stack_hwm_words"] = uxTaskGetStackHighWaterMark(hh);
@@ -66,11 +68,12 @@ static void handleGetStatus() {
 }
 
 static void handleGetRead() {
+  Serial.println(F("HTTP read request"));
   float t = NAN, h = NAN;
   String err;
   bool ok = sensorTakeReading(t, h, err);
 
-  DynamicJsonDocument doc(256);
+  JsonDocument doc;
   doc["ok"] = ok;
   doc["location"] = AppConfig::get().getDeviceLocation();
   if (ok) {
@@ -84,18 +87,20 @@ static void handleGetRead() {
 }
 
 static void handleGetConfig() {
-  DynamicJsonDocument doc(1024);
+  Serial.println(F("HTTP config request"));
+  JsonDocument doc;
   AppConfig::get().toJson(doc);
   String out; serializeJson(doc, out);
   server.send(200, "application/json", out);
 }
 
 static void handlePostConfig() {
+  Serial.println(F("HTTP config update"));
   if (!server.hasArg("plain")) {
     server.send(400, "text/plain", "missing body");
     return;
   }
-  DynamicJsonDocument doc(1024);
+  JsonDocument doc;
   DeserializationError err = deserializeJson(doc, server.arg("plain"));
   if (err) {
     server.send(400, "text/plain", String("json error: ") + err.c_str());
@@ -117,18 +122,19 @@ static void handlePostConfig() {
   }
 
   // Return new config
-  DynamicJsonDocument outDoc(1024);
+  JsonDocument outDoc;
   AppConfig::get().toJson(outDoc);
   String out; serializeJson(outDoc, out);
   server.send(200, "application/json", out);
 }
 
 static void handlePostTask() {
+  Serial.println(F("HTTP task control"));
   if (!server.hasArg("plain")) {
     server.send(400, "text/plain", "missing body");
     return;
   }
-  DynamicJsonDocument doc(512);
+  JsonDocument doc;
   DeserializationError err = deserializeJson(doc, server.arg("plain"));
   if (err) { server.send(400, "text/plain", String("json error: ") + err.c_str()); return; }
   String name = doc["name"] | "";
@@ -157,13 +163,14 @@ static void handlePostTask() {
     return;
   }
 
-  DynamicJsonDocument out(256);
+  JsonDocument out;
   out["ok"] = true;
   String s; serializeJson(out, s);
   server.send(200, "application/json", s);
 }
 
 static void HttpTask(void* pv) {
+  Serial.println(F("Starting HTTP server..."));
   server.on("/", HTTP_GET, handleRoot);
   server.on("/status", HTTP_GET, handleGetStatus);
   server.on("/read", HTTP_GET, handleGetRead);

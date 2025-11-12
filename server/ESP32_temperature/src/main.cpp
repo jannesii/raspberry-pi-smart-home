@@ -24,6 +24,16 @@ void setup() {
   Serial.println();
   Serial.println(F("Booting..."));
 
+  IPAddress local_IP(192,168,10,124);
+  IPAddress gateway (192,168,10,1);
+  IPAddress subnet  (255,255,255,0);
+  IPAddress dns1    (1,1,1,1);     // optional but recommended
+  IPAddress dns2    (9,9,9,9);     // optional
+
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect(true);           // clear old DHCP lease if any
+  delay(100);
+
   // Connect WiFi (blocking until connected)
   Serial.print(F("Connecting to "));
   Serial.println(AppConfig::get().getWifiSSID());
