@@ -1,23 +1,24 @@
 @httpApiKey = sk_example_http_key
+@httpApiUrl = http://192.168.10.124
 
 ### GET status
-GET http://192.168.10.124/status
+GET {{httpApiUrl}}/status
 Authorization: Bearer {{httpApiKey}}
 
 ### GET sensor reading
-GET http://192.168.10.124/read
+GET {{httpApiUrl}}/read
 Authorization: Bearer {{httpApiKey}}
 
 ### GET metrics
-GET http://192.168.10.124/metrics
+GET {{httpApiUrl}}/metrics
 Authorization: Bearer {{httpApiKey}}
 
 ### GET config
-GET http://192.168.10.124/config
+GET {{httpApiUrl}}/config
 Authorization: Bearer {{httpApiKey}}
 
 ### POST config
-POST http://192.168.10.124/config
+POST {{httpApiUrl}}/config
 Content-Type: application/json
 Authorization: Bearer {{httpApiKey}}
 
@@ -27,13 +28,13 @@ Authorization: Bearer {{httpApiKey}}
 }
 
 ### save config
-POST http://192.168.10.124/config/save
+POST {{httpApiUrl}}/config/save
 Authorization: Bearer {{httpApiKey}}
 
 ### discard config
-POST http://192.168.10.124/config/discard
+POST {{httpApiUrl}}/config/discard
 Authorization: Bearer {{httpApiKey}}
 
 ### reset
-POST http://192.168.10.124/config/factory_reset
+POST {{httpApiUrl}}/config/factory_reset
 Authorization: Bearer {{httpApiKey}}

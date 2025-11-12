@@ -8,7 +8,7 @@ Features
 --------
 
 - DHT sensor readouts (temperature, humidity) using Adafruit DHT + Unified Sensor
-- Configurable posting cadence (interval + optional epoch alignment) with NTP time sync and fallback cadence
+- Configurable posting cadence (interval + optional epoch alignment) with deterministic `vTaskDelayUntil` scheduling and NTP-aware fallback
 - Bearer-token protection for every embedded HTTP endpoint with a dedicated HTTP API key (defaults to the upstream key)
 - Prometheus-style `/metrics` endpoint with posting/sensor counters and system gauges
 - TLS (HTTPS) posting with configurable Root CA or insecure mode for development

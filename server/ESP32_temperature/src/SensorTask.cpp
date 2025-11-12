@@ -5,6 +5,7 @@
 #include <DHT_U.h>
 #include <WiFi.h>
 #include <time.h>
+#include <sys/time.h>
 
 #include "Poster.h"
 #include "config.h"
@@ -101,6 +102,10 @@ static void SensorTask(void *pv)
   bool timeSynced = false;
   time_t nextPostEpoch = 0; // next UTC epoch second to post
 
+  TickType_t lastWakeTick = xTaskGetTickCount();
+  TickType_t nextPostTick = lastWakeTick;
+  TickType_t lastSyncAttemptTick = lastWakeTick;
+
   auto readIntervalSeconds = []()
   {
     uint32_t value = AppConfig::get().getPostIntervalSeconds();
@@ -118,7 +123,68 @@ static void SensorTask(void *pv)
 
   uint32_t intervalSec = readIntervalSeconds();
   bool alignToMinute = AppConfig::get().getAlignPostsToMinute();
-  unsigned long nextPostMillis = millis() + computeIntervalMillis(intervalSec); // fallback cadence
+
+  auto scheduleNextTick = [&](TickType_t nowTicks, bool logReason, const __FlashStringHelper *message)
+  {
+    uint32_t intervalMs = computeIntervalMillis(intervalSec);
+    TickType_t scheduledTick = nowTicks + pdMS_TO_TICKS(intervalMs ? intervalMs : 1UL);
+
+    if (timeSynced)
+    {
+      time_t nowEpoch = time(nullptr);
+      time_t targetEpoch;
+      if (alignToMinute)
+      {
+        targetEpoch = ((nowEpoch / intervalSec) + 1) * static_cast<time_t>(intervalSec);
+      }
+      else
+      {
+        targetEpoch = nowEpoch + static_cast<time_t>(intervalSec);
+      }
+      if (targetEpoch <= nowEpoch)
+      {
+        targetEpoch = nowEpoch + 1;
+      }
+      nextPostEpoch = targetEpoch;
+
+      struct timeval tv;
+      if (gettimeofday(&tv, nullptr) == 0)
+      {
+        uint64_t nowMs = (static_cast<uint64_t>(tv.tv_sec) * 1000ULL) + (tv.tv_usec / 1000ULL);
+        uint64_t targetMs = static_cast<uint64_t>(targetEpoch) * 1000ULL;
+        uint64_t deltaMs = (targetMs > nowMs) ? (targetMs - nowMs) : 0ULL;
+        if (deltaMs == 0ULL)
+        {
+          deltaMs = intervalMs ? intervalMs : 1ULL;
+        }
+        if (deltaMs > 0xFFFFFFFFULL)
+        {
+          deltaMs = 0xFFFFFFFFULL;
+        }
+        scheduledTick = nowTicks + pdMS_TO_TICKS(static_cast<uint32_t>(deltaMs));
+      }
+
+      if (logReason)
+      {
+        Serial.print(F("Next measurement (epoch): "));
+        Serial.println((long)nextPostEpoch);
+        if (message)
+        {
+          Serial.println(message);
+        }
+      }
+    }
+    else
+    {
+      nextPostEpoch = 0;
+      if (logReason && message)
+      {
+        Serial.println(message);
+      }
+    }
+
+    return scheduledTick;
+  };
 
   // Initialize sensor
   dht.begin();
@@ -131,20 +197,15 @@ static void SensorTask(void *pv)
 
   // Check if time is available yet (non-blocking)
   struct tm ti;
+  TickType_t initialTick = xTaskGetTickCount();
   if (getLocalTime(&ti, 1))
   {
     timeSynced = true;
-    time_t now = time(nullptr);
-    if (alignToMinute)
-    {
-      nextPostEpoch = ((now / intervalSec) + 1) * intervalSec;
-    }
-    else
-    {
-      nextPostEpoch = now + intervalSec;
-    }
-    Serial.print(F("Next measurement (epoch): "));
-    Serial.println((long)nextPostEpoch);
+    nextPostTick = scheduleNextTick(initialTick, true, F("Scheduling cadence initialized (time-synced)."));
+  }
+  else
+  {
+    nextPostTick = scheduleNextTick(initialTick, true, F("Scheduling cadence initialized (pre time-sync)."));
   }
 
   for (;;)
@@ -156,76 +217,49 @@ static void SensorTask(void *pv)
     {
       intervalSec = latestInterval;
       alignToMinute = latestAlign;
-      if (timeSynced)
-      {
-        time_t now = time(nullptr);
-        if (alignToMinute)
-        {
-          nextPostEpoch = ((now / intervalSec) + 1) * intervalSec;
-        }
-        else
-        {
-          nextPostEpoch = now + intervalSec;
-        }
-        Serial.println(F("Scheduling cadence updated (time-synced)."));
-      }
-      else
-      {
-        nextPostMillis = millis() + computeIntervalMillis(intervalSec);
-        Serial.println(F("Scheduling cadence updated (pre time-sync)."));
-      }
+      TickType_t nowTicks = xTaskGetTickCount();
+      nextPostTick = scheduleNextTick(nowTicks, true, timeSynced ? F("Scheduling cadence updated (time-synced).") : F("Scheduling cadence updated (pre time-sync)."));
     }
 
-    if (WiFi.status() == WL_CONNECTED)
+    bool wifiConnected = (WiFi.status() == WL_CONNECTED);
+
+    if (!timeSynced && wifiConnected)
     {
-      if (timeSynced)
+      TickType_t now = xTaskGetTickCount();
+      if ((now - lastSyncAttemptTick) >= pdMS_TO_TICKS(10000UL))
       {
-        time_t now = time(nullptr);
-        if (now >= nextPostEpoch)
+        lastSyncAttemptTick = now;
+        if (getLocalTime(&ti, 1))
         {
-          (void)readAndPost();
-          if (alignToMinute)
-          {
-            nextPostEpoch = ((now / intervalSec) + 1) * intervalSec;
-          }
-          else
-          {
-            nextPostEpoch = now + intervalSec;
-          }
-        }
-      }
-      else
-      {
-        if (millis() >= nextPostMillis)
-        {
-          (void)readAndPost();
-          nextPostMillis = millis() + computeIntervalMillis(intervalSec);
-        }
-
-        // Retry time sync occasionally without blocking the CPU
-        static unsigned long lastSyncTry = 0;
-        if (millis() - lastSyncTry > 10000UL)
-        {
-          lastSyncTry = millis();
-          if (getLocalTime(&ti, 1))
-          {
-            timeSynced = true;
-            time_t now = time(nullptr);
-            if (alignToMinute)
-            {
-              nextPostEpoch = ((now / intervalSec) + 1) * intervalSec;
-            }
-            else
-            {
-              nextPostEpoch = now + intervalSec;
-            }
-            Serial.println(F("Time synchronized; switching to epoch-based schedule."));
-          }
+          timeSynced = true;
+          nextPostTick = scheduleNextTick(now, true, F("Time synchronized; switching to epoch-based schedule."));
         }
       }
     }
 
-    vTaskDelay(pdMS_TO_TICKS(200));
+    TickType_t nowTicks = xTaskGetTickCount();
+    if ((int32_t)(nowTicks - nextPostTick) >= 0)
+    {
+      if (wifiConnected)
+      {
+        (void)readAndPost();
+      }
+      TickType_t afterRead = xTaskGetTickCount();
+      nextPostTick = scheduleNextTick(afterRead, false, nullptr);
+      continue;
+    }
+
+    TickType_t waitTicks = nextPostTick - nowTicks;
+    const TickType_t kMaxSleepTicks = pdMS_TO_TICKS(1000UL);
+    if (waitTicks > kMaxSleepTicks)
+    {
+      waitTicks = kMaxSleepTicks;
+    }
+    if (waitTicks == 0)
+    {
+      waitTicks = 1;
+    }
+    vTaskDelayUntil(&lastWakeTick, waitTicks);
   }
 }
 

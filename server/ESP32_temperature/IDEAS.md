@@ -41,7 +41,7 @@ API & Control
   - Bearer token for all endpoints; separate admin token for POST /config and /task; CORS disabled by default.
 - [API-2] Mask secrets by default
   - GET /config masks wifi_password and api_key; add `?reveal=1` to explicitly reveal.
-- [API-3] Prometheus metrics
+- DONE [API-3] Prometheus metrics
   - GET /metrics (text/plain) with counters/gauges: posts_ok/posts_fail, last_read_time, heap, uptime, dht_fail_count, Wi‑Fi RSSI, etc.
 - [API-4] Version and health endpoints
   - GET /about with build info (git SHA, build time), reset reason, firmware version; POST /reboot to trigger a safe restart.
@@ -50,7 +50,7 @@ API & Control
 Reliability & Scheduling
 ------------------------
 
-- [RS-1] Deterministic scheduling
+- DONE [RS-1] Deterministic scheduling
   - Use vTaskDelayUntil() for accurate, low-jitter minute boundaries.
 - [RS-2] Watchdog and task health
   - Heartbeats per task; restart stuck tasks; log reset reason at boot.
