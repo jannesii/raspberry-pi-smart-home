@@ -1,0 +1,5 @@
+### POST REBOOT
+POST http://192.168.33.1/rpc/Shelly.Reboot
+Content-Type: application/json
+
+{}
