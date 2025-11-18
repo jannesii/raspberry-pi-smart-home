@@ -7,18 +7,20 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 <html>
   <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Car Heater</title>
     <style>
-      body { font-family: sans-serif; background: #111; color: #eee; margin: 0; padding: 0; }
+      :root { --maxw: 520px; }
+      body { font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif; background: #111; color: #eee; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
 
       .nav {
         background: #181818;
         border-bottom: 1px solid #333;
       }
       .nav-inner {
-        max-width: 480px;
+        max-width: var(--maxw);
         margin: 0 auto;
-        padding: 0.75rem 1.5rem;
+        padding: 0.75rem 1rem;
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -47,26 +49,28 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       }
 
       .card {
-        max-width: 480px;
-        margin: 2rem auto;
-        padding: 1.5rem;
+        max-width: var(--maxw);
+        margin: 1.25rem auto;
+        padding: 1rem;
         border-radius: 0.75rem;
         background: #222;
         box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
       }
       .card + .card {
-        margin-top: 1rem;
+        margin-top: 0.75rem;
       }
       h1, h2 {
         margin: 0 0 0.75rem 0;
       }
       .muted { color: #aaa; font-size: 0.9rem; }
       button {
-        padding: 0.5rem 1rem;
-        border-radius: 0.35rem;
+        padding: 0.8rem 1rem;
+        border-radius: 0.5rem;
         border: none;
         cursor: pointer;
         font: inherit;
+        min-height: 44px; /* mobile-friendly target */
+        touch-action: manipulation;
       }
       .on { background: #2e7d32; color: white; }
       .off { background: #c62828; color: white; }
@@ -110,19 +114,34 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       .config-field input[type="number"],
       .config-field input[type="time"] {
         width: 100%;
-        padding: 0.4rem 0.5rem;
-        border-radius: 0.35rem;
+        padding: 0.6rem 0.6rem;
+        border-radius: 0.5rem;
         border: 1px solid #555;
         background: #111;
         color: #eee;
         box-sizing: border-box;
         font: inherit;
+        min-height: 44px;
+        font-size: 1rem;
       }
 
       .config-actions {
         margin-top: 0.75rem;
         display: flex;
         justify-content: flex-end;
+      }
+
+      /* Make primary actions full-width on small screens */
+      form[action="/toggle"] button,
+      #syncTimeBtn,
+      .config-actions .btn-primary {
+        width: 100%;
+      }
+
+      @media (max-width: 400px) {
+        .nav-title { font-size: 1.05rem; }
+        .nav-inner { padding: 0.6rem 0.8rem; }
+        .card { margin: 1rem auto; padding: 0.9rem; }
       }
     </style>
   </head>
@@ -165,17 +184,17 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         <div class="config-form">
           <div class="config-field">
             <label for="target">Target (°C)</label>
-            <input type="number" step="0.1" id="target" name="target" value="%TARGET_TEMP%">
+            <input type="number" inputmode="decimal" step="0.1" id="target" name="target" value="%TARGET_TEMP%">
           </div>
 
           <div class="config-field">
             <label for="hyst">Hysteresis (°C)</label>
-            <input type="number" step="0.1" id="hyst" name="hyst" value="%HYST%">
+            <input type="number" inputmode="decimal" step="0.1" id="hyst" name="hyst" value="%HYST%">
           </div>
 
           <div class="config-field">
             <label for="taskdelay">Heater Task Delay (s)</label>
-            <input type="number" step="0.1" id="taskdelay" name="taskdelay" value="%TASK_DELAY%">
+            <input type="number" inputmode="decimal" step="0.1" id="taskdelay" name="taskdelay" value="%TASK_DELAY%">
           </div>
         </div>
         <hr>
@@ -256,18 +275,20 @@ const char LOGS_HTML[] PROGMEM = R"rawliteral(
 <html>
   <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Car Heater – Logs</title>
     <style>
-      body { font-family: sans-serif; background: #111; color: #eee; margin: 0; padding: 0; }
+      :root { --maxw: 520px; }
+      body { font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif; background: #111; color: #eee; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
 
       .nav {
         background: #181818;
         border-bottom: 1px solid #333;
       }
       .nav-inner {
-        max-width: 480px;
+        max-width: var(--maxw);
         margin: 0 auto;
-        padding: 0.75rem 1.5rem;
+        padding: 0.75rem 1rem;
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -296,9 +317,9 @@ const char LOGS_HTML[] PROGMEM = R"rawliteral(
       }
 
       .card {
-        max-width: 480px;
-        margin: 2rem auto;
-        padding: 1.5rem;
+        max-width: var(--maxw);
+        margin: 1.25rem auto;
+        padding: 1rem;
         border-radius: 0.75rem;
         background: #222;
         box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
@@ -315,7 +336,7 @@ const char LOGS_HTML[] PROGMEM = R"rawliteral(
         background: #111;
         border-radius: 0.5rem;
         font-family: "Fira Code", monospace;
-        font-size: 0.8rem;
+        font-size: 0.9rem;
         max-height: 60vh;
         overflow-y: auto;
         border: 1px solid #333;
@@ -329,13 +350,16 @@ const char LOGS_HTML[] PROGMEM = R"rawliteral(
       }
 
       .btn-danger {
-        padding: 0.4rem 0.9rem;
-        border-radius: 0.35rem;
+        padding: 0.8rem 1rem;
+        border-radius: 0.5rem;
         border: none;
         cursor: pointer;
         font: inherit;
         background: #c62828;
         color: #fff;
+        min-height: 44px;
+        touch-action: manipulation;
+        width: 100%;
       }
       .btn-danger:hover {
         filter: brightness(1.1);
