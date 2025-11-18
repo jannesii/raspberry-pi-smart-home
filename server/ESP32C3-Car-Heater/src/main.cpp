@@ -2,6 +2,7 @@
 #include <ESPmDNS.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
+#include <LittleFS.h>
 
 #include "wifihelper.h"
 #include "WebRoutes.h"
@@ -15,6 +16,7 @@
 #include "timekeeper.h"
 #include "WatchDog.h"
 #include "LedManager.h"
+
 
 #include <nvs_flash.h>
 #include <nvs.h>
@@ -45,7 +47,11 @@ void setup()
         IPAddress(WIFI_SUBNET_OCTETS),
         IPAddress(WIFI_DNS_PRIMARY_OCTETS)
     );
-    
+    if (!LittleFS.begin()) {
+        Serial.println("Failed to mount FS");
+    } else {
+        Serial.println("File system mounted");
+    }
 
     if (!config.begin()) {
         Serial.println("⚠️ [Config] Failed to init NVS");

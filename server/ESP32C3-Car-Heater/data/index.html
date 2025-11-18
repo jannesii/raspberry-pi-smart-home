@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Car Heater</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <nav class="nav">
+      <div class="nav-inner">
+        <span class="nav-title">Car Heater</span>
+        <div class="nav-links">
+          <a href="/" class="nav-link">Status</a>
+          <a href="/logs" class="nav-link">Logs</a>
+        </div>
+      </div>
+    </nav>
+
+    <div class="card">
+        <h1>Status</h1>
+        <p class="muted">Wi-Fi SSID: <span id="wifiSsid"></span></p>
+
+        <p>Current temperature: <strong id="currentTemp"></strong> °C</p>
+        <p>Heater state: <strong id="heaterState"></strong></p>
+        <form action="/toggle" method="POST">
+        <!-- we’ll still keep the POST action, but JS sets class/label -->
+        <button type="submit" id="heaterBtn" class="">Toggle</button>
+        </form>
+
+        <hr>
+
+        <p>Current time: <strong id="currentTime"></strong></p>
+        <button type="button" id="syncTimeBtn" class="secondary">
+        Sync time from this device
+        </button>
+    </div>
+
+    <div class="card">
+      <div class="config-header">
+        <h2>Config</h2>
+        <small>Adjust control logic</small>
+      </div>
+
+      <form action="/set-config" method="POST">
+        <div class="config-form">
+          <div class="config-field">
+            <label for="target">Target (°C)</label>
+            <input type="number" inputmode="decimal" step="0.1"
+                id="target" name="target" value="">
+          </div>
+
+          <div class="config-field">
+            <label for="hyst">Hysteresis (°C)</label>
+            <input type="number" inputmode="decimal" step="0.1"
+                id="hyst" name="hyst" value="">
+          </div>
+
+          <div class="config-field">
+            <label for="taskdelay">Heater Task Delay (s)</label>
+            <input type="number" inputmode="decimal" step="0.1"
+                id="taskdelay" name="taskdelay" value="">
+          </div>
+        </div>
+        <hr>
+        <div class="config-form">
+          <div class="config-field">
+            <label for="dzs">Deadzone Start</label>
+            <input type="time" id="dzs" name="dzstart" value="">
+          </div>
+          <div class="config-field">
+            <label for="dze">Deadzone End</label>
+            <input type="time" id="dze" name="dzend" value="">
+          </div>
+        </div>
+
+        <div class="config-actions">
+          <button type="submit" class="btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+    <script src="/index.js" defer></script>
+  </body>
+</html>

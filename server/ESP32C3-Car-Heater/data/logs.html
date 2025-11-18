@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Car Heater – Logs</title>
+    <!-- If you want to reuse the same CSS, you can also use /style.css here -->
+    <link rel="stylesheet" href="/logs.css">
+    <script src="/logs.js" defer></script>
+  </head>
+  <body>
+    <nav class="nav">
+      <div class="nav-inner">
+        <span class="nav-title">Car Heater</span>
+        <div class="nav-links">
+          <a href="/" class="nav-link">Status</a>
+          <a href="/logs" class="nav-link">Logs</a>
+        </div>
+      </div>
+    </nav>
+
+    <div class="card">
+      <h1>Logs</h1>
+      <p class="muted">Newest entries first. Timestamp is local device time.</p>
+
+      <!-- JS will populate this -->
+      <div class="logs" id="logs"></div>
+
+      <form class="logs-actions" action="/logs/clear" method="POST">
+        <button type="submit" class="btn-danger">Clear logs</button>
+      </form>
+    </div>
+  </body>
+</html>
