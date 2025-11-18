@@ -12,6 +12,8 @@
 #include "ShellyHandler.h"
 #include "LogManager.h"
 #include "LedManager.h"
+#include "WebSocketRoutes.h"
+#include "WebSocketRoutes.h"
 
 // no longer need: #include "webtemplates.h"
 
@@ -25,6 +27,24 @@ void setupRoutes(AsyncWebServer &server,
                  String wifiSSID,
                  LedManager &led)
 {
+  // Attach WebSocket endpoint
+  setupWebSocket(server);
+
+  logManager.setCallback([](const String &line) {
+    wsBroadcastLogLine(line);
+  });
+
+  wsSetToggleCallback([&shelly, &led]() {
+    Serial.println("[WS] Toggle heater command received");
+    bool ok = shelly.toggle();
+    if (ok) {
+      led.blinkSingle();
+    } else {
+      led.blinkTriple();
+    }
+    // HeaterTask will push the updated state via wsBroadcastTempUpdate()
+    // on its next cycle.
+  });
   // -------------------------
   // STATIC FRONTEND FILES
   // -------------------------
@@ -185,7 +205,7 @@ void setupRoutes(AsyncWebServer &server,
               serializeJson(doc, json);
               request->send(200, "application/json", json);
             });
-            
+
   server.on("/api/logs", HTTP_GET, [&logManager](AsyncWebServerRequest *request) {
     String logs = logManager.toStringNewestFirst();  // already newest → oldest
     if (logs.isEmpty()) {

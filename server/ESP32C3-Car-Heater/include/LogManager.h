@@ -3,10 +3,15 @@
 
 #include <Arduino.h>
 #include <Preferences.h>
+#include <functional>
 
 class LogManager {
 public:
     LogManager();
+
+    using LogCallback = std::function<void(const String &)>;
+
+    void setCallback(LogCallback cb) { callback_ = cb; }
 
     bool begin();  // call in setup()
 
@@ -21,6 +26,8 @@ public:
     void clear();
 
 private:
+    LogCallback callback_;
+    
     static constexpr const char* NAMESPACE    = "logs";
     static constexpr const char* KEY_HEAD     = "head";
     static constexpr const char* KEY_COUNT    = "count";

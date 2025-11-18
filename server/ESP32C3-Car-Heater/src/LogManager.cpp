@@ -45,6 +45,9 @@ void LogManager::append(const String& line) {
     prefs_.putUShort(KEY_HEAD, head_);
     prefs_.putUShort(KEY_COUNT, count_);
     // prefs_ stays open; NVS has wear-levelling, but don't go totally crazy
+    if (callback_) {
+        callback_(line);
+    }
 }
 
 void LogManager::dumpToSerial() const {

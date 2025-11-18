@@ -2,6 +2,7 @@
 #include "measurements.h"
 #include "timekeeper.h"
 #include "LedManager.h"
+#include "WebSocketRoutes.h" 
 
 TaskHandle_t g_heaterTaskHandle = nullptr;
 
@@ -67,6 +68,12 @@ void heaterTask(void *args) {
         if (watchdog) {
             watchdog->kickHeater();
         }
+        
+        // Broadcast temp / heater state over WebSocket for live UI updates
+        String nowStr = timekeeper::isValid()
+                        ? timekeeper::formatLocal()
+                        : "Not set";
+        wsBroadcastTempUpdate(currentTemp, isOn, inDeadzone, nowStr);
 
         vTaskDelay(pdMS_TO_TICKS(config->heaterTaskDelayS() * 1000) );
     }

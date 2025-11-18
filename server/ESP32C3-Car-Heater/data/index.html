@@ -23,8 +23,7 @@
 
         <p>Current temperature: <strong id="currentTemp"></strong> °C</p>
         <p>Heater state: <strong id="heaterState"></strong></p>
-        <form action="/toggle" method="POST">
-        <!-- we’ll still keep the POST action, but JS sets class/label -->
+        <form id="toggleForm" action="/toggle" method="POST">
         <button type="submit" id="heaterBtn" class="">Toggle</button>
         </form>
 
