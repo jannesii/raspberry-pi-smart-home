@@ -5,7 +5,7 @@
 #include <LittleFS.h>
 
 #include "wifihelper.h"
-#include "WebRoutes.h"
+#include "WebInterface.h"
 #include "ShellyHandler.h"
 #include <measurements.h>
 #include "heatertask.h"
@@ -33,6 +33,16 @@ static ShellyHandler shelly(SHELLY_IP);
 static LogManager logManager;
 static LedManager ledManager(LED_PIN, LED_ACTIVE_HIGH != 0);
 static WatchDog watchdog(config, thermostat, shelly, logManager, ledManager);
+
+static WebInterface webInterface(
+    server,
+    config,
+    thermostat,
+    shelly,
+    logManager,
+    WIFI_SSID,
+    ledManager
+);
 
 void setup()
 {
@@ -89,7 +99,7 @@ void setup()
 
     startHeaterTask(config, thermostat, shelly, logManager, watchdog, ledManager);
 
-    setupRoutes(server, config, thermostat, shelly, logManager, WIFI_SSID, ledManager);
+    webInterface.begin();
 
     server.begin();
     Serial.println("[HTTP] Async WebServer started on port 80");
