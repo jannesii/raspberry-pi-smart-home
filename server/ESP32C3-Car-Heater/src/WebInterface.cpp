@@ -234,7 +234,7 @@ void WebInterface::handleApiStatus(AsyncWebServerRequest *request)
                          ? timekeeper::formatLocal()
                          : "Not set";
 
-  StaticJsonDocument<512> doc;
+  JsonDocument doc;
   doc["wifi_ssid"]        = wifiSSID_;
   doc["temp"]             = currentTemp;
   doc["heater_state"]     = heaterState;

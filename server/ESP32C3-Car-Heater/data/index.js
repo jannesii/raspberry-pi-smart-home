@@ -56,8 +56,8 @@ async function syncTimeFromDevice() {
       console.warn("Time sync returned HTTP", resp.status);
     }
 
-    // Reload status after syncing time
-    await loadStatus();
+    // Status after syncing time
+    loadStatus();
   } catch (e) {
     console.error("Failed to sync time:", e);
   }
@@ -122,7 +122,7 @@ function setupStatusWebSocket() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  loadStatus();
+  syncTimeFromDevice(); //loadStatus();
   setupStatusWebSocket();
 
   const syncBtn = document.getElementById("syncTimeBtn");

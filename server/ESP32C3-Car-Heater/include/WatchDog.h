@@ -11,6 +11,7 @@ class Thermostat;
 class ShellyHandler;
 class LogManager;
 class LedManager;
+class HeaterTask;
 
 class WatchDog
 {
@@ -20,9 +21,10 @@ public:
         Thermostat &thermostat,
         ShellyHandler &shelly,
         LogManager &logManager,
-        LedManager &led
+        LedManager &led,
+        HeaterTask &heaterTask
     );
-    void begin();      // create watchdog task
+    void begin(uint32_t stackSize = 4096, UBaseType_t priority = 2);      // create watchdog task
     void kickHeater(); // called by heaterTask when it runs OK
 
 private:
@@ -38,6 +40,7 @@ private:
     ShellyHandler &shelly_;
     LogManager &logManager_;
     LedManager &led_;
+    HeaterTask &heaterTask_;
 
     TaskHandle_t taskHandle_ = nullptr;
 

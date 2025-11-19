@@ -68,7 +68,7 @@ void wsBroadcastLogLine(const String &line)
     return; // no clients → skip work
   }
 
-  StaticJsonDocument<256> doc;
+  JsonDocument doc;
   doc["type"] = "log_append";
   doc["line"] = line;
 
@@ -89,7 +89,7 @@ void wsBroadcastTempUpdate(
     return; // nothing connected
   }
 
-  StaticJsonDocument<256> doc;
+  JsonDocument doc;
   doc["type"]         = "temp_update";
   doc["temp"]         = tempC;
   doc["is_on"]        = isOn;

@@ -4,7 +4,7 @@
 #include "Thermostat.h"
 #include "ShellyHandler.h"
 #include "LogManager.h"
-#include "heatertask.h" // for g_heaterTaskHandle and startHeaterTask
+#include "HeaterTask.h" // for g_heaterTaskHandle and startHeaterTask
 #include "timekeeper.h"
 #include "LedManager.h"
 #include <esp_system.h> // esp_restart()
@@ -15,21 +15,23 @@ String logWifiReconnectAttempt();
 String logShellyReconnectAttempt();
 String logShellyRestart();
 
-WatchDog::WatchDog(Config &config, Thermostat &thermostat, ShellyHandler &shelly, LogManager &logManager, LedManager &led)
+WatchDog::WatchDog(Config &config, Thermostat &thermostat, ShellyHandler &shelly, LogManager &logManager, LedManager &led, HeaterTask &heaterTask)
     : config_(config),
       thermostat_(thermostat),
       shelly_(shelly),
       logManager_(logManager),
-      led_(led) {}
+      led_(led),
+      heaterTask_(heaterTask)
+{}
 
-void WatchDog::begin()
+void WatchDog::begin(uint32_t stackSize, UBaseType_t priority)
 {
     xTaskCreate(
         &WatchDog::taskEntryPoint,
         "WatchDog",
-        4096,
+        stackSize,
         this,
-        2, // slightly higher prio than heater if you want
+        priority, // slightly higher prio than heater if you want
         &taskHandle_);
 }
 
@@ -65,9 +67,10 @@ void WatchDog::checkShelly()
 {
     if (shelly_.ping())
         return; // all good
-    
+
     shellyReconnectAttempts_++;
-    if (shellyReconnectAttempts_ <= MAX_RESTART_ATTEMPTS) {
+    if (shellyReconnectAttempts_ <= MAX_RESTART_ATTEMPTS)
+    {
         Serial.printf("[WatchDog] Shelly not reachable, attempt to reconnect... (attempt %u)\n", shellyReconnectAttempts_);
         WiFi.reconnect();
         logManager_.append(logShellyReconnectAttempt());
@@ -106,7 +109,8 @@ void WatchDog::checkWifi()
 void WatchDog::checkHeater()
 {
     // If heater task hasn't been created yet — nothing to do
-    if (g_heaterTaskHandle == nullptr)
+    TaskHandle_t heaterTaskHandle = heaterTask_.handle();
+    if (heaterTaskHandle == nullptr)
     {
         return;
     }
@@ -142,14 +146,14 @@ void WatchDog::checkHeater()
         Serial.println(F("[WatchDog] Restarting heater task..."));
 
         // Kill current task
-        vTaskDelete(g_heaterTaskHandle);
-        g_heaterTaskHandle = nullptr;
+        vTaskDelete(heaterTaskHandle);
+        heaterTaskHandle = nullptr;
 
         // Reset kick timer to now so we give new task a fresh window
         lastHeaterKickTick_ = xTaskGetTickCount();
 
         // Recreate heater task with same dependencies
-        startHeaterTask(config_, thermostat_, shelly_, logManager_, *this, led_);
+        heaterTask_.start(4096, 1); // stack size, priority
         logManager_.append(logHeaterRestart());
         led_.rapidBurst();
         return;
@@ -162,39 +166,47 @@ void WatchDog::checkHeater()
     esp_restart();
 }
 
-String logHeaterRestart() {
+String logHeaterRestart()
+{
     String line;
     line.reserve(64);
     line += timekeeper::formatLocal();
     line += " - WatchDog: Heater task restarted";
     return line;
 }
-String logESPRestart(bool dueToHeater) {
+String logESPRestart(bool dueToHeater)
+{
     String line;
     line.reserve(64);
     line += timekeeper::formatLocal();
-    if (dueToHeater) {
+    if (dueToHeater)
+    {
         line += " - WatchDog: ESP restarted due to heater task failure";
-    } else {
+    }
+    else
+    {
         line += " - WatchDog: ESP restarted due to WiFi/Shelly failure";
     }
     return line;
 }
-String logWifiReconnectAttempt() {
+String logWifiReconnectAttempt()
+{
     String line;
     line.reserve(64);
     line += timekeeper::formatLocal();
     line += " - WatchDog: WiFi reconnect attempt";
     return line;
 }
-String logShellyReconnectAttempt() {
+String logShellyReconnectAttempt()
+{
     String line;
     line.reserve(64);
     line += timekeeper::formatLocal();
     line += " - WatchDog: Shelly reconnect attempt";
     return line;
 }
-String logShellyRestart() {
+String logShellyRestart()
+{
     String line;
     line.reserve(64);
     line += timekeeper::formatLocal();
