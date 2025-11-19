@@ -1,5 +1,44 @@
 let wsStatus = null;
 
+async function handleStatusData(data) {
+  document.getElementById("currentTemp").textContent = data.temp.toFixed(1);
+  let heater_on = data.is_on;
+  document.getElementById("heaterState").textContent = heater_on ? "ON" : "OFF";
+  
+  let dzEl = document.getElementById("inDeadzone");
+  let dzEnabled = data.dz_enabled;
+  let in_deadzone = data.in_deadzone;
+  if (dzEnabled === true) {
+    dzEl.textContent = in_deadzone ? "Yes" : "No";
+  } else {
+    dzEl.textContent = "Disabled";
+  }
+
+  let htEnabled = data.heater_task_enabled;
+  document.getElementById("heaterTaskState").textContent =
+    htEnabled ? "Enabled" : "Disabled";
+  document.getElementById("currentTime").textContent = data.current_time || "";
+
+  // Heater button
+  const btn = document.getElementById("heaterBtn");
+  btn.textContent = heater_on ? "Heater OFF" : "Heater ON";
+  btn.className   = heater_on ? "off" : "on";
+
+  // Deadzone button
+  const dzBtn = document.getElementById("dzBtn");
+  dzBtn.textContent = dzEnabled ? "Disable Deadzone" : "Enable Deadzone";
+  dzBtn.className   = dzEnabled ? "off" : "on";
+
+  // HeaterTask button
+  const htBtn = document.getElementById("heaterTaskBtn");
+  htBtn.textContent = htEnabled ? "Disable Heater Task" : "Enable Heater Task";
+  htBtn.className   = htEnabled ? "off" : "on";
+
+  if (!data.time_synced) {
+    syncTimeFromDevice();
+  }
+}
+
 async function loadStatus() {
   try {
     const resp = await fetch("/api/status");
@@ -9,38 +48,8 @@ async function loadStatus() {
     const data = await resp.json();
     // Text fields
     document.getElementById("wifiSsid").textContent    = data.wifi_ssid || "";
-    document.getElementById("currentTemp").textContent = data.temp.toFixed(1);
-    let heater_on = data.is_on;
-    document.getElementById("heaterState").textContent = heater_on ? "ON" : "OFF";
-    
-    let dzEl = document.getElementById("inDeadzone");
-    let dzEnabled = data.dz_enabled;
-    let in_deadzone = data.in_deadzone;
-    if (dzEnabled === true) {
-      dzEl.textContent = in_deadzone ? "Yes" : "No";
-    } else {
-      dzEl.textContent = "Disabled";
-    }
 
-    let htEnabled = data.heater_task_enabled;
-    document.getElementById("heaterTaskState").textContent =
-      htEnabled ? "Enabled" : "Disabled";
-    document.getElementById("currentTime").textContent = data.current_time || "";
-
-    // Heater button
-    const btn = document.getElementById("heaterBtn");
-    btn.textContent = heater_on ? "Heater OFF" : "Heater ON";
-    btn.className   = heater_on ? "off" : "on";
-
-    // Deadzone button
-    const dzBtn = document.getElementById("dzBtn");
-    dzBtn.textContent = dzEnabled ? "Disable Deadzone" : "Enable Deadzone";
-    dzBtn.className   = dzEnabled ? "off" : "on";
-
-    // HeaterTask button
-    const htBtn = document.getElementById("heaterTaskBtn");
-    htBtn.textContent = htEnabled ? "Disable Heater Task" : "Enable Heater Task";
-    htBtn.className   = htEnabled ? "off" : "on";
+    await handleStatusData(data);
 
     // Config inputs
     document.getElementById("target").value    = data.target_temp.toFixed(1);
@@ -80,7 +89,7 @@ async function syncTimeFromDevice() {
     }
 
     // Status after syncing time
-    loadStatus();
+    sendWebSocketMessage("request_status");
   } catch (e) {
     console.error("Failed to sync time:", e);
   }
@@ -114,26 +123,7 @@ function setupStatusWebSocket() {
 
         if (data.type === "temp_update") {
           // update temp, state, button, time...
-          if (typeof data.temp === "number") {
-            document.getElementById("currentTemp").textContent =
-              data.temp.toFixed(1);
-          }
-          if (typeof data.is_on === "boolean") {
-            const stateEl = document.getElementById("heaterState");
-            if (data.in_deadzone) {
-              stateEl.textContent = data.is_on ? "ON (deadzone?)" : "OFF (deadzone)";
-            } else {
-              stateEl.textContent = data.is_on ? "ON" : "OFF";
-            }
-
-            const btn = document.getElementById("heaterBtn");
-            btn.textContent = data.is_on ? "Turn OFF" : "Turn ON";
-            btn.className   = data.is_on ? "off" : "on";
-          }
-          if (typeof data.current_time === "string") {
-            document.getElementById("currentTime").textContent =
-              data.current_time;
-          }
+          handleStatusData(data);
         }
       } catch (e) {
         console.warn("[WS] Status invalid message:", event.data);
@@ -144,8 +134,17 @@ function setupStatusWebSocket() {
   connect();
 }
 
+function sendWebSocketMessage(message) {
+  if (wsStatus && wsStatus.readyState === WebSocket.OPEN) {
+    console.log("[WS] Sending message:", message);
+    wsStatus.send(message);
+  } else {
+    console.warn("[WS] Cannot send message, WebSocket not open");
+  }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
-  syncTimeFromDevice(); //loadStatus();
+  loadStatus();
   setupStatusWebSocket();
 
   const syncBtn = document.getElementById("syncTimeBtn");
@@ -157,37 +156,32 @@ document.addEventListener("DOMContentLoaded", () => {
   const dzBtn = document.getElementById("dzBtn");
   if (dzBtn) {
     dzBtn.addEventListener("click", () => {
-      if (wsStatus && wsStatus.readyState === WebSocket.OPEN) {
-        console.log("[UI] Sending toggle_deadzone over WebSocket");
-        wsStatus.send("toggle_deadzone");
-        loadStatus();
-      }
+      sendWebSocketMessage("toggle_deadzone");
     });
   }
   const htBtn = document.getElementById("heaterTaskBtn");
   if (htBtn) {
     htBtn.addEventListener("click", () => {
-      if (wsStatus && wsStatus.readyState === WebSocket.OPEN) {
-        console.log("[UI] Sending toggle_heater_task over WebSocket");
-        wsStatus.send("toggle_heater_task");
-        loadStatus();
-      }
+      sendWebSocketMessage("toggle_heater_task");
     });
   }
-
-  const toggleForm = document.getElementById("toggleForm");
-  if (toggleForm) {
-    toggleForm.addEventListener("submit", (ev) => {
-      // If WS is available, use it and prevent full page reload
-      if (wsStatus && wsStatus.readyState === WebSocket.OPEN) {
-        ev.preventDefault();
-        console.log("[UI] Sending toggle_heater over WebSocket");
-        wsStatus.send("toggle_heater");
-        loadStatus();
-      } else {
-        // Fallback: let the form submit normally to /toggle
-        console.log("[UI] WS not ready, using HTTP /toggle");
-      }
+  const heaterBtn = document.getElementById("heaterBtn");
+  if (heaterBtn) {
+    heaterBtn.addEventListener("click", () => {
+      sendWebSocketMessage("toggle_heater");
+    });
+  }
+  const rebootLink = document.getElementById("reboot");
+  if (rebootLink) {
+    rebootLink.addEventListener("click", (event) => {
+      event.preventDefault();
+      fetch("/api/reboot", { method: "POST" })
+        .then(() => {
+          console.log("Reboot command sent");
+        })
+        .catch((err) => {
+          console.error("Failed to send reboot command:", err);
+        });
     });
   }
 });

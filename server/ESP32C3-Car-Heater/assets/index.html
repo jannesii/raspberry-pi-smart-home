@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Car Heater</title>
-    <link rel="stylesheet" href="/index.css">
+    <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
     <nav class="nav">
@@ -13,6 +13,7 @@
         <div class="nav-links">
           <a href="/" class="nav-link">Status</a>
           <a href="/logs" class="nav-link">Logs</a>
+          <a href="/" class="nav-link" id="reboot">Reboot</a>
         </div>
       </div>
     </nav>
@@ -25,8 +26,7 @@
         <p>Heater state: <strong id="heaterState"></strong></p>
         <p>In deadzone: <strong id="inDeadzone"></strong></p>
         <p>HeaterTask state: <strong id="heaterTaskState"></strong></p>
-        <form id="toggleForm" action="/toggle" method="POST">
-        <button type="submit" id="heaterBtn" class="">Toggle Heater</button></form>
+        <button type="submit" id="heaterBtn" class="">Toggle Heater</button>
         <button id="dzBtn" class="">Toggle Deadzone</button>
         <button id="heaterTaskBtn" class="">Toggle Heater Task</button>
 
