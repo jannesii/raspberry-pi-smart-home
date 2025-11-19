@@ -25,7 +25,6 @@ bool initMDNS();
 void printNvsStats();
 
 static AsyncWebServer server(80);
-static WebSocketHub webSocketHub(server);
 
 static Config config;
 static Thermostat thermostat(0.0f, 0.0f); // will overwrite below
@@ -35,6 +34,7 @@ static LedManager ledManager(LED_PIN, LED_ACTIVE_HIGH != 0);
 static HeaterTask heaterTask(config, thermostat, shelly, logManager, ledManager);
 static WatchDog watchdog(config, thermostat, shelly, logManager, ledManager, heaterTask);
 
+static WebSocketHub webSocketHub(server, heaterTask);
 static WebInterface webInterface(
     server,
     config,
@@ -98,9 +98,8 @@ void setup()
     
     // Setup WebSocket integration
     webSocketHub.begin();
-    webSocketHub.setHeaterToggleCallback([]() {shelly.toggle();});
-    heaterTask.setWsTempUpdateCallback([](float tempC, bool isOn, bool inDeadzone, const String &currentTime) {
-        webSocketHub.broadcastTempUpdate(tempC, isOn, inDeadzone, currentTime);
+    heaterTask.setWsTempUpdateCallback([]() {
+        webSocketHub.broadcastTempUpdate();
     });
     logManager.setCallback([](const String &line) {
         webSocketHub.broadcastLogLine(line);

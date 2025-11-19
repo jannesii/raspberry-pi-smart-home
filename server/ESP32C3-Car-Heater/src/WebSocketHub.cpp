@@ -1,9 +1,13 @@
 #include "WebSocketHub.h"
 #include <ArduinoJson.h>
+#include "timekeeper.h"
 
-WebSocketHub::WebSocketHub(AsyncWebServer &server)
-  : ws_("/ws"),
-    server_(server)
+WebSocketHub::WebSocketHub(
+    AsyncWebServer &server,
+    HeaterTask &heaterTask)
+    : ws_("/ws"),
+      server_(server),
+      heaterTask_(heaterTask)
 {
 }
 
@@ -15,9 +19,8 @@ void WebSocketHub::begin()
                      AwsEventType type,
                      void *arg,
                      uint8_t *data,
-                     size_t len) {
-    this->onEvent(server, client, type, arg, data, len);
-  });
+                     size_t len)
+              { this->onEvent(server, client, type, arg, data, len); });
 
   server_.addHandler(&ws_);
 }
@@ -54,8 +57,14 @@ void WebSocketHub::onEvent(AsyncWebSocket *server,
       }
       Serial.printf("[WS] Received: %s\n", msg.c_str());
 
-      if (msg == "toggle_heater" && heaterToggleCb_) heaterToggleCb_();
-      // you can handle more commands here later
+      if (msg == "toggle_heater")
+        toggleHeater();
+      if (msg == "toggle_deadzone")
+        toggleDeadzone();
+      if (msg == "toggle_heater_task")
+        toggleHeaterTask();
+
+      broadcastTempUpdate();
     }
     break;
   }
@@ -84,23 +93,40 @@ void WebSocketHub::broadcastLogLine(const String &line)
   ws_.textAll(json);
 }
 
-void WebSocketHub::broadcastTempUpdate(
-    float tempC,
-    bool isOn,
-    bool inDeadzone,
-    const String &currentTime)
+void WebSocketHub::broadcastTempUpdate()
 {
   if (!ws_.count())
     return;
-
+  String currentTime = timekeeper::isValid()
+                           ? timekeeper::formatLocal()
+                           : "Not set";
   JsonDocument doc;
-  doc["type"]         = "temp_update";
-  doc["temp"]         = tempC;
-  doc["is_on"]        = isOn;
-  doc["in_deadzone"]  = inDeadzone;
+  doc["type"] = "temp_update";
+  doc["temp"] = heaterTask_.currentTemp();
+  doc["is_on"] = heaterTask_.isHeaterOn();
+  doc["time_synced"] = timekeeper::isValid();
   doc["current_time"] = currentTime;
+  doc["in_deadzone"] = heaterTask_.isInDeadzone();
+  doc["dz_enabled"] = heaterTask_.isDeadzoneEnabled();
+  doc["heater_task_enabled"] = heaterTask_.isEnabled();
 
   String json;
   serializeJson(doc, json);
   ws_.textAll(json);
+}
+
+void WebSocketHub::toggleDeadzone()
+{
+  heaterTask_.setDeadzoneEnabled(!heaterTask_.isDeadzoneEnabled());
+}
+void WebSocketHub::toggleHeaterTask()
+{
+  heaterTask_.setEnabled(!heaterTask_.isEnabled());
+}
+void WebSocketHub::toggleHeater()
+{
+  if (heaterTask_.isHeaterOn())
+    heaterTask_.turnHeaterOff();
+  else
+    heaterTask_.turnHeaterOn();
 }

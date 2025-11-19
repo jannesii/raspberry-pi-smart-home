@@ -14,7 +14,7 @@ class HeaterTask
 {
 public:
     using KickCallback = std::function<void(void)>;
-    using wsTempUpdateCallback = std::function<void(float, bool, bool, const String &)>;
+    using wsTempUpdateCallback = std::function<void()>;
 
     HeaterTask(Config &config,
                Thermostat &thermostat,
@@ -40,6 +40,12 @@ public:
     void setDeadzoneEnabled(bool enabled) { dzEnabled_ = enabled; }
     bool isDeadzoneEnabled() const { return dzEnabled_; }
 
+    float currentTemp() const { return currentTemp_; }
+    bool isHeaterOn() const { return isHeaterOn_; }
+
+    bool turnHeaterOn(bool force = false);
+    bool turnHeaterOff();
+
 private:
     // Task entry trampoline
     static void taskEntry(void *pvParameters);
@@ -61,6 +67,9 @@ private:
     bool lastInDeadzone_ = false;
     bool enabled_ = true;
     bool dzEnabled_ = true;
+
+    float currentTemp_;
+    bool isHeaterOn_;
 
     KickCallback kickCallback_{nullptr};
     wsTempUpdateCallback wsTempUpdateCallback_{nullptr};

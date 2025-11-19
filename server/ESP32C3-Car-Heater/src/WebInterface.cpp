@@ -2,6 +2,7 @@
 #include <LittleFS.h>
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
+#include <esp_system.h>
 
 #include "wifihelper.h"
 #include "measurements.h"
@@ -38,19 +39,20 @@ void WebInterface::begin()
 
 void WebInterface::setupStaticRoutes()
 {
+  // Combined stylesheet referenced by all pages
+  server_.serveStatic("/styles.css", LittleFS, "/styles.css");
+  
   // Root: serve index.html
   server_.on("/", HTTP_GET, [this](AsyncWebServerRequest *request)
              { handleRoot(request); });
-
-  // Static assets for main page
   server_.serveStatic("/index.js", LittleFS, "/index.js");
-  server_.serveStatic("/index.css", LittleFS, "/index.css");
+
+
 
   // Logs page
   server_.on("/logs", HTTP_GET, [this](AsyncWebServerRequest *request)
              { handleLogsPage(request); });
   server_.serveStatic("/logs.js", LittleFS, "/logs.js");
-  server_.serveStatic("/logs.css", LittleFS, "/logs.css");
 }
 
 void WebInterface::setupActionRoutes()
@@ -75,6 +77,14 @@ void WebInterface::setupApiRoutes()
 
   server_.on("/api/logs", HTTP_GET, [this](AsyncWebServerRequest *request)
              { handleApiLogs(request); });
+
+  server_.on("/api/reboot", HTTP_POST, [this](AsyncWebServerRequest *request)
+             {
+               Serial.println("[Web] Reboot request received");
+               request->send(200, "text/plain", "Rebooting...");
+               delay(100);
+               esp_restart();
+             });
 }
 
 // ----------------- handlers -----------------

@@ -42,15 +42,13 @@ void HeaterTask::taskEntry(void *pvParameters)
 
 void HeaterTask::run()
 {
-    bool isOn = false;
-
     for (;;)
     {
-        bool success = shelly_.getStatus(isOn, false);
+        bool success = shelly_.getStatus(isHeaterOn_, false);
         (void)success; // you can log or handle failure if you want
 
-        float currentTemp = takeMeasurement(false).temperature;
-        bool shouldHeat = thermostat_.update(currentTemp);
+        currentTemp_ = takeMeasurement(false).temperature;
+        bool shouldHeat = thermostat_.update(currentTemp_);
 
         bool inDeadzone = isInDeadzone();
         if (inDeadzone != lastInDeadzone_)
@@ -66,16 +64,16 @@ void HeaterTask::run()
 
         if (enabled_)
         {
-            if (shouldHeat && !isOn)
+            if (shouldHeat && !isHeaterOn_)
             {
-                shelly_.switchOn();
-                logger_.append(logHeaterChange(true, currentTemp));
+                turnHeaterOn();
+                logger_.append(logHeaterChange(true, currentTemp_));
                 led_.blinkSingle();
             }
-            else if (!shouldHeat && isOn)
+            else if (!shouldHeat && isHeaterOn_)
             {
-                shelly_.switchOff();
-                logger_.append(logHeaterChange(false, currentTemp));
+                turnHeaterOff();
+                logger_.append(logHeaterChange(false, currentTemp_));
                 led_.blinkSingle();
             }
         }
@@ -85,17 +83,28 @@ void HeaterTask::run()
             kickCallback_();
 
         // Broadcast temp / heater state over WebSocket for live UI updates
-        String nowStr = timekeeper::isValid()
-                            ? timekeeper::formatLocal()
-                            : "Not set";
-        if (wsTempUpdateCallback_)
-            wsTempUpdateCallback_(currentTemp, isOn, inDeadzone, nowStr);
+        if (wsTempUpdateCallback_) wsTempUpdateCallback_();
 
         vTaskDelay(pdMS_TO_TICKS(config_.heaterTaskDelayS() * 1000));
     }
 }
 
 // ---------------- helpers ----------------
+
+bool HeaterTask::turnHeaterOn(bool force)
+{
+    if (!isInDeadzone() || !dzEnabled_ || force)
+    {
+        isHeaterOn_ = true;
+        return shelly_.switchOn();
+    }
+    return false;
+}
+bool HeaterTask::turnHeaterOff()
+{
+    isHeaterOn_ = false;
+    return shelly_.switchOff();
+}
 
 bool HeaterTask::isInDeadzone() const
 {

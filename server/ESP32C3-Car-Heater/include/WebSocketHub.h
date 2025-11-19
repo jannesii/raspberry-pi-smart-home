@@ -3,31 +3,30 @@
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
 #include <functional>
+#include "HeaterTask.h"
 
 class WebSocketHub
 {
 public:
-  using HeaterToggleCallback = std::function<void(void)>;
-
-  explicit WebSocketHub(AsyncWebServer &server);
+  explicit WebSocketHub(
+    AsyncWebServer &server,
+    HeaterTask &heaterTask);
 
   // Call once from setup to register /ws handler
   void begin();
 
-  // Set callback to run when "toggle_heater" WS command is received
-  void setHeaterToggleCallback(HeaterToggleCallback cb) { heaterToggleCb_ = std::move(cb); }
-
   // Broadcast helpers
   void broadcastLogLine(const String &line);
-  void broadcastTempUpdate(float tempC,
-                           bool isOn,
-                           bool inDeadzone,
-                           const String &currentTime);
+  void broadcastTempUpdate();
 
 private:
   AsyncWebSocket ws_;
   AsyncWebServer &server_;
-  HeaterToggleCallback heaterToggleCb_{nullptr};
+  HeaterTask &heaterTask_;
+
+  void toggleDeadzone();
+  void toggleHeaterTask();
+  void toggleHeater();
 
   void onEvent(AsyncWebSocket *server,
                AsyncWebSocketClient *client,
