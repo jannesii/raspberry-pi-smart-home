@@ -8,6 +8,7 @@
 #include "ShellyHandler.h"
 #include "LogManager.h"
 #include "LedManager.h"
+#include "HeaterTask.h"
 
 // forward declare helper if you keep it free, or move into class
 class WebInterface {
@@ -18,7 +19,8 @@ public:
                ShellyHandler &shelly,
                LogManager    &logManager,
                const String  &wifiSSID,
-               LedManager    &led);
+               LedManager    &led,
+               HeaterTask   &heaterTask);
 
   // Call once from setup() after WiFi + FS are ready
   void begin();
@@ -35,11 +37,11 @@ private:
   LogManager    &logManager_;
   String         wifiSSID_;
   LedManager    &led_;
+  HeaterTask   &heaterTask_;
 
   bool showDebug_ = false;  // example tunable
 
   // setup helpers
-  void setupWebSocketIntegration();
   void setupStaticRoutes();
   void setupApiRoutes();
   void setupActionRoutes();
@@ -47,7 +49,6 @@ private:
   // handlers
   void handleRoot(AsyncWebServerRequest *request);
   void handleLogsPage(AsyncWebServerRequest *request);
-  void handleToggle();
   void handleToggleHttp(AsyncWebServerRequest *request);
   void handleSyncTime(AsyncWebServerRequest *request);
   void handleSetConfig(AsyncWebServerRequest *request);

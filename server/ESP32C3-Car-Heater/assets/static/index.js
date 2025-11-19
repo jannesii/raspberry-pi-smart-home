@@ -7,17 +7,40 @@ async function loadStatus() {
       throw new Error("HTTP " + resp.status);
     }
     const data = await resp.json();
-
     // Text fields
     document.getElementById("wifiSsid").textContent    = data.wifi_ssid || "";
     document.getElementById("currentTemp").textContent = data.temp.toFixed(1);
-    document.getElementById("heaterState").textContent = data.heater_state || "";
+    let heater_on = data.is_on;
+    document.getElementById("heaterState").textContent = heater_on ? "ON" : "OFF";
+    
+    let dzEl = document.getElementById("inDeadzone");
+    let dzEnabled = data.dz_enabled;
+    let in_deadzone = data.in_deadzone;
+    if (dzEnabled === true) {
+      dzEl.textContent = in_deadzone ? "Yes" : "No";
+    } else {
+      dzEl.textContent = "Disabled";
+    }
+
+    let htEnabled = data.heater_task_enabled;
+    document.getElementById("heaterTaskState").textContent =
+      htEnabled ? "Enabled" : "Disabled";
     document.getElementById("currentTime").textContent = data.current_time || "";
 
     // Heater button
     const btn = document.getElementById("heaterBtn");
-    btn.textContent = data.heater_btn_label || "Toggle";
-    btn.className   = data.heater_btn_class || "";
+    btn.textContent = heater_on ? "Heater OFF" : "Heater ON";
+    btn.className   = heater_on ? "off" : "on";
+
+    // Deadzone button
+    const dzBtn = document.getElementById("dzBtn");
+    dzBtn.textContent = dzEnabled ? "Disable Deadzone" : "Enable Deadzone";
+    dzBtn.className   = dzEnabled ? "off" : "on";
+
+    // HeaterTask button
+    const htBtn = document.getElementById("heaterTaskBtn");
+    htBtn.textContent = htEnabled ? "Disable Heater Task" : "Enable Heater Task";
+    htBtn.className   = htEnabled ? "off" : "on";
 
     // Config inputs
     document.getElementById("target").value    = data.target_temp.toFixed(1);
@@ -129,6 +152,26 @@ document.addEventListener("DOMContentLoaded", () => {
   if (syncBtn) {
     syncBtn.addEventListener("click", () => {
       syncTimeFromDevice();
+    });
+  }
+  const dzBtn = document.getElementById("dzBtn");
+  if (dzBtn) {
+    dzBtn.addEventListener("click", () => {
+      if (wsStatus && wsStatus.readyState === WebSocket.OPEN) {
+        console.log("[UI] Sending toggle_deadzone over WebSocket");
+        wsStatus.send("toggle_deadzone");
+        loadStatus();
+      }
+    });
+  }
+  const htBtn = document.getElementById("heaterTaskBtn");
+  if (htBtn) {
+    htBtn.addEventListener("click", () => {
+      if (wsStatus && wsStatus.readyState === WebSocket.OPEN) {
+        console.log("[UI] Sending toggle_heater_task over WebSocket");
+        wsStatus.send("toggle_heater_task");
+        loadStatus();
+      }
     });
   }
 

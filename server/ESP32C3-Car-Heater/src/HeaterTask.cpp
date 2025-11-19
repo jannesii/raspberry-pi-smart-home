@@ -2,7 +2,7 @@
 
 #include "measurements.h"
 #include "timekeeper.h"
-#include "WebSocketRoutes.h"
+#include "WebSocketHub.h"
 
 HeaterTask::HeaterTask(Config &config,
                        Thermostat &thermostat,
@@ -26,7 +26,7 @@ void HeaterTask::start(uint32_t stackSize, UBaseType_t priority)
         &HeaterTask::taskEntry,
         "HeaterTask",
         stackSize,
-        this,      // pass this as pvParameters
+        this, // pass this as pvParameters
         priority,
         &handle_);
 
@@ -59,32 +59,37 @@ void HeaterTask::run()
             lastInDeadzone_ = inDeadzone;
         }
 
-        if (inDeadzone)
+        if (inDeadzone && dzEnabled_)
         {
             shouldHeat = false;
         }
 
-        if (shouldHeat && !isOn)
+        if (enabled_)
         {
-            shelly_.switchOn();
-            logger_.append(logHeaterChange(true, currentTemp));
-            led_.blinkSingle();
-        }
-        else if (!shouldHeat && isOn)
-        {
-            shelly_.switchOff();
-            logger_.append(logHeaterChange(false, currentTemp));
-            led_.blinkSingle();
+            if (shouldHeat && !isOn)
+            {
+                shelly_.switchOn();
+                logger_.append(logHeaterChange(true, currentTemp));
+                led_.blinkSingle();
+            }
+            else if (!shouldHeat && isOn)
+            {
+                shelly_.switchOff();
+                logger_.append(logHeaterChange(false, currentTemp));
+                led_.blinkSingle();
+            }
         }
 
         // Tell the watchdog "I am alive" (if configured)
-        if (kickCallback_) kickCallback_();
+        if (kickCallback_)
+            kickCallback_();
 
         // Broadcast temp / heater state over WebSocket for live UI updates
         String nowStr = timekeeper::isValid()
                             ? timekeeper::formatLocal()
                             : "Not set";
-        wsBroadcastTempUpdate(currentTemp, isOn, inDeadzone, nowStr);
+        if (wsTempUpdateCallback_)
+            wsTempUpdateCallback_(currentTemp, isOn, inDeadzone, nowStr);
 
         vTaskDelay(pdMS_TO_TICKS(config_.heaterTaskDelayS() * 1000));
     }
@@ -104,7 +109,7 @@ bool HeaterTask::isInDeadzone() const
         return false;
 
     uint16_t startMin = config_.deadzoneStartMin(); // [0..1439]
-    uint16_t endMin   = config_.deadzoneEndMin();   // [0..1439]
+    uint16_t endMin = config_.deadzoneEndMin();     // [0..1439]
 
     // Normal range, e.g. 08:00–17:00
     if (startMin <= endMin)

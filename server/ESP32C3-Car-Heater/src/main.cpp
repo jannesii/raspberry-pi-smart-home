@@ -16,6 +16,7 @@
 #include "timekeeper.h"
 #include "WatchDog.h"
 #include "LedManager.h"
+#include "WebSocketHub.h"
 
 #include <nvs_flash.h>
 #include <nvs.h>
@@ -24,6 +25,7 @@ bool initMDNS();
 void printNvsStats();
 
 static AsyncWebServer server(80);
+static WebSocketHub webSocketHub(server);
 
 static Config config;
 static Thermostat thermostat(0.0f, 0.0f); // will overwrite below
@@ -40,7 +42,8 @@ static WebInterface webInterface(
     shelly,
     logManager,
     WIFI_SSID,
-    ledManager);
+    ledManager,
+    heaterTask);
 
 void setup()
 {
@@ -54,41 +57,18 @@ void setup()
         IPAddress(WIFI_GATEWAY_OCTETS),
         IPAddress(WIFI_SUBNET_OCTETS),
         IPAddress(WIFI_DNS_PRIMARY_OCTETS));
-    if (!LittleFS.begin())
-    {
-        Serial.println("Failed to mount FS");
-    }
-    else
-    {
-        Serial.println("File system mounted");
-    }
+    if (!LittleFS.begin()) Serial.println("Failed to mount FS");
+    else Serial.println("File system mounted");
 
-    if (!config.begin())
-    {
-        Serial.println("⚠️ [Config] Failed to init NVS");
-    }
-    else
-    {
-        Serial.println("[Config] Config loaded");
-    }
+    if (!config.begin()) Serial.println("⚠️ [Config] Failed to init NVS");
+    else Serial.println("[Config] Config loaded");
+
     // Initialize timekeeper (timezone offset is loaded; clock starts invalid until synced)
-    if (!timekeeper::begin())
-    {
-        Serial.println("⚠️ [Timekeeper] Failed to initialize; time features limited.");
-    }
-    else
-    {
-        Serial.println("[Timekeeper] Initialized");
-    }
+    if (!timekeeper::begin()) Serial.println("⚠️ [Timekeeper] Failed to initialize; time features limited.");
+    else Serial.println("[Timekeeper] Initialized");
 
-    if (!logManager.begin())
-    {
-        Serial.println("⚠️ [LogManager] Failed to initialize");
-    }
-    else
-    {
-        Serial.println("[LogManager] Initialized");
-    }
+    if (!logManager.begin()) Serial.println("⚠️ [LogManager] Failed to initialize");
+    else Serial.println("[LogManager] Initialized");
 
     thermostat.setTarget(config.targetTemp());
     thermostat.setHysteresis(config.hysteresis());
@@ -114,14 +94,27 @@ void setup()
 
     server.begin();
     Serial.println("[HTTP] Async WebServer started on port 80");
+    
+    
+    // Setup WebSocket integration
+    webSocketHub.begin();
+    webSocketHub.setHeaterToggleCallback([]() {shelly.toggle();});
+    heaterTask.setWsTempUpdateCallback([](float tempC, bool isOn, bool inDeadzone, const String &currentTime) {
+        webSocketHub.broadcastTempUpdate(tempC, isOn, inDeadzone, currentTime);
+    });
+    logManager.setCallback([](const String &line) {
+        webSocketHub.broadcastLogLine(line);
+    });
+    
+    // Print NVS stats
+    printNvsStats();
+
     // Ready indicator: five slow blinks, 1s apart
     for (int i = 0; i < 5; ++i)
     {
         ledManager.blinkSingle();
         delay(1000);
     }
-    printNvsStats();
-
     // logManager.dumpToSerial();
 }
 
