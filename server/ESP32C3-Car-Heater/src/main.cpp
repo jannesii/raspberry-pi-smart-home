@@ -100,7 +100,7 @@ void setup()
     }
     printNvsStats();
 
-    logManager.dumpToSerial();
+    // logManager.dumpToSerial();
 }
 
 void loop() {}

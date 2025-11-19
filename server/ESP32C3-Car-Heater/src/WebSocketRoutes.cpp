@@ -38,7 +38,9 @@ static void onWsEvent(AsyncWebSocket *server,
           msg += (char)data[i];
         }
         Serial.printf("[WS] Received: %s\n", msg.c_str());
-        // (Optional) parse JSON commands here in the future
+        if (msg == "toggle_heater" && g_toggleCb) {
+          g_toggleCb();
+        }
       }
       break;
     }
