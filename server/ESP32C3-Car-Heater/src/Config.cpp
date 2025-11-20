@@ -15,14 +15,24 @@ const Config::FloatFieldDesc Config::FLOAT_FIELDS[] = {
     { "k_factor",       20.99f,     &Config::kFactor_        }
 };
 
+// Define boolean fields
+const Config::BoolFieldDesc Config::BOOL_FIELDS[] = {
+    { "dz_enabled",           true,  &Config::deadzoneEnabled_ },
+    { "heater_task_enabled",  true,  &Config::heaterTaskEnabled_ }
+};
+
 // No NUM_FLOAT_FIELDS needed
 
 Config::Config()
     : dirty_(false)
 {
-    // init fields from descriptor defaults
+    // init float fields from descriptor defaults
     for (const auto& f : FLOAT_FIELDS) {
         this->*(f.member) = f.defaultValue;
+    }
+    // init boolean fields from descriptor defaults
+    for (const auto& b : BOOL_FIELDS) {
+        this->*(b.member) = b.defaultValue;
     }
 }
 
@@ -50,6 +60,19 @@ void Config::load() {
         }
     }
 
+    // Load boolean fields
+    for (const auto& b : BOOL_FIELDS) {
+        if (!prefs_.isKey(b.key)) {
+            this->*(b.member) = b.defaultValue;
+            anyMissing = true;
+        } else {
+            this->*(b.member) = prefs_.getBool(b.key, b.defaultValue);
+            Serial.printf("[Config] Loaded key '%s' = %s\n",
+                          b.key,
+                          (this->*(b.member)) ? "true" : "false");
+        }
+    }
+
     dirty_ = anyMissing;
     if (anyMissing) {
         save();   // persist defaults for missing keys
@@ -64,6 +87,13 @@ void Config::save() const {
         Serial.printf("[Config] Saved key '%s' = %.2f\n",
                       f.key,
                       this->*(f.member));
+    }
+
+    for (const auto& b : BOOL_FIELDS) {
+        prefs_.putBool(b.key, this->*(b.member));
+        Serial.printf("[Config] Saved key '%s' = %s\n",
+                      b.key,
+                      (this->*(b.member)) ? "true" : "false");
     }
 
     dirty_ = false;
@@ -115,4 +145,22 @@ void Config::setDeadzoneEndMin(uint16_t m) {
         deadzoneEndMinF_ = v;
         dirty_ = true;
     }
+}
+
+void Config::setKFactor(float v) {
+    if (v == kFactor_) return;
+    kFactor_ = v;
+    dirty_ = true;
+}
+
+void Config::setDeadzoneEnabled(bool v) {
+    if (v == deadzoneEnabled_) return;
+    deadzoneEnabled_ = v;
+    dirty_ = true;
+}
+
+void Config::setHeaterTaskEnabled(bool v) {
+    if (v == heaterTaskEnabled_) return;
+    heaterTaskEnabled_ = v;
+    dirty_ = true;
 }
