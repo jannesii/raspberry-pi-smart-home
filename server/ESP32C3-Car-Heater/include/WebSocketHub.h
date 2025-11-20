@@ -20,6 +20,7 @@ public:
   void begin();
 
   // Broadcast helpers
+  void broadcastTimeSync();
   void broadcastLogLine(const String &line);
   void broadcastTempUpdate();
   void broadcastReadyByUpdate();

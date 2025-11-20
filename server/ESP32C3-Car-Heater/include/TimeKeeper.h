@@ -7,8 +7,12 @@ namespace timekeeper {
 // Initialize timekeeper and load persisted settings (e.g., timezone offset)
 bool begin();
 
-// True if device has a valid epoch base (since last boot)
+// True if device has a valid epoch base from NVS
 bool isValid();
+// True if device has a valid epoch base (since last boot)
+bool isTrulyValid();
+
+static void TimeKeeperTask(void *args);
 
 // Set UTC epoch seconds and mark valid. Does not change timezone offset.
 void setUtc(uint64_t epochSeconds);

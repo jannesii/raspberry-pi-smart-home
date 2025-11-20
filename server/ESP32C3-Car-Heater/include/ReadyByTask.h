@@ -4,6 +4,7 @@
 #include "Config.h"
 #include "HeaterTask.h"
 #include <LogManager.h>
+#include <Thermostat.h>
 
 class ReadyByTask
 {
@@ -12,7 +13,8 @@ public:
 
     ReadyByTask(Config &config,
                 HeaterTask &heaterTask,
-                LogManager &logManager);
+                LogManager &logManager,
+                Thermostat &thermostat);
 
     // Create and start the FreeRTOS task
     void start(uint32_t stackSize = 4096, UBaseType_t priority = 1);
@@ -50,10 +52,12 @@ private:
     void clearScheduleLocked();   // used from task context
     void logScheduleInfo(const char *msgPrefix) const;
     String log(const String &msg) const;
+    void exitActions();
 
     Config             &config_;
     HeaterTask         &heaterTask_;
     LogManager         &logManager_;
+    Thermostat         &thermostat_;
 
     TaskHandle_t handle_ = nullptr;
 
@@ -64,6 +68,7 @@ private:
     volatile bool     heatingForced_ = false;
     volatile uint64_t targetEpochUtc_ = 0;
     volatile float    targetTempC_    = 0.0f;
+    volatile bool     targetTempReached_ = false;
 
     wsReadyByUpdateCallback wsReadyByUpdateCallback_{nullptr};
 };

@@ -6,10 +6,12 @@
 
 ReadyByTask::ReadyByTask(Config &config,
                          HeaterTask &heaterTask,
-                         LogManager &logManager)
+                         LogManager &logManager,
+                         Thermostat &thermostat)
     : config_(config),
       heaterTask_(heaterTask),
-      logManager_(logManager)
+      logManager_(logManager),
+      thermostat_(thermostat)
 {
 }
 
@@ -43,10 +45,18 @@ void ReadyByTask::taskEntry(void *pvParameters)
 void ReadyByTask::schedule(uint64_t targetEpochUtc, float targetTempC)
 {
     // Set fields first, then flip active_ true last.
-    targetEpochUtc_ = targetEpochUtc;
-    targetTempC_    = targetTempC;
-    heatingForced_  = false;
-    active_         = true;
+    config_.setReadyByTargetEpochUtc(targetEpochUtc);
+    config_.setReadyByTargetTemp(targetTempC);
+    config_.setReadyByActive(true);
+    heatingForced_ = false;
+    targetTempReached_ = false;
+
+    thermostat_.setTarget(targetTempC);
+    thermostat_.setHysteresis(0.0f); // disable hysteresis during ReadyBy
+    heaterTask_.setEnabled(false);
+
+    // no need to save, "heaterTask_.setEnabled(false);" handles that
+    // config_.save();
 
     String targetFormatted = timekeeper::formatEpoch(targetEpochUtc);
     Serial.printf("[ReadyBy] Scheduled: target time=%s, targetTemp=%.1f°C\n",
@@ -56,36 +66,26 @@ void ReadyByTask::schedule(uint64_t targetEpochUtc, float targetTempC)
         buf,
         sizeof(buf),
         "Scheduled: target time=%s, targetTemp=%.1f°C",
-        targetFormatted.c_str(), targetTempC
-    );
-    start();
+        targetFormatted.c_str(), targetTempC);
     log(String(buf));
 }
 
 bool ReadyByTask::getSchedule(uint64_t &targetEpochUtc, float &targetTempC) const
 {
-    if (!active_) {
+    if (!config_.readyByActive())
+    {
         return false;
     }
-    targetEpochUtc = targetEpochUtc_;
-    targetTempC    = targetTempC_;
+    targetEpochUtc = config_.readyByTargetEpochUtc();
+    targetTempC = config_.readyByTargetTemp();
     return true;
 }
 
 void ReadyByTask::cancel()
 {
-    // Mark as inactive first so task can see it and exit any plan
-    active_ = false;
-
-    // If we were currently forcing heat on, switch it off
-    if (heatingForced_)
-    {
-        bool ok = heaterTask_.turnHeaterOff();
-        Serial.printf("[ReadyBy] Cancel: turnHeaterOff() %s\n", ok ? "OK" : "FAILED");
-        heatingForced_ = false;
-    }
-    stop();
-    Serial.println("[ReadyBy] Schedule cancelled");
+    exitActions();
+    log("Schedule cancelled by user.");
+    Serial.println("[ReadyBy] Schedule cancelled by user.");
 }
 
 void ReadyByTask::run()
@@ -101,7 +101,7 @@ void ReadyByTask::run()
             continue;
         }
 
-        if (!active_)
+        if (!config_.readyByActive())
         {
             vTaskDelay(pdMS_TO_TICKS(1000));
             continue;
@@ -114,31 +114,28 @@ void ReadyByTask::run()
             continue;
         }
 
+        bool exiting = false;
+
         // Capture current schedule state into locals (avoid re-reading volatile)
-        uint64_t targetUtc = targetEpochUtc_;
-        float    targetTmp = targetTempC_;
+        uint64_t targetUtc = config_.readyByTargetEpochUtc();
+        float targetTmp = config_.readyByTargetTemp();
+
+        // Measure current ambient
+        float ambient = takeMeasurement(false).temperature;
 
         // If we somehow ended up past target time, stop forcing and clear schedule
         if (now >= targetUtc)
         {
-            if (heatingForced_)
-            {
-                heaterTask_.turnHeaterOff();
-                log("Target reached; shutting down...");
-                Serial.printf("[ReadyBy] Target reached; shutting down.");
-                heatingForced_ = false;
-            }
-            heaterTask_.start(); // re-enable normal thermostat control
-            active_ = false;
-            log("Schedule completed");
+            exiting = true;
+            char buf[128];
+            snprintf(
+                buf,
+                sizeof(buf),
+                "Past target time, exiting. Reached temperature: %.1f/%.1f°C",
+                ambient, targetTmp);
+            log(String(buf));
             Serial.println("[ReadyBy] Schedule completed");
-            vTaskDelay(pdMS_TO_TICKS(1000));
-            this->stop();
-            break;
         }
-
-        // Measure current ambient
-        float ambient = takeMeasurement(false).temperature;
 
         // Estimate how long we need to heat for current conditions
         float warmupSec = calculator.estimateWarmupSeconds(config_.kFactor(), ambient, targetTmp);
@@ -164,25 +161,62 @@ void ReadyByTask::run()
         }
 
         // Start forcing heat if it's time and we haven't already done so
-        if (!heatingForced_ && now >= startUtc)
+        if (now >= startUtc)
         {
-            heaterTask_.stop(); // disable normal thermostat control
-            bool ok = heaterTask_.turnHeaterOn(true);
-            Serial.printf("[ReadyBy] Forcing heater ON to meet schedule (ambient=%.1f°C, target=%.1f°C, warmup=%.0fs) -> %s\n",
-                          ambient, targetTmp, warmupSec, ok ? "OK" : "FAILED");
-            char buf[128];
-            snprintf(
-                buf,
-                sizeof(buf),
-                "Forcing heater ON (ambient=%.1f°C, target=%.1f°C, warmup=%.0fs)",
-                ambient, targetTmp, warmupSec);
-            log(String(buf));
-            if (ok)
+            if (!heatingForced_)
             {
-                heatingForced_ = true;
+                heaterTask_.setEnabled(false); // disable normal thermostat control
+                bool ok = heaterTask_.turnHeaterOn(true);
+                Serial.printf("[ReadyBy] Forcing heater ON to meet schedule (ambient=%.1f°C, target=%.1f°C, warmup=%.0fs) -> %s\n",
+                              ambient, targetTmp, warmupSec, ok ? "OK" : "FAILED");
+                char buf[128];
+                snprintf(
+                    buf,
+                    sizeof(buf),
+                    "Forcing heater ON (ambient=%.1f°C, target=%.1f°C, warmup=%.0fs)",
+                    ambient, targetTmp, warmupSec);
+                log(String(buf));
+                if (ok)
+                {
+                    heatingForced_ = true;
+                }
+            }
+            bool shouldHeat = thermostat_.update(ambient);
+            bool heaterOn = heaterTask_.isHeaterOn();
+            if (!shouldHeat && !targetTempReached_)
+            {
+                // Target temp reached early
+                char buf[128];
+                snprintf(
+                    buf,
+                    sizeof(buf),
+                    "Target temperature %.1f°C reached %.0f minutes early (ambient=%.1f°C)",
+                    targetTmp, (static_cast<float>(secondsUntilTarget) / 60.0f), ambient);
+                Serial.println("[ReadyBy] Target temperature reached; maintaining.");
+                targetTempReached_ = true;
+                thermostat_.setHysteresis(config_.hysteresis());
+            }
+            else if (shouldHeat && !heaterOn)
+            {
+                // Heater should be on but isn't
+                heaterTask_.turnHeaterOn(true);
+                Serial.println("[ReadyBy] Heater turned ON to maintain target temperature.");
+                log("Heater turned ON to maintain target temperature.");
+            }
+            else if (!shouldHeat && heaterOn)
+            {
+                // Heater should be off but is on
+                heaterTask_.turnHeaterOff();
+                Serial.println("[ReadyBy] Heater turned OFF to maintain target temperature.");
+                log("Heater turned OFF to maintain target temperature.");
             }
         }
-        if (wsReadyByUpdateCallback_) wsReadyByUpdateCallback_();
+
+        if (wsReadyByUpdateCallback_)
+            wsReadyByUpdateCallback_();
+        if (exiting)
+            exitActions();
+
         // Re-evaluate roughly every 30 seconds; this lets us adjust if ambient changes.
         vTaskDelay(pdMS_TO_TICKS(30000));
     }
@@ -197,4 +231,16 @@ String ReadyByTask::log(const String &msg) const
     line += msg;
     logManager_.append(line);
     return line;
+}
+
+void ReadyByTask::exitActions()
+{
+    config_.setReadyByActive(false);
+    heatingForced_ = false;
+    targetTempReached_ = false;
+    thermostat_.setTarget(config_.targetTemp());
+    thermostat_.setHysteresis(config_.hysteresis());
+    heaterTask_.setEnabled(true); // re-enable normal thermostat control
+
+    config_.save();
 }

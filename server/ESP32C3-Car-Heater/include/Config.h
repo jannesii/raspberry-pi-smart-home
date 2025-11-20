@@ -3,7 +3,8 @@
 #include <Arduino.h>
 #include <Preferences.h>
 
-class Config {
+class Config
+{
 public:
     Config();
 
@@ -12,66 +13,95 @@ public:
     void load();       // reload from NVS
     void save() const; // write to NVS if dirty
 
-    // Getters
-    float targetTemp() const        { return targetTemp_; }
-    float hysteresis() const        { return hysteresis_; }
-    float heaterTaskDelayS() const  { return heaterTaskDelayS_; }
+    // float getters
+    float targetTemp() const { return targetTemp_; }
+    float hysteresis() const { return hysteresis_; }
+    float heaterTaskDelayS() const { return heaterTaskDelayS_; }
     uint16_t deadzoneStartMin() const;
     uint16_t deadzoneEndMin() const;
-    float kFactor() const            { return kFactor_; }
-    // Example boolean getters
-    bool deadzoneEnabled() const     { return deadzoneEnabled_; }
-    bool heaterTaskEnabled() const   { return heaterTaskEnabled_; }
-    
+    float kFactor() const { return kFactor_; }
+    float readyByTargetTemp() const { return readyByTargetTemp_; }
+
+    // Boolean getters
+    bool deadzoneEnabled() const { return deadzoneEnabled_; }
+    bool heaterTaskEnabled() const { return heaterTaskEnabled_; }
+    bool readyByActive() const { return readyByActive_; }
+
+    // uint64 getters
+    uint64_t readyByTargetEpochUtc() const { return readyByTargetEpochUtc_; }
+
     // Setters (mark config as dirty, but do not auto-save)
+    // Float setters
     void setTargetTemp(float v);
     void setHysteresis(float v);
     void setHeaterTaskDelayS(float v);
     void setDeadzoneStartMin(uint16_t m);
     void setDeadzoneEndMin(uint16_t m);
     void setKFactor(float v);
-    // Boolean setters (mark dirty; persisted by save())
+    void setReadyByTargetTemp(float v);
+    // Boolean setters
     void setDeadzoneEnabled(bool v);
     void setHeaterTaskEnabled(bool v);
+    void setReadyByActive(bool v);
+    // uint64 setters
+    void setReadyByTargetEpochUtc(uint64_t v);
 
 private:
     // Not copyable
-    Config(const Config&) = delete;
-    Config& operator=(const Config&) = delete;
+    Config(const Config &) = delete;
+    Config &operator=(const Config &) = delete;
 
     // Descriptor for one float field
-    struct FloatFieldDesc {
-        const char*   key;          // NVS key
-        float         defaultValue; // default if key missing
-        float Config::* member;     // pointer to member
+    struct FloatFieldDesc
+    {
+        const char *key;       // NVS key
+        float defaultValue;    // default if key missing
+        float Config::*member; // pointer to member
     };
 
     // Table of all float fields (defined in .cpp)
     static const FloatFieldDesc FLOAT_FIELDS[];
 
     // Descriptor for one boolean field
-    struct BoolFieldDesc {
-        const char*  key;            // NVS key
-        bool         defaultValue;   // default if key missing
-        bool  Config::* member;      // pointer to member
+    struct BoolFieldDesc
+    {
+        const char *key;      // NVS key
+        bool defaultValue;    // default if key missing
+        bool Config::*member; // pointer to member
     };
 
     // Table of all boolean fields (defined in .cpp)
     static const BoolFieldDesc BOOL_FIELDS[];
 
+    // Descriptor for one uint64 field
+    struct Uint64FieldDesc
+    {
+        const char *key;          // NVS key
+        uint64_t defaultValue;    // default if key missing
+        uint64_t Config::*member; // pointer to member
+    };
+
+    // Table of all uint64 fields (defined in .cpp)
+    static const Uint64FieldDesc UINT64_FIELDS[];
+
     // These are modified even from save() const
     mutable Preferences prefs_;
-    mutable bool        dirty_;
+    mutable bool dirty_;
 
     // Actual stored values
-    float  targetTemp_;
-    float  hysteresis_;
-    float  heaterTaskDelayS_;
-    float  deadzoneStartMinF_;  // stored as float minutes
-    float  deadzoneEndMinF_;
-    float  kFactor_;
+    float targetTemp_;
+    float hysteresis_;
+    float heaterTaskDelayS_;
+    float deadzoneStartMinF_; // stored as float minutes
+    float deadzoneEndMinF_;
+    float kFactor_;
+    float readyByTargetTemp_;
 
-    // Example booleans (persisted via BOOL_FIELDS)
-    bool   deadzoneEnabled_;
-    bool   heaterTaskEnabled_;
+    // booleans (persisted via BOOL_FIELDS)
+    bool deadzoneEnabled_;
+    bool heaterTaskEnabled_;
+    bool readyByActive_;
+
+    // uint64s (persisted via UINT64_FIELDS)
+    uint64_t readyByTargetEpochUtc_;
 };

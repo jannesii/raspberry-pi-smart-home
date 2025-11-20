@@ -124,6 +124,11 @@ function setupStatusWebSocket() {
         if (data.type === "temp_update") {
           // update temp, state, button, time...
           handleStatusData(data);
+        } else if (data.type === "time_sync") {
+            console.log("[WS] Time sync update", data);
+            if (!data.time_synced) {
+              syncTimeFromDevice();
+            }
         }
       } catch (e) {
         console.warn("[WS] Status invalid message:", event.data);

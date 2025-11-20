@@ -60,7 +60,7 @@ private:
   void handleLogsClear(AsyncWebServerRequest *request);
   void handleApiStatus(AsyncWebServerRequest *request);
   void handleApiLogs(AsyncWebServerRequest *request);
-  void handleGetApiReadyBy(AsyncWebServerRequest *request);
+  void handleReadyByStatus(AsyncWebServerRequest *request);
   void handleReadyBySchedule(AsyncWebServerRequest *request);
 
   // small internal helper

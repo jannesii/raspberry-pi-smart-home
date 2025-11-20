@@ -74,6 +74,19 @@ async function handleStatusData(data) {
   const targetInput = document.getElementById("rb_target");
   const configForm = document.querySelector(".readyby-form .config-form");
   const btnSet     = document.getElementById("rb_set");
+  const btnClear   = document.getElementById("rb_clear");
+  const currentTempEl = document.getElementById("currentTemp");
+
+  // Update current temperature display
+  if (currentTempEl && typeof data.current_temp === "number") {
+    currentTempEl.textContent = data.current_temp.toFixed(1);
+  }
+
+  if (!data.scheduled) {
+    // Not scheduled
+    btnClear.style.display = "none";
+    return;
+  }
   // Scheduled: update status
   if (statusEl) {
     statusEl.textContent = "Scheduled";
@@ -116,7 +129,9 @@ async function handleStatusData(data) {
   if (btnSet) {
     btnSet.style.display = "none";
   }
-  // rb_clear remains visible so the user can cancel
+  if (!data.time_synced) {
+    syncTimeFromDevice();
+  }
 }
 
 async function loadReadyByStatus() {
@@ -129,10 +144,7 @@ async function loadReadyByStatus() {
     }
     const data = await resp.json();
     console.log("[ReadyBy] /api/ready-by response", data);
-    if (!data.scheduled) {
-      // Not scheduled → leave defaults as they are
-      return;
-    }
+
     await handleStatusData(data);
 
   } catch (err) {
@@ -297,6 +309,11 @@ function setupStatusWebSocket() {
           console.log("[WS] Ready By update", data);
           // update temp, state, button, time...
           handleStatusData(data);
+        } else if (data.type === "time_sync") {
+            console.log("[WS] Time sync update", data);
+            if (!data.time_synced) {
+              syncTimeFromDevice();
+            }
         }
       } catch (e) {
         console.warn("[WS] Status invalid message:", event.data);
@@ -309,7 +326,6 @@ function setupStatusWebSocket() {
 
 document.addEventListener("DOMContentLoaded", () => {
   setDefaultDateAndTime();
-  syncTimeFromDevice();
 
   const dateInput = document.getElementById("rb_date");
   const timeInput = document.getElementById("rb_time");

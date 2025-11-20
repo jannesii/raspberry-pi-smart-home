@@ -31,8 +31,8 @@ async function loadLogs() {
     const resp = await fetch("/api/logs");
     if (!resp.ok) throw new Error("HTTP " + resp.status);
 
-    const text = await resp.text();
-    const lines = text.split("\n").filter(line => line.trim().length > 0);
+    const data = await resp.json();
+    const lines = data.logs.split("\n").filter(line => line.trim().length > 0);
 
     container.innerHTML = "";
 
@@ -55,6 +55,9 @@ async function loadLogs() {
     }
 
     container.appendChild(list);
+    if (!data.time_synced) {
+      syncTimeFromDevice();
+    }
 
   } catch (err) {
     console.error("Failed to load logs:", err);
@@ -94,6 +97,11 @@ function setupLogWebSocket() {
         const data = JSON.parse(event.data);
         if (data.type === "log_append" && data.line) {
           appendLogLine(data.line);
+        } else if (data.type === "time_sync") {
+            console.log("[WS] Time sync update", data);
+            if (!data.time_synced) {
+              syncTimeFromDevice();
+            }
         }
       } catch (e) {
         console.warn("[WS] Non-JSON or invalid message:", event.data);
@@ -102,6 +110,34 @@ function setupLogWebSocket() {
   }
 
   connect();
+}
+
+async function syncTimeFromDevice() {
+  try {
+    const now = new Date();
+    const epochSeconds = Math.floor(now.getTime() / 1000);
+    const tzOffsetMin  = -now.getTimezoneOffset(); // east-positive
+
+    const params = new URLSearchParams();
+    params.set("epoch", epochSeconds.toString());
+    params.set("tz", tzOffsetMin.toString());
+
+    const resp = await fetch("/sync-time", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: params.toString()
+    });
+
+    if (!resp.ok && resp.status !== 302) {
+      // redirect will be followed by browser if this were a form;
+      // via fetch we just ignore it
+      console.warn("Time sync returned HTTP", resp.status);
+    }
+  } catch (e) {
+    console.error("Failed to sync time:", e);
+  }
 }
 
 document.addEventListener("DOMContentLoaded", () => {

@@ -99,7 +99,7 @@ void WebInterface::setupApiRoutes()
                             "{\"ok\":true,\"scheduled\":false}"); });
   server_.on("/api/ready-by", HTTP_GET, [this](AsyncWebServerRequest *request)
              {Serial.println("[Web] GET /api/ready-by request received");
-              handleGetApiReadyBy(request); });
+              handleReadyByStatus(request); });
   server_.on("/api/ready-by", HTTP_POST, [this](AsyncWebServerRequest *request)
              {Serial.println("[Web] POST /api/ready-by request received"); 
               handleReadyBySchedule(request); });
@@ -226,7 +226,7 @@ void WebInterface::handleApiStatus(AsyncWebServerRequest *request)
   doc["temp"] = currentTemp;
   doc["is_on"] = shelly_.getStatus(isOn) ? isOn : false;
   doc["current_time"] = currentTime;
-  doc["time_synced"] = timekeeper::isValid();
+  doc["time_synced"] = timekeeper::isTrulyValid();
   doc["in_deadzone"] = heaterTask_.isInDeadzone();
   doc["dz_enabled"] = heaterTask_.isDeadzoneEnabled();
   doc["heater_task_enabled"] = heaterTask_.isEnabled();
@@ -244,15 +244,20 @@ void WebInterface::handleApiStatus(AsyncWebServerRequest *request)
 
 void WebInterface::handleApiLogs(AsyncWebServerRequest *request)
 {
+  JsonDocument doc;
   String logs = logManager_.toStringNewestFirst();
   if (logs.isEmpty())
   {
     logs = "No log entries yet.";
   }
-  request->send(200, "text/plain", logs);
+  doc["logs"] = logs;
+  doc["time_synced"] = timekeeper::isTrulyValid();
+  String json;
+  serializeJson(doc, json);
+  request->send(200, "application/json", json);
 }
 
-void WebInterface::handleGetApiReadyBy(AsyncWebServerRequest *request)
+void WebInterface::handleReadyByStatus(AsyncWebServerRequest *request)
 {
   JsonDocument doc;
 
@@ -307,6 +312,8 @@ void WebInterface::handleGetApiReadyBy(AsyncWebServerRequest *request)
       doc["start_epoch_utc"] = startEpochUtc;
     }
   }
+  doc["current_temp"] = takeMeasurement(false).temperature;
+  doc["time_synced"] = timekeeper::isTrulyValid();
 
   String json;
   serializeJson(doc, json);

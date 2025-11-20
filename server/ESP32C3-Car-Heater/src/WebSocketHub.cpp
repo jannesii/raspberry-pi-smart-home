@@ -44,6 +44,9 @@ void WebSocketHub::onEvent(AsyncWebSocket *server,
     Serial.printf("[WS] Client #%u connected from %s\n",
                   client->id(),
                   client->remoteIP().toString().c_str());
+    broadcastTimeSync();
+    broadcastTempUpdate();
+    broadcastReadyByUpdate();
     break;
 
   case WS_EVT_DISCONNECT:
@@ -85,6 +88,20 @@ void WebSocketHub::onEvent(AsyncWebSocket *server,
   }
 }
 
+void WebSocketHub::broadcastTimeSync()
+{
+  if (!ws_.count())
+    return;
+
+  JsonDocument doc;
+  doc["type"] = "time_sync";
+  doc["time_synced"] = timekeeper::isTrulyValid();
+
+  String json;
+  serializeJson(doc, json);
+  ws_.textAll(json);
+}
+
 void WebSocketHub::broadcastLogLine(const String &line)
 {
   if (!ws_.count())
@@ -110,7 +127,7 @@ void WebSocketHub::broadcastTempUpdate()
   doc["type"] = "temp_update";
   doc["temp"] = heaterTask_.currentTemp();
   doc["is_on"] = heaterTask_.isHeaterOn();
-  doc["time_synced"] = timekeeper::isValid();
+  doc["time_synced"] = timekeeper::isTrulyValid();
   doc["current_time"] = currentTime;
   doc["in_deadzone"] = heaterTask_.isInDeadzone();
   doc["dz_enabled"] = heaterTask_.isDeadzoneEnabled();
@@ -180,6 +197,8 @@ void WebSocketHub::broadcastReadyByUpdate()
       doc["start_epoch_utc"] = startEpochUtc;
     }
   }
+  doc["current_temp"] = takeMeasurement(false).temperature;
+  doc["time_synced"] = timekeeper::isTrulyValid();
 
   String json;
   serializeJson(doc, json);

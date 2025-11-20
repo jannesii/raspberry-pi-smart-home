@@ -34,7 +34,7 @@ static LogManager logManager;
 static LedManager ledManager(LED_PIN, LED_ACTIVE_HIGH != 0);
 static HeaterTask heaterTask(config, thermostat, shelly, logManager, ledManager);
 static WatchDog watchdog(config, thermostat, shelly, logManager, ledManager, heaterTask);
-static ReadyByTask readyByTask(config, heaterTask, logManager);
+static ReadyByTask readyByTask(config, heaterTask, logManager, thermostat);
 
 static WebSocketHub webSocketHub(server, heaterTask, readyByTask, config);
 static WebInterface webInterface(
@@ -99,6 +99,7 @@ void setup()
                                { watchdog.kickHeater(); });
 
     heaterTask.start(4096, 1); // stack size, priority
+    readyByTask.start(4096, 1); // stack size, priority
 
     webInterface.begin();
 

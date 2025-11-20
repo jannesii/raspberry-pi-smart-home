@@ -33,11 +33,11 @@ public:
 
     void setWsTempUpdateCallback(wsTempUpdateCallback cb) { wsTempUpdateCallback_ = cb; }
 
-    void setEnabled(bool enabled) { enabled_ = enabled; }
+    void setEnabled(bool enabled);
     bool isEnabled() const { return enabled_; }
 
     bool isInDeadzone() const;
-    void setDeadzoneEnabled(bool enabled) { dzEnabled_ = enabled; }
+    void setDeadzoneEnabled(bool enabled);
     bool isDeadzoneEnabled() const { return dzEnabled_; }
 
     float currentTemp() const { return currentTemp_; }

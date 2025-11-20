@@ -48,6 +48,8 @@ void HeaterTask::taskEntry(void *pvParameters)
 
 void HeaterTask::run()
 {
+    dzEnabled_ = config_.deadzoneEnabled();
+    enabled_   = config_.heaterTaskEnabled();
     for (;;)
     {
         bool success = shelly_.getStatus(isHeaterOn_, false);
@@ -134,6 +136,23 @@ bool HeaterTask::isInDeadzone() const
 
     // Wrap-around range, e.g. 20:00–06:00
     return (m >= startMin) || (m < endMin);
+}
+
+void HeaterTask::setEnabled(bool enabled) {
+    if (enabled && config_.readyByActive()) {
+        // Don't enable if ReadyBy is active
+        this->enabled_ = false;
+    } else {
+        this->enabled_ = enabled;
+    }
+    config_.setHeaterTaskEnabled(this->enabled_);
+    config_.save();
+}
+
+void HeaterTask::setDeadzoneEnabled(bool enabled) {
+    this->dzEnabled_ = enabled;
+    config_.setDeadzoneEnabled(this->dzEnabled_);
+    config_.save();
 }
 
 String HeaterTask::logHeaterChange(bool isOn, float currentTemp) const
