@@ -1,5 +1,5 @@
 // LogManager.cpp
-#include "LogManager.h"
+#include "core/LogManager.h"
 
 LogManager::LogManager()
     : head_(0),

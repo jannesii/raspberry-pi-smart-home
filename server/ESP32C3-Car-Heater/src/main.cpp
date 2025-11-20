@@ -4,20 +4,20 @@
 #include <ESPAsyncWebServer.h>
 #include <LittleFS.h>
 
-#include "wifihelper.h"
-#include "WebInterface.h"
-#include "ShellyHandler.h"
-#include <measurements.h>
-#include "HeaterTask.h"
-#include "Thermostat.h"
-#include "Config.h"
-#include "staticconfig.h"
-#include "LogManager.h"
-#include "TimeKeeper.h"
-#include "WatchDog.h"
-#include "LedManager.h"
-#include "WebSocketHub.h"
-#include "ReadyByTask.h"
+#include "io/wifihelper.h"
+#include "ui/WebInterface.h"
+#include "io/ShellyHandler.h"
+#include "io/measurements.h"
+#include "heating/HeaterTask.h"
+#include "heating/Thermostat.h"
+#include "core/Config.h"
+#include "core/staticconfig.h"
+#include "core/LogManager.h"
+#include "core/TimeKeeper.h"
+#include "core/WatchDog.h"
+#include "io/LedManager.h"
+#include "io/WebSocketHub.h"
+#include "heating/ReadyByTask.h"
 
 #include <nvs_flash.h>
 #include <nvs.h>

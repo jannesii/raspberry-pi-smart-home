@@ -3,11 +3,11 @@
 #include <Arduino.h>
 #include <functional>
 
-#include "Config.h"
-#include "Thermostat.h"
-#include "ShellyHandler.h"
-#include "LogManager.h"
-#include "LedManager.h"
+#include "core/Config.h"
+#include "heating/Thermostat.h"
+#include "io/ShellyHandler.h"
+#include "core/LogManager.h"
+#include "io/LedManager.h"
 
 // Wrapper around the FreeRTOS heater control task
 class HeaterTask

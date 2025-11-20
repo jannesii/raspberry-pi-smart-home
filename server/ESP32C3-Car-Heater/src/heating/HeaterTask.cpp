@@ -1,8 +1,8 @@
-#include "HeaterTask.h"
+#include "heating/HeaterTask.h"
 
-#include "measurements.h"
-#include "TimeKeeper.h"
-#include "WebSocketHub.h"
+#include "io/measurements.h"
+#include "core/TimeKeeper.h"
+#include "io/WebSocketHub.h"
 
 HeaterTask::HeaterTask(Config &config,
                        Thermostat &thermostat,

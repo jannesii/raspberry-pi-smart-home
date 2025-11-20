@@ -1,5 +1,5 @@
 // Config.cpp
-#include "Config.h"
+#include "core/Config.h"
 
 namespace {
 constexpr const char* NAMESPACE = "config";

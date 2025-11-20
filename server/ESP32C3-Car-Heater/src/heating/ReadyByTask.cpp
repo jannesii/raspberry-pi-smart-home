@@ -1,8 +1,8 @@
-#include "ReadyByTask.h"
+#include "heating/ReadyByTask.h"
 
-#include "measurements.h"
-#include "TimeKeeper.h"
-#include "HeatingCalculator.h"
+#include "io/measurements.h"
+#include "core/TimeKeeper.h"
+#include "heating/HeatingCalculator.h"
 
 ReadyByTask::ReadyByTask(Config &config,
                          HeaterTask &heaterTask,

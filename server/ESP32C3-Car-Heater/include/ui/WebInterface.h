@@ -3,13 +3,13 @@
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
 
-#include "Config.h"
-#include "Thermostat.h"
-#include "ShellyHandler.h"
-#include "LogManager.h"
-#include "LedManager.h"
-#include "HeaterTask.h"
-#include "ReadyByTask.h"
+#include "core/Config.h"
+#include "heating/Thermostat.h"
+#include "io/ShellyHandler.h"
+#include "core/LogManager.h"
+#include "io/LedManager.h"
+#include "heating/HeaterTask.h"
+#include "heating/ReadyByTask.h"
 
 // forward declare helper if you keep it free, or move into class
 class WebInterface

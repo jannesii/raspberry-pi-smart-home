@@ -3,9 +3,9 @@
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
 #include <functional>
-#include "HeaterTask.h"
-#include "ReadyByTask.h"
-#include "Config.h"
+#include "heating/HeaterTask.h"
+#include "heating/ReadyByTask.h"
+#include "core/Config.h"
 
 class WebSocketHub
 {

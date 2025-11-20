@@ -1,10 +1,10 @@
 #pragma once
 
 #include <Arduino.h>
-#include "Config.h"
-#include "HeaterTask.h"
-#include <LogManager.h>
-#include <Thermostat.h>
+#include "core/Config.h"
+#include "heating/HeaterTask.h"
+#include "core/LogManager.h"
+#include "heating/Thermostat.h"
 
 class ReadyByTask
 {

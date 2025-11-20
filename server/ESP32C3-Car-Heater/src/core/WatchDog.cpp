@@ -1,12 +1,12 @@
 // WatchDog.cpp
-#include "WatchDog.h"
-#include "Config.h"
-#include "Thermostat.h"
-#include "ShellyHandler.h"
-#include "LogManager.h"
-#include "HeaterTask.h" // for g_heaterTaskHandle and startHeaterTask
-#include "TimeKeeper.h"
-#include "LedManager.h"
+#include "core/WatchDog.h"
+#include "core/Config.h"
+#include "heating/Thermostat.h"
+#include "io/ShellyHandler.h"
+#include "core/LogManager.h"
+#include "heating/HeaterTask.h" // for g_heaterTaskHandle and startHeaterTask
+#include "core/TimeKeeper.h"
+#include "io/LedManager.h"
 #include <esp_system.h> // esp_restart()
 
 String logHeaterRestart();

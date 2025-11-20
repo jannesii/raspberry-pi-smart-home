@@ -4,12 +4,12 @@
 #include <ArduinoJson.h>
 #include <esp_system.h>
 
-#include "wifihelper.h"
-#include "measurements.h"
-#include "TimeKeeper.h"
-#include "WebInterface.h"
-#include "ReadyByTask.h"
-#include "HeatingCalculator.h"
+#include "io/wifihelper.h"
+#include "io/measurements.h"
+#include "core/TimeKeeper.h"
+#include "ui/WebInterface.h"
+#include "heating/ReadyByTask.h"
+#include "heating/HeatingCalculator.h"
 
 WebInterface::WebInterface(AsyncWebServer &server,
                            Config &config,

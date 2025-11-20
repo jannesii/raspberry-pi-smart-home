@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include "Thermostat.h"
+#include "heating/Thermostat.h"
 
 Thermostat::Thermostat(float targetTemp, float hysteresis)
     : targetTemp_(targetTemp),

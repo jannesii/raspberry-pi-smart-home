@@ -5,3 +5,4 @@
 .vscode/ipch
 staticconfig.h
 data/
+web/dist/

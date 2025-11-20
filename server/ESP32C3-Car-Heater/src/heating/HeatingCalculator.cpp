@@ -1,4 +1,4 @@
-#include "HeatingCalculator.h"
+#include "heating/HeatingCalculator.h"
 
 HeatingCalculator::HeatingCalculator(float cabinVolume_m3,
                                      float heaterPower_W,

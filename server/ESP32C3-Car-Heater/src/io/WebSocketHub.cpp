@@ -1,8 +1,8 @@
-#include "WebSocketHub.h"
+#include "io/WebSocketHub.h"
 #include <ArduinoJson.h>
-#include "TimeKeeper.h"
-#include "HeatingCalculator.h"
-#include "measurements.h"
+#include "core/TimeKeeper.h"
+#include "heating/HeatingCalculator.h"
+#include "io/measurements.h"
 
 WebSocketHub::WebSocketHub(
     AsyncWebServer &server,

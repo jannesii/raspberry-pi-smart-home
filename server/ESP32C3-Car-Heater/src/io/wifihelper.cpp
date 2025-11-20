@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include <WiFi.h>
-#include "wifihelper.h"
+#include "io/wifihelper.h"
 
 bool wifiIsConnected() {
     return WiFi.status() == WL_CONNECTED;

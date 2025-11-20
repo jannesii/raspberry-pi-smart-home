@@ -1,6 +1,6 @@
 #include <Adafruit_BMP280.h>
 
-#include "measurements.h"
+#include "io/measurements.h"
 
 Adafruit_BMP280 bmp;
 static Measurements g_last_valid{NAN, NAN, NAN};
