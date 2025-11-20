@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Calibrate kFactor – Car Heater</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="page-header">
+    <h1>Calibrate kFactor</h1>
+    <nav class="nav-links">
+      <a href="/">Home</a>
+      <a href="/ready-by">Ready By</a>
+      <a href="/logs">Logs</a>
+      <strong>kFactor</strong>
+    </nav>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Current settings</h2>
+      <p>Current kFactor: <strong id="currentKVal">–</strong></p>
+      <p>Ideal heater physics: <span id="idealSecVal">–</span> seconds per °C (k=1)</p>
+      <p class="hint">kFactor scales the ideal warmup time to match reality. Higher k = slower warmup.</p>
+    </section>
+
+    <section class="card">
+      <h2>Calculate suggestion</h2>
+      <form id="kfactor-form">
+        <label>Ambient temperature (°C)
+          <input type="number" step="0.1" id="ambient" required placeholder="e.g. 5">
+        </label>
+        <label>Target temperature (°C)
+          <input type="number" step="0.1" id="target" required placeholder="e.g. 22">
+        </label>
+        <label>Observed warmup time (minutes)
+          <input type="number" step="0.1" id="warmupMin" required placeholder="e.g. 45">
+        </label>
+        <button type="submit">Calculate suggested kFactor</button>
+      </form>
+      <div id="resultBox" class="card muted" style="margin-top:0.75rem;">
+        <div id="resultText">Enter values above to compute.</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Apply kFactor</h2>
+      <div class="stack">
+        <label>kFactor to apply
+          <input type="number" step="0.01" id="applyK" placeholder="e.g. 21.5">
+        </label>
+        <button type="button" id="apply-btn">Save to device</button>
+        <p class="hint" id="statusText"></p>
+      </div>
+    </section>
+  </main>
+
+  <script src="/calibrate.js"></script>
+</body>
+</html>

@@ -54,6 +54,7 @@ private:
   void handleRoot(AsyncWebServerRequest *request);
   void handleReadyBy(AsyncWebServerRequest *request);
   void handleLogsPage(AsyncWebServerRequest *request);
+  void handleCalibratePage(AsyncWebServerRequest *request);
   void handleToggleHttp(AsyncWebServerRequest *request);
   void handleSyncTime(AsyncWebServerRequest *request);
   void handleSetConfig(AsyncWebServerRequest *request);
@@ -62,6 +63,9 @@ private:
   void handleApiLogs(AsyncWebServerRequest *request);
   void handleReadyByStatus(AsyncWebServerRequest *request);
   void handleReadyBySchedule(AsyncWebServerRequest *request);
+  void handleKFactorStatus(AsyncWebServerRequest *request);
+  void handleKFactorSuggest(AsyncWebServerRequest *request);
+  void handleKFactorApply(AsyncWebServerRequest *request);
 
   // small internal helper
   String fmtHHMM(uint16_t minutes) const;

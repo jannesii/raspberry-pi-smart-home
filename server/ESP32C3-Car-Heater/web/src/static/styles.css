@@ -45,6 +45,8 @@ body {
   background: #222;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
 }
+.card.muted { color: #ccc; }
+.card.error { border: 1px solid #c62828; background: #301414; }
 .card + .card { margin-top: 0.75rem; }
 h1, h2 { margin: 0 0 0.75rem 0; }
 .muted { color: #aaa; font-size: 0.9rem; }
@@ -168,10 +170,37 @@ form[action="/toggle"] button,
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+.page-header {
+  max-width: var(--maxw);
+  margin: 1.25rem auto 0.5rem;
+  padding: 0 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+.page-header h1 { margin: 0; }
+.nav-links { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+.nav-links a,
+.nav-links strong {
+  color: #ccc;
+  text-decoration: none;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid #333;
+}
+.nav-links strong {
+  background: #1976d2;
+  color: #fff;
+  border-color: #115da5;
+}
+.nav-links a:hover { color: #fff; border-color: #444; background: #222; }
+
+.stack { display: flex; flex-direction: column; gap: 0.5rem; }
+
 /* Responsive tweaks */
 @media (max-width: 400px) {
   .nav-title { font-size: 1.05rem; }
   .nav-inner { padding: 0.6rem 0.8rem; }
   .card { margin: 1rem auto; padding: 0.9rem; }
 }
-

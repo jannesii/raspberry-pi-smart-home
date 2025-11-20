@@ -10,6 +10,7 @@
 #include "ui/WebInterface.h"
 #include "heating/ReadyByTask.h"
 #include "heating/HeatingCalculator.h"
+#include "heating/KFactorCalibrator.h"
 
 WebInterface::WebInterface(AsyncWebServer &server,
                            Config &config,
@@ -50,6 +51,10 @@ void WebInterface::setupStaticRoutes()
   server_.on("/", HTTP_GET, [this](AsyncWebServerRequest *request)
              { handleRoot(request); });
   server_.serveStatic("/index.js", LittleFS, "/index.js");
+
+  server_.on("/calibrate", HTTP_GET, [this](AsyncWebServerRequest *request)
+             { handleCalibratePage(request); });
+  server_.serveStatic("/calibrate.js", LittleFS, "/calibrate.js");
 
   server_.on("/ready-by", HTTP_GET, [this](AsyncWebServerRequest *request)
              { handleReadyBy(request); });
@@ -103,6 +108,14 @@ void WebInterface::setupApiRoutes()
   server_.on("/api/ready-by", HTTP_POST, [this](AsyncWebServerRequest *request)
              {Serial.println("[Web] POST /api/ready-by request received"); 
               handleReadyBySchedule(request); });
+
+  // kFactor calibration
+  server_.on("/api/kfactor/status", HTTP_GET, [this](AsyncWebServerRequest *request)
+             { handleKFactorStatus(request); });
+  server_.on("/api/kfactor/suggest", HTTP_POST, [this](AsyncWebServerRequest *request)
+             { handleKFactorSuggest(request); });
+  server_.on("/api/kfactor/apply", HTTP_POST, [this](AsyncWebServerRequest *request)
+             { handleKFactorApply(request); });
 }
 
 // ----------------- handlers -----------------
@@ -136,6 +149,17 @@ void WebInterface::handleLogsPage(AsyncWebServerRequest *request)
     Serial.println("[Web] Serving /logs.html from FS");
   }
   auto *res = request->beginResponse(LittleFS, "/logs.html.gz", "text/html");
+  res->addHeader("Content-Encoding", "gzip");
+  request->send(res);
+}
+
+void WebInterface::handleCalibratePage(AsyncWebServerRequest *request)
+{
+  if (showDebug_)
+  {
+    Serial.println("[Web] Serving /calibrate.html from FS");
+  }
+  auto *res = request->beginResponse(LittleFS, "/calibrate.html.gz", "text/html");
   res->addHeader("Content-Encoding", "gzip");
   request->send(res);
 }
@@ -372,6 +396,101 @@ void WebInterface::handleReadyBySchedule(AsyncWebServerRequest *request)
     }
     doc["start_epoch_utc"] = startEpochUtc;
   }
+
+  String json;
+  serializeJson(doc, json);
+  request->send(200, "application/json", json);
+}
+
+void WebInterface::handleKFactorStatus(AsyncWebServerRequest *request)
+{
+  KFactorCalibrator calibrator;
+  JsonDocument doc;
+  doc["current_k"] = config_.kFactor();
+  doc["ideal_seconds_per_deg"] = calibrator.idealSecondsPerDegree();
+  doc["cabin_volume_m3"] = calibrator.cabinVolume();
+  doc["heater_power_w"] = calibrator.heaterPower();
+  doc["air_density_kg_m3"] = calibrator.airDensity();
+  doc["specific_heat_j_kgk"] = calibrator.specificHeat();
+
+  String json;
+  serializeJson(doc, json);
+  request->send(200, "application/json", json);
+}
+
+void WebInterface::handleKFactorSuggest(AsyncWebServerRequest *request)
+{
+  const bool fromBody = request->method() == HTTP_POST;
+  if (!request->hasParam("ambient", fromBody) ||
+      !request->hasParam("target", fromBody) ||
+      (!request->hasParam("warmup_s", fromBody) && !request->hasParam("warmup_min", fromBody)))
+  {
+    request->send(400, "application/json", "{\"ok\":false,\"error\":\"missing params\"}");
+    return;
+  }
+
+  auto pAmbient = request->getParam("ambient", fromBody);
+  auto pTarget = request->getParam("target", fromBody);
+
+  float ambient = pAmbient->value().toFloat();
+  float target = pTarget->value().toFloat();
+  float warmupSeconds = 0.0f;
+  if (request->hasParam("warmup_s", fromBody))
+  {
+    warmupSeconds = request->getParam("warmup_s", fromBody)->value().toFloat();
+  }
+  else if (request->hasParam("warmup_min", fromBody))
+  {
+    warmupSeconds = request->getParam("warmup_min", fromBody)->value().toFloat() * 60.0f;
+  }
+
+  KFactorCalibrator calibrator;
+  float suggestedK = calibrator.deriveKFactor(ambient, target, warmupSeconds);
+  float deltaT = target - ambient;
+
+  if (suggestedK <= 0.0f)
+  {
+    request->send(400, "application/json", "{\"ok\":false,\"error\":\"invalid inputs\"}");
+    return;
+  }
+
+  JsonDocument doc;
+  doc["ok"] = true;
+  doc["current_k"] = config_.kFactor();
+  doc["suggested_k"] = suggestedK;
+  doc["delta_t_c"] = deltaT;
+  doc["warmup_seconds"] = warmupSeconds;
+  doc["observed_seconds_per_deg"] = warmupSeconds / deltaT;
+  doc["ideal_seconds_per_deg"] = calibrator.idealSecondsPerDegree();
+
+  String json;
+  serializeJson(doc, json);
+  request->send(200, "application/json", json);
+}
+
+void WebInterface::handleKFactorApply(AsyncWebServerRequest *request)
+{
+  const bool fromBody = request->method() == HTTP_POST;
+  if (!request->hasParam("k", fromBody))
+  {
+    request->send(400, "application/json", "{\"ok\":false,\"error\":\"missing k\"}");
+    return;
+  }
+
+  float k = request->getParam("k", fromBody)->value().toFloat();
+  if (k <= 0.0f || !isfinite(k))
+  {
+    request->send(400, "application/json", "{\"ok\":false,\"error\":\"invalid k\"}");
+    return;
+  }
+
+  config_.setKFactor(k);
+  config_.save();
+  led_.blinkSingle();
+
+  JsonDocument doc;
+  doc["ok"] = true;
+  doc["k_factor"] = k;
 
   String json;
   serializeJson(doc, json);
