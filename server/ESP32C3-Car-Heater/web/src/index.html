@@ -17,6 +17,7 @@
           <a href="/calibrate" class="nav-link">kFactor</a>
           <!-- <a href="/" class="nav-link" id="reboot">Reboot</a> -->
         </div>
+        <span class="nav-temp" id="navTemp">--</span>
       </div>
     </nav>
 
@@ -25,12 +26,16 @@
         <p class="muted">Wi-Fi SSID: <span id="wifiSsid"></span></p>
 
         <p>Current temperature: <strong id="currentTemp"></strong> °C</p>
-        <p>Heater state: <strong id="heaterState"></strong></p>
-        <p>In deadzone: <strong id="inDeadzone"></strong></p>
-        <p>HeaterTask state: <strong id="heaterTaskState"></strong></p>
-        <button type="submit" id="heaterBtn" class="">Toggle Heater</button>
-        <button id="dzBtn" class="">Toggle Deadzone</button>
-        <button id="heaterTaskBtn" class="">Toggle Heater Task</button>
+        <p>
+          Heater: <span class="badge" id="heaterState"></span>
+          Deadzone: <span class="badge" id="inDeadzone"></span>
+          HeaterTask: <span class="badge" id="heaterTaskState"></span>
+        </p>
+        <div class="btn-row">
+          <button type="submit" id="heaterBtn" class="">Toggle Heater</button>
+          <button id="dzBtn" class="">Toggle Deadzone</button>
+          <button id="heaterTaskBtn" class="">Toggle Heater Task</button>
+        </div>
 
         <hr>
 

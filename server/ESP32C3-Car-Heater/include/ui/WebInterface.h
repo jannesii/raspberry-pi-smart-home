@@ -10,6 +10,7 @@
 #include "io/LedManager.h"
 #include "heating/HeaterTask.h"
 #include "heating/ReadyByTask.h"
+#include "heating/KFactorCalibrator.h"
 
 // forward declare helper if you keep it free, or move into class
 class WebInterface
@@ -23,7 +24,8 @@ public:
                const String &wifiSSID,
                LedManager &led,
                HeaterTask &heaterTask,
-               ReadyByTask &readyByTask);
+               ReadyByTask &readyByTask,
+               KFactorCalibrationManager &calibration);
 
   // Call once from setup() after WiFi + FS are ready
   void begin();
@@ -42,6 +44,7 @@ private:
   LedManager &led_;
   HeaterTask &heaterTask_;
   ReadyByTask &readyByTask_;
+  KFactorCalibrationManager &calibration_;
 
   bool showDebug_ = false; // example tunable
 
@@ -63,9 +66,10 @@ private:
   void handleApiLogs(AsyncWebServerRequest *request);
   void handleReadyByStatus(AsyncWebServerRequest *request);
   void handleReadyBySchedule(AsyncWebServerRequest *request);
-  void handleKFactorStatus(AsyncWebServerRequest *request);
-  void handleKFactorSuggest(AsyncWebServerRequest *request);
-  void handleKFactorApply(AsyncWebServerRequest *request);
+  void handleCalibrationStatus(AsyncWebServerRequest *request);
+  void handleCalibrationStart(AsyncWebServerRequest *request);
+  void handleCalibrationCancel(AsyncWebServerRequest *request);
+  void handleCalibrationSettings(AsyncWebServerRequest *request);
 
   // small internal helper
   String fmtHHMM(uint16_t minutes) const;

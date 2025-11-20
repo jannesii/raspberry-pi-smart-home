@@ -8,12 +8,14 @@ WebSocketHub::WebSocketHub(
     AsyncWebServer &server,
     HeaterTask &heaterTask,
     ReadyByTask &readyByTask,
-    Config &config)
+    Config &config,
+    KFactorCalibrationManager &calibration)
     : ws_("/ws"),
       server_(server),
       heaterTask_(heaterTask),
       readyByTask_(readyByTask),
-      config_(config)
+      config_(config),
+      calibration_(calibration)
 {
 }
 
@@ -47,6 +49,7 @@ void WebSocketHub::onEvent(AsyncWebSocket *server,
     broadcastTimeSync();
     broadcastTempUpdate();
     broadcastReadyByUpdate();
+    broadcastCalibrationUpdate();
     break;
 
   case WS_EVT_DISCONNECT:
@@ -65,6 +68,12 @@ void WebSocketHub::onEvent(AsyncWebSocket *server,
         msg += (char)data[i];
       }
       Serial.printf("[WS] Received: %s\n", msg.c_str());
+
+      if (calibration_.isBusy())
+      {
+        // Ignore control toggles while calibration is active
+        break;
+      }
 
       if (msg == "toggle_heater")
         toggleHeater();
@@ -175,7 +184,8 @@ void WebSocketHub::broadcastReadyByUpdate()
 
       // Use same physics as ReadyBy to estimate warmup / start time
       HeatingCalculator calc;
-      float warmupSec = calc.estimateWarmupSeconds(config_.kFactor(), ambient, targetTemp);
+      float k = calibration_.derivedKFor(ambient, targetTemp);
+      float warmupSec = calc.estimateWarmupSeconds(k, ambient, targetTemp);
       if (warmupSec < 0.0f)
         warmupSec = 0.0f;
 
@@ -199,6 +209,48 @@ void WebSocketHub::broadcastReadyByUpdate()
   }
   doc["current_temp"] = takeMeasurement(false).temperature;
   doc["time_synced"] = timekeeper::isTrulyValid();
+
+  String json;
+  serializeJson(doc, json);
+  ws_.textAll(json);
+}
+
+void WebSocketHub::broadcastCalibrationUpdate()
+{
+  if (!ws_.count())
+    return;
+
+  KFactorCalibrationManager::Status st = calibration_.status();
+  JsonDocument doc;
+  doc["type"] = "calibration_update";
+  doc["state"] = (st.state == KFactorCalibrationManager::State::Idle)
+                     ? "idle"
+                     : (st.state == KFactorCalibrationManager::State::Scheduled ? "scheduled" : "running");
+  doc["target_temp_c"] = st.targetTempC;
+  doc["start_epoch_utc"] = st.startEpochUtc;
+  doc["ambient_start_c"] = st.ambientStartC;
+  doc["current_temp_c"] = st.currentTempC;
+  doc["elapsed_seconds"] = st.elapsedSeconds;
+  doc["suggested_k"] = st.suggestedK;
+  doc["current_k"] = config_.kFactor();
+  doc["time_synced"] = timekeeper::isTrulyValid();
+  doc["auto_enabled"] = config_.autoCalibrationEnabled();
+  doc["auto_start_min"] = config_.autoCalibStartMin();
+  doc["auto_end_min"] = config_.autoCalibEndMin();
+  doc["auto_target_cap_c"] = config_.autoCalibTargetCapC();
+  doc["current_temp"] = heaterTask_.currentTemp();
+
+  JsonArray recs = doc["records"].to<JsonArray>();
+  for (size_t i = 0; i < st.recordCount && i < st.records.size(); ++i)
+  {
+    const auto &r = st.records[i];
+    JsonObject o = recs.add<JsonObject>();
+    o["ambient_c"] = r.ambientC;
+    o["target_c"] = r.targetC;
+    o["warmup_seconds"] = r.warmupSeconds;
+    o["k"] = r.kFactor;
+    o["epoch_utc"] = r.epochUtc;
+  }
 
   String json;
   serializeJson(doc, json);

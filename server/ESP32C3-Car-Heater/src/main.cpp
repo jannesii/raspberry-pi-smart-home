@@ -18,6 +18,7 @@
 #include "io/LedManager.h"
 #include "io/WebSocketHub.h"
 #include "heating/ReadyByTask.h"
+#include "heating/KFactorCalibrator.h"
 
 #include <nvs_flash.h>
 #include <nvs.h>
@@ -35,8 +36,9 @@ static LedManager ledManager(LED_PIN, LED_ACTIVE_HIGH != 0);
 static HeaterTask heaterTask(config, thermostat, shelly, logManager, ledManager);
 static WatchDog watchdog(config, thermostat, shelly, logManager, ledManager, heaterTask);
 static ReadyByTask readyByTask(config, heaterTask, logManager, thermostat);
+static KFactorCalibrationManager calibration(config, heaterTask, readyByTask, logManager);
 
-static WebSocketHub webSocketHub(server, heaterTask, readyByTask, config);
+static WebSocketHub webSocketHub(server, heaterTask, readyByTask, config, calibration);
 static WebInterface webInterface(
     server,
     config,
@@ -46,7 +48,8 @@ static WebInterface webInterface(
     WIFI_SSID,
     ledManager,
     heaterTask,
-    readyByTask);
+    readyByTask,
+    calibration);
 
 void setup()
 {
@@ -100,6 +103,10 @@ void setup()
 
     heaterTask.start(4096, 1); // stack size, priority
     readyByTask.start(4096, 1); // stack size, priority
+    calibration.begin(4096, 1);
+    calibration.setUpdateCallback([]()
+                                  { webSocketHub.broadcastCalibrationUpdate(); });
+    readyByTask.setCalibrationManager(&calibration);
 
     webInterface.begin();
 

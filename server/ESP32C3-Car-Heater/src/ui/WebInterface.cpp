@@ -20,7 +20,8 @@ WebInterface::WebInterface(AsyncWebServer &server,
                            const String &wifiSSID,
                            LedManager &led,
                            HeaterTask &heaterTask,
-                           ReadyByTask &readyByTask)
+                           ReadyByTask &readyByTask,
+                           KFactorCalibrationManager &calibration)
     : server_(server),
       config_(config),
       thermostat_(thermostat),
@@ -29,7 +30,8 @@ WebInterface::WebInterface(AsyncWebServer &server,
       wifiSSID_(wifiSSID),
       led_(led),
       heaterTask_(heaterTask),
-      readyByTask_(readyByTask)
+      readyByTask_(readyByTask),
+      calibration_(calibration)
 {
 }
 
@@ -109,13 +111,15 @@ void WebInterface::setupApiRoutes()
              {Serial.println("[Web] POST /api/ready-by request received"); 
               handleReadyBySchedule(request); });
 
-  // kFactor calibration
-  server_.on("/api/kfactor/status", HTTP_GET, [this](AsyncWebServerRequest *request)
-             { handleKFactorStatus(request); });
-  server_.on("/api/kfactor/suggest", HTTP_POST, [this](AsyncWebServerRequest *request)
-             { handleKFactorSuggest(request); });
-  server_.on("/api/kfactor/apply", HTTP_POST, [this](AsyncWebServerRequest *request)
-             { handleKFactorApply(request); });
+  // Calibration
+  server_.on("/api/calibration/status", HTTP_GET, [this](AsyncWebServerRequest *request)
+             { handleCalibrationStatus(request); });
+  server_.on("/api/calibration/start", HTTP_POST, [this](AsyncWebServerRequest *request)
+             { handleCalibrationStart(request); });
+  server_.on("/api/calibration/cancel", HTTP_POST, [this](AsyncWebServerRequest *request)
+             { handleCalibrationCancel(request); });
+  server_.on("/api/calibration/settings", HTTP_POST, [this](AsyncWebServerRequest *request)
+             { handleCalibrationSettings(request); });
 }
 
 // ----------------- handlers -----------------
@@ -314,7 +318,8 @@ void WebInterface::handleReadyByStatus(AsyncWebServerRequest *request)
 
       // Use same physics as ReadyBy to estimate warmup / start time
       HeatingCalculator calc;
-      float warmupSec = calc.estimateWarmupSeconds(config_.kFactor(), ambient, targetTemp);
+      float k = calibration_.derivedKFor(ambient, targetTemp);
+      float warmupSec = calc.estimateWarmupSeconds(k, ambient, targetTemp);
       if (warmupSec < 0.0f)
         warmupSec = 0.0f;
 
@@ -402,96 +407,116 @@ void WebInterface::handleReadyBySchedule(AsyncWebServerRequest *request)
   request->send(200, "application/json", json);
 }
 
-void WebInterface::handleKFactorStatus(AsyncWebServerRequest *request)
+void WebInterface::handleCalibrationStatus(AsyncWebServerRequest *request)
 {
-  KFactorCalibrator calibrator;
+  auto st = calibration_.status();
   JsonDocument doc;
+  doc["ok"] = true;
+  doc["state"] = (st.state == KFactorCalibrationManager::State::Idle)
+                     ? "idle"
+                     : (st.state == KFactorCalibrationManager::State::Scheduled ? "scheduled" : "running");
+  doc["target_temp_c"] = st.targetTempC;
+  doc["start_epoch_utc"] = st.startEpochUtc;
+  doc["ambient_start_c"] = st.ambientStartC;
+  doc["current_temp_c"] = st.currentTempC;
+  doc["elapsed_seconds"] = st.elapsedSeconds;
+  doc["suggested_k"] = st.suggestedK;
+  doc["time_synced"] = timekeeper::isTrulyValid();
   doc["current_k"] = config_.kFactor();
-  doc["ideal_seconds_per_deg"] = calibrator.idealSecondsPerDegree();
-  doc["cabin_volume_m3"] = calibrator.cabinVolume();
-  doc["heater_power_w"] = calibrator.heaterPower();
-  doc["air_density_kg_m3"] = calibrator.airDensity();
-  doc["specific_heat_j_kgk"] = calibrator.specificHeat();
+  doc["auto_enabled"] = config_.autoCalibrationEnabled();
+  doc["auto_start_min"] = config_.autoCalibStartMin();
+  doc["auto_end_min"] = config_.autoCalibEndMin();
+  doc["auto_target_cap_c"] = config_.autoCalibTargetCapC();
+  doc["current_temp"] = takeMeasurement(false).temperature;
+
+  JsonArray recs = doc["records"].to<JsonArray>();
+  for (size_t i = 0; i < st.recordCount && i < st.records.size(); ++i)
+  {
+    const auto &r = st.records[i];
+    JsonObject o = recs.add<JsonObject>();
+    o["ambient_c"] = r.ambientC;
+    o["target_c"] = r.targetC;
+    o["warmup_seconds"] = r.warmupSeconds;
+    o["k"] = r.kFactor;
+    o["epoch_utc"] = r.epochUtc;
+  }
 
   String json;
   serializeJson(doc, json);
   request->send(200, "application/json", json);
 }
 
-void WebInterface::handleKFactorSuggest(AsyncWebServerRequest *request)
+void WebInterface::handleCalibrationStart(AsyncWebServerRequest *request)
 {
-  const bool fromBody = request->method() == HTTP_POST;
-  if (!request->hasParam("ambient", fromBody) ||
-      !request->hasParam("target", fromBody) ||
-      (!request->hasParam("warmup_s", fromBody) && !request->hasParam("warmup_min", fromBody)))
+  const bool fromBody = true;
+  if (!request->hasParam("target", fromBody))
   {
-    request->send(400, "application/json", "{\"ok\":false,\"error\":\"missing params\"}");
+    request->send(400, "application/json", "{\"ok\":false,\"error\":\"missing target\"}");
     return;
   }
 
-  auto pAmbient = request->getParam("ambient", fromBody);
-  auto pTarget = request->getParam("target", fromBody);
-
-  float ambient = pAmbient->value().toFloat();
-  float target = pTarget->value().toFloat();
-  float warmupSeconds = 0.0f;
-  if (request->hasParam("warmup_s", fromBody))
+  float target = request->getParam("target", fromBody)->value().toFloat();
+  uint64_t startEpoch = 0;
+  if (request->hasParam("start_epoch_utc", fromBody))
   {
-    warmupSeconds = request->getParam("warmup_s", fromBody)->value().toFloat();
-  }
-  else if (request->hasParam("warmup_min", fromBody))
-  {
-    warmupSeconds = request->getParam("warmup_min", fromBody)->value().toFloat() * 60.0f;
+    startEpoch = strtoull(request->getParam("start_epoch_utc", fromBody)->value().c_str(), nullptr, 10);
   }
 
-  KFactorCalibrator calibrator;
-  float suggestedK = calibrator.deriveKFactor(ambient, target, warmupSeconds);
-  float deltaT = target - ambient;
-
-  if (suggestedK <= 0.0f)
+  String err;
+  if (!calibration_.schedule(target, startEpoch, err))
   {
-    request->send(400, "application/json", "{\"ok\":false,\"error\":\"invalid inputs\"}");
+    String resp = "{\"ok\":false,\"error\":\"" + err + "\"}";
+    request->send(400, "application/json", resp);
     return;
   }
 
   JsonDocument doc;
   doc["ok"] = true;
-  doc["current_k"] = config_.kFactor();
-  doc["suggested_k"] = suggestedK;
-  doc["delta_t_c"] = deltaT;
-  doc["warmup_seconds"] = warmupSeconds;
-  doc["observed_seconds_per_deg"] = warmupSeconds / deltaT;
-  doc["ideal_seconds_per_deg"] = calibrator.idealSecondsPerDegree();
+  doc["state"] = (startEpoch == 0) ? "running" : "scheduled";
 
   String json;
   serializeJson(doc, json);
   request->send(200, "application/json", json);
 }
 
-void WebInterface::handleKFactorApply(AsyncWebServerRequest *request)
+void WebInterface::handleCalibrationCancel(AsyncWebServerRequest *request)
 {
-  const bool fromBody = request->method() == HTTP_POST;
-  if (!request->hasParam("k", fromBody))
-  {
-    request->send(400, "application/json", "{\"ok\":false,\"error\":\"missing k\"}");
-    return;
-  }
+  bool cancelled = calibration_.cancel();
+  JsonDocument doc;
+  doc["ok"] = cancelled;
+  String json;
+  serializeJson(doc, json);
+  request->send(200, "application/json", json);
+}
 
-  float k = request->getParam("k", fromBody)->value().toFloat();
-  if (k <= 0.0f || !isfinite(k))
+void WebInterface::handleCalibrationSettings(AsyncWebServerRequest *request)
+{
+  const bool fromBody = true;
+  if (request->hasParam("auto_enabled", fromBody))
   {
-    request->send(400, "application/json", "{\"ok\":false,\"error\":\"invalid k\"}");
-    return;
+    bool en = request->getParam("auto_enabled", fromBody)->value() == "1";
+    config_.setAutoCalibrationEnabled(en);
   }
-
-  config_.setKFactor(k);
+  if (request->hasParam("auto_start_min", fromBody))
+  {
+    config_.setAutoCalibStartMin(request->getParam("auto_start_min", fromBody)->value().toInt());
+  }
+  if (request->hasParam("auto_end_min", fromBody))
+  {
+    config_.setAutoCalibEndMin(request->getParam("auto_end_min", fromBody)->value().toInt());
+  }
+  if (request->hasParam("auto_target_cap_c", fromBody))
+  {
+    config_.setAutoCalibTargetCapC(request->getParam("auto_target_cap_c", fromBody)->value().toFloat());
+  }
   config_.save();
-  led_.blinkSingle();
 
   JsonDocument doc;
   doc["ok"] = true;
-  doc["k_factor"] = k;
-
+  doc["auto_enabled"] = config_.autoCalibrationEnabled();
+  doc["auto_start_min"] = config_.autoCalibStartMin();
+  doc["auto_end_min"] = config_.autoCalibEndMin();
+  doc["auto_target_cap_c"] = config_.autoCalibTargetCapC();
   String json;
   serializeJson(doc, json);
   request->send(200, "application/json", json);

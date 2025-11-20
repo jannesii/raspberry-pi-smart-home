@@ -6,6 +6,8 @@
 #include "core/LogManager.h"
 #include "heating/Thermostat.h"
 
+class KFactorCalibrationManager;
+
 class ReadyByTask
 {
 public:
@@ -18,6 +20,8 @@ public:
 
     // Create and start the FreeRTOS task
     void start(uint32_t stackSize = 4096, UBaseType_t priority = 1);
+
+    void setCalibrationManager(KFactorCalibrationManager *mgr) { calibMgr_ = mgr; }
 
     void setWsReadyByUpdateCallback(wsReadyByUpdateCallback callback) 
     { wsReadyByUpdateCallback_ = callback; }
@@ -58,6 +62,7 @@ private:
     HeaterTask         &heaterTask_;
     LogManager         &logManager_;
     Thermostat         &thermostat_;
+    KFactorCalibrationManager *calibMgr_ = nullptr;
 
     TaskHandle_t handle_ = nullptr;
 

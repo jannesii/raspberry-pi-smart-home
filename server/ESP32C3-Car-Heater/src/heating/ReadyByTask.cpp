@@ -3,6 +3,7 @@
 #include "io/measurements.h"
 #include "core/TimeKeeper.h"
 #include "heating/HeatingCalculator.h"
+#include "heating/KFactorCalibrator.h"
 
 ReadyByTask::ReadyByTask(Config &config,
                          HeaterTask &heaterTask,
@@ -138,7 +139,12 @@ void ReadyByTask::run()
         }
 
         // Estimate how long we need to heat for current conditions
-        float warmupSec = calculator.estimateWarmupSeconds(config_.kFactor(), ambient, targetTmp);
+        float k = config_.kFactor();
+        if (calibMgr_)
+        {
+            k = calibMgr_->derivedKFor(ambient, targetTmp);
+        }
+        float warmupSec = calculator.estimateWarmupSeconds(k, ambient, targetTmp);
         if (warmupSec < 0.0f)
         {
             warmupSec = 0.0f;

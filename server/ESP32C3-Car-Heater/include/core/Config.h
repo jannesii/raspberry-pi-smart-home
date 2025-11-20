@@ -21,11 +21,15 @@ public:
     uint16_t deadzoneEndMin() const;
     float kFactor() const { return kFactor_; }
     float readyByTargetTemp() const { return readyByTargetTemp_; }
+    float autoCalibTargetCapC() const { return autoCalibTargetCap_; }
 
     // Boolean getters
     bool deadzoneEnabled() const { return deadzoneEnabled_; }
     bool heaterTaskEnabled() const { return heaterTaskEnabled_; }
     bool readyByActive() const { return readyByActive_; }
+    bool autoCalibrationEnabled() const { return autoCalibrationEnabled_; }
+    uint16_t autoCalibStartMin() const;
+    uint16_t autoCalibEndMin() const;
 
     // uint64 getters
     uint64_t readyByTargetEpochUtc() const { return readyByTargetEpochUtc_; }
@@ -39,10 +43,14 @@ public:
     void setDeadzoneEndMin(uint16_t m);
     void setKFactor(float v);
     void setReadyByTargetTemp(float v);
+    void setAutoCalibTargetCapC(float v);
     // Boolean setters
     void setDeadzoneEnabled(bool v);
     void setHeaterTaskEnabled(bool v);
     void setReadyByActive(bool v);
+    void setAutoCalibrationEnabled(bool v);
+    void setAutoCalibStartMin(uint16_t m);
+    void setAutoCalibEndMin(uint16_t m);
     // uint64 setters
     void setReadyByTargetEpochUtc(uint64_t v);
 
@@ -96,11 +104,15 @@ private:
     float deadzoneEndMinF_;
     float kFactor_;
     float readyByTargetTemp_;
+    float autoCalibStartMinF_;
+    float autoCalibEndMinF_;
+    float autoCalibTargetCap_;
 
     // booleans (persisted via BOOL_FIELDS)
     bool deadzoneEnabled_;
     bool heaterTaskEnabled_;
     bool readyByActive_;
+    bool autoCalibrationEnabled_;
 
     // uint64s (persisted via UINT64_FIELDS)
     uint64_t readyByTargetEpochUtc_;

@@ -64,6 +64,17 @@ function updateTargetDisplay() {
   targetEl.textContent = `${dateVal} ${timeVal}`;
 }
 
+function updateNavTemp(t) {
+  const navTemp = document.getElementById("navTemp");
+  if (!navTemp || typeof t !== "number") return;
+  navTemp.textContent = `${t.toFixed(1)}°`;
+  navTemp.className = "nav-temp";
+  if (t < 0) navTemp.classList.add("cold");
+  else if (t < 10) navTemp.classList.add("cool");
+  else if (t < 25) navTemp.classList.add("warm");
+  else navTemp.classList.add("hot");
+}
+
 async function handleStatusData(data) {
   const statusEl  = document.getElementById("rb_status");
   const warmupEl  = document.getElementById("rb_warmup");
@@ -81,6 +92,7 @@ async function handleStatusData(data) {
   if (currentTempEl && typeof data.current_temp === "number") {
     currentTempEl.textContent = data.current_temp.toFixed(1);
   }
+  updateNavTemp(data.current_temp);
 
   if (!data.scheduled) {
     // Not scheduled
@@ -309,6 +321,8 @@ function setupStatusWebSocket() {
           console.log("[WS] Ready By update", data);
           // update temp, state, button, time...
           handleStatusData(data);
+        } else if (data.type === "temp_update" && typeof data.temp === "number") {
+          updateNavTemp(data.temp);
         } else if (data.type === "time_sync") {
             console.log("[WS] Time sync update", data);
             if (!data.time_synced) {

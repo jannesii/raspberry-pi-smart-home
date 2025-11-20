@@ -31,7 +31,7 @@ private:
     static constexpr const char* NAMESPACE    = "logs";
     static constexpr const char* KEY_HEAD     = "head";
     static constexpr const char* KEY_COUNT    = "count";
-    static constexpr uint16_t    MAX_ENTRIES  = 400; // tune this
+    static constexpr uint16_t    MAX_ENTRIES  = 100; // tune this
 
     mutable Preferences prefs_;
     uint16_t head_;   // next index to write [0..MAX_ENTRIES-1]

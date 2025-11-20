@@ -72,6 +72,7 @@ async function loadLogs() {
 function setupLogWebSocket() {
   const protocol = (location.protocol === "https:") ? "wss:" : "ws:";
   const wsUrl = `${protocol}//${location.host}/ws`;
+  const navTemp = document.getElementById("navTemp");
 
   let ws;
 
@@ -97,6 +98,14 @@ function setupLogWebSocket() {
         const data = JSON.parse(event.data);
         if (data.type === "log_append" && data.line) {
           appendLogLine(data.line);
+        } else if (data.type === "temp_update" && navTemp && typeof data.temp === "number") {
+          const t = data.temp;
+          navTemp.textContent = `${t.toFixed(1)}°`;
+          navTemp.className = "nav-temp";
+          if (t < 0) navTemp.classList.add("cold");
+          else if (t < 10) navTemp.classList.add("cool");
+          else if (t < 25) navTemp.classList.add("warm");
+          else navTemp.classList.add("hot");
         } else if (data.type === "time_sync") {
             console.log("[WS] Time sync update", data);
             if (!data.time_synced) {

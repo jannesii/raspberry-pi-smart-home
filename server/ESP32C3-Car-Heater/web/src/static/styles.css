@@ -1,4 +1,8 @@
-:root { --maxw: 520px; }
+:root {
+  --maxw: 560px;
+  --safe-top: env(safe-area-inset-top);
+  --safe-bottom: env(safe-area-inset-bottom);
+}
 
 /* Base */
 body {
@@ -6,7 +10,7 @@ body {
   background: #111;
   color: #eee;
   margin: 0;
-  padding: 0;
+  padding: calc(var(--safe-top, 0) + 8px) 0 calc(var(--safe-bottom, 0) + 14px) 0;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -18,11 +22,12 @@ body {
 .nav-inner {
   max-width: var(--maxw);
   margin: 0 auto;
-  padding: 0.75rem 1rem;
+  padding: 0.6rem 1rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+  flex-wrap: wrap;
 }
 .nav-title { font-weight: 600; font-size: 1rem; }
 .nav-links { display: flex; gap: 0.5rem; }
@@ -35,6 +40,20 @@ body {
   border: 1px solid transparent;
 }
 .nav-link:hover { color: #fff; border-color: #444; background: #222; }
+.nav-temp {
+  margin-left: auto;
+  font-weight: 600;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  background: #2e7d32;
+  color: #fff;
+  min-width: 48px;
+  text-align: center;
+}
+.nav-temp.cool { background: #1565c0; }
+.nav-temp.cold { background: #0d47a1; }
+.nav-temp.warm { background: #b47c00; }
+.nav-temp.hot { background: #c62828; }
 
 /* Layout */
 .card {
@@ -61,6 +80,7 @@ button {
   font: inherit;
   min-height: 44px; /* mobile-friendly target */
   touch-action: manipulation;
+  width: 100%;
 }
 .btn-primary { background: #1976d2; color: #fff; }
 .btn-primary:hover { filter: brightness(1.1); }
@@ -106,6 +126,11 @@ button {
   font: inherit;
   min-height: 44px;
   font-size: 1rem;
+}
+input[type="date"],
+input[type="time"] {
+  max-width: 100%;
+  min-width: 0;
 }
 
 .config-actions { margin-top: 0.75rem; display: flex; justify-content: flex-end; }
@@ -178,6 +203,7 @@ form[action="/toggle"] button,
   align-items: center;
   justify-content: space-between;
   gap: 0.6rem;
+  flex-wrap: wrap;
 }
 .page-header h1 { margin: 0; }
 .nav-links { display: flex; gap: 0.35rem; flex-wrap: wrap; }
@@ -197,10 +223,26 @@ form[action="/toggle"] button,
 .nav-links a:hover { color: #fff; border-color: #444; background: #222; }
 
 .stack { display: flex; flex-direction: column; gap: 0.5rem; }
+.btn-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.5rem; }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+.badge.ok { background: rgba(46, 125, 50, 0.2); color: #b2dfdb; border-color: rgba(46, 125, 50, 0.5); }
+.badge.warn { background: rgba(180, 124, 0, 0.2); color: #ffd180; border-color: rgba(180, 124, 0, 0.4); }
+.badge.err { background: rgba(198, 40, 40, 0.2); color: #ffcdd2; border-color: rgba(198, 40, 40, 0.4); }
 
 /* Responsive tweaks */
 @media (max-width: 400px) {
   .nav-title { font-size: 1.05rem; }
   .nav-inner { padding: 0.6rem 0.8rem; }
   .card { margin: 1rem auto; padding: 0.9rem; }
+  .config-form { grid-template-columns: 1fr; }
 }

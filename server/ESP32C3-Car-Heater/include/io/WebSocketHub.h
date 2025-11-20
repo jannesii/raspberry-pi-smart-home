@@ -6,6 +6,7 @@
 #include "heating/HeaterTask.h"
 #include "heating/ReadyByTask.h"
 #include "core/Config.h"
+#include "heating/KFactorCalibrator.h"
 
 class WebSocketHub
 {
@@ -14,7 +15,8 @@ public:
     AsyncWebServer &server,
     HeaterTask &heaterTask,
     ReadyByTask &readyByTask,
-    Config &config);
+    Config &config,
+    KFactorCalibrationManager &calibration);
 
   // Call once from setup to register /ws handler
   void begin();
@@ -24,6 +26,7 @@ public:
   void broadcastLogLine(const String &line);
   void broadcastTempUpdate();
   void broadcastReadyByUpdate();
+   void broadcastCalibrationUpdate();
 
 private:
   AsyncWebSocket ws_;
@@ -31,6 +34,7 @@ private:
   HeaterTask &heaterTask_;
   ReadyByTask &readyByTask_;
   Config &config_;
+  KFactorCalibrationManager &calibration_;
 
   void toggleDeadzone();
   void toggleHeaterTask();

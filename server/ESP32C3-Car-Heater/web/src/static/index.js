@@ -1,22 +1,37 @@
 let wsStatus = null;
 
 async function handleStatusData(data) {
-  document.getElementById("currentTemp").textContent = data.temp.toFixed(1);
+  const currentTemp = data.temp;
+  document.getElementById("currentTemp").textContent = currentTemp.toFixed(1);
+  const navTemp = document.getElementById("navTemp");
+  if (navTemp) {
+    navTemp.textContent = `${currentTemp.toFixed(1)}°`;
+    navTemp.className = "nav-temp";
+    if (currentTemp < 0) navTemp.classList.add("cold");
+    else if (currentTemp < 10) navTemp.classList.add("cool");
+    else if (currentTemp < 25) navTemp.classList.add("warm");
+    else navTemp.classList.add("hot");
+  }
   let heater_on = data.is_on;
-  document.getElementById("heaterState").textContent = heater_on ? "ON" : "OFF";
+  const heaterState = document.getElementById("heaterState");
+  heaterState.textContent = heater_on ? "On" : "Off";
+  heaterState.className = "badge " + (heater_on ? "ok" : "warn");
   
   let dzEl = document.getElementById("inDeadzone");
   let dzEnabled = data.dz_enabled;
   let in_deadzone = data.in_deadzone;
   if (dzEnabled === true) {
-    dzEl.textContent = in_deadzone ? "Yes" : "No";
+    dzEl.textContent = in_deadzone ? "In DZ" : "Clear";
+    dzEl.className = "badge " + (in_deadzone ? "warn" : "ok");
   } else {
-    dzEl.textContent = "Disabled";
+    dzEl.textContent = "DZ Off";
+    dzEl.className = "badge err";
   }
 
   let htEnabled = data.heater_task_enabled;
-  document.getElementById("heaterTaskState").textContent =
-    htEnabled ? "Enabled" : "Disabled";
+  const htState = document.getElementById("heaterTaskState");
+  htState.textContent = htEnabled ? "Task On" : "Task Off";
+  htState.className = "badge " + (htEnabled ? "ok" : "warn");
   document.getElementById("currentTime").textContent = data.current_time || "";
 
   // Heater button
