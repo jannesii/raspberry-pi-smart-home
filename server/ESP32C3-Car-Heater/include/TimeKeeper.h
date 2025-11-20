@@ -24,6 +24,7 @@ int16_t tzOffsetMinutes();
 void setTzOffsetMinutes(int16_t minutes);
 
 // Convenience: formatted strings (empty if time invalid)
+String formatEpoch(uint64_t epoch);
 String formatUtc();
 String formatLocal();
 

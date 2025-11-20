@@ -1,13 +1,19 @@
 #include "WebSocketHub.h"
 #include <ArduinoJson.h>
-#include "timekeeper.h"
+#include "TimeKeeper.h"
+#include "HeatingCalculator.h"
+#include "measurements.h"
 
 WebSocketHub::WebSocketHub(
     AsyncWebServer &server,
-    HeaterTask &heaterTask)
+    HeaterTask &heaterTask,
+    ReadyByTask &readyByTask,
+    Config &config)
     : ws_("/ws"),
       server_(server),
-      heaterTask_(heaterTask)
+      heaterTask_(heaterTask),
+      readyByTask_(readyByTask),
+      config_(config)
 {
 }
 
@@ -115,14 +121,81 @@ void WebSocketHub::broadcastTempUpdate()
   ws_.textAll(json);
 }
 
+void WebSocketHub::broadcastReadyByUpdate()
+{
+  if (!ws_.count())
+    return;
+  JsonDocument doc;
+
+  doc["type"] = "ready_by_update";
+
+  // If time invalid or no schedule → just "scheduled: false"
+  if (!timekeeper::isValid())
+  {
+    doc["scheduled"] = false;
+  }
+  else
+  {
+    uint64_t targetEpoch = 0;
+    float targetTemp = 0.0f;
+
+    if (!readyByTask_.getSchedule(targetEpoch, targetTemp))
+    {
+      doc["scheduled"] = false;
+    }
+    else
+    {
+      doc["scheduled"] = true;
+      doc["target_epoch_utc"] = targetEpoch;
+      doc["target_temp_c"] = targetTemp;
+
+      // Current state
+      uint64_t nowUtc = timekeeper::nowUtc();
+      doc["now_epoch_utc"] = nowUtc;
+
+      float ambient = takeMeasurement(false).temperature;
+      doc["ambient_temp_c"] = ambient;
+
+      // Use same physics as ReadyBy to estimate warmup / start time
+      HeatingCalculator calc;
+      float warmupSec = calc.estimateWarmupSeconds(config_.kFactor(), ambient, targetTemp);
+      if (warmupSec < 0.0f)
+        warmupSec = 0.0f;
+
+      doc["warmup_seconds"] = warmupSec;
+
+      uint64_t warmup = static_cast<uint64_t>(warmupSec);
+      uint64_t secondsLeft = (targetEpoch > nowUtc) ? (targetEpoch - nowUtc) : 0;
+
+      uint64_t startEpochUtc;
+      if (warmup >= secondsLeft)
+      {
+        startEpochUtc = nowUtc; // start ASAP
+      }
+      else
+      {
+        startEpochUtc = targetEpoch - warmup;
+      }
+
+      doc["start_epoch_utc"] = startEpochUtc;
+    }
+  }
+
+  String json;
+  serializeJson(doc, json);
+  ws_.textAll(json);
+}
+
 void WebSocketHub::toggleDeadzone()
 {
   heaterTask_.setDeadzoneEnabled(!heaterTask_.isDeadzoneEnabled());
 }
+
 void WebSocketHub::toggleHeaterTask()
 {
   heaterTask_.setEnabled(!heaterTask_.isEnabled());
 }
+
 void WebSocketHub::toggleHeater()
 {
   if (heaterTask_.isHeaterOn())

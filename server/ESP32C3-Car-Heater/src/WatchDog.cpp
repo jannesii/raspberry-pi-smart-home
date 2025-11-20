@@ -5,7 +5,7 @@
 #include "ShellyHandler.h"
 #include "LogManager.h"
 #include "HeaterTask.h" // for g_heaterTaskHandle and startHeaterTask
-#include "timekeeper.h"
+#include "TimeKeeper.h"
 #include "LedManager.h"
 #include <esp_system.h> // esp_restart()
 
@@ -22,7 +22,8 @@ WatchDog::WatchDog(Config &config, Thermostat &thermostat, ShellyHandler &shelly
       logManager_(logManager),
       led_(led),
       heaterTask_(heaterTask)
-{}
+{
+}
 
 void WatchDog::begin(uint32_t stackSize, UBaseType_t priority)
 {

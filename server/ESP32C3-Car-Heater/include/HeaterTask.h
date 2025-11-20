@@ -46,6 +46,17 @@ public:
     bool turnHeaterOn(bool force = false);
     bool turnHeaterOff();
 
+    void stop()
+    {
+        if (handle_ != nullptr)
+        {
+            log("Heater task stopped");
+            vTaskDelete(handle_);
+            handle_ = nullptr;
+        }
+    }
+
+
 private:
     // Task entry trampoline
     static void taskEntry(void *pvParameters);
@@ -56,6 +67,7 @@ private:
     // Helpers
     String logHeaterChange(bool isOn, float currentTemp) const;
     String logDZChange(bool inDZ) const;
+    String log(const String &msg) const;
 
     Config &config_;
     Thermostat &thermostat_;

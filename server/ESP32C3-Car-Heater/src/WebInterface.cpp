@@ -6,8 +6,10 @@
 
 #include "wifihelper.h"
 #include "measurements.h"
-#include "timekeeper.h"
+#include "TimeKeeper.h"
 #include "WebInterface.h"
+#include "ReadyByTask.h"
+#include "HeatingCalculator.h"
 
 WebInterface::WebInterface(AsyncWebServer &server,
                            Config &config,
@@ -16,7 +18,8 @@ WebInterface::WebInterface(AsyncWebServer &server,
                            LogManager &logManager,
                            const String &wifiSSID,
                            LedManager &led,
-                           HeaterTask &heaterTask)
+                           HeaterTask &heaterTask,
+                           ReadyByTask &readyByTask)
     : server_(server),
       config_(config),
       thermostat_(thermostat),
@@ -24,7 +27,8 @@ WebInterface::WebInterface(AsyncWebServer &server,
       logManager_(logManager),
       wifiSSID_(wifiSSID),
       led_(led),
-      heaterTask_(heaterTask)
+      heaterTask_(heaterTask),
+      readyByTask_(readyByTask)
 {
 }
 
@@ -41,13 +45,15 @@ void WebInterface::setupStaticRoutes()
 {
   // Combined stylesheet referenced by all pages
   server_.serveStatic("/styles.css", LittleFS, "/styles.css");
-  
+
   // Root: serve index.html
   server_.on("/", HTTP_GET, [this](AsyncWebServerRequest *request)
              { handleRoot(request); });
   server_.serveStatic("/index.js", LittleFS, "/index.js");
 
-
+  server_.on("/ready-by", HTTP_GET, [this](AsyncWebServerRequest *request)
+             { handleReadyBy(request); });
+  server_.serveStatic("/readyby.js", LittleFS, "/readyby.js");
 
   // Logs page
   server_.on("/logs", HTTP_GET, [this](AsyncWebServerRequest *request)
@@ -83,8 +89,20 @@ void WebInterface::setupApiRoutes()
                Serial.println("[Web] Reboot request received");
                request->send(200, "text/plain", "Rebooting...");
                delay(100);
-               esp_restart();
-             });
+               esp_restart(); });
+
+  server_.on("/api/ready-by/clear", HTTP_POST, [this](AsyncWebServerRequest *request)
+             {
+              Serial.println("[Web] Cancel Ready By request received");
+              readyByTask_.cancel();
+              request->send(200, "application/json",
+                            "{\"ok\":true,\"scheduled\":false}"); });
+  server_.on("/api/ready-by", HTTP_GET, [this](AsyncWebServerRequest *request)
+             {Serial.println("[Web] GET /api/ready-by request received");
+              handleGetApiReadyBy(request); });
+  server_.on("/api/ready-by", HTTP_POST, [this](AsyncWebServerRequest *request)
+             {Serial.println("[Web] POST /api/ready-by request received"); 
+              handleReadyBySchedule(request); });
 }
 
 // ----------------- handlers -----------------
@@ -96,6 +114,17 @@ void WebInterface::handleRoot(AsyncWebServerRequest *request)
     Serial.println("[Web] Serving /index.html from FS");
   }
   auto *res = request->beginResponse(LittleFS, "/index.html.gz", "text/html");
+  res->addHeader("Content-Encoding", "gzip");
+  request->send(res);
+}
+
+void WebInterface::handleReadyBy(AsyncWebServerRequest *request)
+{
+  if (showDebug_)
+  {
+    Serial.println("[Web] Serving /ready-by from FS");
+  }
+  auto *res = request->beginResponse(LittleFS, "/readyby.html.gz", "text/html");
   res->addHeader("Content-Encoding", "gzip");
   request->send(res);
 }
@@ -129,7 +158,7 @@ void WebInterface::handleSyncTime(AsyncWebServerRequest *request)
   timekeeper::setUtcWithOffset(epoch, tzMin);
   led_.blinkSingle();
 
-  request->redirect("/");
+  request->send(200, "text/plain", "Time synchronized");
 }
 
 void WebInterface::handleSetConfig(AsyncWebServerRequest *request)
@@ -221,6 +250,125 @@ void WebInterface::handleApiLogs(AsyncWebServerRequest *request)
     logs = "No log entries yet.";
   }
   request->send(200, "text/plain", logs);
+}
+
+void WebInterface::handleGetApiReadyBy(AsyncWebServerRequest *request)
+{
+  JsonDocument doc;
+
+  // If time invalid or no schedule → just "scheduled: false"
+  if (!timekeeper::isValid())
+  {
+    doc["scheduled"] = false;
+  }
+  else
+  {
+    uint64_t targetEpoch = 0;
+    float targetTemp = 0.0f;
+
+    if (!readyByTask_.getSchedule(targetEpoch, targetTemp))
+    {
+      doc["scheduled"] = false;
+    }
+    else
+    {
+      doc["scheduled"] = true;
+      doc["target_epoch_utc"] = targetEpoch;
+      doc["target_temp_c"] = targetTemp;
+
+      // Current state
+      uint64_t nowUtc = timekeeper::nowUtc();
+      doc["now_epoch_utc"] = nowUtc;
+
+      float ambient = takeMeasurement(false).temperature;
+      doc["ambient_temp_c"] = ambient;
+
+      // Use same physics as ReadyBy to estimate warmup / start time
+      HeatingCalculator calc;
+      float warmupSec = calc.estimateWarmupSeconds(config_.kFactor(), ambient, targetTemp);
+      if (warmupSec < 0.0f)
+        warmupSec = 0.0f;
+
+      doc["warmup_seconds"] = warmupSec;
+
+      uint64_t warmup = static_cast<uint64_t>(warmupSec);
+      uint64_t secondsLeft = (targetEpoch > nowUtc) ? (targetEpoch - nowUtc) : 0;
+
+      uint64_t startEpochUtc;
+      if (warmup >= secondsLeft)
+      {
+        startEpochUtc = nowUtc; // start ASAP
+      }
+      else
+      {
+        startEpochUtc = targetEpoch - warmup;
+      }
+
+      doc["start_epoch_utc"] = startEpochUtc;
+    }
+  }
+
+  String json;
+  serializeJson(doc, json);
+  request->send(200, "application/json", json);
+}
+
+void WebInterface::handleReadyBySchedule(AsyncWebServerRequest *request)
+{
+  if (!request->hasParam("target_epoch_utc", true) ||
+      !request->hasParam("target_temp_c", true))
+  {
+    request->send(400, "application/json",
+                  "{\"ok\":false,\"error\":\"missing params\"}");
+    return;
+  }
+
+  auto pEpoch = request->getParam("target_epoch_utc", true);
+  auto pTemp = request->getParam("target_temp_c", true);
+
+  uint64_t targetEpoch = strtoull(pEpoch->value().c_str(), nullptr, 10);
+  float targetTemp = pTemp->value().toFloat();
+
+  readyByTask_.schedule(targetEpoch, targetTemp);
+
+  // Optional: compute warmup & start like GET /api/ready-by does
+  JsonDocument doc;
+  doc["ok"] = true;
+  doc["scheduled"] = true;
+  doc["target_epoch_utc"] = targetEpoch;
+  doc["target_temp_c"] = targetTemp;
+
+  if (timekeeper::isValid())
+  {
+    uint64_t nowUtc = timekeeper::nowUtc();
+    doc["now_epoch_utc"] = nowUtc;
+
+    float ambient = takeMeasurement(false).temperature;
+    HeatingCalculator calc;
+    float warmupSec = calc.estimateWarmupSeconds(config_.kFactor(), ambient, targetTemp);
+    if (warmupSec < 0.0f)
+      warmupSec = 0.0f;
+
+    doc["warmup_seconds"] = warmupSec;
+
+    uint64_t warmup = static_cast<uint64_t>(warmupSec);
+    uint64_t secondsLeft = (targetEpoch > nowUtc) ? (targetEpoch - nowUtc) : 0;
+
+    uint64_t startEpochUtc;
+    if (warmup >= secondsLeft)
+    {
+      startEpochUtc = nowUtc;
+    }
+    else
+    {
+      startEpochUtc = targetEpoch - warmup;
+    }
+    doc["start_epoch_utc"] = startEpochUtc;
+  }
+
+  String json;
+  serializeJson(doc, json);
+  request->send(200, "application/json", json);
 }
 
 // ----------------- helper -----------------

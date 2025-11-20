@@ -13,10 +13,11 @@
 #include "Config.h"
 #include "staticconfig.h"
 #include "LogManager.h"
-#include "timekeeper.h"
+#include "TimeKeeper.h"
 #include "WatchDog.h"
 #include "LedManager.h"
 #include "WebSocketHub.h"
+#include "ReadyByTask.h"
 
 #include <nvs_flash.h>
 #include <nvs.h>
@@ -33,8 +34,9 @@ static LogManager logManager;
 static LedManager ledManager(LED_PIN, LED_ACTIVE_HIGH != 0);
 static HeaterTask heaterTask(config, thermostat, shelly, logManager, ledManager);
 static WatchDog watchdog(config, thermostat, shelly, logManager, ledManager, heaterTask);
+static ReadyByTask readyByTask(config, heaterTask, logManager);
 
-static WebSocketHub webSocketHub(server, heaterTask);
+static WebSocketHub webSocketHub(server, heaterTask, readyByTask, config);
 static WebInterface webInterface(
     server,
     config,
@@ -43,7 +45,8 @@ static WebInterface webInterface(
     logManager,
     WIFI_SSID,
     ledManager,
-    heaterTask);
+    heaterTask,
+    readyByTask);
 
 void setup()
 {
@@ -57,18 +60,26 @@ void setup()
         IPAddress(WIFI_GATEWAY_OCTETS),
         IPAddress(WIFI_SUBNET_OCTETS),
         IPAddress(WIFI_DNS_PRIMARY_OCTETS));
-    if (!LittleFS.begin()) Serial.println("Failed to mount FS");
-    else Serial.println("File system mounted");
+    if (!LittleFS.begin())
+        Serial.println("Failed to mount FS");
+    else
+        Serial.println("File system mounted");
 
-    if (!config.begin()) Serial.println("⚠️ [Config] Failed to init NVS");
-    else Serial.println("[Config] Config loaded");
+    if (!config.begin())
+        Serial.println("⚠️ [Config] Failed to init NVS");
+    else
+        Serial.println("[Config] Config loaded");
 
     // Initialize timekeeper (timezone offset is loaded; clock starts invalid until synced)
-    if (!timekeeper::begin()) Serial.println("⚠️ [Timekeeper] Failed to initialize; time features limited.");
-    else Serial.println("[Timekeeper] Initialized");
+    if (!timekeeper::begin())
+        Serial.println("⚠️ [Timekeeper] Failed to initialize; time features limited.");
+    else
+        Serial.println("[Timekeeper] Initialized");
 
-    if (!logManager.begin()) Serial.println("⚠️ [LogManager] Failed to initialize");
-    else Serial.println("[LogManager] Initialized");
+    if (!logManager.begin())
+        Serial.println("⚠️ [LogManager] Failed to initialize");
+    else
+        Serial.println("[LogManager] Initialized");
 
     thermostat.setTarget(config.targetTemp());
     thermostat.setHysteresis(config.hysteresis());
@@ -84,9 +95,8 @@ void setup()
     ledManager.begin();
 
     watchdog.begin(4096, 2); // stack size, priority
-    heaterTask.setKickCallback([]() {
-        watchdog.kickHeater();
-    });
+    heaterTask.setKickCallback([]()
+                               { watchdog.kickHeater(); });
 
     heaterTask.start(4096, 1); // stack size, priority
 
@@ -94,17 +104,16 @@ void setup()
 
     server.begin();
     Serial.println("[HTTP] Async WebServer started on port 80");
-    
-    
+
     // Setup WebSocket integration
     webSocketHub.begin();
-    heaterTask.setWsTempUpdateCallback([]() {
-        webSocketHub.broadcastTempUpdate();
-    });
-    logManager.setCallback([](const String &line) {
-        webSocketHub.broadcastLogLine(line);
-    });
-    
+    heaterTask.setWsTempUpdateCallback([]()
+                            { webSocketHub.broadcastTempUpdate(); });
+    logManager.setCallback([](const String &line)
+                            { webSocketHub.broadcastLogLine(line); });
+    readyByTask.setWsReadyByUpdateCallback([]()
+                            { webSocketHub.broadcastReadyByUpdate(); });
+
     // Print NVS stats
     printNvsStats();
 

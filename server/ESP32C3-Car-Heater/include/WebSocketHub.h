@@ -4,13 +4,17 @@
 #include <ESPAsyncWebServer.h>
 #include <functional>
 #include "HeaterTask.h"
+#include "ReadyByTask.h"
+#include "Config.h"
 
 class WebSocketHub
 {
 public:
   explicit WebSocketHub(
     AsyncWebServer &server,
-    HeaterTask &heaterTask);
+    HeaterTask &heaterTask,
+    ReadyByTask &readyByTask,
+    Config &config);
 
   // Call once from setup to register /ws handler
   void begin();
@@ -18,11 +22,14 @@ public:
   // Broadcast helpers
   void broadcastLogLine(const String &line);
   void broadcastTempUpdate();
+  void broadcastReadyByUpdate();
 
 private:
   AsyncWebSocket ws_;
   AsyncWebServer &server_;
   HeaterTask &heaterTask_;
+  ReadyByTask &readyByTask_;
+  Config &config_;
 
   void toggleDeadzone();
   void toggleHeaterTask();

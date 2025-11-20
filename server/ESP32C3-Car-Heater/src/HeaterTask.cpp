@@ -1,7 +1,7 @@
 #include "HeaterTask.h"
 
 #include "measurements.h"
-#include "timekeeper.h"
+#include "TimeKeeper.h"
 #include "WebSocketHub.h"
 
 HeaterTask::HeaterTask(Config &config,
@@ -21,7 +21,12 @@ void HeaterTask::start(uint32_t stackSize, UBaseType_t priority)
 {
     // Initialize lastInDeadzone_ before starting
     lastInDeadzone_ = isInDeadzone();
-
+    if (handle_ != nullptr)
+    {
+        Serial.println("[HeaterTask] Warning: Heater task already running");
+        log("Warning: Heater task already running");
+        return;
+    }
     xTaskCreate(
         &HeaterTask::taskEntry,
         "HeaterTask",
@@ -31,6 +36,7 @@ void HeaterTask::start(uint32_t stackSize, UBaseType_t priority)
         &handle_);
 
     Serial.println("[HeaterTask] Started heater task");
+    log("Heater task started");
 }
 
 void HeaterTask::taskEntry(void *pvParameters)
@@ -150,5 +156,16 @@ String HeaterTask::logDZChange(bool inDZ) const
     line.reserve(60);
     line += timekeeper::formatLocal();
     line += inDZ ? " Entered deadzone" : " Exited deadzone";
+    return line;
+}
+
+String HeaterTask::log(const String &msg) const
+{
+    String line;
+    line.reserve(60 + msg.length());
+    line += timekeeper::formatLocal();
+    line += " [HeaterTask] ";
+    line += msg;
+    logger_.append(line);
     return line;
 }

@@ -18,6 +18,7 @@ public:
     float heaterTaskDelayS() const  { return heaterTaskDelayS_; }
     uint16_t deadzoneStartMin() const;
     uint16_t deadzoneEndMin() const;
+    float kFactor() const            { return kFactor_; }
     
     // Setters (mark config as dirty, but do not auto-save)
     void setTargetTemp(float v);
@@ -25,6 +26,7 @@ public:
     void setHeaterTaskDelayS(float v);
     void setDeadzoneStartMin(uint16_t m);
     void setDeadzoneEndMin(uint16_t m);
+    void setKFactor(float v);
 
 private:
     // Not copyable
@@ -51,4 +53,5 @@ private:
     float  heaterTaskDelayS_;
     float  deadzoneStartMinF_;  // stored as float minutes
     float  deadzoneEndMinF_;
+    float   kFactor_;
 };

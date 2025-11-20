@@ -7,11 +7,12 @@ constexpr const char* NAMESPACE = "config";
 
 // Define the field table (class static member)
 const Config::FloatFieldDesc Config::FLOAT_FIELDS[] = {
-    { "target_temp",  5.0f, &Config::targetTemp_  },
-    { "hysteresis",   1.0f, &Config::hysteresis_  },
-    { "heater_delay", 10.0f, &Config::heaterTaskDelayS_ },
-    { "dz_start_min", 20.f * 60, &Config::deadzoneStartMinF_  }, // 20:00
-    { "dz_end_min",    6.f * 60, &Config::deadzoneEndMinF_    }, // 06:00
+    { "target_temp",    10.0f,       &Config::targetTemp_  },
+    { "hysteresis",     3.0f,       &Config::hysteresis_  },
+    { "heater_delay",   10.0f,      &Config::heaterTaskDelayS_ },
+    { "dz_start_min",   20.f * 60,  &Config::deadzoneStartMinF_  }, // 20:00
+    { "dz_end_min",     6.f * 60,   &Config::deadzoneEndMinF_    }, // 06:00
+    { "k_factor",       20.99f,     &Config::kFactor_        }
 };
 
 // No NUM_FLOAT_FIELDS needed
