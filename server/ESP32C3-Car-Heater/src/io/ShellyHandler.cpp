@@ -72,7 +72,7 @@ bool ShellyHandler::sendSwitchRequest(bool on)
     return (httpCode >= 200 && httpCode < 300);
 }
 
-bool ShellyHandler::getStatus(bool &isOn, bool verbose)
+bool ShellyHandler::getStatus(bool &isOn, bool verbose, String *respBody)
 {
     if (WiFi.status() != WL_CONNECTED)
     {
@@ -112,6 +112,10 @@ bool ShellyHandler::getStatus(bool &isOn, bool verbose)
 
     String payload = http.getString();
     http.end();
+
+    if (respBody) {
+        *respBody = payload;
+    }
 
     if (verbose) {
         Serial.print("[Shelly] Status response: ");

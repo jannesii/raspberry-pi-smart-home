@@ -15,7 +15,7 @@ public:
     // Query current status from Shelly.
     // Returns true if the HTTP request + parsing succeeded, and
     // writes the result into isOn (true = ON, false = OFF).
-    bool getStatus(bool &isOn, bool verbose = true);
+    bool getStatus(bool &isOn, bool verbose = true, String *respBody = nullptr);
     
     bool reboot();
     bool ping();

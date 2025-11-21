@@ -1,55 +1,22 @@
 #include <Arduino.h>
 #include <ESPmDNS.h>
-#include <AsyncTCP.h>
-#include <ESPAsyncWebServer.h>
-#include <LittleFS.h>
 
 #include "io/wifihelper.h"
-#include "ui/WebInterface.h"
 #include "io/ShellyHandler.h"
 #include "io/measurements.h"
-#include "heating/HeaterTask.h"
-#include "heating/Thermostat.h"
-#include "core/Config.h"
 #include "core/staticconfig.h"
-#include "core/LogManager.h"
 #include "core/TimeKeeper.h"
-#include "core/WatchDog.h"
-#include "io/LedManager.h"
-#include "io/WebSocketHub.h"
-#include "heating/ReadyByTask.h"
-#include "heating/KFactorCalibrator.h"
+#include "heating/PosterTask.h"
 
 #include <nvs_flash.h>
 #include <nvs.h>
 
-bool initMDNS();
-void printNvsStats();
-
-static AsyncWebServer server(80);
-
-static Config config;
-static Thermostat thermostat(0.0f, 0.0f); // will overwrite below
 static ShellyHandler shelly(SHELLY_IP);
 static LogManager logManager;
-static LedManager ledManager(LED_PIN, LED_ACTIVE_HIGH != 0);
-static HeaterTask heaterTask(config, thermostat, shelly, logManager, ledManager);
-static WatchDog watchdog(config, thermostat, shelly, logManager, ledManager, heaterTask);
-static ReadyByTask readyByTask(config, heaterTask, logManager, thermostat);
-static KFactorCalibrationManager calibration(config, heaterTask, readyByTask, logManager);
+static PosterTask posterTask(shelly, logManager);
 
-static WebSocketHub webSocketHub(server, heaterTask, readyByTask, config, calibration);
-static WebInterface webInterface(
-    server,
-    config,
-    thermostat,
-    shelly,
-    logManager,
-    WIFI_SSID,
-    ledManager,
-    heaterTask,
-    readyByTask,
-    calibration);
+bool initMDNS();
+void printNvsStats();
 
 void setup()
 {
@@ -63,29 +30,15 @@ void setup()
         IPAddress(WIFI_GATEWAY_OCTETS),
         IPAddress(WIFI_SUBNET_OCTETS),
         IPAddress(WIFI_DNS_PRIMARY_OCTETS));
-    if (!LittleFS.begin())
-        Serial.println("Failed to mount FS");
-    else
-        Serial.println("File system mounted");
-
-    if (!config.begin())
-        Serial.println("⚠️ [Config] Failed to init NVS");
-    else
-        Serial.println("[Config] Config loaded");
 
     // Initialize timekeeper (timezone offset is loaded; clock starts invalid until synced)
     if (!timekeeper::begin())
         Serial.println("⚠️ [Timekeeper] Failed to initialize; time features limited.");
     else
-        Serial.println("[Timekeeper] Initialized");
+        Serial.println("[Timekeeper] Initialized");;
 
     if (!logManager.begin())
-        Serial.println("⚠️ [LogManager] Failed to initialize");
-    else
-        Serial.println("[LogManager] Initialized");
-
-    thermostat.setTarget(config.targetTemp());
-    thermostat.setHysteresis(config.hysteresis());
+        Serial.println("⚠️ [LogManager] Failed to initialize log manager.");
 
     initMDNS();
 
@@ -94,44 +47,11 @@ void setup()
         I2C_SDA_PIN,
         I2C_SCL_PIN);
 
-    // Start LED manager
-    ledManager.begin();
-
-    watchdog.begin(4096, 2); // stack size, priority
-    heaterTask.setKickCallback([]()
-                               { watchdog.kickHeater(); });
-
-    heaterTask.start(4096, 1); // stack size, priority
-    readyByTask.start(4096, 1); // stack size, priority
-    calibration.begin(4096, 1);
-    calibration.setUpdateCallback([]()
-                                  { webSocketHub.broadcastCalibrationUpdate(); });
-    readyByTask.setCalibrationManager(&calibration);
-
-    webInterface.begin();
-
-    server.begin();
-    Serial.println("[HTTP] Async WebServer started on port 80");
-
-    // Setup WebSocket integration
-    webSocketHub.begin();
-    heaterTask.setWsTempUpdateCallback([]()
-                            { webSocketHub.broadcastTempUpdate(); });
-    logManager.setCallback([](const String &line)
-                            { webSocketHub.broadcastLogLine(line); });
-    readyByTask.setWsReadyByUpdateCallback([]()
-                            { webSocketHub.broadcastReadyByUpdate(); });
+    posterTask.start(8192, 1); // stack size, priority
 
     // Print NVS stats
     printNvsStats();
 
-    // Ready indicator: five slow blinks, 1s apart
-    for (int i = 0; i < 5; ++i)
-    {
-        ledManager.blinkSingle();
-        delay(1000);
-    }
-    // logManager.dumpToSerial();
 }
 
 void loop() {}
