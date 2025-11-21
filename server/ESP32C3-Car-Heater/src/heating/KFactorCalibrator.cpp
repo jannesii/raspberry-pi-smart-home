@@ -22,10 +22,9 @@ float KFactorCalibrator::deriveKFactor(float ambientTempC, float targetTempC, fl
     }
 
     const float idealSecondsPerDeg = idealSecondsPerDegree();
-    if (idealSecondsPerDeg <= 0.0f)
-    {
+    if (!isfinite(idealSecondsPerDeg) || idealSecondsPerDeg <= 0.0f)
         return -1.0f;
-    }
+
 
     const float observedSecondsPerDeg = observedWarmupSeconds / deltaT;
     float k = observedSecondsPerDeg / idealSecondsPerDeg;
@@ -50,8 +49,21 @@ constexpr const char *CALIB_NS = "kcal";
 constexpr const char *CALIB_REC_KEY = "records";
 constexpr const char *CALIB_COUNT_KEY = "count";
 constexpr uint32_t MAX_RUN_SECONDS = 3 * 3600; // 3 hours ceiling
-constexpr uint8_t BAND_WIDTH_C = 5;           // 5°C bands
-constexpr uint8_t MAX_BAND = 30;              // up to ~150°C
+constexpr int AMBIENT_MIN_C   = -30;  // lowest temp we care about
+constexpr int AMBIENT_MAX_C   =  20;  // highest temp we care about (car use, winter)
+constexpr uint8_t BAND_WIDTH_C = 5;   // 5°C bands
+constexpr float MIN_EFFECT_DELTA_C         = 1.0f;    // must heat at least 1°C
+constexpr uint32_t NO_EFFECT_TIMEOUT_SEC   = 20 * 60; // after 20 min with <1°C change, abort
+constexpr float MIN_AUTO_DELTA_C = 5.0f;
+
+
+// Number of bands for -30..20 with width 5°C → 50/5 = 10 → bands 0..10
+constexpr uint8_t MAX_BAND =
+    (AMBIENT_MAX_C - AMBIENT_MIN_C) / BAND_WIDTH_C;
+
+static_assert(MAX_BAND <= 255, "MAX_BAND must fit in uint8_t");
+
+
 
 const char *stateName(KFactorCalibrationManager::State s)
 {
@@ -148,43 +160,120 @@ KFactorCalibrationManager::Status KFactorCalibrationManager::status() const
     s.startEpochUtc = scheduledStartUtc_;
     s.ambientStartC = ambientStartC_;
     s.currentTempC = takeMeasurement(false).temperature;
-    s.elapsedSeconds = (state_ == State::Running) ? (millis() - runStartMs_) / 1000 : 0;
-    s.suggestedK = calibrator_.deriveKFactor(ambientStartC_, targetTempC_, s.elapsedSeconds);
+
+    if (state_ == State::Running)
+    {
+        s.elapsedSeconds = (millis() - runStartMs_) / 1000;
+        const float deltaSoFar = s.currentTempC - ambientStartC_;
+        if (deltaSoFar > 0.5f)  // arbitrary “enough progress” threshold
+        {
+            const float pseudoTarget = ambientStartC_ + deltaSoFar;
+            s.suggestedK = calibrator_.deriveKFactor(
+                ambientStartC_, pseudoTarget, s.elapsedSeconds);
+        }
+        else
+        {
+            s.suggestedK = -1.0f; // not enough data yet
+        }
+    }
+    else
+    {
+        s.elapsedSeconds = 0;
+        s.suggestedK = -1.0f;
+    }
+
     s.recordCount = recordCount_;
     s.records = records_;
     return s;
 }
 
+
 float KFactorCalibrationManager::derivedKFor(float ambientC, float targetC) const
 {
-    // Fall back to config value if no records
+    // Fall back if no data
     if (recordCount_ == 0)
         return config_.kFactor();
 
     uint8_t band = bandForAmbient(ambientC);
-    // Simple strategy: take newest record in same band; otherwise nearest band with data.
-    int bestIdx = -1;
-    uint8_t bestBand = 255;
+
+    float sumK = 0.0f;
+    float sumW = 0.0f;
+
     for (size_t i = 0; i < recordCount_; ++i)
     {
-        uint8_t b = records_[i].band;
-        if (bestIdx == -1 || (b == band) || (abs(int(b) - int(band)) < abs(int(bestBand) - int(band))))
-        {
-            bestIdx = static_cast<int>(i);
-            bestBand = b;
-            if (b == band)
-                break;
-        }
+        const Record &r = records_[i];
+        if (r.kFactor <= 0.0f || !isfinite(r.kFactor))
+            continue;
+
+        // Distance in ambient band
+        float bandDist = fabs(static_cast<float>(r.band) - static_cast<float>(band));
+
+        // Distance between this record's target and our requested target
+        float targetDist = fabs(r.targetC - targetC);
+
+        // Weight:
+        //  - exact same band & target → weight ~1
+        //  - further away in band or target → weight shrinks
+        float w = 1.0f / (1.0f + bandDist + (targetDist / 5.0f)); // 5°C scale for target
+
+        sumK += r.kFactor * w;
+        sumW += w;
     }
-    if (bestIdx >= 0)
-        return records_[bestIdx].kFactor;
+
+    if (sumW > 0.0f)
+        return sumK / sumW;
+
+    // Fallback if everything was invalid
     return config_.kFactor();
 }
+
+
+
+float KFactorCalibrationManager::globalAverageK() const
+{
+    float sum = 0.0f;
+    size_t count = 0;
+
+    for (size_t i = 0; i < recordCount_; ++i)
+    {
+        const Record &r = records_[i];
+        if (r.kFactor > 0.0f && isfinite(r.kFactor))
+        {
+            sum += r.kFactor;
+            ++count;
+        }
+    }
+
+    if (count == 0)
+        return config_.kFactor(); // or some default
+
+    return sum / static_cast<float>(count);
+}
+
+
 
 void KFactorCalibrationManager::taskEntry(void *pvParameters)
 {
     auto *self = static_cast<KFactorCalibrationManager *>(pvParameters);
     self->run();
+}
+
+bool KFactorCalibrationManager::shouldLogAutoSkip()
+{
+    uint32_t now = millis();
+    if (lastAutoSkipLogMs_ == 0 || (now - lastAutoSkipLogMs_) >= AUTO_SKIP_LOG_INTERVAL_MS)
+    {
+        lastAutoSkipLogMs_ = now;
+        return true;
+    }
+    return false;
+}
+
+void KFactorCalibrationManager::logAutoSkip(const String &msg)
+{
+    if (!shouldLogAutoSkip())
+        return;
+    log(msg);
 }
 
 void KFactorCalibrationManager::run()
@@ -217,11 +306,13 @@ void KFactorCalibrationManager::startRun()
     if (!timekeeper::isTrulyValid())
     {
         state_ = State::Idle;
+        autoRequested_ = false;
         notify();
         return;
     }
 
-    readyByTask_.cancel();
+    prevReadyByActive_ = readyByTask_.isActive();
+    readyByTask_.setActive(false); // disable ReadyBy during calibration
     prevHeaterEnabled_ = heaterTask_.isEnabled();
     heaterTask_.setEnabled(false); // disable automation
 
@@ -233,8 +324,15 @@ void KFactorCalibrationManager::startRun()
     notify();
 
     char buf[128];
-    snprintf(buf, sizeof(buf), "Starting kFactor calibration to %.1f°C (ambient %.1f°C)", targetTempC_, ambientStartC_);
-    logManager_.append(buf);
+    uint8_t band = bandForAmbient(ambientStartC_);
+    const char *mode = autoRequested_ ? "auto" : "manual";
+    snprintf(buf, sizeof(buf),
+             "Starting %s kFactor calibration to %.1f°C (ambient %.1f°C, band %u)",
+             mode,
+             targetTempC_,
+             ambientStartC_,
+             static_cast<unsigned>(band));
+    log(buf);
 }
 
 void KFactorCalibrationManager::tickRun()
@@ -246,6 +344,23 @@ void KFactorCalibrationManager::tickRun()
     }
 
     uint32_t elapsed = (millis() - runStartMs_) / 1000;
+    float deltaFromStart = current - ambientStartC_;
+
+    // --- NEW: abort if there is clearly no heating effect ---
+    if (elapsed >= NO_EFFECT_TIMEOUT_SEC && deltaFromStart < MIN_EFFECT_DELTA_C)
+    {
+        char buf[128];
+        snprintf(buf, sizeof(buf),
+                 "Calibration aborted: no heating effect detected (ΔT=%.1f°C after %lus)",
+                 deltaFromStart, static_cast<unsigned long>(elapsed));
+        log(buf);
+
+        // Do NOT save any k for this run
+        finishRun(false, -1.0f, static_cast<float>(elapsed));
+        return;
+    }
+    // --- END NEW ---
+
     if (current >= targetTempC_ || elapsed >= MAX_RUN_SECONDS)
     {
         float warmup = elapsed;
@@ -260,29 +375,51 @@ void KFactorCalibrationManager::tickRun()
     }
 }
 
+
 void KFactorCalibrationManager::finishRun(bool success, float measuredK, float warmupSeconds)
 {
     heaterTask_.turnHeaterOff();
     restoreControl();
 
+    const bool wasAuto = autoRequested_;
+
     if (success && measuredK > 0.0f && isfinite(measuredK))
     {
-        Record rec{ambientStartC_, targetTempC_, warmupSeconds, measuredK, runStartEpochUtc_, bandForAmbient(ambientStartC_)};
+        Record rec{ambientStartC_, targetTempC_, warmupSeconds, measuredK,
+                   runStartEpochUtc_, bandForAmbient(ambientStartC_)};
         saveRecord(rec);
-        config_.setKFactor(measuredK);
-        config_.save();
+
+        // Use a smoothed global k from all records instead of just this one
+        float globalK = globalAverageK();
+        if (globalK > 0.0f && isfinite(globalK))
+        {
+            config_.setKFactor(globalK);
+            config_.save();
+        }
     }
 
     state_ = State::Idle;
+    autoRequested_ = false;
     notify();
 
     char buf[128];
-    snprintf(buf, sizeof(buf), "Calibration finished: k=%.2f, warmup=%.0fs", measuredK, warmupSeconds);
-    logManager_.append(buf);
+    uint8_t band = bandForAmbient(ambientStartC_);
+    const char *mode = wasAuto ? "auto" : "manual";
+    snprintf(buf, sizeof(buf),
+             "%s calibration finished: k=%.2f, warmup=%.0fs (ambient %.1f°C → %.1f°C, band %u)",
+             mode,
+             measuredK,
+             warmupSeconds,
+             ambientStartC_,
+             targetTempC_,
+             static_cast<unsigned>(band));
+    log(buf);
 }
+
 
 void KFactorCalibrationManager::restoreControl()
 {
+    readyByTask_.setActive(prevReadyByActive_);
     heaterTask_.setEnabled(prevHeaterEnabled_);
 }
 
@@ -341,17 +478,76 @@ void KFactorCalibrationManager::saveRecord(const Record &rec)
     prefs_.putUChar(CALIB_COUNT_KEY, static_cast<uint8_t>(recordCount_));
 }
 
+bool KFactorCalibrationManager::deleteRecord(uint64_t epochUtc)
+{
+    if (recordCount_ == 0)
+        return false;
+
+    int idx = -1;
+    for (size_t i = 0; i < recordCount_; ++i)
+    {
+        if (records_[i].epochUtc == epochUtc)
+        {
+            idx = static_cast<int>(i);
+            break;
+        }
+    }
+    if (idx < 0)
+        return false;
+
+    Record removed = records_[static_cast<size_t>(idx)];
+
+    // Shift remaining records down to keep ordering
+    for (size_t i = static_cast<size_t>(idx); i + 1 < recordCount_; ++i)
+    {
+        records_[i] = records_[i + 1];
+    }
+    // Clear trailing slot
+    records_[recordCount_ - 1] = Record{0, 0, 0, 0, 0, 0};
+    --recordCount_;
+
+    prefs_.putBytes(CALIB_REC_KEY, records_.data(), sizeof(Record) * MAX_RECORDS);
+    prefs_.putUChar(CALIB_COUNT_KEY, static_cast<uint8_t>(recordCount_));
+
+    float globalK = globalAverageK();
+    if (globalK > 0.0f && isfinite(globalK))
+    {
+        config_.setKFactor(globalK);
+        config_.save();
+    }
+
+    char buf[128];
+    snprintf(buf, sizeof(buf),
+             "Deleted calibration record k=%.2f (%.1f°C → %.1f°C)",
+             removed.kFactor, removed.ambientC, removed.targetC);
+    log(buf);
+
+    notify();
+    return true;
+}
+
 uint8_t KFactorCalibrationManager::bandForAmbient(float ambient) const
 {
     if (!isfinite(ambient))
         return 0;
-    int b = static_cast<int>(ambient / BAND_WIDTH_C);
+
+    // Shift so AMBIENT_MIN_C (-30) maps to 0
+    // e.g. ambient = -30 → shifted = 0
+    //      ambient =   0 → shifted = 30
+    float shifted = ambient - static_cast<float>(AMBIENT_MIN_C);
+
+    int b = static_cast<int>(shifted / static_cast<float>(BAND_WIDTH_C));
+
+    // Clamp to valid range
     if (b < 0)
         b = 0;
     if (b > MAX_BAND)
         b = MAX_BAND;
+
     return static_cast<uint8_t>(b);
 }
+
+
 
 bool KFactorCalibrationManager::hasRecordForBand(uint8_t band) const
 {
@@ -414,9 +610,9 @@ void KFactorCalibrationManager::maybeAutoCalibrate()
 {
     if (!config_.autoCalibrationEnabled())
         return;
-    if (!inAutoWindow())
-        return;
     if (!timekeeper::isTrulyValid())
+        return;
+    if (!inAutoWindow())
         return;
 
     // Avoid running if in the 2h window before a ReadyBy target, or heater already heating
@@ -427,7 +623,10 @@ void KFactorCalibrationManager::maybeAutoCalibrate()
         readyActive = true;
 
     if (heaterTask_.isHeaterOn())
+    {
+        logAutoSkip(F("Auto calibration skipped: heater already on"));
         return;
+    }
 
     if (readyActive)
     {
@@ -436,20 +635,76 @@ void KFactorCalibrationManager::maybeAutoCalibrate()
             return;
         uint64_t secondsLeft = (rbEpoch > now) ? (rbEpoch - now) : 0;
         if (secondsLeft <= 2 * 3600UL)
+        {
+            char buf[96];
+            snprintf(buf,
+                     sizeof(buf),
+                     "Auto calibration skipped: ReadyBy target in %lu min",
+                     static_cast<unsigned long>(secondsLeft / 60UL));
+            logAutoSkip(buf);
             return; // do not start within 2h of ReadyBy target
+        }
     }
 
     float ambient = takeMeasurement(false).temperature;
-    float target = std::min(config_.targetTemp(), config_.autoCalibTargetCapC()); // guard against runaway targets
+    float target = config_.autoCalibTargetCapC();
     float deltaT = target - ambient;
-    if (!isfinite(ambient) || deltaT < 3.0f)
+    if (!isfinite(ambient) || deltaT < MIN_AUTO_DELTA_C)
+    {
+        char buf[128];
+        snprintf(buf,
+                 sizeof(buf),
+                 "Auto calibration skipped: insufficient deltaT (ambient=%.1f°C, target=%.1f°C)",
+                 ambient,
+                 target);
+        logAutoSkip(buf);
         return;
+    }
 
     uint8_t band = bandForAmbient(ambient);
     if (hasRecordForBand(band))
+    {
+        char buf[96];
+        snprintf(buf,
+                 sizeof(buf),
+                 "Auto calibration skipped: band %u already has record",
+                 static_cast<unsigned>(band));
+        logAutoSkip(buf);
         return;
+    }
 
     // Schedule immediate run
     String err;
-    schedule(target, 0, err);
+    autoRequested_ = true;
+    if (!schedule(target, 0, err))
+    {
+        char buf[128];
+        snprintf(buf,
+                 sizeof(buf),
+                 "Auto calibration failed to schedule: %s",
+                 err.c_str());
+        logAutoSkip(buf);
+        autoRequested_ = false;
+    }
+    else
+    {
+        char buf[128];
+        snprintf(buf,
+                 sizeof(buf),
+                 "Auto calibration scheduled to %.1f°C (ambient %.1f°C, band %u)",
+                 target,
+                 ambient,
+                 static_cast<unsigned>(band));
+        log(buf);
+    }
+}
+String KFactorCalibrationManager::log(const String &msg) const
+{
+    String line;
+    line.reserve(60 + msg.length());
+    line += timekeeper::formatLocal();
+    line += " [CalibMgr] ";
+    line += msg;
+    logManager_.append(line);
+    return line;
 }

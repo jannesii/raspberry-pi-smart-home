@@ -7,6 +7,7 @@
     elapsed: document.getElementById('elapsed'),
     timeSync: document.getElementById('timeSync'),
     records: document.getElementById('records'),
+    recordsStatus: document.getElementById('records-status'),
     form: document.getElementById('start-form'),
     targetInput: document.getElementById('target-input'),
     modeNow: () => document.querySelector('input[name="mode"][value="now"]'),
@@ -43,6 +44,12 @@
     els.formStatus.style.color = ok ? '#aaa' : '#e53935';
   }
 
+  function setRecordsStatus(msg, ok = true) {
+    if (!els.recordsStatus) return;
+    els.recordsStatus.textContent = msg || '';
+    els.recordsStatus.style.color = ok ? '#aaa' : '#e53935';
+  }
+
   async function syncTimeFromDevice() {
     try {
       const now = new Date();
@@ -73,9 +80,44 @@
     return `${m}m ${s}s`;
   }
 
+  async function confirmDelete(record) {
+    if (!record || !record.epoch_utc) return;
+    const k = Number.isFinite(record.k) ? record.k.toFixed(2) : '?';
+    const ambient = Number.isFinite(record.ambient_c) ? record.ambient_c.toFixed(1) : '?';
+    const target = Number.isFinite(record.target_c) ? record.target_c.toFixed(1) : '?';
+    const when = record.epoch_utc ? new Date(record.epoch_utc * 1000).toLocaleString() : 'this entry';
+    const ok = window.confirm(`Delete calibration k=${k} (${ambient}°C → ${target}°C) from ${when}?`);
+    if (!ok) return;
+    await deleteRecord(record.epoch_utc);
+  }
+
+  async function deleteRecord(epochUtc) {
+    if (!epochUtc) {
+      setRecordsStatus('Missing record identifier', false);
+      return;
+    }
+    setRecordsStatus('Deleting...');
+    try {
+      const params = new URLSearchParams();
+      params.set('epoch_utc', String(epochUtc));
+      const res = await fetch('/api/calibration/delete', {
+        method: 'POST',
+        body: params
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Delete failed');
+      setRecordsStatus('Entry deleted', true);
+      fetchStatus();
+    } catch (err) {
+      console.error(err);
+      setRecordsStatus(err.message || 'Delete failed', false);
+    }
+  }
+
   function renderRecords(list) {
     if (!list || list.length === 0) {
       els.records.textContent = 'No records yet.';
+      setRecordsStatus('');
       return;
     }
     els.records.innerHTML = '';
@@ -83,10 +125,27 @@
       const div = document.createElement('div');
       div.className = 'card muted';
       const when = r.epoch_utc ? new Date(r.epoch_utc * 1000).toLocaleString() : 'n/a';
-      div.innerHTML = `
-        <div><strong>k=${r.k.toFixed(2)}</strong> | Ambient ${r.ambient_c.toFixed(1)}°C → Target ${r.target_c.toFixed(1)}°C</div>
-        <div>Warmup ${fmtSeconds(r.warmup_seconds)} | ${when}</div>
-      `;
+      const k = Number.isFinite(r.k) ? r.k.toFixed(2) : 'n/a';
+      const ambient = Number.isFinite(r.ambient_c) ? r.ambient_c.toFixed(1) : '--';
+      const target = Number.isFinite(r.target_c) ? r.target_c.toFixed(1) : '--';
+
+      const line1 = document.createElement('div');
+      line1.innerHTML = `<strong>k=${k}</strong> | Ambient ${ambient}°C → Target ${target}°C`;
+      const line2 = document.createElement('div');
+      line2.textContent = `Warmup ${fmtSeconds(r.warmup_seconds)} | ${when}`;
+
+      const actions = document.createElement('div');
+      actions.className = 'btn-row';
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'btn-danger';
+      delBtn.textContent = 'Delete';
+      delBtn.addEventListener('click', () => confirmDelete(r));
+      actions.appendChild(delBtn);
+
+      div.appendChild(line1);
+      div.appendChild(line2);
+      div.appendChild(actions);
       els.records.appendChild(div);
     });
   }

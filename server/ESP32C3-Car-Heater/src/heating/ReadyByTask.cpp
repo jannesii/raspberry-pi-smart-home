@@ -91,7 +91,6 @@ void ReadyByTask::cancel()
 
 void ReadyByTask::run()
 {
-    log("Task started!");
     HeatingCalculator calculator;
     for (;;)
     {
@@ -198,6 +197,7 @@ void ReadyByTask::run()
                     sizeof(buf),
                     "Target temperature %.1f°C reached %.0f minutes early (ambient=%.1f°C)",
                     targetTmp, (static_cast<float>(secondsUntilTarget) / 60.0f), ambient);
+                log(String(buf));
                 Serial.println("[ReadyBy] Target temperature reached; maintaining.");
                 targetTempReached_ = true;
                 thermostat_.setHysteresis(config_.hysteresis());
@@ -248,5 +248,22 @@ void ReadyByTask::exitActions()
     thermostat_.setHysteresis(config_.hysteresis());
     heaterTask_.setEnabled(true); // re-enable normal thermostat control
 
+    config_.save();
+}
+
+void ReadyByTask::setActive(bool v)
+{
+    if (v == active_)
+        return;
+
+    if (v) {
+        Serial.println("[ReadyBy] Activating ReadyBy");
+        log("Activating ReadyBy");
+    } else {
+        Serial.println("[ReadyBy] Deactivating ReadyBy");
+        log("Deactivating ReadyBy");
+    }
+    active_ = v;
+    config_.setReadyByActive(v);
     config_.save();
 }

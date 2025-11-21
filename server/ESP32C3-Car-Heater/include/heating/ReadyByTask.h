@@ -35,6 +35,7 @@ public:
     void cancel();
 
     bool isActive() const { return active_; }
+    void setActive(bool v);
 
     void stop()
     {

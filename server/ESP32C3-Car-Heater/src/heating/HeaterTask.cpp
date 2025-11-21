@@ -36,7 +36,6 @@ void HeaterTask::start(uint32_t stackSize, UBaseType_t priority)
         &handle_);
 
     Serial.println("[HeaterTask] Started heater task");
-    log("Heater task started");
 }
 
 void HeaterTask::taskEntry(void *pvParameters)
@@ -52,8 +51,8 @@ void HeaterTask::run()
     enabled_   = config_.heaterTaskEnabled();
     for (;;)
     {
-        bool success = shelly_.getStatus(isHeaterOn_, false);
-        (void)success; // you can log or handle failure if you want
+        if (!shelly_.getStatus(isHeaterOn_, false))
+            log("Warning: Failed to get Shelly status");
 
         currentTemp_ = takeMeasurement(false).temperature;
         bool shouldHeat = thermostat_.update(currentTemp_);
@@ -161,7 +160,7 @@ String HeaterTask::logHeaterChange(bool isOn, float currentTemp) const
     line.reserve(60);
     line += timekeeper::formatLocal(); // "YYYY-MM-DD HH:MM:SS"
     line += isOn ? " Heater turned ON" : " Heater turned OFF";
-    line += " | Current: ";
+    line += " By HeaterTask | Current: ";
     line += String(currentTemp, 1);
     line += "°C Target: ";
     line += String(config_.targetTemp(), 1);

@@ -118,6 +118,8 @@ void WebInterface::setupApiRoutes()
              { handleCalibrationStart(request); });
   server_.on("/api/calibration/cancel", HTTP_POST, [this](AsyncWebServerRequest *request)
              { handleCalibrationCancel(request); });
+  server_.on("/api/calibration/delete", HTTP_POST, [this](AsyncWebServerRequest *request)
+             { handleCalibrationDelete(request); });
   server_.on("/api/calibration/settings", HTTP_POST, [this](AsyncWebServerRequest *request)
              { handleCalibrationSettings(request); });
 }
@@ -487,6 +489,34 @@ void WebInterface::handleCalibrationCancel(AsyncWebServerRequest *request)
   String json;
   serializeJson(doc, json);
   request->send(200, "application/json", json);
+}
+
+void WebInterface::handleCalibrationDelete(AsyncWebServerRequest *request)
+{
+  const bool fromBody = true;
+  if (!request->hasParam("epoch_utc", fromBody))
+  {
+    request->send(400, "application/json",
+                  "{\"ok\":false,\"error\":\"missing epoch_utc\"}");
+    return;
+  }
+
+  uint64_t epoch = strtoull(request->getParam("epoch_utc", fromBody)->value().c_str(), nullptr, 10);
+  bool deleted = false;
+  if (epoch > 0)
+  {
+    deleted = calibration_.deleteRecord(epoch);
+  }
+
+  JsonDocument doc;
+  doc["ok"] = deleted;
+  if (!deleted)
+  {
+    doc["error"] = "not found";
+  }
+  String json;
+  serializeJson(doc, json);
+  request->send(deleted ? 200 : 404, "application/json", json);
 }
 
 void WebInterface::handleCalibrationSettings(AsyncWebServerRequest *request)

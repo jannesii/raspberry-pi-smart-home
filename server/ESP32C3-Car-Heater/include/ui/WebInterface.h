@@ -69,6 +69,7 @@ private:
   void handleCalibrationStatus(AsyncWebServerRequest *request);
   void handleCalibrationStart(AsyncWebServerRequest *request);
   void handleCalibrationCancel(AsyncWebServerRequest *request);
+  void handleCalibrationDelete(AsyncWebServerRequest *request);
   void handleCalibrationSettings(AsyncWebServerRequest *request);
 
   // small internal helper

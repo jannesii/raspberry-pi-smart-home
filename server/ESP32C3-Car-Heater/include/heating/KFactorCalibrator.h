@@ -88,10 +88,15 @@ public:
 
   Status status() const;
   float derivedKFor(float ambientC, float targetC) const;
+  bool deleteRecord(uint64_t epochUtc);
 
   void setUpdateCallback(UpdateCallback cb) { updateCb_ = cb; }
 
 private:
+  // Internal helpers
+  bool shouldLogAutoSkip();
+  void logAutoSkip(const String &msg);
+
   static void taskEntry(void *pvParameters);
   void run();
   void startRun();
@@ -106,8 +111,10 @@ private:
   bool hasRecordForBand(uint8_t band) const;
   int oldestIndexForBand(uint8_t band) const;
   int similarIndex(uint8_t band, float targetC) const;
+  float globalAverageK() const;
   bool inAutoWindow() const;
   void maybeAutoCalibrate();
+  String log(const String &msg) const;
 
   Config &config_;
   HeaterTask &heaterTask_;
@@ -125,10 +132,17 @@ private:
   uint64_t runStartEpochUtc_ = 0;
   uint32_t runStartMs_ = 0;
   bool prevHeaterEnabled_ = true;
+  bool prevReadyByActive_ = false;
 
   static constexpr size_t MAX_RECORDS = 12;
   std::array<Record, MAX_RECORDS> records_{};
   size_t recordCount_ = 0;
+
+  // Track whether the current run was started by auto-calibration
+  bool autoRequested_ = false;
+  // Rate-limit auto-calibration skip logs so we don't spam the small log buffer
+  static constexpr uint32_t AUTO_SKIP_LOG_INTERVAL_MS = 20UL * 60UL * 1000UL; // 20 minutes
+  uint32_t lastAutoSkipLogMs_ = 0;
 
   UpdateCallback updateCb_{nullptr};
 };
