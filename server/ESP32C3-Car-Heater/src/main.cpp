@@ -4,9 +4,9 @@
 #include "io/wifihelper.h"
 #include "io/ShellyHandler.h"
 #include "io/measurements.h"
+#include "io/PosterTask.h"
 #include "core/staticconfig.h"
 #include "core/TimeKeeper.h"
-#include "heating/PosterTask.h"
 
 #include <nvs_flash.h>
 #include <nvs.h>
@@ -35,10 +35,12 @@ void setup()
     if (!timekeeper::begin())
         Serial.println("⚠️ [Timekeeper] Failed to initialize; time features limited.");
     else
-        Serial.println("[Timekeeper] Initialized");;
+        Serial.println("[Timekeeper] Initialized");
 
     if (!logManager.begin())
         Serial.println("⚠️ [LogManager] Failed to initialize log manager.");
+    else
+        Serial.println("[LogManager] Initialized");
 
     initMDNS();
 
@@ -51,7 +53,6 @@ void setup()
 
     // Print NVS stats
     printNvsStats();
-
 }
 
 void loop() {}

@@ -1,7 +1,7 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 
-#include "heating/PosterTask.h"
+#include "io/PosterTask.h"
 #include "io/measurements.h"
 #include "core/TimeKeeper.h"
 
@@ -41,6 +41,8 @@ void PosterTask::taskEntry(void *pvParameters)
 
 void PosterTask::run()
 {
+    const TickType_t periodTicks = pdMS_TO_TICKS(taskDelayS_ * 1000);
+    TickType_t lastWakeTime = xTaskGetTickCount();
     for (;;)
     {
         String body = "";
@@ -48,13 +50,12 @@ void PosterTask::run()
         if (!shelly_.getStatus(isShellyOn, false, &body))
             log("Warning: Failed to get Shelly status");
 
-        // Serial.printf("Body: %s\n", body.c_str());
-
         float currentTemp = takeMeasurement(false).temperature;
 
         JsonDocument doc;
         doc["shelly"] = body;
         doc["temperature"] = currentTemp;
+        doc["timestamp"] = timekeeper::formatLocal();
 
         String apiPayload;
         serializeJson(doc, apiPayload);
@@ -63,18 +64,36 @@ void PosterTask::run()
         Serial.println(apiPayload);
         Serial.println("===================");
 
+        // --- measure POST time ---
+        uint32_t startMs = millis();
+
         HTTPClient http;
         http.begin(apiURL_);
         http.addHeader("Content-Type", "application/json");
-
         int code = http.POST(apiPayload);
         http.end();
-        Serial.printf("Posted to API, response code: %d\n", code);
 
+        uint32_t durationMs = millis() - startMs;
+        // -------------------------
 
-        vTaskDelay(pdMS_TO_TICKS(taskDelayS_ * 1000));
+        Serial.printf("Posted to API, response code: %d, took %lu ms\n",
+                      code, static_cast<unsigned long>(durationMs));
+
+        // update running average (since boot)
+        postCount_++;
+        avgPostMs_ += (static_cast<float>(durationMs) - avgPostMs_) / postCount_;
+
+        // occasionally print the average
+        if (postCount_ % 10 == 0) {
+            Serial.printf("Average POST time over %lu posts: %.1f ms\n",
+                          static_cast<unsigned long>(postCount_), avgPostMs_);
+        }
+
+        // Wait until the next exact period boundary
+        vTaskDelayUntil(&lastWakeTime, periodTicks);
     }
 }
+
 
 // ---------------- helpers ----------------
 

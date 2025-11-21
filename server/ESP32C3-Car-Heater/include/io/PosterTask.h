@@ -44,6 +44,8 @@ private:
     TaskHandle_t handle_ = nullptr;
 
     float taskDelayS_ = 10.0f;
+    uint32_t postCount_ = 0;
+    float avgPostMs_ = 0.0f;
 
     String apiURL_ = "https://jannenkoti.com/api/car_heater/status";
 };
