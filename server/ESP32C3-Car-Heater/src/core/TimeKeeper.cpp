@@ -71,10 +71,23 @@ namespace timekeeper
   {
     if (!g_valid)
       return 0;
-    // millis() is 32-bit; subtraction handles wrap-around with unsigned arithmetic
     uint32_t nowMs = millis();
     uint32_t deltaMs = nowMs - g_baseMillis;
     return g_baseEpochSec + static_cast<time_t>(deltaMs / 1000UL);
+  }
+  // Internal helper: compute current epoch using last sync + millis()
+  static time_t nowEpochInternal()
+  {
+    if (!g_valid)
+      return 0;
+    uint32_t nowMs = millis();
+    uint32_t deltaMs = nowMs - g_baseMillis;
+    return g_baseEpochSec + static_cast<time_t>(deltaMs / 1000UL);
+  }
+
+  time_t nowEpochSeconds()
+  {
+    return nowEpochInternal();
   }
 
   // Helper: format epoch to string
@@ -90,7 +103,6 @@ namespace timekeeper
     return String(buf);
   }
 
-
   String formatUtc()
   {
     if (!g_valid)
@@ -103,8 +115,9 @@ namespace timekeeper
   {
     if (!g_valid)
       return String("");
-    return formatEpoch(nowEpoch());
+    return formatEpoch(nowEpochInternal());
   }
+
 
   static void TimeKeeperTask(void *args)
   {

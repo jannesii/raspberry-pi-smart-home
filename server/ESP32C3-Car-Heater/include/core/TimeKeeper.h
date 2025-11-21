@@ -11,6 +11,8 @@ bool begin();
 // True if device has a valid time fetched from the network
 bool isValid();
 
+time_t nowEpochSeconds();
+
 // Convenience: formatted strings (empty if time invalid)
 // Returns local time (Europe/Helsinki) as "YYYY-MM-DD HH:MM:SS"
 String formatUtc();
