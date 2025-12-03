@@ -23,6 +23,9 @@ bool connectWifi(
     }
 
     WiFi.mode(WIFI_STA);
+    // Disable Wi-Fi power save to reduce latency / jitter
+    WiFi.setSleep(false);
+    Serial.println(F("[WiFi] Power-save disabled (setSleep(false))"));
     WiFi.setAutoReconnect(true);
     WiFi.persistent(false);  // don't write creds to flash every time
 

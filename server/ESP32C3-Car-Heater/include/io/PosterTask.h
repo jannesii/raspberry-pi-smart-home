@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <functional>
+#include <HTTPClient.h>
 
 #include "io/ShellyHandler.h"
 #include "core/LogManager.h"
@@ -45,14 +46,22 @@ private:
     void handleGetLogs();
     void handleEspRestart();
     void handleShellyReboot();
+    void handlePostDelay(uint32_t seconds);
     void handleUnknownAction(const char* action);
+
+    void sendImmediateResultIfNeeded();
 
     ShellyHandler &shelly_;
     LogManager &logger_;
 
     TaskHandle_t handle_ = nullptr;
+
+    HTTPClient http_;          // persistent HTTP client
+    bool httpInitialized_ = false;
+
+    void initHttpIfNeeded();
     
-    uint32_t taskDelayS_ = 10;
+    uint32_t taskDelayS_ = 5;
     uint32_t postCount_ = 0;
     float avgPostMs_ = 0.0f;
     
