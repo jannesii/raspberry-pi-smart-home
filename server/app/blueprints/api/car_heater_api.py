@@ -3,7 +3,8 @@ from datetime import datetime, date, timezone
 from typing import Any, Dict, List
 import logging
 import json
-from dataclasses import asdict
+import time
+from dataclasses import dataclass, asdict
 from zoneinfo import ZoneInfo
 from flask import Blueprint, request, jsonify, current_app
 from ...core import Controller
@@ -16,27 +17,43 @@ car_bp = Blueprint('car_bp', __name__, url_prefix='/car_heater')
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
+# Toggle to enable/disable sending commands to the ESP.
+COMMANDS_ENABLED = True
+
+
+@dataclass
+class FallbackStatus:
+    timestamp: datetime | None = None
+    ambient_temp: float | None = None
+    shelly_connected: bool | None = None
+
+
+# Global fallback status for car_heater_web
+fallback_status = FallbackStatus()
+
 
 @car_bp.route('/status', methods=['POST'])
 @csrf.exempt
 @require_api_key
 def update_car_heater_status():
     """Update the car heater status and return queued commands."""
+    start_time = time.perf_counter()
     ctrl: Controller = getattr(current_app, "ctrl", None)
     if ctrl is None:
         return jsonify({"error": "Controller not initialized"}), 500
 
-    data = request.get_json()
+    data: Dict[str, Any] = request.get_json()
     if not data:
         return jsonify({"error": "Invalid JSON payload"}), 400
 
     # Raw Shelly JSON payload from the ESP
     shelly_raw = data.get("shelly")
-    
+
     raw_ts = data.get("timestamp")  # '2025-11-21 19:44:10'
 
     # Interpret the string as UTC
-    dt_utc = datetime.strptime(raw_ts, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+    dt_utc = datetime.strptime(
+        raw_ts, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
 
     # Convert to Helsinki time (or whatever you use)
     dt_local = dt_utc.astimezone(ZoneInfo("Europe/Helsinki"))
@@ -53,11 +70,16 @@ def update_car_heater_status():
         shelly = {}
 
     aenergy = shelly.get("aenergy") or {}
-    temp = shelly.get("temperature") or {}
-    
+    shelly_temp = shelly.get("temperature") or {}
+
     shelly_connected = bool(data.get("shelly_connected", True))
-    
+
     status_payload: Dict[str, Any] | None = None
+
+    ambient_temp = data.get("temperature")
+    fallback_status.timestamp = timestamp
+    fallback_status.ambient_temp = ambient_temp
+    fallback_status.shelly_connected = shelly_connected
 
     if shelly and shelly_connected:
         car = CarHeaterStatus(
@@ -76,12 +98,13 @@ def update_car_heater_status():
 
             # Device temperature
 
-            device_temp_c=temp.get("tC"),             # 37.9
-            device_temp_f=temp.get("tF"),             # 100.1
-            ambient_temp=data.get("temperature"),    # in Celsius
+            device_temp_c=shelly_temp.get("tC"),             # 37.9
+            device_temp_f=shelly_temp.get("tF"),             # 100.1
+            ambient_temp=ambient_temp,    # in Celsius
 
             # Optional/meta
-            source=shelly.get("source")                # 'button', 'HTTP_in', ...
+            # 'button', 'HTTP_in', ...
+            source=shelly.get("source")
         )
 
         # Persist status in DB
@@ -109,24 +132,35 @@ def update_car_heater_status():
         }
     else:
         logger.warning("No shelly data provided in car heater status update")
+        status_payload = {
+            "timestamp": timestamp.isoformat() if hasattr(timestamp, "isoformat") else timestamp,
+            "ambient_temp": ambient_temp,
+            "shelly_connected": shelly_connected,
+        }
 
     # Fetch any queued commands from the shared CarHeaterService
     commands: List[Dict[str, Any]] = []
     command_status: Dict[str, Any] | None = None
-    try:
-        from ...services.car_heater import CarHeaterService
-        service: CarHeaterService = current_app.config.get("CAR_HEATER_SERVICE")
-        if service:
-            action_results = data.get("action_results", {})
-            if action_results:
-                service.mark_command_success(action_results)
-            
-            commands = service.get_queued_commands()
-            service.mark_commands_sent(commands)
-            command_status = asdict(service.get_command_status())
-            logger.debug("cmd status: %s", command_status)
-    except Exception as e:
-        logger.exception("Failed to fetch queued car heater commands: %s", e)
+    if COMMANDS_ENABLED:
+        try:
+            from ...services.car_heater import CarHeaterService
+            service: CarHeaterService = current_app.config.get(
+                "CAR_HEATER_SERVICE")
+            if service:
+                action_results = data.get("action_results", {})
+                if action_results:
+                    service.mark_command_success(action_results)
+
+                commands = service.get_queued_commands()
+                service.mark_commands_sent(commands)
+                command_status = asdict(service.get_command_status())
+                logger.debug("cmd status: %s", command_status)
+        except Exception as e:
+            logger.exception(
+                "Failed to fetch queued car heater commands: %s", e)
+    else:
+        logger.debug(
+            "Car heater commands are disabled; skipping command queue handling.")
     if commands:
         logger.info("Sending %s commands to car heater ESP", commands)
 
@@ -139,7 +173,30 @@ def update_car_heater_status():
                 payload["command_status"] = command_status
             socketio.emit("car_heater_status", payload)
     except Exception as e:
-        logger.exception("Failed to emit car_heater_status over Socket.IO: %s", e)
+        logger.exception(
+            "Failed to emit car_heater_status over Socket.IO: %s", e)
 
+    elapsed_time = time.perf_counter() - start_time
+    logger.debug(
+        "Processed car heater status update in %.3f seconds", elapsed_time)
     # Return commands as a plain JSON list so ESP can act on them
+    return jsonify(commands), 200
+
+
+@car_bp.route('/commands', methods=['GET'])
+@csrf.exempt
+@require_api_key
+def get_car_heater_commands():
+    """Return currently queued car heater commands without consuming them."""
+    commands: List[Dict[str, Any]] = []
+    try:
+        from ...services.car_heater import CarHeaterService
+        service: CarHeaterService = current_app.config.get(
+            "CAR_HEATER_SERVICE")
+        if service:
+            commands = service.peek_queued_commands()
+    except Exception as e:
+        logger.exception(
+            "Failed to fetch queued car heater commands via GET: %s", e)
+
     return jsonify(commands), 200

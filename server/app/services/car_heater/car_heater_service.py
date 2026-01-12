@@ -101,6 +101,15 @@ class CarHeaterService:
         logger.debug("Returning %d queued car heater commands", len(commands))
         return commands
 
+    def peek_queued_commands(self) -> List[Dict[str, Any]]:
+        """
+        Return a snapshot of queued commands without clearing them.
+
+        Intended for debugging or monitoring via the HTTP API.
+        """
+        with self._lock:
+            return list(self._commands)
+
     def stop(self) -> None:
         """Signal the background thread to stop (best-effort)."""
         self._stop_event.set()
@@ -122,4 +131,3 @@ class CarHeaterService:
 
 
 __all__ = ["CarHeaterService"]
-
