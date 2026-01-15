@@ -1,0 +1,139 @@
+/* Car Heater chart modal styles (copy/adapt from temperature chart modal) */
+
+#carHeaterChartModal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+#carHeaterChartModal .dialog {
+  background: #111;
+  color: #fff;
+  padding: 1rem;
+  border-radius: 10px;
+  width: 95%;
+  max-width: 1200px;
+  max-height: 92dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+}
+
+#carHeaterChartModal .header {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+#carHeaterChartTitle {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+#carHeaterChartClose {
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 0.25rem 0.4rem;
+  line-height: 1;
+}
+
+#carHeaterChartModal .nav {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 0.95rem;
+}
+
+#carHeaterChartModal .nav button {
+  background: #222;
+  border: 1px solid #444;
+  color: #fff;
+  border-radius: 6px;
+  padding: 0.35rem 0.8rem;
+  cursor: pointer;
+}
+
+#carHeaterChartToday {
+  background: #3a5780;
+  border-color: #556c9d;
+}
+
+.chart-summary {
+  text-align: center;
+  font-size: 0.9rem;
+  color: #ccc;
+  margin-bottom: 0.25rem;
+}
+
+#carHeaterChartModal .toggle-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: center;
+  margin: 0.25rem 0;
+}
+
+.toggle-pill {
+  border-radius: 999px;
+  border: 1px solid #555;
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  padding: 0.3rem 0.9rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.toggle-pill .pill-chip {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: inline-block;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.toggle-pill.active {
+  border-color: #fff;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.toggle-pill:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+.canvas-wrap {
+  width: 100%;
+  flex: 1;
+  position: relative;
+}
+
+#carHeaterChartCanvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+
+@media (max-width: 800px) {
+  #carHeaterChartModal .dialog {
+    width: 100vw;
+    max-width: none;
+    border-radius: 0;
+    padding: 0.75rem;
+    max-height: 100dvh;
+  }
+}

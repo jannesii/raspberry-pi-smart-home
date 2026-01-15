@@ -1076,3 +1076,51 @@ class Controller:
             )
             for row in rows
         ]
+
+    def get_car_heater_status_for_date(
+        self,
+        date_str: str,
+    ) -> list[CarHeaterStatus]:
+        """
+        Return all car heater status records for a given local date.
+        """
+        rows = self.db.fetchall(
+            """
+            SELECT
+                id,
+                timestamp,
+                is_heater_on,
+                instant_power_w,
+                voltage_v,
+                current_a,
+                energy_total_wh,
+                energy_last_min_wh,
+                energy_ts,
+                device_temp_c,
+                device_temp_f,
+                ambient_temp,
+                source
+            FROM car_heater_status
+            WHERE date(timestamp) = ?
+            ORDER BY timestamp ASC, id ASC
+            """,
+            (date_str,)
+        )
+        return [
+            CarHeaterStatus(
+                id=row["id"],
+                timestamp=row["timestamp"],
+                is_heater_on=bool(row["is_heater_on"]),
+                instant_power_w=row["instant_power_w"],
+                voltage_v=row["voltage_v"],
+                current_a=row["current_a"],
+                energy_total_wh=row["energy_total_wh"],
+                energy_last_min_wh=row["energy_last_min_wh"],
+                energy_ts=row["energy_ts"],
+                device_temp_c=row["device_temp_c"],
+                device_temp_f=row["device_temp_f"],
+                ambient_temp=row["ambient_temp"],
+                source=row["source"],
+            )
+            for row in rows
+        ]

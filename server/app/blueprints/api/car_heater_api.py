@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass, asdict
 from zoneinfo import ZoneInfo
 from flask import Blueprint, request, jsonify, current_app
-from flask_login import login_required
+from flask_login import login_required, current_user
 
 from ...core import Controller
 from ...core.models import CarHeaterStatus
@@ -110,6 +110,14 @@ def update_car_heater_status():
             # 'button', 'HTTP_in', ...
             source=shelly.get("source")
         )
+        """ for i in ["energy_total_wh", "energy_last_min_wh",
+                  "instant_power_w", "voltage_v", "current_a",
+                  "device_temp_c", "device_temp_f", "ambient_temp"]:
+            val = getattr(car, i)
+            if val is not None:
+                logger.setLevel(logging.DEBUG)
+                logger.debug("Car heater status %s: %s", i, val)
+                logger.setLevel(logging.INFO) """
 
         # Persist status in DB
         recorded_id = None
@@ -262,4 +270,44 @@ def queue_car_heater_command():
         return jsonify({"ok": True, "queued": cmd}), 200
     except Exception as e:
         logger.exception("Failed to queue car heater command via HTTP: %s", e)
-        return jsonify({"error": "Failed to queue command"}), 500
+    return jsonify({"error": "Failed to queue command"}), 500
+
+
+@car_bp.route('/history', methods=['GET'])
+@login_required
+def get_car_heater_history():
+    """Return recorded car heater metrics for the requested day."""
+    ctrl: Controller = getattr(current_app, "ctrl", None)
+    if ctrl is None:
+        return jsonify({"error": "Controller not initialized"}), 500
+
+    tz = ZoneInfo("Europe/Helsinki")
+    now_local = datetime.now(tz)
+    default_date = now_local.date().isoformat()
+    date_str = request.args.get("date", default_date).strip()
+
+    try:
+        # Validate the incoming date to avoid SQL injections and bogus queries
+        datetime.strptime(date_str, "%Y-%m-%d")
+    except ValueError:
+        return jsonify({"error": "Invalid date"}), 400
+
+    logger.info("Serving car heater history for %s by %s", date_str, current_user.get_id())
+    rows = ctrl.get_car_heater_status_for_date(date_str)
+    payload = [
+        {
+            "timestamp": row.timestamp,
+            "instant_power_w": row.instant_power_w,
+            "voltage_v": row.voltage_v,
+            "current_a": row.current_a,
+            "ambient_temp": row.ambient_temp,
+            "device_temp_c": row.device_temp_c,
+            "energy_total_wh": row.energy_total_wh,
+        }
+        for row in rows
+    ]
+    energies = [row.energy_total_wh for row in rows if row.energy_total_wh is not None]
+    energy_today_wh = None
+    if len(energies) >= 2:
+        energy_today_wh = energies[-1] - energies[0]
+    return jsonify({"rows": payload, "energy_today_wh": energy_today_wh}), 200

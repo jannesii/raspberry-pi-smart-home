@@ -5,13 +5,17 @@
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/flash.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_chart.css') }}">
 {% endblock %}
 
 {% block content %}
 <div class="container car-heater-page">
   <div class="page-header">
-    <h2>Car Heater</h2>
-    <p class="subtitle">Live status and controls for the car heater relay.</p>
+    <div>
+      <h2>Car Heater</h2>
+      <p class="subtitle">Live status and controls for the car heater relay.</p>
+    </div>
+    <button id="btnOpenCarHeaterCharts" class="btn btn-ghost">View charts</button>
   </div>
 
   <div class="page-grid">
@@ -125,10 +129,12 @@
   window.CAR_HEATER_CMD_STATUS = {{ command_status | tojson }};
   window.CAR_HEATER_CHARGE_STATE = {{ charge_mode_state | tojson }};
 </script>
+{% include 'car_heater_chart_modal.html' %}
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/init_sio.js') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater.js') }}"></script>
 <script src="{{ url_for('static', filename='js/flash.js') }}"></script>
+<script src="{{ url_for('static', filename='js/car_heater_chart.js') }}"></script>
 {% endblock %}

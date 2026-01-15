@@ -1,0 +1,29 @@
+<!-- Component asset registration: include CSS/JS when this module is included -->
+{{ assets.style(url_for('static', filename='css/car_heater_chart.css')) if assets is defined else '' }}
+{{ assets.script(url_for('static', filename='js/car_heater_chart.js')) if assets is defined else '' }}
+
+<div id="carHeaterChartModal">
+  <div class="dialog">
+    <div class="header">
+      <h3 id="carHeaterChartTitle">Car Heater Metrics</h3>
+      <button id="carHeaterChartClose" aria-label="Close">✕</button>
+    </div>
+
+    <div class="nav">
+      <button id="carHeaterChartPrev">← Edellinen</button>
+      <span id="carHeaterChartCurrentDate"></span>
+      <button id="carHeaterChartNext">Seuraava →</button>
+      <button id="carHeaterChartToday" type="button">Today</button>
+    </div>
+
+    <div class="chart-summary">
+      <span id="carHeaterChartEnergyTotal">Energy today: – Wh</span>
+    </div>
+
+    <div id="carHeaterChartToggles" class="toggle-bar" aria-label="Toggle series visibility"></div>
+
+    <div class="canvas-wrap">
+      <canvas id="carHeaterChartCanvas" width="960" height="360"></canvas>
+    </div>
+  </div>
+</div>
