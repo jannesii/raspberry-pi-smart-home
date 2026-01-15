@@ -17,6 +17,16 @@ class CommandStatus:
     esp_restart: str | None = None
     shelly_restart: str | None = None
 
+
+@dataclass
+class ChargeModeState:
+    enabled: bool = False
+    threshold_w: float = 20.0
+    power_cut: bool = False
+    power_cut_at: str | None = None
+    last_instant_power_w: float | None = None
+    seen_above_threshold: bool = False
+
 class CarHeaterService:
     """
     In-memory command queue for the car heater ESP.
@@ -31,6 +41,7 @@ class CarHeaterService:
         self._lock = threading.Lock()
         self._commands: List[Dict[str, Any]] = []
         self._command_status = CommandStatus()
+        self._charge_mode_state = ChargeModeState()
         self._stop_event = threading.Event()
         self._thread = threading.Thread(
             target=self._run, name="CarHeaterService", daemon=True
@@ -86,6 +97,75 @@ class CarHeaterService:
         """Return the current status of queued commands."""
         with self._lock:
             return CommandStatus(**vars(self._command_status))
+
+    def get_charge_mode_state(self) -> ChargeModeState:
+        """Return a snapshot of the current charge mode state."""
+        with self._lock:
+            return ChargeModeState(**vars(self._charge_mode_state))
+
+    def set_charge_mode_enabled(self, enabled: bool) -> ChargeModeState:
+        """
+        Enable or disable battery charge mode.
+
+        When enabled, internal state related to previous runs is reset.
+        """
+        enabled_bool = bool(enabled)
+        with self._lock:
+            state = self._charge_mode_state
+            state.enabled = enabled_bool
+            state.last_instant_power_w = None
+            state.seen_above_threshold = False
+            if enabled_bool:
+                state.power_cut = False
+                state.power_cut_at = None
+            return ChargeModeState(**vars(state))
+
+    def handle_status_update(
+        self,
+        instant_power_w: float | None,
+        is_heater_on: bool,
+        timestamp_iso: str | None = None,
+    ) -> None:
+        """
+        Update charge mode state based on the latest heater status.
+
+        If charge mode is enabled and the heater has previously drawn
+        at least `threshold_w` power, it will automatically queue a
+        `turn_off` command once the instant power drops below the
+        threshold.
+        """
+        command_to_queue: Dict[str, Any] | None = None
+        with self._lock:
+            state = self._charge_mode_state
+            try:
+                state.last_instant_power_w = float(
+                    instant_power_w) if instant_power_w is not None else None
+            except (TypeError, ValueError):
+                state.last_instant_power_w = None
+
+            if not state.enabled:
+                return
+            if state.last_instant_power_w is None:
+                return
+
+            # First require that we have seen power at or above the
+            # threshold before considering a drop below it as "cut".
+            if state.last_instant_power_w >= state.threshold_w:
+                state.seen_above_threshold = True
+                return
+
+            if not state.seen_above_threshold:
+                return
+
+            # Power has now dropped below the threshold after being
+            # above it: consider this a cut and auto-queue turn_off.
+            state.enabled = False
+            state.power_cut = True
+            state.power_cut_at = timestamp_iso
+            command_to_queue = {"action": "turn_off"}
+
+        if command_to_queue is not None:
+            self.queue_command(command_to_queue)
 
     def get_queued_commands(self) -> List[Dict[str, Any]]:
         """

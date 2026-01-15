@@ -7,6 +7,8 @@ import time
 from dataclasses import dataclass, asdict
 from zoneinfo import ZoneInfo
 from flask import Blueprint, request, jsonify, current_app
+from flask_login import login_required
+
 from ...core import Controller
 from ...core.models import CarHeaterStatus
 from ...extensions import csrf, socketio
@@ -81,6 +83,8 @@ def update_car_heater_status():
     fallback_status.ambient_temp = ambient_temp
     fallback_status.shelly_connected = shelly_connected
 
+    car: CarHeaterStatus | None = None
+
     if shelly and shelly_connected:
         car = CarHeaterStatus(
             id=None,
@@ -141,12 +145,30 @@ def update_car_heater_status():
     # Fetch any queued commands from the shared CarHeaterService
     commands: List[Dict[str, Any]] = []
     command_status: Dict[str, Any] | None = None
+    charge_mode_state: Dict[str, Any] | None = None
+
     if COMMANDS_ENABLED:
         try:
             from ...services.car_heater import CarHeaterService
-            service: CarHeaterService = current_app.config.get(
+
+            service: CarHeaterService | None = current_app.config.get(
                 "CAR_HEATER_SERVICE")
+
             if service:
+                # Update charge mode from the latest Shelly status (if any)
+                if car is not None:
+                    try:
+                        ts_iso = car.timestamp.isoformat() if hasattr(
+                            car.timestamp, "isoformat") else str(car.timestamp)
+                        service.handle_status_update(
+                            instant_power_w=car.instant_power_w,
+                            is_heater_on=car.is_heater_on,
+                            timestamp_iso=ts_iso,
+                        )
+                    except Exception as e:
+                        logger.exception(
+                            "Failed to update car heater charge mode: %s", e)
+
                 action_results = data.get("action_results", {})
                 if action_results:
                     service.mark_command_success(action_results)
@@ -154,7 +176,13 @@ def update_car_heater_status():
                 commands = service.get_queued_commands()
                 service.mark_commands_sent(commands)
                 command_status = asdict(service.get_command_status())
-                logger.debug("cmd status: %s", command_status)
+                try:
+                    charge_mode_state = asdict(
+                        service.get_charge_mode_state())
+                except Exception:
+                    charge_mode_state = None
+                logger.debug(
+                    "cmd status: %s charge_mode: %s", command_status, charge_mode_state)
         except Exception as e:
             logger.exception(
                 "Failed to fetch queued car heater commands: %s", e)
@@ -171,6 +199,8 @@ def update_car_heater_status():
             payload: Dict[str, Any] = {"status": status_payload}
             if command_status is not None:
                 payload["command_status"] = command_status
+            if charge_mode_state is not None:
+                payload["charge_mode"] = charge_mode_state
             socketio.emit("car_heater_status", payload)
     except Exception as e:
         logger.exception(
@@ -200,3 +230,36 @@ def get_car_heater_commands():
             "Failed to fetch queued car heater commands via GET: %s", e)
 
     return jsonify(commands), 200
+
+
+@car_bp.route('/queue', methods=['POST'])
+@csrf.exempt
+@login_required
+def queue_car_heater_command():
+    """
+    HTTP fallback for queuing car heater commands from the web UI.
+    """
+    data: Dict[str, Any] = request.get_json() or {}
+    action = (data.get("action") or "").strip()
+    if not action:
+        return jsonify({"error": "Missing action"}), 400
+
+    try:
+        from ...services.car_heater import CarHeaterService
+
+        service: CarHeaterService | None = current_app.config.get(
+            "CAR_HEATER_SERVICE")
+    except Exception:
+        service = None
+
+    if service is None:
+        return jsonify({"error": "Car heater service not initialized"}), 503
+
+    try:
+        cmd = {"action": action}
+        service.queue_command(cmd)
+        logger.debug("Queued car heater command via HTTP: %s", cmd)
+        return jsonify({"ok": True, "queued": cmd}), 200
+    except Exception as e:
+        logger.exception("Failed to queue car heater command via HTTP: %s", e)
+        return jsonify({"error": "Failed to queue command"}), 500

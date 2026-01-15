@@ -81,6 +81,14 @@
           <button id="btnEspRestart" class="btn control-btn danger">Restart ESP</button>
           <button id="btnShellyRestart" class="btn control-btn danger">Restart Shelly</button>
         </div>
+        <div class="charge-mode-row">
+          <button id="btnChargeMode" type="button" class="btn control-btn btn-ghost" aria-pressed="false">
+            Battery Charge
+          </button>
+          <div id="chargeModeStatus" class="charge-mode-status">
+            Battery charge: idle
+          </div>
+        </div>
         <div class="divider"></div>
         <div class="cmd-status-header">
           <span>Command statuses</span>
@@ -115,6 +123,7 @@
 <script>
   window.CAR_HEATER_LAST_STATUS = {{ last_status | tojson }};
   window.CAR_HEATER_CMD_STATUS = {{ command_status | tojson }};
+  window.CAR_HEATER_CHARGE_STATE = {{ charge_mode_state | tojson }};
 </script>
 {% endblock %}
 

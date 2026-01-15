@@ -34,11 +34,16 @@ def get_car_heater_page():
 
     # Command status from in-memory CarHeaterService (if available)
     command_status = None
+    charge_mode_state = None
     try:
         svc: CarHeaterService | None = current_app.config.get(
             "CAR_HEATER_SERVICE")
         if svc is not None:
             command_status = asdict(svc.get_command_status())
+            try:
+                charge_mode_state = asdict(svc.get_charge_mode_state())
+            except Exception:
+                charge_mode_state = None
     except Exception as e:
         logger.exception("Failed to get car heater command status: %s", e)
 
@@ -46,4 +51,5 @@ def get_car_heater_page():
         'car_heater.html',
         last_status=last_status,
         command_status=command_status,
+        charge_mode_state=charge_mode_state,
     )

@@ -169,6 +169,32 @@
   width: 100%;
 }
 
+.charge-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.charge-mode-status {
+  font-size: 0.85rem;
+  color: #9ca3af;
+}
+
+.charge-mode-status.charge-active {
+  color: #6ee7b7;
+}
+
+.charge-mode-status.charge-cut {
+  color: #facc15;
+}
+
+.btn.charge-active {
+  background: rgba(59, 130, 246, 0.2);
+  color: #e5e7eb;
+  border: 1px solid rgba(59, 130, 246, 0.8);
+}
+
 .btn.primary {
   background: #2563eb;
   color: #e5e7eb;

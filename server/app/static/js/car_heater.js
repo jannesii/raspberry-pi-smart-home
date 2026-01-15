@@ -160,6 +160,40 @@ function updateCommandStatusUI(commandStatus) {
   });
 }
 
+let chargeModeState = null;
+
+function updateChargeModeUI(state) {
+  chargeModeState = state || null;
+
+  const btn = document.getElementById('btnChargeMode');
+  const label = document.getElementById('chargeModeStatus');
+  if (!btn || !label) return;
+
+  const enabled = !!(state && state.enabled);
+  const powerCut = !!(state && state.power_cut);
+  const threshold = state && state.threshold_w != null
+    ? Number(state.threshold_w)
+    : 40;
+
+  btn.classList.toggle('charge-active', enabled);
+  btn.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+
+  label.classList.remove('charge-active', 'charge-cut');
+
+  if (powerCut) {
+    const ts = state.power_cut_at;
+    label.textContent = ts
+      ? `Battery charge: power cut at ${fmtTs(ts)}`
+      : 'Battery charge: power cut';
+    label.classList.add('charge-cut');
+  } else if (enabled) {
+    label.textContent = `Battery charge mode active (cut at ${threshold} W)`;
+    label.classList.add('charge-active');
+  } else {
+    label.textContent = 'Battery charge: idle';
+  }
+}
+
 function setQueueStatus(mode, text) {
   const el = document.getElementById('queueStatus');
   if (!el) return;
@@ -213,11 +247,18 @@ document.addEventListener('DOMContentLoaded', () => {
     updateCommandStatusUI(window.CAR_HEATER_CMD_STATUS);
   }
 
+  if (typeof window.CAR_HEATER_CHARGE_STATE !== 'undefined') {
+    updateChargeModeUI(window.CAR_HEATER_CHARGE_STATE);
+  } else {
+    updateChargeModeUI(null);
+  }
+
   const btnOn = document.getElementById('btnTurnOn');
   const btnOff = document.getElementById('btnTurnOff');
   const btnLogs = document.getElementById('btnGetLogs');
   const btnEspRestart = document.getElementById('btnEspRestart');
   const btnShellyRestart = document.getElementById('btnShellyRestart');
+  const btnChargeMode = document.getElementById('btnChargeMode');
 
   if (btnOn) btnOn.addEventListener('click', () => queueCommand('turn_on'));
   if (btnOff) btnOff.addEventListener('click', () => queueCommand('turn_off'));
@@ -237,6 +278,36 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  if (btnChargeMode) {
+    btnChargeMode.addEventListener('click', () => {
+      const newEnabled = !(chargeModeState && chargeModeState.enabled);
+      try {
+        if (window.socket) {
+          window.socket.emit('car_heater_charge_mode', { enabled: newEnabled });
+        }
+      } catch (err) {
+        console.warn('Socket emit failed for charge mode toggle:', err);
+      }
+
+      const nextState = Object.assign(
+        {
+          enabled: false,
+          power_cut: false,
+          power_cut_at: null,
+          threshold_w: 40,
+          last_instant_power_w: null,
+        },
+        chargeModeState || {},
+        { enabled: newEnabled, power_cut: false, power_cut_at: null },
+      );
+      updateChargeModeUI(nextState);
+
+      if (newEnabled) {
+        queueCommand('turn_on');
+      }
+    });
+  }
+
   if (window.socket) {
     window.socket.on('car_heater_status', data => {
       console.log('📡 car_heater_status:', data);
@@ -248,6 +319,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (data && (data.command_status || data.commandStatus)) {
         updateCommandStatusUI(data.command_status || data.commandStatus);
       }
+       if (data && (data.charge_mode || data.chargeMode)) {
+         updateChargeModeUI(data.charge_mode || data.chargeMode);
+       }
       // When a new status arrives, assume commands were delivered
       setQueueStatus('queue-sent', 'Last command sent to car');
     });
@@ -260,6 +334,13 @@ document.addEventListener('DOMContentLoaded', () => {
                      ok ? 'Last action sent' : 'Action failed');
       if (ok && data.action) {
         updateSingleCommandStatus(data.action, 'queued');
+      }
+    });
+
+    window.socket.on('car_heater_charge_mode', data => {
+      console.log('📡 car_heater_charge_mode:', data);
+      if (data) {
+        updateChargeModeUI(data);
       }
     });
   }

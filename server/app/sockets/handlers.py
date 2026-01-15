@@ -37,6 +37,8 @@ class SocketEventHandler:
         socketio.on_event('ac_control',   self.handle_ac_control)
         socketio.on_event('car_heater_control',
                           self.handle_car_heater_control)
+        socketio.on_event('car_heater_charge_mode',
+                          self.handle_car_heater_charge_mode)
 
     def handle_connect(self, auth):
         # Use Flask-Login session cookie for auth instead of API key
@@ -496,3 +498,43 @@ class SocketEventHandler:
             self.logger.exception("car_heater_control error: %s", e)
             self.socketio.emit(
                 'error', {'message': 'Car heater control error'})
+
+    def handle_car_heater_charge_mode(self, data):
+        """
+        Toggle car heater battery charge mode from the web UI.
+        """
+        if data is None or not isinstance(data, dict):
+            self.socketio.emit(
+                'error', {'message': 'Invalid car heater charge payload'})
+            self.logger.warning(
+                "Bad car_heater_charge_mode payload: %s", data)
+            return
+
+        if 'enabled' not in data:
+            self.socketio.emit(
+                'error', {'message': 'Missing enabled flag for charge mode'})
+            return
+
+        try:
+            svc = current_app.config.get('CAR_HEATER_SERVICE')
+        except Exception:
+            svc = None
+        if svc is None:
+            self.socketio.emit(
+                'error', {'message': 'Car heater service not initialized'})
+            return
+
+        try:
+            state = svc.set_charge_mode_enabled(bool(data.get('enabled')))
+            payload = {
+                'enabled': state.enabled,
+                'threshold_w': state.threshold_w,
+                'power_cut': state.power_cut,
+                'power_cut_at': state.power_cut_at,
+                'last_instant_power_w': state.last_instant_power_w,
+            }
+            self.emit_to_views('car_heater_charge_mode', payload)
+        except Exception as e:
+            self.logger.exception("car_heater_charge_mode error: %s", e)
+            self.socketio.emit(
+                'error', {'message': 'Car heater charge mode error'})
