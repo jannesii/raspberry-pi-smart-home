@@ -21,6 +21,15 @@
   --ch-safe-top: env(safe-area-inset-top, 0px);
 }
 
+/* Override base layout for full-width mobile rendering */
+body {
+  align-items: stretch;
+}
+
+.content {
+  width: 100%;
+}
+
 /* Page container */
 .car-heater-page {
   width: 100%;
@@ -646,7 +655,7 @@
   position: fixed;
   top: calc(12px + var(--ch-safe-top) + var(--nav-height, 0px));
   left: 50%;
-  transform: translateX(-50%);
+  transform: translate(-50%, 0);
   width: min(720px, calc(100% - 32px));
   z-index: 1500;
   pointer-events: none;
@@ -672,8 +681,8 @@
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translate(-50%, -4px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
 }
 
 /* Timestamp Footer */
