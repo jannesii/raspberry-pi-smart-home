@@ -130,6 +130,21 @@ class DatabaseManager:
                 'device_temp_f REAL, '
                 'ambient_temp REAL, '
                 'source TEXT'
+            ),
+            'car_heater_charge_mode': (
+                'id INTEGER PRIMARY KEY CHECK (id = 1), '
+                'enabled BOOLEAN NOT NULL DEFAULT 0, '
+                'threshold_w REAL NOT NULL DEFAULT 20.0, '
+                'power_cut BOOLEAN NOT NULL DEFAULT 0, '
+                'power_cut_at TEXT, '
+                'last_instant_power_w REAL, '
+                'seen_above_threshold BOOLEAN NOT NULL DEFAULT 0'
+            ),
+            'car_heater_keep_at_temp': (
+                'id INTEGER PRIMARY KEY CHECK (id = 1), '
+                'target_temperature_c REAL, '
+                'hysteresis_c REAL, '
+                'enabled BOOLEAN NOT NULL DEFAULT 0'
             )
         }
         for name, schema in tables.items():

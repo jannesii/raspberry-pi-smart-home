@@ -1,26 +1,38 @@
 """Car Heater API routes."""
-from datetime import datetime, date, timezone
+from datetime import datetime
+import time
 from typing import Any, Dict, List
 import logging
-import json
-import time
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 from flask import Blueprint, request, jsonify, current_app
 from flask_login import login_required, current_user
 
 from ...core import Controller
-from ...core.models import CarHeaterStatus
-from ...extensions import csrf, socketio
+from ...extensions import csrf
 from ...security import require_api_key
+
+from .car_heater_utils import handle_status_update_request
 
 car_bp = Blueprint('car_bp', __name__, url_prefix='/car_heater')
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 # Toggle to enable/disable sending commands to the ESP.
 COMMANDS_ENABLED = True
+
+# Test mode timeout: normal endpoint disabled while test requests arrive
+TEST_MODE_TIMEOUT_SECONDS = 10.0
+_last_test_request_time: float | None = None
+_test_mode_was_active: bool = False
+
+
+def _is_test_mode_active() -> bool:
+    """Check if test mode is active (test request received within timeout)."""
+    if _last_test_request_time is None:
+        return False
+    return (time.monotonic() - _last_test_request_time) < TEST_MODE_TIMEOUT_SECONDS
 
 
 @dataclass
@@ -39,186 +51,46 @@ fallback_status = FallbackStatus()
 @require_api_key
 def update_car_heater_status():
     """Update the car heater status and return queued commands."""
-    start_time = time.perf_counter()
-    ctrl: Controller = getattr(current_app, "ctrl", None)
-    if ctrl is None:
-        return jsonify({"error": "Controller not initialized"}), 500
+    global _test_mode_was_active
 
-    data: Dict[str, Any] = request.get_json()
-    if not data:
-        return jsonify({"error": "Invalid JSON payload"}), 400
+    if _is_test_mode_active():
+        logger.debug("Normal endpoint blocked - test mode active")
+        return jsonify([]), 200  # Return empty commands, don't process
 
-    # Raw Shelly JSON payload from the ESP
-    shelly_raw = data.get("shelly")
+    # Log when test mode expires
+    if _test_mode_was_active:
+        logger.info("Test mode expired - normal endpoint re-enabled")
+        _test_mode_was_active = False
 
-    raw_ts = data.get("timestamp")  # '2025-11-21 19:44:10'
+    return handle_status_update_request(
+        data=request.get_json(),
+        fallback_status=fallback_status,
+        commands_enabled=COMMANDS_ENABLED,
+    )
 
-    # Interpret the string as UTC
-    dt_utc = datetime.strptime(
-        raw_ts, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
 
-    # Convert to Helsinki time (or whatever you use)
-    dt_local = dt_utc.astimezone(ZoneInfo("Europe/Helsinki"))
+@car_bp.route('/status/test', methods=['POST'])
+@csrf.exempt
+@require_api_key
+def update_car_heater_status_test():
+    """Test endpoint for car heater status (requires API key)."""
+    global _last_test_request_time, _test_mode_was_active
 
-    timestamp = dt_local
-
-    shelly = None
-    if shelly_raw:
-        try:
-            shelly = json.loads(shelly_raw)
-        except json.JSONDecodeError:
-            logger.warning("Failed to decode shelly JSON: %r", shelly_raw)
-    if shelly is None:
-        shelly = {}
-
-    aenergy = shelly.get("aenergy") or {}
-    shelly_temp = shelly.get("temperature") or {}
-
-    shelly_connected = bool(data.get("shelly_connected", True))
-
-    status_payload: Dict[str, Any] | None = None
-
-    ambient_temp = data.get("temperature")
-    fallback_status.timestamp = timestamp
-    fallback_status.ambient_temp = ambient_temp
-    fallback_status.shelly_connected = shelly_connected
-
-    car: CarHeaterStatus | None = None
-
-    if shelly and shelly_connected:
-        car = CarHeaterStatus(
-            id=None,
-            # Core status
-            timestamp=timestamp,
-            is_heater_on=bool(shelly.get("output")),        # True / False
-            instant_power_w=shelly.get("apower", 0.0),       # e.g. 35.1
-            voltage_v=shelly.get("voltage"),          # e.g. 229.7
-            current_a=shelly.get("current"),          # e.g. 0.187
-
-            # Energy (Wh)
-            energy_total_wh=aenergy.get("total"),     # lifetime energy
-            energy_last_min_wh=(aenergy.get("by_minute") or [None])[0],
-            energy_ts=aenergy.get("minute_ts"),         # UNIX ts
-
-            # Device temperature
-
-            device_temp_c=shelly_temp.get("tC"),             # 37.9
-            device_temp_f=shelly_temp.get("tF"),             # 100.1
-            ambient_temp=ambient_temp,    # in Celsius
-
-            # Optional/meta
-            # 'button', 'HTTP_in', ...
-            source=shelly.get("source")
+    # Log if test mode is being activated (not already active)
+    if not _is_test_mode_active():
+        logger.info(
+            "Test mode activated - normal endpoint disabled for %.0f seconds",
+            TEST_MODE_TIMEOUT_SECONDS,
         )
-        """ for i in ["energy_total_wh", "energy_last_min_wh",
-                  "instant_power_w", "voltage_v", "current_a",
-                  "device_temp_c", "device_temp_f", "ambient_temp"]:
-            val = getattr(car, i)
-            if val is not None:
-                logger.setLevel(logging.DEBUG)
-                logger.debug("Car heater status %s: %s", i, val)
-                logger.setLevel(logging.INFO) """
+    _last_test_request_time = time.monotonic()
+    _test_mode_was_active = True
 
-        # Persist status in DB
-        recorded_id = None
-        try:
-            recorded = ctrl.record_car_heater_status(car)
-            recorded_id = getattr(recorded, "id", None)
-        except Exception as e:
-            logger.exception("Failed to record car heater status: %s", e)
-
-        status_payload = {
-            "id": recorded_id,
-            "timestamp": car.timestamp.isoformat() if hasattr(car.timestamp, "isoformat") else car.timestamp,
-            "is_heater_on": car.is_heater_on,
-            "instant_power_w": car.instant_power_w,
-            "voltage_v": car.voltage_v,
-            "current_a": car.current_a,
-            "energy_total_wh": car.energy_total_wh,
-            "energy_last_min_wh": car.energy_last_min_wh,
-            "energy_ts": car.energy_ts,
-            "device_temp_c": car.device_temp_c,
-            "device_temp_f": car.device_temp_f,
-            "ambient_temp": car.ambient_temp,
-            "source": car.source,
-        }
-    else:
-        logger.warning("No shelly data provided in car heater status update")
-        status_payload = {
-            "timestamp": timestamp.isoformat() if hasattr(timestamp, "isoformat") else timestamp,
-            "ambient_temp": ambient_temp,
-            "shelly_connected": shelly_connected,
-        }
-
-    # Fetch any queued commands from the shared CarHeaterService
-    commands: List[Dict[str, Any]] = []
-    command_status: Dict[str, Any] | None = None
-    charge_mode_state: Dict[str, Any] | None = None
-
-    if COMMANDS_ENABLED:
-        try:
-            from ...services.car_heater import CarHeaterService
-
-            service: CarHeaterService | None = current_app.config.get(
-                "CAR_HEATER_SERVICE")
-
-            if service:
-                # Update charge mode from the latest Shelly status (if any)
-                if car is not None:
-                    try:
-                        ts_iso = car.timestamp.isoformat() if hasattr(
-                            car.timestamp, "isoformat") else str(car.timestamp)
-                        service.handle_status_update(
-                            instant_power_w=car.instant_power_w,
-                            is_heater_on=car.is_heater_on,
-                            timestamp_iso=ts_iso,
-                        )
-                    except Exception as e:
-                        logger.exception(
-                            "Failed to update car heater charge mode: %s", e)
-
-                action_results = data.get("action_results", {})
-                if action_results:
-                    service.mark_command_success(action_results)
-
-                commands = service.get_queued_commands()
-                service.mark_commands_sent(commands)
-                command_status = asdict(service.get_command_status())
-                try:
-                    charge_mode_state = asdict(
-                        service.get_charge_mode_state())
-                except Exception:
-                    charge_mode_state = None
-                logger.debug(
-                    "cmd status: %s charge_mode: %s", command_status, charge_mode_state)
-        except Exception as e:
-            logger.exception(
-                "Failed to fetch queued car heater commands: %s", e)
-    else:
-        logger.debug(
-            "Car heater commands are disabled; skipping command queue handling.")
-    if commands:
-        logger.info("Sending %s commands to car heater ESP", commands)
-
-    # Notify any connected browser views of the latest status + command statuses.
-    # Use the global Socket.IO instance so events work across Gunicorn workers.
-    try:
-        if status_payload is not None:
-            payload: Dict[str, Any] = {"status": status_payload}
-            if command_status is not None:
-                payload["command_status"] = command_status
-            if charge_mode_state is not None:
-                payload["charge_mode"] = charge_mode_state
-            socketio.emit("car_heater_status", payload)
-    except Exception as e:
-        logger.exception(
-            "Failed to emit car_heater_status over Socket.IO: %s", e)
-
-    elapsed_time = time.perf_counter() - start_time
-    logger.debug(
-        "Processed car heater status update in %.3f seconds", elapsed_time)
-    # Return commands as a plain JSON list so ESP can act on them
-    return jsonify(commands), 200
+    return handle_status_update_request(
+        data=request.get_json(),
+        fallback_status=fallback_status,
+        commands_enabled=COMMANDS_ENABLED,
+        is_test=True,
+    )
 
 
 @car_bp.route('/commands', methods=['GET'])
@@ -292,7 +164,8 @@ def get_car_heater_history():
     except ValueError:
         return jsonify({"error": "Invalid date"}), 400
 
-    logger.info("Serving car heater history for %s by %s", date_str, current_user.get_id())
+    logger.info("Serving car heater history for %s by %s",
+                date_str, current_user.get_id())
     rows = ctrl.get_car_heater_status_for_date(date_str)
     payload = [
         {
@@ -306,7 +179,8 @@ def get_car_heater_history():
         }
         for row in rows
     ]
-    energies = [row.energy_total_wh for row in rows if row.energy_total_wh is not None]
+    energies = [
+        row.energy_total_wh for row in rows if row.energy_total_wh is not None]
     energy_today_wh = None
     if len(energies) >= 2:
         energy_today_wh = energies[-1] - energies[0]

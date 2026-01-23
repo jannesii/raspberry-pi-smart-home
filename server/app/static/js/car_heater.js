@@ -194,6 +194,21 @@ function updateChargeModeUI(state) {
   }
 }
 
+function updateKeepAtTempUI(settings) {
+  const toggle = document.getElementById('keepAtTempToggle');
+  const targetInput = document.getElementById('targetTempInput');
+  const hysteresisInput = document.getElementById('hysteresisInput');
+  if (!toggle || !targetInput || !hysteresisInput) return;
+
+  toggle.checked = !!(settings && settings.enabled);
+  targetInput.value = settings && settings.target_temp_c != null
+    ? String(settings.target_temp_c)
+    : '';
+  hysteresisInput.value = settings && settings.hysteresis_c != null
+    ? String(settings.hysteresis_c)
+    : '';
+}
+
 function setQueueStatus(mode, text) {
   const el = document.getElementById('queueStatus');
   if (!el) return;
@@ -259,6 +274,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnEspRestart = document.getElementById('btnEspRestart');
   const btnShellyRestart = document.getElementById('btnShellyRestart');
   const btnChargeMode = document.getElementById('btnChargeMode');
+  const keepAtTempToggle = document.getElementById('keepAtTempToggle');
+  const keepAtTempTarget = document.getElementById('targetTempInput');
+  const keepAtTempHysteresis = document.getElementById('hysteresisInput');
 
   if (btnOn) btnOn.addEventListener('click', () => queueCommand('turn_on'));
   if (btnOff) btnOff.addEventListener('click', () => queueCommand('turn_off'));
@@ -307,6 +325,40 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+  function sendKeepAtTempSettings() {
+    try {
+      const enabled = keepAtTempToggle.checked;
+      const targetTemp = Number(keepAtTempTarget.value);
+      const hysteresis = Number(keepAtTempHysteresis.value);
+      
+      const settings = {
+        enabled: enabled,
+        target_temp_c: targetTemp,
+        hysteresis_c: hysteresis,
+      };
+      if (window.socket) {
+        window.socket.emit('keep_at_temp_settings', settings);
+      }
+    } catch (err) {
+      console.warn('Socket emit failed for keep-at-temp settings:', err);
+    }
+  }
+
+  if (keepAtTempTarget) {
+    keepAtTempTarget.addEventListener('change', () => {
+      sendKeepAtTempSettings();
+    });
+  }
+  if (keepAtTempHysteresis) {
+    keepAtTempHysteresis.addEventListener('change', () => {
+      sendKeepAtTempSettings();
+    });
+  }
+  if (keepAtTempToggle) {
+    keepAtTempToggle.addEventListener('change', (event) => {
+      sendKeepAtTempSettings();
+    });
+  }
 
   if (window.socket) {
     window.socket.on('car_heater_status', data => {
@@ -341,6 +393,13 @@ document.addEventListener('DOMContentLoaded', () => {
       console.log('📡 car_heater_charge_mode:', data);
       if (data) {
         updateChargeModeUI(data);
+      }
+    });
+
+    window.socket.on('keep_at_temp_settings', data => {
+      console.log('📡 keep_at_temp_settings:', data);
+      if (data) {
+        updateKeepAtTempUI(data);
       }
     });
   }
