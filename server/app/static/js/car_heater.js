@@ -482,7 +482,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (data && (data.charge_mode || data.chargeMode)) {
         updateChargeModeUI(data.charge_mode || data.chargeMode);
       }
-      setQueueStatus('sent', 'Status updated');
+      // setQueueStatus('sent', 'Status updated');
     });
 
     window.socket.on('car_heater_action_result', data => {

@@ -565,17 +565,23 @@ class SocketEventHandler:
 
         try:
             # Build partial update - only set fields that were provided
-            settings = KeepAtTempSettings()
-            
+            current_settings = svc.get_settings() or KeepAtTempSettings()
+            settings = KeepAtTempSettings(
+                target_temperature_c=current_settings.target_temperature_c,
+                hysteresis_c=current_settings.hysteresis_c,
+                enabled=current_settings.enabled,
+            )
+
             if 'enabled' in data:
                 settings.enabled = bool(data['enabled'])
-            
-            if 'target_temp_c' in data:
-                temp = float(data['target_temp_c'])
+
+            target_key = 'target_temperature_c' if 'target_temperature_c' in data else 'target_temp_c'
+            if target_key in data:
+                temp = float(data[target_key])
                 if not -50 <= temp <= 50:
                     raise ValueError("Target temp out of range (-50 to 50°C)")
                 settings.target_temperature_c = temp
-            
+
             if 'hysteresis_c' in data:
                 hyst = float(data['hysteresis_c'])
                 if not 0.1 <= hyst <= 10:
@@ -584,10 +590,10 @@ class SocketEventHandler:
 
             svc.update_settings(settings)
             settings_new = svc.get_settings()
-            
+
             self.emit_to_views('keep_at_temp_settings', {
                 'enabled': settings_new.enabled,
-                'target_temp_c': settings_new.target_temperature_c,
+                'target_temperature_c': settings_new.target_temperature_c,
                 'hysteresis_c': settings_new.hysteresis_c,
             })
         except ValueError as e:
@@ -597,7 +603,7 @@ class SocketEventHandler:
                 current_settings = svc.get_settings()
                 self.emit_to_views('keep_at_temp_settings', {
                     'enabled': current_settings.enabled,
-                    'target_temp_c': current_settings.target_temperature_c,
+                    'target_temperature_c': current_settings.target_temperature_c,
                     'hysteresis_c': current_settings.hysteresis_c,
                 })
         except Exception as e:
