@@ -303,6 +303,165 @@
   color: #fecaca;
 }
 
+/* Keep at Temperature Section */
+.keep-at-temp-section {
+  padding: 4px 0;
+}
+
+.keep-at-temp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.keep-at-temp-title {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #e5e7eb;
+}
+
+.keep-at-temp-hint {
+  margin: 0 0 12px;
+  font-size: 0.82rem;
+  color: #9ca3af;
+}
+
+.keep-at-temp-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.input-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.input-field label {
+  font-size: 0.78rem;
+  color: #9ca3af;
+}
+
+.input-with-unit {
+  display: flex;
+  align-items: center;
+  background: rgba(17, 24, 39, 0.8);
+  border: 1px solid rgba(75, 85, 99, 0.6);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: border-color 0.15s ease;
+}
+
+.input-with-unit:focus-within {
+  border-color: rgba(59, 130, 246, 0.7);
+}
+
+.input-with-unit input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 8px;
+  background: transparent;
+  border: none;
+  color: #e5e7eb;
+  font-size: 1rem;
+  font-weight: 500;
+  -webkit-appearance: none;
+  -moz-appearance: textfield;
+  appearance: none;
+}
+
+.input-with-unit input:focus {
+  outline: none;
+}
+
+.input-with-unit input::placeholder {
+  color: #6b7280;
+}
+
+/* Remove number input spinners */
+.input-with-unit input::-webkit-outer-spin-button,
+.input-with-unit input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.input-unit {
+  padding: 0 10px;
+  font-size: 0.85rem;
+  color: #9ca3af;
+  background: rgba(31, 41, 55, 0.6);
+  border-left: 1px solid rgba(75, 85, 99, 0.4);
+  height: 100%;
+  display: flex;
+  align-items: center;
+  min-height: 42px;
+}
+
+/* Toggle Switch - iOS style */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 51px;
+  height: 31px;
+  flex-shrink: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: rgba(55, 65, 81, 0.9);
+  border-radius: 31px;
+  transition: background-color 0.25s ease;
+}
+
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 27px;
+  height: 27px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  transition: transform 0.25s ease;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background: #10b981;
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+  transform: translateX(20px);
+}
+
+.toggle-switch input:focus + .toggle-slider {
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.4);
+}
+
+/* iOS Safari optimizations */
+@supports (-webkit-touch-callout: none) {
+  .input-with-unit input {
+    font-size: 16px; /* Prevents iOS zoom on focus */
+  }
+  
+  .toggle-switch {
+    touch-action: manipulation;
+  }
+}
+
 @media (max-width: 800px) {
   .car-heater-page {
     padding: 8px 4px 24px;
@@ -312,5 +471,10 @@
   }
   .car-heater-page .card {
     padding: 12px 12px 14px;
+  }
+  
+  .keep-at-temp-inputs {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
   }
 }

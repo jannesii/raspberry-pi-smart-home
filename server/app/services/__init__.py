@@ -115,13 +115,27 @@ def init_services(app) -> Dict[str, Any]:
     try:
         from .car_heater import CarHeaterService
 
-        car_heater_service = CarHeaterService()
+        car_heater_service = CarHeaterService(app.ctrl)
         # Expose via app.config so both API and web UI can access it
-        app.config["CAR_HEATER_SERVICE"] = car_heater_service
+        app.car_heater_service = car_heater_service
         services["car_heater_service"] = car_heater_service
         logger.info("Car heater service initialized and stored in app.config")
     except Exception as e:
         logger.exception("Failed to initialize car heater service: %s", e)
+
+    try:
+        from .car_heater import KeepAtTempService
+
+        keep_at_temp_service = KeepAtTempService(
+            car_heater_service=car_heater_service,
+            ctrl=app.ctrl,  # type: ignore[attr-defined]
+        )
+        app.keep_at_temp_service = keep_at_temp_service
+        services["keep_at_temp_service"] = keep_at_temp_service
+        logger.info("Keep-at-temperature service initialized")
+    except Exception as e:
+        logger.exception(
+            "Failed to initialize keep-at-temperature service: %s", e)
 
     # --- Sodexo scheduler ---
     try:

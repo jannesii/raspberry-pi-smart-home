@@ -1,31 +1,17 @@
 import logging
 import threading
-from typing import Any, Dict, List
+from typing import Any, Dict, List, TYPE_CHECKING
 
-from dataclasses import dataclass
+from .car_heater_models import ChargeModeState, CommandStatus, KeepAtTempSettings
+
+if TYPE_CHECKING:
+    from ...core.controller import Controller
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 status_levels = [None, "queued", "sent", "success", "failed"]
 
-@dataclass
-class CommandStatus:
-    turn_on: str | None = None
-    turn_off: str | None = None
-    get_logs: str | None = None
-    esp_restart: str | None = None
-    shelly_restart: str | None = None
-
-
-@dataclass
-class ChargeModeState:
-    enabled: bool = False
-    threshold_w: float = 20.0
-    power_cut: bool = False
-    power_cut_at: str | None = None
-    last_instant_power_w: float | None = None
-    seen_above_threshold: bool = False
 
 class CarHeaterService:
     """
@@ -35,13 +21,26 @@ class CarHeaterService:
     by the ESP when it POSTs status updates. The service maintains an
     internal thread for future background housekeeping but currently
     only manages the queue in a thread-safe manner.
+
+    If a Controller is provided, ChargeModeState is persisted to the
+    database on every update so it survives reboots.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, controller: "Controller | None" = None) -> None:
         self._lock = threading.Lock()
         self._commands: List[Dict[str, Any]] = []
         self._command_status = CommandStatus()
-        self._charge_mode_state = ChargeModeState()
+        self._controller = controller
+
+        # Load persisted state from DB if controller is available
+        if self._controller is not None:
+            self._charge_mode_state = self._controller.get_charge_mode_state()
+            logger.info("Loaded ChargeModeState from DB: %r",
+                        self._charge_mode_state)
+        else:
+            self._charge_mode_state = ChargeModeState()
+
+        self._keep_at_temp_settings = KeepAtTempSettings()
         self._stop_event = threading.Event()
         self._thread = threading.Thread(
             target=self._run, name="CarHeaterService", daemon=True
@@ -62,7 +61,7 @@ class CarHeaterService:
             action = command.get("action")
             setattr(self._command_status, action, "queued")
         logger.debug("Queued car heater command: %r", command)
-        
+
     def mark_commands_sent(self, commands: List[Dict[str, Any]]) -> None:
         """
         Mark the given commands as sent.
@@ -76,7 +75,7 @@ class CarHeaterService:
                 if hasattr(self._command_status, action):
                     setattr(self._command_status, action, "sent")
         logger.debug("Marked %d car heater commands as sent", len(commands))
-        
+
     def mark_command_success(self, commands: List[Dict[str, Any]]) -> None:
         """
         Mark the given commands as successfully executed.
@@ -91,8 +90,9 @@ class CarHeaterService:
                 string = "success" if success else "failed"
                 if hasattr(self._command_status, action):
                     setattr(self._command_status, action, string)
-        logger.debug("Marked %d car heater commands as successful", len(commands))
-        
+        logger.debug(
+            "Marked %d car heater commands as successful", len(commands))
+
     def get_command_status(self) -> CommandStatus:
         """Return the current status of queued commands."""
         with self._lock:
@@ -118,7 +118,23 @@ class CarHeaterService:
             if enabled_bool:
                 state.power_cut = False
                 state.power_cut_at = None
-            return ChargeModeState(**vars(state))
+            result = ChargeModeState(**vars(state))
+
+        # Persist to DB outside of lock
+        self._persist_charge_mode_state()
+        return result
+
+    def _persist_charge_mode_state(self) -> None:
+        """Persist current charge mode state to the database if controller is available."""
+        if self._controller is None:
+            return
+        try:
+            with self._lock:
+                state_copy = ChargeModeState(**vars(self._charge_mode_state))
+            self._controller.save_charge_mode_state(state_copy)
+            logger.debug("Persisted ChargeModeState to DB")
+        except Exception:
+            logger.exception("Failed to persist ChargeModeState to DB")
 
     def handle_status_update(
         self,
@@ -135,6 +151,7 @@ class CarHeaterService:
         threshold.
         """
         command_to_queue: Dict[str, Any] | None = None
+        state_changed = False
         with self._lock:
             state = self._charge_mode_state
             try:
@@ -151,7 +168,9 @@ class CarHeaterService:
             # First require that we have seen power at or above the
             # threshold before considering a drop below it as "cut".
             if state.last_instant_power_w >= state.threshold_w:
-                state.seen_above_threshold = True
+                if not state.seen_above_threshold:
+                    state.seen_above_threshold = True
+                    state_changed = True
                 return
 
             if not state.seen_above_threshold:
@@ -162,7 +181,12 @@ class CarHeaterService:
             state.enabled = False
             state.power_cut = True
             state.power_cut_at = timestamp_iso
+            state_changed = True
             command_to_queue = {"action": "turn_off"}
+
+        # Persist state changes to DB outside of lock
+        if state_changed:
+            self._persist_charge_mode_state()
 
         if command_to_queue is not None:
             self.queue_command(command_to_queue)
@@ -208,6 +232,3 @@ class CarHeaterService:
                 self._stop_event.wait(timeout=60.0)
         except Exception:
             logger.exception("CarHeaterService thread crashed")
-
-
-__all__ = ["CarHeaterService"]

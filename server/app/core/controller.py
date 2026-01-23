@@ -19,6 +19,7 @@ from . import (
     BMPData,
     CarHeaterStatus,
 )
+from ..services.car_heater.car_heater_models import ChargeModeState, KeepAtTempSettings
 import pytz
 import sqlite3
 import secrets
@@ -914,7 +915,8 @@ class Controller:
             """
         )
         if row is None:
-            raise RuntimeError("Failed to retrieve inserted car_heater_status record")
+            raise RuntimeError(
+                "Failed to retrieve inserted car_heater_status record")
 
         return CarHeaterStatus(
             id=row["id"],
@@ -1124,3 +1126,94 @@ class Controller:
             )
             for row in rows
         ]
+
+    # --- Car heater charge mode state ---
+    def get_charge_mode_state(self) -> ChargeModeState:
+        """Load ChargeModeState from the database, or return defaults if not found."""
+        row = self.db.fetchone(
+            """
+            SELECT enabled, threshold_w, power_cut, power_cut_at,
+                   last_instant_power_w, seen_above_threshold
+              FROM car_heater_charge_mode
+             WHERE id = 1
+            """
+        )
+        if row is None:
+            return ChargeModeState()
+        return ChargeModeState(
+            enabled=bool(row['enabled']),
+            threshold_w=float(row['threshold_w']),
+            power_cut=bool(row['power_cut']),
+            power_cut_at=row['power_cut_at'],
+            last_instant_power_w=float(
+                row['last_instant_power_w']) if row['last_instant_power_w'] is not None else None,
+            seen_above_threshold=bool(row['seen_above_threshold']),
+        )
+
+    def save_charge_mode_state(self, state: ChargeModeState) -> None:
+        """Persist ChargeModeState to the database."""
+        self.db.execute_query(
+            """
+            INSERT INTO car_heater_charge_mode (
+                id, enabled, threshold_w, power_cut, power_cut_at,
+                last_instant_power_w, seen_above_threshold
+            )
+            VALUES (1, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                enabled = excluded.enabled,
+                threshold_w = excluded.threshold_w,
+                power_cut = excluded.power_cut,
+                power_cut_at = excluded.power_cut_at,
+                last_instant_power_w = excluded.last_instant_power_w,
+                seen_above_threshold = excluded.seen_above_threshold
+            """,
+            (
+                1 if state.enabled else 0,
+                state.threshold_w,
+                1 if state.power_cut else 0,
+                state.power_cut_at,
+                state.last_instant_power_w,
+                1 if state.seen_above_threshold else 0,
+            ),
+        )
+
+    # --- Car heater keep-at-temp settings ---
+    def get_keep_at_temp_settings(self) -> KeepAtTempSettings:
+        """Load KeepAtTempSettings from the database, or return defaults if not found."""
+        row = self.db.fetchone(
+            """
+            SELECT target_temperature_c, hysteresis_c, enabled
+              FROM car_heater_keep_at_temp
+             WHERE id = 1
+            """
+        )
+        if row is None:
+            return KeepAtTempSettings()
+        return KeepAtTempSettings(
+            target_temperature_c=float(
+                row['target_temperature_c']) if row['target_temperature_c'] is not None else None,
+            hysteresis_c=float(
+                row['hysteresis_c']) if row['hysteresis_c'] is not None else None,
+            enabled=bool(
+                row['enabled']) if row['enabled'] is not None else None,
+        )
+
+    def save_keep_at_temp_settings(self, settings: KeepAtTempSettings) -> None:
+        """Persist KeepAtTempSettings to the database."""
+        self.db.execute_query(
+            """
+            INSERT INTO car_heater_keep_at_temp (
+                id, target_temperature_c, hysteresis_c, enabled
+            )
+            VALUES (1, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                target_temperature_c = excluded.target_temperature_c,
+                hysteresis_c = excluded.hysteresis_c,
+                enabled = excluded.enabled
+            """,
+            (
+                settings.target_temperature_c,
+                settings.hysteresis_c,
+                1 if settings.enabled else 0,
+            ),
+        )

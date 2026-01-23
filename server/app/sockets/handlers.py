@@ -6,7 +6,7 @@ from flask_login import current_user
 
 from ..core import Controller
 from ..services.ac import ACThermostat
-
+from ..services.car_heater import CarHeaterService
 
 class SocketEventHandler:
     _instance: "SocketEventHandler | None" = None
@@ -39,6 +39,8 @@ class SocketEventHandler:
                           self.handle_car_heater_control)
         socketio.on_event('car_heater_charge_mode',
                           self.handle_car_heater_charge_mode)
+        socketio.on_event('keep_at_temp_settings', 
+                          self.handle_car_heater_keep_at_temp)
 
     def handle_connect(self, auth):
         # Use Flask-Login session cookie for auth instead of API key
@@ -516,7 +518,7 @@ class SocketEventHandler:
             return
 
         try:
-            svc = current_app.config.get('CAR_HEATER_SERVICE')
+            svc: CarHeaterService = current_app.config.get('CAR_HEATER_SERVICE')
         except Exception:
             svc = None
         if svc is None:
@@ -538,3 +540,66 @@ class SocketEventHandler:
             self.logger.exception("car_heater_charge_mode error: %s", e)
             self.socketio.emit(
                 'error', {'message': 'Car heater charge mode error'})
+
+    def handle_car_heater_keep_at_temp(self, data):
+        """Handle car heater keep-at-temperature settings from the web UI."""
+        if data is None or not isinstance(data, dict):
+            self.socketio.emit('error', {'message': 'Invalid keep-at-temp payload'})
+            self.logger.warning("Bad keep_at_temp payload: %s", data)
+            return
+
+        # Permission check (if needed)
+        if not current_user.is_admin:
+            self.flash("Permission denied for keep-at-temp settings.", 'error')
+            return
+
+        from ..services.car_heater import KeepAtTempSettings, KeepAtTempService
+
+        try:
+            svc: KeepAtTempService | None = getattr(current_app, 'keep_at_temp_service', None)
+        except Exception:
+            svc = None
+        if svc is None:
+            self.socketio.emit('error', {'message': 'Keep-at-temp service not initialized'})
+            return
+
+        try:
+            # Build partial update - only set fields that were provided
+            settings = KeepAtTempSettings()
+            
+            if 'enabled' in data:
+                settings.enabled = bool(data['enabled'])
+            
+            if 'target_temp_c' in data:
+                temp = float(data['target_temp_c'])
+                if not -50 <= temp <= 50:
+                    raise ValueError("Target temp out of range (-50 to 50°C)")
+                settings.target_temperature_c = temp
+            
+            if 'hysteresis_c' in data:
+                hyst = float(data['hysteresis_c'])
+                if not 0.1 <= hyst <= 10:
+                    raise ValueError("Hysteresis out of range (0.1 to 10°C)")
+                settings.hysteresis_c = hyst
+
+            svc.update_settings(settings)
+            settings_new = svc.get_settings()
+            
+            self.emit_to_views('keep_at_temp_settings', {
+                'enabled': settings_new.enabled,
+                'target_temp_c': settings_new.target_temperature_c,
+                'hysteresis_c': settings_new.hysteresis_c,
+            })
+        except ValueError as e:
+            self.socketio.emit('error', {'message': str(e)})
+            self.logger.warning("Invalid keep-at-temp value: %s", e)
+            if svc:
+                current_settings = svc.get_settings()
+                self.emit_to_views('keep_at_temp_settings', {
+                    'enabled': current_settings.enabled,
+                    'target_temp_c': current_settings.target_temperature_c,
+                    'hysteresis_c': current_settings.hysteresis_c,
+                })
+        except Exception as e:
+            self.logger.exception("keep_at_temp_settings error: %s", e)
+            self.socketio.emit('error', {'message': 'Keep-at-temp settings error'})

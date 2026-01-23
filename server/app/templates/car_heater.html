@@ -93,6 +93,40 @@
             Battery charge: idle
           </div>
         </div>
+
+        <div class="divider"></div>
+
+        <div class="keep-at-temp-section">
+          <div class="keep-at-temp-header">
+            <span class="keep-at-temp-title">Keep at Temperature</span>
+            <label class="toggle-switch" for="keepAtTempToggle">
+              <input type="checkbox" id="keepAtTempToggle" name="keepAtTempToggle">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <p class="keep-at-temp-hint">Automatically turn heater on/off to maintain target temperature.</p>
+          <div class="keep-at-temp-inputs">
+            <div class="input-field">
+              <label for="targetTempInput">Target temperature</label>
+              <div class="input-with-unit">
+                <input type="number" id="targetTempInput" name="targetTempInput" 
+                       inputmode="decimal" step="0.5" min="-40" max="40" 
+                       placeholder="-5.0" autocomplete="off">
+                <span class="input-unit">°C</span>
+              </div>
+            </div>
+            <div class="input-field">
+              <label for="hysteresisInput">Hysteresis</label>
+              <div class="input-with-unit">
+                <input type="number" id="hysteresisInput" name="hysteresisInput" 
+                       inputmode="decimal" step="0.1" min="0.1" max="10" 
+                       placeholder="1.0" autocomplete="off">
+                <span class="input-unit">°C</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="divider"></div>
         <div class="cmd-status-header">
           <span>Command statuses</span>
