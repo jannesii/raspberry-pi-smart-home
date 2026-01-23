@@ -37,7 +37,11 @@ class KeepAtTempService:
         with self._lock:
             return self._settings
 
-    def thermostat_logic(self, current_temp: float, heater_on: bool) -> None:
+    def thermostat_logic(
+            self, 
+            current_temp: float, 
+            heater_on: bool,
+        ) -> None:
         """
         Logic to control the car heater based on temperature settings.
         """

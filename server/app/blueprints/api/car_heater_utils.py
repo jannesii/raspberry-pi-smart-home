@@ -1,16 +1,20 @@
 """Car Heater API utility functions."""
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, TYPE_CHECKING
 from dataclasses import asdict
 import logging
 import json
+import time
 from zoneinfo import ZoneInfo
 
-from flask import current_app
+from flask import current_app, jsonify
 
 from ...core import Controller
 from ...core.models import CarHeaterStatus
 from ...extensions import socketio
+
+if TYPE_CHECKING:
+    from .car_heater_api import FallbackStatus
 
 logger = logging.getLogger(__name__)
 
@@ -63,14 +67,16 @@ def build_car_heater_status(
 def record_and_build_payload(
     ctrl: Controller,
     car: CarHeaterStatus,
+    skip_db: bool = False,
 ) -> Dict[str, Any]:
     """Persist status to DB and return the status payload dict."""
     recorded_id = None
-    try:
-        recorded = ctrl.record_car_heater_status(car)
-        recorded_id = getattr(recorded, "id", None)
-    except Exception as e:
-        logger.exception("Failed to record car heater status: %s", e)
+    if not skip_db:
+        try:
+            recorded = ctrl.record_car_heater_status(car)
+            recorded_id = getattr(recorded, "id", None)
+        except Exception as e:
+            logger.exception("Failed to record car heater status: %s", e)
 
     return {
         "id": recorded_id,
@@ -199,3 +205,75 @@ def emit_status_to_views(
     except Exception as e:
         logger.exception(
             "Failed to emit car_heater_status over Socket.IO: %s", e)
+
+
+def handle_status_update_request(
+    data: Dict[str, Any] | None,
+    fallback_status: "FallbackStatus",
+    commands_enabled: bool = True,
+    is_test: bool = False,
+) -> Tuple[Any, int]:
+    """
+    Shared handler for car heater status update requests.
+
+    Args:
+        data: JSON payload from request
+        fallback_status: Global fallback status object to update
+        commands_enabled: Whether to process commands
+
+    Returns:
+        Flask response tuple (jsonify response, status code)
+    """
+    start_time = time.perf_counter()
+
+    ctrl: Controller = getattr(current_app, "ctrl", None)
+    if ctrl is None:
+        return jsonify({"error": "Controller not initialized"}), 500
+
+    if not data:
+        return jsonify({"error": "Invalid JSON payload"}), 400
+
+    # Parse incoming data
+    timestamp = parse_timestamp(data.get("timestamp"))
+    shelly = parse_shelly_payload(data.get("shelly"))
+    shelly_connected = bool(data.get("shelly_connected", True))
+    ambient_temp = data.get("temperature")
+
+    # Update global fallback status
+    fallback_status.timestamp = timestamp
+    fallback_status.ambient_temp = ambient_temp
+    fallback_status.shelly_connected = shelly_connected
+
+    # Build status and payload
+    car: CarHeaterStatus | None = None
+    status_payload: Dict[str, Any]
+
+    if shelly and shelly_connected:
+        car = build_car_heater_status(timestamp, shelly, ambient_temp)
+        status_payload = record_and_build_payload(ctrl, car, skip_db=is_test)
+        run_keep_at_temp_tick(car)
+    else:
+        logger.debug("No shelly data provided in car heater status update")
+        status_payload = build_fallback_payload(
+            timestamp, ambient_temp, shelly_connected)
+
+    # Process commands
+    commands: List[Dict[str, Any]] = []
+    command_status: Dict[str, Any] | None = None
+    charge_mode_state: Dict[str, Any] | None = None
+
+    if commands_enabled:
+        commands, command_status, charge_mode_state = process_commands(
+            data, car)
+    else:
+        logger.debug(
+            "Car heater commands are disabled; skipping command queue handling.")
+
+    # Notify browser clients
+    emit_status_to_views(status_payload, command_status, charge_mode_state)
+
+    elapsed_time = time.perf_counter() - start_time
+    logger.debug(
+        "Processed car heater status update in %.3f seconds", elapsed_time)
+
+    return jsonify(commands), 200

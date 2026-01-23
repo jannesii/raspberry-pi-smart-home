@@ -1,28 +1,18 @@
 """Car Heater API routes."""
-from datetime import datetime, timezone
+from datetime import datetime
+import time
 from typing import Any, Dict, List
 import logging
-import time
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 from flask import Blueprint, request, jsonify, current_app
 from flask_login import login_required, current_user
 
 from ...core import Controller
-from ...core.models import CarHeaterStatus
 from ...extensions import csrf
 from ...security import require_api_key
 
-from .car_heater_utils import (
-    parse_timestamp,
-    parse_shelly_payload,
-    build_car_heater_status,
-    record_and_build_payload,
-    build_fallback_payload,
-    run_keep_at_temp_tick,
-    process_commands,
-    emit_status_to_views,
-)
+from .car_heater_utils import handle_status_update_request
 
 car_bp = Blueprint('car_bp', __name__, url_prefix='/car_heater')
 
@@ -31,6 +21,18 @@ logger.setLevel(logging.INFO)
 
 # Toggle to enable/disable sending commands to the ESP.
 COMMANDS_ENABLED = True
+
+# Test mode timeout: normal endpoint disabled while test requests arrive
+TEST_MODE_TIMEOUT_SECONDS = 10.0
+_last_test_request_time: float | None = None
+_test_mode_was_active: bool = False
+
+
+def _is_test_mode_active() -> bool:
+    """Check if test mode is active (test request received within timeout)."""
+    if _last_test_request_time is None:
+        return False
+    return (time.monotonic() - _last_test_request_time) < TEST_MODE_TIMEOUT_SECONDS
 
 
 @dataclass
@@ -49,60 +51,46 @@ fallback_status = FallbackStatus()
 @require_api_key
 def update_car_heater_status():
     """Update the car heater status and return queued commands."""
-    start_time = time.perf_counter()
+    global _test_mode_was_active
 
-    ctrl: Controller = getattr(current_app, "ctrl", None)
-    if ctrl is None:
-        return jsonify({"error": "Controller not initialized"}), 500
+    if _is_test_mode_active():
+        logger.debug("Normal endpoint blocked - test mode active")
+        return jsonify([]), 200  # Return empty commands, don't process
 
-    data: Dict[str, Any] = request.get_json()
-    if not data:
-        return jsonify({"error": "Invalid JSON payload"}), 400
+    # Log when test mode expires
+    if _test_mode_was_active:
+        logger.info("Test mode expired - normal endpoint re-enabled")
+        _test_mode_was_active = False
 
-    # Parse incoming data
-    timestamp = parse_timestamp(data.get("timestamp"))
-    shelly = parse_shelly_payload(data.get("shelly"))
-    shelly_connected = bool(data.get("shelly_connected", True))
-    ambient_temp = data.get("temperature")
+    return handle_status_update_request(
+        data=request.get_json(),
+        fallback_status=fallback_status,
+        commands_enabled=COMMANDS_ENABLED,
+    )
 
-    # Update global fallback status
-    fallback_status.timestamp = timestamp
-    fallback_status.ambient_temp = ambient_temp
-    fallback_status.shelly_connected = shelly_connected
 
-    # Build status and payload
-    car: CarHeaterStatus | None = None
-    status_payload: Dict[str, Any]
+@car_bp.route('/status/test', methods=['POST'])
+@csrf.exempt
+@require_api_key
+def update_car_heater_status_test():
+    """Test endpoint for car heater status (requires API key)."""
+    global _last_test_request_time, _test_mode_was_active
 
-    if shelly and shelly_connected:
-        car = build_car_heater_status(timestamp, shelly, ambient_temp)
-        status_payload = record_and_build_payload(ctrl, car)
-        run_keep_at_temp_tick(car)
-    else:
-        logger.debug("No shelly data provided in car heater status update")
-        status_payload = build_fallback_payload(
-            timestamp, ambient_temp, shelly_connected)
+    # Log if test mode is being activated (not already active)
+    if not _is_test_mode_active():
+        logger.info(
+            "Test mode activated - normal endpoint disabled for %.0f seconds",
+            TEST_MODE_TIMEOUT_SECONDS,
+        )
+    _last_test_request_time = time.monotonic()
+    _test_mode_was_active = True
 
-    # Process commands
-    commands: List[Dict[str, Any]] = []
-    command_status: Dict[str, Any] | None = None
-    charge_mode_state: Dict[str, Any] | None = None
-
-    if COMMANDS_ENABLED:
-        commands, command_status, charge_mode_state = process_commands(
-            data, car)
-    else:
-        logger.debug(
-            "Car heater commands are disabled; skipping command queue handling.")
-
-    # Notify browser clients
-    emit_status_to_views(status_payload, command_status, charge_mode_state)
-
-    elapsed_time = time.perf_counter() - start_time
-    logger.debug(
-        "Processed car heater status update in %.3f seconds", elapsed_time)
-
-    return jsonify(commands), 200
+    return handle_status_update_request(
+        data=request.get_json(),
+        fallback_status=fallback_status,
+        commands_enabled=COMMANDS_ENABLED,
+        is_test=True,
+    )
 
 
 @car_bp.route('/commands', methods=['GET'])
