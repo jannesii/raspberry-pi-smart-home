@@ -116,7 +116,7 @@ def init_services(app) -> Dict[str, Any]:
         from .car_heater import CarHeaterService
 
         car_heater_service = CarHeaterService(app.ctrl)
-        # Expose via app.config so both API and web UI can access it
+        # Expose via both app attributes and config for compatibility
         app.car_heater_service = car_heater_service
         services["car_heater_service"] = car_heater_service
         logger.info("Car heater service initialized and stored in app.config")

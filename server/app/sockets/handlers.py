@@ -481,7 +481,7 @@ class SocketEventHandler:
                 'error', {'message': 'Missing car heater action'})
             return
         try:
-            svc = current_app.config.get('CAR_HEATER_SERVICE')
+            svc = getattr(current_app, 'car_heater_service', None)
         except Exception:
             svc = None
         if svc is None:
@@ -518,7 +518,7 @@ class SocketEventHandler:
             return
 
         try:
-            svc: CarHeaterService = current_app.config.get('CAR_HEATER_SERVICE')
+            svc: CarHeaterService = getattr(current_app, 'car_heater_service', None)
         except Exception:
             svc = None
         if svc is None:

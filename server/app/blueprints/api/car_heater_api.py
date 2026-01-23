@@ -101,8 +101,7 @@ def get_car_heater_commands():
     commands: List[Dict[str, Any]] = []
     try:
         from ...services.car_heater import CarHeaterService
-        service: CarHeaterService = current_app.config.get(
-            "CAR_HEATER_SERVICE")
+        service: CarHeaterService | None = getattr(current_app, "car_heater_service", None)
         if service:
             commands = service.peek_queued_commands()
     except Exception as e:
@@ -127,8 +126,7 @@ def queue_car_heater_command():
     try:
         from ...services.car_heater import CarHeaterService
 
-        service: CarHeaterService | None = current_app.config.get(
-            "CAR_HEATER_SERVICE")
+        service: CarHeaterService | None = getattr(current_app, "car_heater_service", None)
     except Exception:
         service = None
 

@@ -183,8 +183,11 @@ function updateSingleCommandStatus(action, status) {
       cls = 'status-queued';
       break;
     case 'sent':
-    case 'success':
       text = 'Sent';
+      cls = 'status-sent';
+      break;
+    case 'success':
+      text = 'Success';
       cls = 'status-sent';
       break;
     case 'failed':
@@ -268,6 +271,7 @@ function updateKeepAtTempUI(settings) {
 // ============================================
 
 let queueBannerTimeout = null;
+let lastQueuedAction = null;
 
 function updateNavHeightVar() {
   const nav = document.querySelector('nav.navbar');
@@ -310,6 +314,7 @@ function setQueueStatus(mode, text) {
 
 function queueCommand(action) {
   const payload = { action: action };
+  lastQueuedAction = action;
   setQueueStatus('pending', 'Action queued…');
   updateSingleCommandStatus(action, 'queued');
 
@@ -477,7 +482,20 @@ document.addEventListener('DOMContentLoaded', () => {
         updateStatusUI(data);
       }
       if (data && (data.command_status || data.commandStatus)) {
-        updateCommandStatusUI(data.command_status || data.commandStatus);
+        const cmdStatus = data.command_status || data.commandStatus;
+        updateCommandStatusUI(cmdStatus);
+        if (lastQueuedAction && cmdStatus && Object.prototype.hasOwnProperty.call(cmdStatus, lastQueuedAction)) {
+          const status = cmdStatus[lastQueuedAction];
+          if (status === 'sent') {
+            setQueueStatus('sent', 'Sent to heater');
+          } else if (status === 'success') {
+            setQueueStatus('sent', 'Action successful');
+            lastQueuedAction = null;
+          } else if (status === 'failed') {
+            setQueueStatus('idle', 'Action failed');
+            lastQueuedAction = null;
+          }
+        }
       }
       if (data && (data.charge_mode || data.chargeMode)) {
         updateChargeModeUI(data.charge_mode || data.chargeMode);
@@ -489,7 +507,7 @@ document.addEventListener('DOMContentLoaded', () => {
       console.log('📡 car_heater_action_result:', data);
       if (!data) return;
       const ok = data.ok !== false;
-      setQueueStatus(ok ? 'sent' : 'idle', ok ? 'Command sent' : 'Action failed');
+      setQueueStatus(ok ? 'pending' : 'idle', ok ? 'Action queued…' : 'Action failed');
       if (ok && data.action) {
         updateSingleCommandStatus(data.action, 'queued');
       }

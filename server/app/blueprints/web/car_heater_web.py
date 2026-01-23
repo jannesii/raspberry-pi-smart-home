@@ -37,8 +37,7 @@ def get_car_heater_page():
     command_status = None
     charge_mode_state = None
     try:
-        svc: CarHeaterService | None = current_app.config.get(
-            "CAR_HEATER_SERVICE")
+        svc: CarHeaterService | None = getattr(current_app, "car_heater_service", None)
         if svc is not None:
             command_status = asdict(svc.get_command_status())
             try:

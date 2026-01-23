@@ -163,8 +163,38 @@ def process_commands(
 
         # Handle action results from ESP
         action_results = data.get("action_results", {})
+        normalized_results: List[Dict[str, Any]] = []
         if action_results:
-            service.mark_command_success(action_results)
+            if isinstance(action_results, list):
+                for item in action_results:
+                    if isinstance(item, dict):
+                        if "action" in item:
+                            normalized_results.append({
+                                "action": item.get("action"),
+                                "success": item.get("success", item.get("ok", False)),
+                            })
+                        else:
+                            for key, val in item.items():
+                                normalized_results.append({
+                                    "action": key,
+                                    "success": bool(val),
+                                })
+                    elif isinstance(item, str):
+                        normalized_results.append({"action": item, "success": True})
+            elif isinstance(action_results, dict):
+                if "action" in action_results:
+                    normalized_results.append({
+                        "action": action_results.get("action"),
+                        "success": action_results.get("success", action_results.get("ok", False)),
+                    })
+                else:
+                    for key, val in action_results.items():
+                        normalized_results.append({
+                            "action": key,
+                            "success": bool(val),
+                        })
+            if normalized_results:
+                service.mark_command_success(normalized_results)
 
         # Fetch and mark commands
         commands = service.get_queued_commands()
