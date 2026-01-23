@@ -6,156 +6,231 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/flash.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_chart.css') }}">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 {% endblock %}
 
 {% block content %}
+{% include 'settings_flash.html' %}
 <div class="container car-heater-page">
-  <div class="page-header">
-    <div>
-      <h2>Car Heater</h2>
-      <p class="subtitle">Live status and controls for the car heater relay.</p>
-    </div>
-    <button id="btnOpenCarHeaterCharts" class="btn btn-ghost">View charts</button>
+  <!-- Sticky Header -->
+  <header class="page-header">
+    <h2>Car Heater</h2>
+  </header>
+
+  <!-- Queue Status Banner -->
+  <div id="queueBanner" class="queue-banner">
+    <span id="queueBannerText">Action queued…</span>
   </div>
 
-  <div class="page-grid">
-    <section class="card status-card">
-      <div class="card-header">
-        <div>
-          <h3>Status</h3>
-          <div class="pill-row">
-            <span id="heaterStatePill" class="pill pill-unknown">Unknown</span>
-            <span id="powerPill" class="pill pill-muted">Power: —</span>
-            <span id="ambientPill" class="pill pill-muted">Ambient: —</span>
+  <!-- Desktop Grid Layout -->
+  <div class="desktop-grid">
+    <!-- Hero Status Card - spans full width on desktop -->
+    <section class="hero-status">
+      <div class="hero-status-main">
+        <div class="hero-state">
+          <div id="stateIndicator" class="state-indicator state-unknown">
+            <span id="stateIcon">❓</span>
+          </div>
+          <div class="state-text">
+            <h3 id="stateTitle">Unknown</h3>
+            <span class="state-label">Heater Status</span>
           </div>
         </div>
-        <div class="pill-row secondary">
-          <span id="deviceTempPill" class="pill pill-muted">Device: —</span>
-          <span id="voltagePill" class="pill pill-muted">U: —</span>
-          <span id="currentPill" class="pill pill-muted">I: —</span>
+        <div class="hero-power">
+          <span id="heroPowerValue" class="power-value">—</span>
+          <span class="power-unit">W</span>
         </div>
       </div>
-      <div class="card-body">
-        <div class="status-grid">
-          <div class="field">
-            <label>Last update</label>
-            <div id="tsValue" class="value value-ts">—</div>
-          </div>
-          <div class="field">
-            <label>Instant power</label>
-            <div id="instantPowerValue" class="value">—</div>
-          </div>
-          <div class="field">
-            <label>Energy today</label>
-            <div id="energyLastMinValue" class="value">—</div>
-          </div>
-          <div class="field">
-            <label>Energy total</label>
-            <div id="energyTotalValue" class="value">—</div>
-          </div>
-          <div class="field">
-            <label>Device temperature</label>
-            <div id="deviceTempValue" class="value">—</div>
-          </div>
-          <div class="field">
-            <label>Ambient temperature</label>
-            <div id="ambientTempValue" class="value">—</div>
-          </div>
-          <div class="field">
-            <label>Source</label>
-            <div id="sourceValue" class="value value-source">—</div>
-          </div>
+      <div class="hero-stats">
+        <div class="hero-stat">
+          <div id="heroAmbient" class="hero-stat-value">—</div>
+          <div class="hero-stat-label">Ambient</div>
+        </div>
+        <div class="hero-stat">
+          <div id="heroDeviceTemp" class="hero-stat-value">—</div>
+          <div class="hero-stat-label">Device</div>
+        </div>
+        <div class="hero-stat">
+          <div id="heroEnergy" class="hero-stat-value">—</div>
+          <div class="hero-stat-label">Today</div>
         </div>
       </div>
     </section>
 
-    <section class="card control-card">
-      <div class="card-header">
-        <div>
-          <h3>Controls</h3>
-          <p class="hint">Actions are queued and executed when the car contacts the server.</p>
-        </div>
-        <div id="queueStatus" class="queue-status queue-idle">No pending actions</div>
-      </div>
-      <div class="card-body">
-        <div class="controls-grid">
-          <button id="btnTurnOn" class="btn control-btn primary">Turn ON</button>
-          <button id="btnTurnOff" class="btn control-btn danger">Turn OFF</button>
-          <button id="btnGetLogs" class="btn control-btn">Get logs</button>
-          <button id="btnEspRestart" class="btn control-btn danger">Restart ESP</button>
-          <button id="btnShellyRestart" class="btn control-btn danger">Restart Shelly</button>
-        </div>
-        <div class="charge-mode-row">
-          <button id="btnChargeMode" type="button" class="btn control-btn btn-ghost" aria-pressed="false">
-            Battery Charge
+    <!-- Left Column on Desktop -->
+    <div class="desktop-column">
+      <!-- Quick Actions -->
+      <section class="ios-card">
+        <div class="quick-actions">
+          <button id="btnTurnOn" class="quick-action-btn action-on" type="button">
+            <span class="icon">🔥</span>
+            <span class="label">Turn ON</span>
           </button>
-          <div id="chargeModeStatus" class="charge-mode-status">
-            Battery charge: idle
-          </div>
+          <button id="btnTurnOff" class="quick-action-btn action-off" type="button">
+            <span class="icon">❄️</span>
+            <span class="label">Turn OFF</span>
+          </button>
         </div>
+      </section>
 
-        <div class="divider"></div>
-
-        <div class="keep-at-temp-section">
-          <div class="keep-at-temp-header">
-            <span class="keep-at-temp-title">Keep at Temperature</span>
-            <label class="toggle-switch" for="keepAtTempToggle">
+      <!-- Keep at Temperature -->
+      <section class="ios-card">
+        <div class="temp-control-section">
+          <div class="temp-control-header">
+            <span class="temp-control-title">Keep at Temperature</span>
+            <label class="ios-toggle">
               <input type="checkbox" id="keepAtTempToggle" name="keepAtTempToggle">
-              <span class="toggle-slider"></span>
+              <span class="ios-toggle-track"></span>
+              <span class="ios-toggle-thumb"></span>
             </label>
           </div>
-          <p class="keep-at-temp-hint">Automatically turn heater on/off to maintain target temperature.</p>
-          <div class="keep-at-temp-inputs">
-            <div class="input-field">
-              <label for="targetTempInput">Target temperature</label>
-              <div class="input-with-unit">
+          <p class="temp-control-subtitle">Automatically maintain target temperature</p>
+          <div class="temp-inputs-row">
+            <div class="temp-input-group">
+              <label class="temp-input-label" for="targetTempInput">Target</label>
+              <div class="temp-input-wrapper">
                 <input type="number" id="targetTempInput" name="targetTempInput" 
                        inputmode="decimal" step="0.5" min="-40" max="40" 
-                       placeholder="-5.0" autocomplete="off">
-                <span class="input-unit">°C</span>
+                       placeholder="-5" autocomplete="off">
+                <span class="temp-input-unit">°C</span>
               </div>
             </div>
-            <div class="input-field">
-              <label for="hysteresisInput">Hysteresis</label>
-              <div class="input-with-unit">
+            <div class="temp-input-group">
+              <label class="temp-input-label" for="hysteresisInput">Hysteresis</label>
+              <div class="temp-input-wrapper">
                 <input type="number" id="hysteresisInput" name="hysteresisInput" 
                        inputmode="decimal" step="0.1" min="0.1" max="10" 
-                       placeholder="1.0" autocomplete="off">
-                <span class="input-unit">°C</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="divider"></div>
-        <div class="cmd-status-header">
-          <span>Command statuses</span>
-        </div>
-        <div class="cmd-status-grid" aria-live="polite" aria-label="Command statuses">
-          <div class="cmd-status-row">
-            <span class="cmd-status-label">Turn ON</span>
-            <span id="cmdStatus_turn_on" class="cmd-status-value"></span>
-          </div>
-          <div class="cmd-status-row">
-            <span class="cmd-status-label">Turn OFF</span>
-            <span id="cmdStatus_turn_off" class="cmd-status-value"></span>
-          </div>
-          <div class="cmd-status-row">
-            <span class="cmd-status-label">Get logs</span>
-            <span id="cmdStatus_get_logs" class="cmd-status-value"></span>
-          </div>
-          <div class="cmd-status-row">
-            <span class="cmd-status-label">Restart ESP</span>
-            <span id="cmdStatus_esp_restart" class="cmd-status-value"></span>
-          </div>
-          <div class="cmd-status-row">
-            <span class="cmd-status-label">Restart Shelly</span>
-            <span id="cmdStatus_shelly_restart" class="cmd-status-value"></span>
+                       placeholder="1" autocomplete="off">
+                <span class="temp-input-unit">°C</span>
           </div>
         </div>
       </div>
-    </section>
-  </div>
+    </div>
+
+    <!-- Battery Charge Mode -->
+    <div class="charge-mode-section">
+      <div class="charge-mode-row">
+        <div class="charge-mode-left">
+          <div class="charge-mode-icon">🔋</div>
+          <div class="charge-mode-info">
+            <h4>Battery Charge Mode</h4>
+            <p id="chargeModeStatusText" class="charge-mode-status">Idle</p>
+          </div>
+        </div>
+        <label class="ios-toggle">
+          <input type="checkbox" id="chargeModeToggle" name="chargeModeToggle">
+          <span class="ios-toggle-track"></span>
+          <span class="ios-toggle-thumb"></span>
+        </label>
+      </div>
+    </div>
+  </section>
+    </div><!-- /desktop-column left -->
+
+    <!-- Right Column on Desktop -->
+    <div class="desktop-column">
+  <!-- Details Card -->
+  <section class="ios-card">
+    <div class="ios-card-header">
+      <h3>Details</h3>
+    </div>
+    <div class="status-pills-compact">
+      <span id="pillVoltage" class="status-pill">
+        <span class="pill-icon">⚡</span>
+        <span>—</span>
+      </span>
+      <span id="pillCurrent" class="status-pill">
+        <span class="pill-icon">〰️</span>
+        <span>—</span>
+      </span>
+      <span id="pillEnergyTotal" class="status-pill">
+        <span class="pill-icon">📊</span>
+        <span>—</span>
+      </span>
+    </div>
+    <ul class="ios-list details-grid">
+      <li class="ios-list-item">
+        <span class="item-label">Instant Power</span>
+        <span id="detailPower" class="item-value">—</span>
+      </li>
+      <li class="ios-list-item">
+        <span class="item-label">Ambient Temperature</span>
+        <span id="detailAmbient" class="item-value">—</span>
+      </li>
+      <li class="ios-list-item">
+        <span class="item-label">Device Temperature</span>
+        <span id="detailDeviceTemp" class="item-value">—</span>
+      </li>
+      <li class="ios-list-item">
+        <span class="item-label">Voltage</span>
+        <span id="detailVoltage" class="item-value">—</span>
+      </li>
+      <li class="ios-list-item">
+        <span class="item-label">Current</span>
+        <span id="detailCurrent" class="item-value">—</span>
+      </li>
+      <li class="ios-list-item">
+        <span class="item-label">Energy Today</span>
+        <span id="detailEnergyToday" class="item-value">—</span>
+      </li>
+      <li class="ios-list-item">
+        <span class="item-label">Energy Total</span>
+        <span id="detailEnergyTotal" class="item-value">—</span>
+      </li>
+      <li class="ios-list-item">
+        <span class="item-label">Source</span>
+        <span id="detailSource" class="item-value">—</span>
+      </li>
+    </ul>
+    <div class="timestamp-footer">
+      Last updated: <span id="lastUpdateTime">—</span>
+    </div>
+  </section>
+
+  <!-- Charts Button -->
+  <button id="btnOpenCarHeaterCharts" class="charts-button" type="button">
+    📈 View Charts
+  </button>
+
+  <!-- Command Status & Advanced -->
+  <section class="ios-card cmd-status-card">
+    <div class="cmd-status-section">
+      <div class="cmd-status-title">Command Status</div>
+      <div class="cmd-status-list">
+        <div class="cmd-status-item">
+          <span class="cmd-status-name">Turn ON</span>
+          <span id="cmdStatus_turn_on" class="cmd-status-badge"></span>
+        </div>
+        <div class="cmd-status-item">
+          <span class="cmd-status-name">Turn OFF</span>
+          <span id="cmdStatus_turn_off" class="cmd-status-badge"></span>
+        </div>
+        <div class="cmd-status-item">
+          <span class="cmd-status-name">Get Logs</span>
+          <span id="cmdStatus_get_logs" class="cmd-status-badge"></span>
+        </div>
+        <div class="cmd-status-item">
+          <span class="cmd-status-name">Restart ESP</span>
+          <span id="cmdStatus_esp_restart" class="cmd-status-badge"></span>
+        </div>
+        <div class="cmd-status-item">
+          <span class="cmd-status-name">Restart Shelly</span>
+          <span id="cmdStatus_shelly_restart" class="cmd-status-badge"></span>
+        </div>
+      </div>
+    </div>
+    <div class="advanced-actions">
+      <div class="advanced-actions-title">Advanced Actions</div>
+      <div class="advanced-btn-row">
+        <button id="btnGetLogs" class="advanced-btn" type="button">Get Logs</button>
+        <button id="btnEspRestart" class="advanced-btn btn-danger" type="button">Restart ESP</button>
+        <button id="btnShellyRestart" class="advanced-btn btn-danger" type="button">Restart Shelly</button>
+      </div>
+    </div>
+  </section>
+    </div><!-- /desktop-column right -->
+  </div><!-- /desktop-grid -->
 </div>
 
 <script>

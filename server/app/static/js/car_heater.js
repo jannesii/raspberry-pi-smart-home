@@ -1,11 +1,20 @@
+/**
+ * Car Heater Page - iOS-Optimized JavaScript
+ * Handles real-time updates, controls, and UI state
+ */
+
 console.log('🚗 car_heater.js loaded');
+
+// ============================================
+// Utility Functions
+// ============================================
 
 function fmtTs(ts) {
   if (!ts) return '—';
   try {
     const d = new Date(ts);
     return d.toLocaleString(undefined, {
-      year: 'numeric', month: '2-digit', day: '2-digit',
+      month: 'short', day: 'numeric',
       hour: '2-digit', minute: '2-digit', second: '2-digit'
     });
   } catch {
@@ -20,90 +29,136 @@ function fmtNum(v, unit = '', digits = 1) {
   return `${n.toFixed(digits)}${unit}`;
 }
 
-function applyTempPill(el, temp) {
-  if (!el) return;
-  const n = Number(temp);
-  el.classList.remove('pill-warm', 'pill-hot', 'pill-muted');
-  if (!Number.isFinite(n)) {
-    el.classList.add('pill-muted');
-    return;
+function fmtCompact(v, unit = '', digits = 0) {
+  if (v === null || v === undefined) return '—';
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '—';
+  if (n >= 1000) {
+    return `${(n / 1000).toFixed(1)}k${unit}`;
   }
-  if (n >= 40) el.classList.add('pill-hot');
-  else if (n >= 30) el.classList.add('pill-warm');
-  else el.classList.add('pill-muted');
+  return `${n.toFixed(digits)}${unit}`;
 }
 
-function updateStatusUI(status) {
-  const heaterPill = document.getElementById('heaterStatePill');
-  const powerPill = document.getElementById('powerPill');
-  const ambientPill = document.getElementById('ambientPill');
-  const deviceTempPill = document.getElementById('deviceTempPill');
-  const voltagePill = document.getElementById('voltagePill');
-  const currentPill = document.getElementById('currentPill');
+// ============================================
+// Hero Status Updates
+// ============================================
 
-  const tsEl = document.getElementById('tsValue');
-  const instantEl = document.getElementById('instantPowerValue');
-  const energyLastEl = document.getElementById('energyLastMinValue');
-  const energyTotalEl = document.getElementById('energyTotalValue');
-  const deviceTempEl = document.getElementById('deviceTempValue');
-  const ambientTempEl = document.getElementById('ambientTempValue');
-  const sourceEl = document.getElementById('sourceValue');
+function updateHeroStatus(status) {
+  const stateIndicator = document.getElementById('stateIndicator');
+  const stateIcon = document.getElementById('stateIcon');
+  const stateTitle = document.getElementById('stateTitle');
+  const heroPowerValue = document.getElementById('heroPowerValue');
+  const heroAmbient = document.getElementById('heroAmbient');
+  const heroDeviceTemp = document.getElementById('heroDeviceTemp');
+  const heroEnergy = document.getElementById('heroEnergy');
 
   if (!status) {
-    if (heaterPill) {
-      heaterPill.classList.remove('pill-on', 'pill-off');
-      heaterPill.classList.add('pill-unknown');
-      heaterPill.textContent = 'Unknown';
+    if (stateIndicator) {
+      stateIndicator.classList.remove('state-on', 'state-off');
+      stateIndicator.classList.add('state-unknown');
     }
+    if (stateIcon) stateIcon.textContent = '❓';
+    if (stateTitle) stateTitle.textContent = 'Unknown';
+    if (heroPowerValue) heroPowerValue.textContent = '—';
     return;
   }
 
   const isOn = !!status.is_heater_on;
   const instantW = status.instant_power_w;
   const ambient = status.ambient_temp;
-  const devTemp = status.device_temp_c ?? status.device_temp_f;
+  const devTemp = status.device_temp_c;
+  const energyToday = status.energy_last_min_wh;
 
-  if (heaterPill) {
-    heaterPill.classList.remove('pill-on', 'pill-off', 'pill-unknown');
-    heaterPill.classList.add(isOn ? 'pill-on' : 'pill-off');
-    heaterPill.textContent = isOn ? 'Heater ON' : 'Heater OFF';
+  // State indicator
+  if (stateIndicator) {
+    stateIndicator.classList.remove('state-on', 'state-off', 'state-unknown');
+    stateIndicator.classList.add(isOn ? 'state-on' : 'state-off');
   }
-  if (powerPill) {
-    powerPill.textContent = `Power: ${fmtNum(instantW, ' W', 1)}`;
-  }
-  if (ambientPill) {
-    ambientPill.textContent = `Ambient: ${fmtNum(ambient, ' °C', 1)}`;
-  }
-  if (deviceTempPill) {
-    deviceTempPill.textContent = `Device: ${fmtNum(status.device_temp_c, ' °C', 1)}`;
-    applyTempPill(deviceTempPill, status.device_temp_c);
-  }
-  if (voltagePill) {
-    voltagePill.textContent = `U: ${fmtNum(status.voltage_v, ' V', 1)}`;
-  }
-  if (currentPill) {
-    currentPill.textContent = `I: ${fmtNum(status.current_a, ' A', 2)}`;
+  if (stateIcon) stateIcon.textContent = isOn ? '🔥' : '❄️';
+  if (stateTitle) stateTitle.textContent = isOn ? 'Heating' : 'Off';
+
+  // Power display
+  if (heroPowerValue) {
+    const power = Number(instantW);
+    heroPowerValue.textContent = Number.isFinite(power) ? power.toFixed(0) : '—';
   }
 
-  if (tsEl) tsEl.textContent = fmtTs(status.timestamp);
-  if (instantEl) instantEl.textContent = fmtNum(instantW, ' W', 1);
-  if (energyLastEl) {
-    const v = status.energy_last_min_wh;
-    energyLastEl.textContent = (v === null || v === undefined) ? '—' : `${v} Wh (last min)`;
-  }
-  if (energyTotalEl) {
-    const v = status.energy_total_wh;
-    energyTotalEl.textContent = (v === null || v === undefined) ? '—' : `${v} Wh`;
-  }
-  if (deviceTempEl) deviceTempEl.textContent = fmtNum(status.device_temp_c, ' °C', 1);
-  if (ambientTempEl) ambientTempEl.textContent = fmtNum(ambient, ' °C', 1);
-  if (sourceEl) sourceEl.textContent = status.source || '—';
+  // Stats row
+  if (heroAmbient) heroAmbient.textContent = fmtNum(ambient, '°', 1);
+  if (heroDeviceTemp) heroDeviceTemp.textContent = fmtNum(devTemp, '°', 1);
+  if (heroEnergy) heroEnergy.textContent = fmtCompact(energyToday, 'Wh');
 }
+
+// ============================================
+// Details Section Updates
+// ============================================
+
+function updateDetailsSection(status) {
+  // Pills
+  const pillVoltage = document.getElementById('pillVoltage');
+  const pillCurrent = document.getElementById('pillCurrent');
+  const pillEnergyTotal = document.getElementById('pillEnergyTotal');
+
+  // Detail list items
+  const detailPower = document.getElementById('detailPower');
+  const detailAmbient = document.getElementById('detailAmbient');
+  const detailDeviceTemp = document.getElementById('detailDeviceTemp');
+  const detailVoltage = document.getElementById('detailVoltage');
+  const detailCurrent = document.getElementById('detailCurrent');
+  const detailEnergyToday = document.getElementById('detailEnergyToday');
+  const detailEnergyTotal = document.getElementById('detailEnergyTotal');
+  const detailSource = document.getElementById('detailSource');
+  const lastUpdateTime = document.getElementById('lastUpdateTime');
+
+  if (!status) return;
+
+  // Update pills
+  if (pillVoltage) {
+    pillVoltage.querySelector('span:last-child').textContent = fmtNum(status.voltage_v, 'V', 0);
+  }
+  if (pillCurrent) {
+    pillCurrent.querySelector('span:last-child').textContent = fmtNum(status.current_a, 'A', 2);
+  }
+  if (pillEnergyTotal) {
+    pillEnergyTotal.querySelector('span:last-child').textContent = fmtCompact(status.energy_total_wh, 'Wh');
+  }
+
+  // Update detail list
+  if (detailPower) detailPower.textContent = fmtNum(status.instant_power_w, ' W', 1);
+  if (detailAmbient) detailAmbient.textContent = fmtNum(status.ambient_temp, ' °C', 1);
+  if (detailDeviceTemp) {
+    detailDeviceTemp.textContent = fmtNum(status.device_temp_c, ' °C', 1);
+    // Highlight if hot
+    const temp = Number(status.device_temp_c);
+    detailDeviceTemp.classList.remove('value-warning', 'value-danger');
+    if (temp >= 50) detailDeviceTemp.classList.add('value-danger');
+    else if (temp >= 40) detailDeviceTemp.classList.add('value-warning');
+  }
+  if (detailVoltage) detailVoltage.textContent = fmtNum(status.voltage_v, ' V', 1);
+  if (detailCurrent) detailCurrent.textContent = fmtNum(status.current_a, ' A', 2);
+  if (detailEnergyToday) detailEnergyToday.textContent = fmtNum(status.energy_last_min_wh, ' Wh', 0);
+  if (detailEnergyTotal) detailEnergyTotal.textContent = fmtNum(status.energy_total_wh, ' Wh', 0);
+  if (detailSource) detailSource.textContent = status.source || '—';
+  if (lastUpdateTime) lastUpdateTime.textContent = fmtTs(status.timestamp);
+}
+
+// ============================================
+// Combined Status Update
+// ============================================
+
+function updateStatusUI(status) {
+  updateHeroStatus(status);
+  updateDetailsSection(status);
+}
+
+// ============================================
+// Command Status
+// ============================================
 
 const COMMAND_ACTIONS = {
   turn_on: 'Turn ON',
   turn_off: 'Turn OFF',
-  get_logs: 'Get logs',
+  get_logs: 'Get Logs',
   esp_restart: 'Restart ESP',
   shelly_restart: 'Restart Shelly',
 };
@@ -112,11 +167,11 @@ function updateSingleCommandStatus(action, status) {
   const el = document.getElementById(`cmdStatus_${action}`);
   if (!el) return;
 
-  el.classList.remove('status-queued', 'status-sent', 'status-success', 'status-error');
+  el.classList.remove('status-queued', 'status-sent', 'status-error');
+  el.style.display = 'none';
 
   if (!status) {
     el.textContent = '';
-    el.style.display = 'none';
     return;
   }
 
@@ -128,11 +183,8 @@ function updateSingleCommandStatus(action, status) {
       cls = 'status-queued';
       break;
     case 'sent':
-      text = 'Sent to ESP';
-      cls = 'status-sent';
-      break;
     case 'success':
-      text = 'Success';
+      text = 'Sent';
       cls = 'status-sent';
       break;
     case 'failed':
@@ -160,39 +212,41 @@ function updateCommandStatusUI(commandStatus) {
   });
 }
 
+// ============================================
+// Charge Mode
+// ============================================
+
 let chargeModeState = null;
 
 function updateChargeModeUI(state) {
   chargeModeState = state || null;
 
-  const btn = document.getElementById('btnChargeMode');
-  const label = document.getElementById('chargeModeStatus');
-  if (!btn || !label) return;
+  const toggle = document.getElementById('chargeModeToggle');
+  const statusText = document.getElementById('chargeModeStatusText');
+  if (!toggle || !statusText) return;
 
   const enabled = !!(state && state.enabled);
   const powerCut = !!(state && state.power_cut);
-  const threshold = state && state.threshold_w != null
-    ? Number(state.threshold_w)
-    : 40;
+  const threshold = state && state.threshold_w != null ? Number(state.threshold_w) : 40;
 
-  btn.classList.toggle('charge-active', enabled);
-  btn.setAttribute('aria-pressed', enabled ? 'true' : 'false');
-
-  label.classList.remove('charge-active', 'charge-cut');
+  toggle.checked = enabled;
+  statusText.classList.remove('active', 'cut');
 
   if (powerCut) {
     const ts = state.power_cut_at;
-    label.textContent = ts
-      ? `Battery charge: power cut at ${fmtTs(ts)}`
-      : 'Battery charge: power cut';
-    label.classList.add('charge-cut');
+    statusText.textContent = ts ? `Power cut at ${fmtTs(ts)}` : 'Power cut';
+    statusText.classList.add('cut');
   } else if (enabled) {
-    label.textContent = `Battery charge mode active (cut at ${threshold} W)`;
-    label.classList.add('charge-active');
+    statusText.textContent = `Active (cut at ${threshold}W)`;
+    statusText.classList.add('active');
   } else {
-    label.textContent = 'Battery charge: idle';
+    statusText.textContent = 'Idle';
   }
 }
+
+// ============================================
+// Keep at Temperature
+// ============================================
 
 function updateKeepAtTempUI(settings) {
   const toggle = document.getElementById('keepAtTempToggle');
@@ -209,20 +263,62 @@ function updateKeepAtTempUI(settings) {
     : '';
 }
 
-function setQueueStatus(mode, text) {
-  const el = document.getElementById('queueStatus');
-  if (!el) return;
-  el.classList.remove('queue-idle', 'queue-pending', 'queue-sent');
-  if (mode) el.classList.add(mode);
-  el.textContent = text;
+// ============================================
+// Queue Status Banner
+// ============================================
+
+let queueBannerTimeout = null;
+
+function updateNavHeightVar() {
+  const nav = document.querySelector('nav.navbar');
+  if (!nav) return;
+  const height = nav.getBoundingClientRect().height;
+  document.documentElement.style.setProperty('--nav-height', `${height}px`);
 }
+
+function setQueueStatus(mode, text) {
+  const banner = document.getElementById('queueBanner');
+  const bannerText = document.getElementById('queueBannerText');
+  if (!banner || !bannerText) return;
+
+  updateNavHeightVar();
+
+  // Clear any existing timeout
+  if (queueBannerTimeout) {
+    clearTimeout(queueBannerTimeout);
+    queueBannerTimeout = null;
+  }
+
+  banner.classList.remove('visible', 'pending', 'sent', 'idle');
+  
+  if (mode) {
+    banner.classList.add('visible', mode);
+    bannerText.textContent = text;
+
+    // Auto-hide after 5 seconds for 'sent' status
+    if (mode === 'sent') {
+      queueBannerTimeout = setTimeout(() => {
+        banner.classList.remove('visible');
+      }, 5000);
+    }
+  }
+}
+
+// ============================================
+// Command Queue
+// ============================================
 
 function queueCommand(action) {
   const payload = { action: action };
-  setQueueStatus('queue-pending', 'Action queued…');
+  setQueueStatus('pending', 'Action queued…');
   updateSingleCommandStatus(action, 'queued');
 
-  // Prefer Socket.IO for low latency; fall back to HTTP if needed.
+  // Haptic feedback on iOS
+  if (window.navigator && window.navigator.vibrate) {
+    window.navigator.vibrate(10);
+  }
+
+  // Prefer Socket.IO for low latency
   try {
     if (window.socket) {
       window.socket.emit('car_heater_control', payload);
@@ -232,7 +328,7 @@ function queueCommand(action) {
     console.warn('Socket emit failed, falling back to HTTP:', err);
   }
 
-  // HTTP fallback endpoint
+  // HTTP fallback
   fetch('/api/car_heater/queue', {
     method: 'POST',
     headers: {
@@ -245,14 +341,20 @@ function queueCommand(action) {
     return resp.json();
   }).then(data => {
     console.log('Queue HTTP result:', data);
-    setQueueStatus('queue-pending', 'Action queued');
+    setQueueStatus('pending', 'Action queued');
   }).catch(err => {
     console.error('Queue HTTP error:', err);
-    setQueueStatus('queue-idle', 'Failed to queue action');
+    setQueueStatus('idle', 'Failed to queue action');
   });
 }
 
+// ============================================
+// Event Listeners
+// ============================================
+
 document.addEventListener('DOMContentLoaded', () => {
+  updateNavHeightVar();
+  window.addEventListener('resize', updateNavHeightVar);
   // Initial status from server-rendered context
   if (window.CAR_HEATER_LAST_STATUS) {
     updateStatusUI(window.CAR_HEATER_LAST_STATUS);
@@ -272,19 +374,17 @@ document.addEventListener('DOMContentLoaded', () => {
     updateKeepAtTempUI(window.CAR_HEATER_KEEP_AT_TEMP);
   }
 
+  // Quick action buttons
   const btnOn = document.getElementById('btnTurnOn');
   const btnOff = document.getElementById('btnTurnOff');
   const btnLogs = document.getElementById('btnGetLogs');
   const btnEspRestart = document.getElementById('btnEspRestart');
   const btnShellyRestart = document.getElementById('btnShellyRestart');
-  const btnChargeMode = document.getElementById('btnChargeMode');
-  const keepAtTempToggle = document.getElementById('keepAtTempToggle');
-  const keepAtTempTarget = document.getElementById('targetTempInput');
-  const keepAtTempHysteresis = document.getElementById('hysteresisInput');
 
   if (btnOn) btnOn.addEventListener('click', () => queueCommand('turn_on'));
   if (btnOff) btnOff.addEventListener('click', () => queueCommand('turn_off'));
   if (btnLogs) btnLogs.addEventListener('click', () => queueCommand('get_logs'));
+
   if (btnEspRestart) {
     btnEspRestart.addEventListener('click', () => {
       if (window.confirm('Restart ESP? This will reboot the microcontroller.')) {
@@ -292,6 +392,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+
   if (btnShellyRestart) {
     btnShellyRestart.addEventListener('click', () => {
       if (window.confirm('Restart Shelly? This will reboot the relay device.')) {
@@ -300,9 +401,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  if (btnChargeMode) {
-    btnChargeMode.addEventListener('click', () => {
-      const newEnabled = !(chargeModeState && chargeModeState.enabled);
+  // Charge mode toggle
+  const chargeModeToggle = document.getElementById('chargeModeToggle');
+  if (chargeModeToggle) {
+    chargeModeToggle.addEventListener('change', () => {
+      const newEnabled = chargeModeToggle.checked;
+      
       try {
         if (window.socket) {
           window.socket.emit('car_heater_charge_mode', { enabled: newEnabled });
@@ -311,16 +415,11 @@ document.addEventListener('DOMContentLoaded', () => {
         console.warn('Socket emit failed for charge mode toggle:', err);
       }
 
+      // Optimistic UI update
       const nextState = Object.assign(
-        {
-          enabled: false,
-          power_cut: false,
-          power_cut_at: null,
-          threshold_w: 40,
-          last_instant_power_w: null,
-        },
+        { enabled: false, power_cut: false, power_cut_at: null, threshold_w: 40, last_instant_power_w: null },
         chargeModeState || {},
-        { enabled: newEnabled, power_cut: false, power_cut_at: null },
+        { enabled: newEnabled, power_cut: false, power_cut_at: null }
       );
       updateChargeModeUI(nextState);
 
@@ -329,17 +428,24 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+
+  // Keep at temp controls
+  const keepAtTempToggle = document.getElementById('keepAtTempToggle');
+  const keepAtTempTarget = document.getElementById('targetTempInput');
+  const keepAtTempHysteresis = document.getElementById('hysteresisInput');
+
   function sendKeepAtTempSettings() {
     try {
-      const enabled = keepAtTempToggle.checked;
-      const targetTemp = Number(keepAtTempTarget.value);
-      const hysteresis = Number(keepAtTempHysteresis.value);
+      const enabled = keepAtTempToggle ? keepAtTempToggle.checked : false;
+      const targetTemp = keepAtTempTarget ? Number(keepAtTempTarget.value) : null;
+      const hysteresis = keepAtTempHysteresis ? Number(keepAtTempHysteresis.value) : null;
       
       const settings = {
         enabled: enabled,
         target_temperature_c: targetTemp,
         hysteresis_c: hysteresis,
       };
+      
       if (window.socket) {
         window.socket.emit('keep_at_temp_settings', settings);
       }
@@ -348,22 +454,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  if (keepAtTempToggle) {
+    keepAtTempToggle.addEventListener('change', sendKeepAtTempSettings);
+  }
   if (keepAtTempTarget) {
-    keepAtTempTarget.addEventListener('change', () => {
-      sendKeepAtTempSettings();
-    });
+    keepAtTempTarget.addEventListener('change', sendKeepAtTempSettings);
+    // Also send on blur for better mobile UX
+    keepAtTempTarget.addEventListener('blur', sendKeepAtTempSettings);
   }
   if (keepAtTempHysteresis) {
-    keepAtTempHysteresis.addEventListener('change', () => {
-      sendKeepAtTempSettings();
-    });
-  }
-  if (keepAtTempToggle) {
-    keepAtTempToggle.addEventListener('change', (event) => {
-      sendKeepAtTempSettings();
-    });
+    keepAtTempHysteresis.addEventListener('change', sendKeepAtTempSettings);
+    keepAtTempHysteresis.addEventListener('blur', sendKeepAtTempSettings);
   }
 
+  // Socket.IO event handlers
   if (window.socket) {
     window.socket.on('car_heater_status', data => {
       console.log('📡 car_heater_status:', data);
@@ -375,19 +479,17 @@ document.addEventListener('DOMContentLoaded', () => {
       if (data && (data.command_status || data.commandStatus)) {
         updateCommandStatusUI(data.command_status || data.commandStatus);
       }
-       if (data && (data.charge_mode || data.chargeMode)) {
-         updateChargeModeUI(data.charge_mode || data.chargeMode);
-       }
-      // When a new status arrives, assume commands were delivered
-      setQueueStatus('queue-sent', 'Last command sent to car');
+      if (data && (data.charge_mode || data.chargeMode)) {
+        updateChargeModeUI(data.charge_mode || data.chargeMode);
+      }
+      setQueueStatus('sent', 'Status updated');
     });
 
     window.socket.on('car_heater_action_result', data => {
       console.log('📡 car_heater_action_result:', data);
       if (!data) return;
       const ok = data.ok !== false;
-      setQueueStatus(ok ? 'queue-sent' : 'queue-idle',
-                     ok ? 'Last action sent' : 'Action failed');
+      setQueueStatus(ok ? 'sent' : 'idle', ok ? 'Command sent' : 'Action failed');
       if (ok && data.action) {
         updateSingleCommandStatus(data.action, 'queued');
       }

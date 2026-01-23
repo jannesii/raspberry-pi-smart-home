@@ -1,11 +1,32 @@
 {% with messages = get_flashed_messages(with_categories=true) %}
   {% if messages %}
-  <div class="flash-container" style="max-width:800px; margin:20px auto;">
+  <div class="flash-container">
     {% for category, msg in messages %}
-    <div class="flash {{ category }}">
+    <div class="flash {{ category }}" data-auto-dismiss="true">
       {{ msg }}
     </div>
     {% endfor %}
   </div>
+  <script>
+    // Move flash container to body for proper fixed positioning
+    (function() {
+      const container = document.querySelector('.flash-container');
+      if (container && container.parentElement !== document.body) {
+        document.body.appendChild(container);
+      }
+    })();
+    // Auto-dismiss server-rendered flashes after 3 seconds
+    document.querySelectorAll('.flash[data-auto-dismiss]').forEach(flash => {
+      setTimeout(() => {
+        flash.style.opacity = '0';
+        flash.style.transform = 'translateY(-20px)';
+        setTimeout(() => {
+          flash.remove();
+          const container = document.querySelector('.flash-container');
+          if (container && container.children.length === 0) container.remove();
+        }, 300);
+      }, 3000);
+    });
+  </script>
   {% endif %}
 {% endwith %}

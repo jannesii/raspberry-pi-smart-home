@@ -1,15 +1,42 @@
 /* ─────────────────────────────── flash helpers ────────────────────────── */
-function getOrCreateFlashContainer () {
-  // 1.  Use an already‑rendered container if it exists …
-  let container = document.querySelector('.flash-container');
-  if (container) return container;
+function ensureFixedFlashContainer (container) {
+  if (!container) return;
+  const computed = window.getComputedStyle(container);
+  if (computed.position === 'fixed') return;
 
-  // 2.  Otherwise create one **and put it in the same spot**
-  //     as a fixed overlay at the top of the viewport.
+  // Fallback inline styles when page-specific CSS overrides or misses flash.css
+  container.style.position = 'fixed';
+  container.style.top = '12px';
+  container.style.left = '50%';
+  container.style.transform = 'translateX(-50%)';
+  container.style.width = 'min(800px, calc(100% - 32px))';
+  container.style.zIndex = '2000';
+  container.style.margin = '0';
+  container.style.pointerEvents = 'none';
+}
+
+function getOrCreateFlashContainer () {
+  // Always look for container as direct child of body for proper fixed positioning
+  let container = document.body.querySelector(':scope > .flash-container');
+  if (container) {
+    ensureFixedFlashContainer(container);
+    return container;
+  }
+
+  // Check if there's a container elsewhere (e.g., server-rendered inside content)
+  // and move it to body if found
+  const existingContainer = document.querySelector('.flash-container');
+  if (existingContainer) {
+    document.body.appendChild(existingContainer);
+    ensureFixedFlashContainer(existingContainer);
+    return existingContainer;
+  }
+
+  // Create new container and append directly to body
   container = document.createElement('div');
   container.className = 'flash-container';
-  // append to body; CSS positions it fixed at the top center
   document.body.appendChild(container);
+  ensureFixedFlashContainer(container);
   return container;
 }
 function clearFlash (flash, container) {
@@ -43,3 +70,12 @@ window.socket.on('flash', ({ category, message }) => {
   console.log('💬 flash:', category, message);
   showFlash(category, message);
 });
+
+// Normalize any server-rendered flash container after the DOM is ready.
+const initialFlashContainer = document.querySelector('.flash-container');
+if (initialFlashContainer) {
+  if (initialFlashContainer.parentElement !== document.body) {
+    document.body.appendChild(initialFlashContainer);
+  }
+  ensureFixedFlashContainer(initialFlashContainer);
+}
