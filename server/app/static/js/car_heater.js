@@ -201,8 +201,8 @@ function updateKeepAtTempUI(settings) {
   if (!toggle || !targetInput || !hysteresisInput) return;
 
   toggle.checked = !!(settings && settings.enabled);
-  targetInput.value = settings && settings.target_temp_c != null
-    ? String(settings.target_temp_c)
+  targetInput.value = settings && settings.target_temperature_c != null
+    ? String(settings.target_temperature_c)
     : '';
   hysteresisInput.value = settings && settings.hysteresis_c != null
     ? String(settings.hysteresis_c)
@@ -266,6 +266,10 @@ document.addEventListener('DOMContentLoaded', () => {
     updateChargeModeUI(window.CAR_HEATER_CHARGE_STATE);
   } else {
     updateChargeModeUI(null);
+  }
+
+  if (typeof window.CAR_HEATER_KEEP_AT_TEMP !== 'undefined') {
+    updateKeepAtTempUI(window.CAR_HEATER_KEEP_AT_TEMP);
   }
 
   const btnOn = document.getElementById('btnTurnOn');
@@ -333,7 +337,7 @@ document.addEventListener('DOMContentLoaded', () => {
       
       const settings = {
         enabled: enabled,
-        target_temp_c: targetTemp,
+        target_temperature_c: targetTemp,
         hysteresis_c: hysteresis,
       };
       if (window.socket) {

@@ -10,6 +10,7 @@ from flask_login import login_required, current_user
 from ...utils import get_ctrl
 from ...core import Controller, CarHeaterStatus
 from ...services.car_heater import CarHeaterService
+from ...services.car_heater.car_heater_models import KeepAtTempSettings
 from ..api.car_heater_api import fallback_status
 
 from . import web_bp
@@ -47,9 +48,13 @@ def get_car_heater_page():
     except Exception as e:
         logger.exception("Failed to get car heater command status: %s", e)
 
+    # Keep-at-temp settings from database
+    keep_at_temp_settings: KeepAtTempSettings = ctrl.get_keep_at_temp_settings()
+
     return render_template(
         'car_heater.html',
         last_status=last_status,
         command_status=command_status,
         charge_mode_state=charge_mode_state,
+        keep_at_temp_settings=asdict(keep_at_temp_settings),
     )

@@ -162,6 +162,7 @@
   window.CAR_HEATER_LAST_STATUS = {{ last_status | tojson }};
   window.CAR_HEATER_CMD_STATUS = {{ command_status | tojson }};
   window.CAR_HEATER_CHARGE_STATE = {{ charge_mode_state | tojson }};
+  window.CAR_HEATER_KEEP_AT_TEMP = {{ keep_at_temp_settings | tojson }};
 </script>
 {% include 'car_heater_chart_modal.html' %}
 {% endblock %}
