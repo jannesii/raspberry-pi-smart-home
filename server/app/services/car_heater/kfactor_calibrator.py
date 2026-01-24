@@ -1561,4 +1561,20 @@ class KFactorCalibrator:
         )
         self._ctrl.save_kfactor_active_params(params)
         self._active_params_override = (float(new_k), float(new_eta))
+        if (
+            fit.k_loss_W_per_K < float(self._cfg.k_loss_min)
+            or fit.k_loss_W_per_K > float(self._cfg.k_loss_max)
+            or fit.eta < float(self._cfg.eta_min)
+            or fit.eta > float(self._cfg.eta_max)
+        ):
+            record_alert(
+                key="kfactor_params_out_of_bounds",
+                title="KFactor fit out of bounds",
+                message=(
+                    f"k_loss={fit.k_loss_W_per_K:.2f} "
+                    f"eta={fit.eta:.3f} "
+                    f"bounds_k=[{self._cfg.k_loss_min},{self._cfg.k_loss_max}] "
+                    f"bounds_eta=[{self._cfg.eta_min},{self._cfg.eta_max}]"
+                ),
+            )
         return True

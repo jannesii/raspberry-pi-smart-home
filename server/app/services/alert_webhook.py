@@ -86,6 +86,7 @@ def record_alert(
 
 
 def flush_alerts(*, force: bool = False) -> bool:
+    global _LAST_FLUSH_TS
     now = time.time()
     interval_s = int(os.getenv("ALERT_WEBHOOK_BATCH_SECONDS", "3600"))
 
@@ -121,7 +122,6 @@ def flush_alerts(*, force: bool = False) -> bool:
         title=f"Alert batch ({len(items)} types, {total} total)",
         message=content,
     )
-    global _LAST_FLUSH_TS
     _LAST_FLUSH_TS = now
     return ok
 

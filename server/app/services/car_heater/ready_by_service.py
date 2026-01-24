@@ -107,6 +107,7 @@ class ReadyByService:
 
         self._schedule: ReadyBySchedule | None = None
         self._last_persisted_json: str | None = None
+        self._missing_outside_since: datetime | None = None
 
         self._restore_from_db()
 
@@ -219,7 +220,19 @@ class ReadyByService:
                 except Exception:
                     out = None
             if out is None:
+                if self._schedule is not None:
+                    if self._missing_outside_since is None:
+                        self._missing_outside_since = now
+                    missing_s = (now - self._missing_outside_since).total_seconds()
+                    if missing_s >= 15 * 60 and not is_test:
+                        from ..alert_webhook import record_alert
+                        record_alert(
+                            key="ready_by_missing_outside",
+                            title="Ready-by missing outside temperature",
+                            message=f"missing_min={missing_s/60:.1f}",
+                        )
                 return
+            self._missing_outside_since = None
 
             s.last_eval_ts = now.replace(microsecond=0).isoformat(sep=" ")
             s.cabin_temp_c = cabin_temp_c
