@@ -22,6 +22,7 @@ from ...core import (
     CarHeaterStatus,
 )
 from ..weather.weather_service import WeatherService
+from ..alert_webhook import send_alert_webhook
 
 if TYPE_CHECKING:
     from ...core import Controller
@@ -742,6 +743,17 @@ class KFactorCalibrator:
             return None
 
         early_s = int(self._cfg.early_window_minutes) * 60
+        # If we don't see a meaningful rise early on, abort to avoid recording forever.
+        if (samples[-1].ts - started).total_seconds() >= early_s:
+            temp_rise = max(s.cabin_temp_c for s in samples) - samples[0].cabin_temp_c
+            min_rise = max(0.3, float(self._cfg.min_temp_rise_C) * 0.25)
+            if temp_rise < min_rise:
+                self._session_flags["no_heating_detected"] = {
+                    "temp_rise": temp_rise,
+                    "min_rise": min_rise,
+                    "window_s": early_s,
+                }
+                return "disturbance_no_heating"
         if (samples[-1].ts - started).total_seconds() <= early_s:
             drops = 0
             thr = float(self._cfg.drop_threshold_C)
@@ -760,8 +772,11 @@ class KFactorCalibrator:
         samples = list(self._session_samples)
 
         self._state = "COOLDOWN"
+        cooldown_minutes = int(self._cfg.cooldown_minutes)
+        if reason == "disturbance_no_heating":
+            cooldown_minutes = 15
         self._cooldown_until = end_ts + \
-            timedelta(minutes=int(self._cfg.cooldown_minutes))
+            timedelta(minutes=cooldown_minutes)
         self._heater_on_streak = 0
 
         # Clear live session state early (even if we fail later).
@@ -798,6 +813,20 @@ class KFactorCalibrator:
 
         flags: dict[str, Any] = dict(self._session_flags)
         flags["stop_reason"] = reason
+        if reason == "disturbance_no_heating" and not is_test:
+            details = flags.get("no_heating_detected", {})
+            send_alert_webhook(
+                title="KFactor calibration aborted (no heating detected)",
+                message=(
+                    f"duration_s={duration_s} "
+                    f"temp_rise={details.get('temp_rise')} "
+                    f"min_rise={details.get('min_rise')} "
+                    f"window_s={details.get('window_s')} "
+                    f"cabin_start={cabin_t_start:.2f}C "
+                    f"cabin_end={cabin_t_end:.2f}C "
+                    f"outside_mean={outside_mean}"
+                ),
+            )
 
         informative, info_details = self._is_informative_session(
             samples=samples,
@@ -1104,6 +1133,8 @@ class KFactorCalibrator:
         if delta_t < float(self._cfg.min_temp_rise_C):
             return False
         if "non_monotonic_early" in flags or "spike_outlier" in flags:
+            return False
+        if "no_heating_detected" in flags:
             return False
         if "not_informative" in flags:
             return False
