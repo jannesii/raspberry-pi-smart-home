@@ -1,0 +1,6 @@
+- [ ] Heating duration calculation
+- [ ] KFactor Calibartion
+    - float cabinVolume_m3  = 2.8f,
+    - float heaterPower_W   = 1000.0f,
+    - float airDensity_kg_m3 = 1.2f,
+    - float specificHeat_J_kgK = 1000.0f

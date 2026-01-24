@@ -34,7 +34,7 @@ def get_3d_page():
     th = TemperatureHumidity(
         id=1, timestamp='', temperature=0.0, humidity=0.0
     )
-    st = ctrl.get_last_status()
+    st = ctrl.get_last_3d_status()
     logger.debug(
         f"Last image: {img.id if img else None}, Last temphum: {th}, Last status: {st}")
     return render_template(

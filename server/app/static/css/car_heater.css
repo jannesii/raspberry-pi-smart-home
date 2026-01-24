@@ -675,6 +675,11 @@ body {
   color: var(--ch-success);
 }
 
+.queue-banner.error {
+  background: rgba(255, 69, 58, 0.15);
+  color: var(--ch-danger);
+}
+
 .queue-banner.idle {
   background: rgba(142, 142, 147, 0.15);
   color: var(--ch-text-secondary);

@@ -349,7 +349,7 @@ function queueCommand(action) {
     setQueueStatus('pending', 'Action queued');
   }).catch(err => {
     console.error('Queue HTTP error:', err);
-    setQueueStatus('idle', 'Failed to queue action');
+    setQueueStatus('error', 'Failed to queue action');
   });
 }
 
@@ -492,7 +492,7 @@ document.addEventListener('DOMContentLoaded', () => {
             setQueueStatus('sent', 'Action successful');
             lastQueuedAction = null;
           } else if (status === 'failed') {
-            setQueueStatus('idle', 'Action failed');
+            setQueueStatus('error', 'Action failed');
             lastQueuedAction = null;
           }
         }
@@ -507,7 +507,7 @@ document.addEventListener('DOMContentLoaded', () => {
       console.log('📡 car_heater_action_result:', data);
       if (!data) return;
       const ok = data.ok !== false;
-      setQueueStatus(ok ? 'pending' : 'idle', ok ? 'Action queued…' : 'Action failed');
+      setQueueStatus(ok ? 'pending' : 'error', ok ? 'Action queued…' : 'Action failed');
       if (ok && data.action) {
         updateSingleCommandStatus(data.action, 'queued');
       }
