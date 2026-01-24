@@ -6,11 +6,12 @@ Simple console GUI to send test payloads to the /car_heater/status/test endpoint
 Includes a simulation mode that mimics real heater behavior.
 """
 import json
+import math
 import random
 import signal
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 import os
 
@@ -18,6 +19,7 @@ import requests
 
 # Default endpoint URL (local test server)
 DEFAULT_URL = "http://127.0.0.1:5555/api/car_heater/status/test"
+DEFAULT_KFACTOR_DEBUG_URL = "http://127.0.0.1:5555/api/car_heater/kfactor/debug"
 
 # API key for authentication (set this to your actual API key)
 API_KEY = os.getenv("API_KEY")
@@ -75,6 +77,30 @@ def generate_payload(
     return payload
 
 
+def generate_payload_at_time(
+    ts_utc: datetime,
+    *,
+    ambient_temp: float | None,
+    heater_on: bool,
+    power_w: float,
+    outside_temp_c: float | None = None,
+    wind_m_s: float | None = None,
+) -> Dict[str, Any]:
+    """Generate a payload with a controlled timestamp (useful for fast simulations)."""
+    payload = generate_payload(
+        ambient_temp=ambient_temp,
+        shelly_connected=True,
+        heater_on=heater_on,
+        power_w=power_w if heater_on else 0.0,
+    )
+    payload["timestamp"] = ts_utc.strftime("%Y-%m-%d %H:%M:%S")
+    if outside_temp_c is not None:
+        payload["outside_temp"] = outside_temp_c
+    if wind_m_s is not None:
+        payload["wind_m_s"] = wind_m_s
+    return payload
+
+
 def send_request(url: str, payload: Dict[str, Any], verbose: bool = True) -> List[Dict[str, Any]]:
     """Send POST request and print response. Returns list of commands from server."""
     if verbose:
@@ -129,6 +155,7 @@ def print_menu() -> None:
     print("  r. Random realistic payload")
     print("\nSimulation:")
     print("  s. Run temperature simulation (Ctrl+C to stop)")
+    print("  k. Run KFactor calibration simulation (fast, no waiting)")
     print("\nOptions:")
     print("  u. Change URL (current: {url})")
     print("  q. Quit")
@@ -315,9 +342,135 @@ def run_simulation(url: str) -> None:
     print(f"[*] Total ticks: {tick}")
 
 
+def _get_json(url: str) -> Dict[str, Any] | None:
+    headers = {}
+    if API_KEY:
+        headers["X-API-Key"] = API_KEY
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        print(f"[!] Failed to GET {url}: {e}")
+        return None
+
+
+def run_kfactor_simulation(status_url: str, debug_url: str) -> None:
+    """
+    Run a KFactor calibration simulation using the same first-order model as the server.
+
+    Notes:
+    - Sends requests to the /status/test endpoint (no DB persistence of raw status).
+    - Uses payload-level weather overrides (outside_temp, wind_m_s) for deterministic fitting.
+    - Advances timestamps without sleeping so a 15–30 min session runs quickly.
+    """
+    # Fixed constants (must match server defaults)
+    cabin_volume_m3 = 2.8
+    air_density_kg_m3 = 1.2
+    specific_heat_J_kgK = 1000.0
+    C = air_density_kg_m3 * cabin_volume_m3 * specific_heat_J_kgK
+
+    print("\n" + "=" * 60)
+    print("  KFACTOR CALIBRATION SIMULATION")
+    print("=" * 60)
+    print("\nThis simulation will:")
+    print("  - Run a continuous heater-ON segment using a physics model")
+    print("  - Send synthetic cabin temps + Shelly power to the test endpoint")
+    print("  - Stop the session by turning heater OFF at the end")
+    print("  - Fetch /kfactor/debug to compare fitted params vs truth")
+    print("-" * 60)
+
+    start_temp = get_float_input("\nStarting cabin temperature (°C)", -15.0)
+    if start_temp is None:
+        start_temp = -15.0
+
+    outside_temp = get_float_input("Outside temperature (°C)", -10.0)
+    if outside_temp is None:
+        outside_temp = -10.0
+
+    wind_m_s = get_float_input("Wind (m/s) [optional]", 2.0)
+
+    power_w = get_float_input("Heater power (W)", 1000.0)
+    if power_w is None:
+        power_w = 1000.0
+
+    eta_true = get_float_input("TRUE eta (0..1)", 0.6)
+    if eta_true is None:
+        eta_true = 0.6
+
+    k_loss_true = get_float_input("TRUE k_loss (W/K)", 40.0)
+    if k_loss_true is None:
+        k_loss_true = 40.0
+
+    duration_min = int(get_float_input("Session duration (minutes)", 20.0) or 20.0)
+    sample_period_s = int(get_float_input("Sample period (seconds)", 10.0) or 10.0)
+    noise_std = get_float_input("Noise std-dev (°C)", 0.1)
+    noise_std = float(noise_std) if noise_std is not None else 0.1
+
+    steps = max(1, int(duration_min * 60 // max(1, sample_period_s)))
+    print(
+        f"\n[*] Running {steps} samples (dt={sample_period_s}s) "
+        f"Tout={outside_temp}°C wind={wind_m_s}m/s P={power_w}W truth=(k={k_loss_true}, eta={eta_true})"
+    )
+
+    ts = datetime.now(timezone.utc).replace(microsecond=0)
+    T = float(start_temp)
+
+    for i in range(steps):
+        # Integrate one step (heater ON)
+        Tss = outside_temp + (eta_true * power_w) / k_loss_true
+        decay = math.exp(-(k_loss_true / C) * sample_period_s)
+        T = Tss + (T - Tss) * decay
+        if noise_std > 0:
+            T += random.gauss(0.0, noise_std)
+        T = round(T, 2)
+
+        ts = ts + timedelta(seconds=sample_period_s)
+
+        payload = generate_payload_at_time(
+            ts,
+            ambient_temp=T,
+            heater_on=True,
+            power_w=power_w,
+            outside_temp_c=outside_temp,
+            wind_m_s=wind_m_s,
+        )
+        send_request(status_url, payload, verbose=False)
+
+    # End the session by turning heater OFF
+    ts = ts + timedelta(seconds=sample_period_s)
+    payload = generate_payload_at_time(
+        ts,
+        ambient_temp=T,
+        heater_on=False,
+        power_w=0.0,
+        outside_temp_c=outside_temp,
+        wind_m_s=wind_m_s,
+    )
+    send_request(status_url, payload, verbose=False)
+
+    dbg = _get_json(debug_url)
+    if not dbg:
+        print("[!] No debug snapshot returned.")
+        return
+
+    last = dbg.get("last_session") or {}
+    fit = (last.get("fit") or {}) if isinstance(last, dict) else {}
+    print("\n--- Server fit result ---")
+    print(json.dumps(last, indent=2))
+
+    k_fit = fit.get("k_loss_W_per_K")
+    eta_fit = fit.get("eta")
+    rmse = fit.get("rmse_C")
+    print("\n--- Comparison ---")
+    print(f"truth: k_loss={k_loss_true:.2f} eta={eta_true:.3f}")
+    print(f"fit:   k_loss={k_fit} eta={eta_fit} rmse={rmse}")
+
+
 def main() -> None:
     """Main entry point."""
     url = DEFAULT_URL
+    debug_url = DEFAULT_KFACTOR_DEBUG_URL
 
     # Check for URL argument
     if len(sys.argv) > 1:
@@ -346,6 +499,8 @@ def main() -> None:
             new_url = input(f"Enter new URL [{url}]: ").strip()
             if new_url:
                 url = new_url
+                if "/api/car_heater/status" in url:
+                    debug_url = url.replace("/status/test", "/kfactor/debug").replace("/status", "/kfactor/debug")
             print(f"URL set to: {url}")
         elif choice == "c":
             payload = custom_payload_builder()
@@ -355,6 +510,8 @@ def main() -> None:
             send_request(url, payload)
         elif choice == "s":
             run_simulation(url)
+        elif choice == "k":
+            run_kfactor_simulation(url, debug_url)
         elif choice in presets:
             payload = presets[choice]()
             send_request(url, payload)

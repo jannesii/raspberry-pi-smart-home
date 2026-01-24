@@ -138,3 +138,49 @@ class CarHeaterStatus:
     device_temp_f: float | None
     ambient_temp: float | None
     source: str | None
+
+
+@dataclass
+class CarHeaterKFactorSession:
+    id: int | None
+    start_ts: str
+    end_ts: str
+    auto_window_date: str | None = None
+    auto_window_start: str | None = None
+    auto_window_stop: str | None = None
+    heater_mode: str | None = None
+    outside_t_mean: float | None = None
+    outside_t_min: float | None = None
+    outside_t_max: float | None = None
+    wind_mean: float | None = None
+    cabin_t_start: float | None = None
+    cabin_t_end: float | None = None
+    cabin_t_max: float | None = None
+    duration_s: int | None = None
+    sample_count: int | None = None
+    flags_json: str | None = None
+    quality_score: float | None = None
+    accepted: bool = False
+
+
+@dataclass
+class CarHeaterKFactorResult:
+    id: int | None
+    session_id: int
+    model_version: str
+    k_loss_W_per_K: float
+    eta: float
+    rmse_C: float | None = None
+    r2: float | None = None
+    confidence: float | None = None
+    promoted: bool = False
+    created_ts: str | None = None
+
+
+@dataclass
+class CarHeaterKFactorActiveParams:
+    id: int = 1
+    k_loss_W_per_K: float | None = None
+    eta: float | None = None
+    updated_ts: str | None = None
+    source: str | None = None

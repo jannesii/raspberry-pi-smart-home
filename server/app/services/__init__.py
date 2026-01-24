@@ -165,6 +165,7 @@ def init_services(app) -> Dict[str, Any]:
         logger.exception("Failed to initialize Sodexo scheduler: %s", e)
         
     # --- Weather service ---
+    weather_service = None
     try:
         from .weather import WeatherService
 
@@ -174,5 +175,19 @@ def init_services(app) -> Dict[str, Any]:
         logger.info("Weather service initialized")
     except Exception as e:
         logger.exception("Failed to initialize weather service: %s", e)
+
+    # --- KFactor calibration (Ready-by model) ---
+    try:
+        from .car_heater import KFactorCalibrator
+
+        kfactor_calibrator = KFactorCalibrator(
+            ctrl=getattr(app, "ctrl", None),
+            weather_service=weather_service,
+        )
+        app.kfactor_calibrator = kfactor_calibrator
+        services["kfactor_calibrator"] = kfactor_calibrator
+        logger.info("KFactor calibrator initialized")
+    except Exception as e:
+        logger.exception("Failed to initialize KFactor calibrator: %s", e)
 
     return services

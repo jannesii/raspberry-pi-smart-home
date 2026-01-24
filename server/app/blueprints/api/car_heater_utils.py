@@ -282,6 +282,22 @@ def handle_status_update_request(
         car = build_car_heater_status(timestamp, shelly, ambient_temp)
         status_payload = record_and_build_payload(ctrl, car, skip_db=is_test)
         run_keep_at_temp_tick(car)
+        # KFactor calibration tick (Ready-by model)
+        try:
+            from ...services.car_heater import KFactorCalibrator
+
+            ksvc: KFactorCalibrator | None = getattr(
+                current_app, "kfactor_calibrator", None
+            )
+            if ksvc is not None:
+                ksvc.tick(
+                    car,
+                    outside_temp_c=data.get("outside_temp"),
+                    wind_m_s=data.get("wind_m_s"),
+                    is_test=is_test,
+                )
+        except Exception as e:
+            logger.exception("Failed to run kfactor tick: %s", e)
     else:
         logger.debug("No shelly data provided in car heater status update")
         status_payload = build_fallback_payload(

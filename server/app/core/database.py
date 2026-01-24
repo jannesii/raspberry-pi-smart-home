@@ -145,6 +145,46 @@ class DatabaseManager:
                 'target_temperature_c REAL, '
                 'hysteresis_c REAL, '
                 'enabled BOOLEAN NOT NULL DEFAULT 0'
+            ),
+            'car_heater_kfactor_session': (
+                'id INTEGER PRIMARY KEY AUTOINCREMENT, '
+                'start_ts TEXT NOT NULL, '
+                'end_ts TEXT NOT NULL, '
+                'auto_window_date TEXT, '
+                'auto_window_start TEXT, '
+                'auto_window_stop TEXT, '
+                'heater_mode TEXT, '
+                'outside_t_mean REAL, '
+                'outside_t_min REAL, '
+                'outside_t_max REAL, '
+                'wind_mean REAL, '
+                'cabin_t_start REAL, '
+                'cabin_t_end REAL, '
+                'cabin_t_max REAL, '
+                'duration_s INTEGER, '
+                'sample_count INTEGER, '
+                'flags_json TEXT, '
+                'quality_score REAL, '
+                'accepted BOOLEAN NOT NULL DEFAULT 0'
+            ),
+            'car_heater_kfactor_result': (
+                'id INTEGER PRIMARY KEY AUTOINCREMENT, '
+                'session_id INTEGER, '
+                'model_version TEXT, '
+                'k_loss_W_per_K REAL, '
+                'eta REAL, '
+                'rmse_C REAL, '
+                'r2 REAL, '
+                'confidence REAL, '
+                'promoted BOOLEAN NOT NULL DEFAULT 0, '
+                'created_ts TEXT'
+            ),
+            'car_heater_kfactor_active_params': (
+                'id INTEGER PRIMARY KEY CHECK (id = 1), '
+                'k_loss_W_per_K REAL, '
+                'eta REAL, '
+                'updated_ts TEXT, '
+                'source TEXT'
             )
         }
         for name, schema in tables.items():

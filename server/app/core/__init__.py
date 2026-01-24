@@ -11,6 +11,9 @@ from .models import (
     ApiKey,
     BMPData,
     CarHeaterStatus,
+    CarHeaterKFactorSession,
+    CarHeaterKFactorResult,
+    CarHeaterKFactorActiveParams,
 )
 from .controller import Controller
 from .database import DatabaseManager
@@ -26,6 +29,9 @@ __all__ = [
     "ApiKey",
     "BMPData",
     "CarHeaterStatus",
+    "CarHeaterKFactorSession",
+    "CarHeaterKFactorResult",
+    "CarHeaterKFactorActiveParams",
     "Controller",
     "DatabaseManager",
 ]

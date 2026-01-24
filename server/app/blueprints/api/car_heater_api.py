@@ -183,3 +183,121 @@ def get_car_heater_history():
     if len(energies) >= 2:
         energy_today_wh = energies[-1] - energies[0]
     return jsonify({"rows": payload, "energy_today_wh": energy_today_wh}), 200
+
+
+@car_bp.route('/kfactor/debug', methods=['GET'])
+@csrf.exempt
+@require_api_key
+def get_kfactor_debug():
+    """Return KFactor calibration debug snapshot."""
+    try:
+        from ...services.car_heater import KFactorCalibrator
+
+        svc: KFactorCalibrator | None = getattr(
+            current_app, "kfactor_calibrator", None)
+        if svc is None:
+            return jsonify({"error": "KFactorCalibrator not initialized"}), 503
+        return jsonify(svc.get_debug_snapshot()), 200
+    except Exception as e:
+        logger.exception("Failed to return kfactor debug snapshot: %s", e)
+    return jsonify({"error": "Failed to get kfactor debug snapshot"}), 500
+
+
+@car_bp.route('/ready_by', methods=['GET'])
+@login_required
+def get_ready_by_prediction():
+    """Return a Ready-by ETA prediction (minutes) using the calibrated model."""
+    try:
+        from ...services.car_heater import KFactorCalibrator
+
+        svc: KFactorCalibrator | None = getattr(
+            current_app, "kfactor_calibrator", None)
+        if svc is None:
+            return jsonify({"error": "KFactorCalibrator not initialized"}), 503
+
+        target_raw = (request.args.get("target_temp_c") or "").strip()
+        if not target_raw:
+            return jsonify({"error": "Missing target_temp_c"}), 400
+        try:
+            target_temp_c = float(target_raw)
+        except ValueError:
+            return jsonify({"error": "Invalid target_temp_c"}), 400
+
+        cabin_raw = (request.args.get("cabin_temp_c") or "").strip()
+        cabin_temp_c: float | None = None
+        if cabin_raw:
+            try:
+                cabin_temp_c = float(cabin_raw)
+            except ValueError:
+                return jsonify({"error": "Invalid cabin_temp_c"}), 400
+
+        outside_raw = (request.args.get("outside_temp_c") or "").strip()
+        outside_temp_c: float | None = None
+        if outside_raw:
+            try:
+                outside_temp_c = float(outside_raw)
+            except ValueError:
+                return jsonify({"error": "Invalid outside_temp_c"}), 400
+
+        power_raw = (request.args.get("power_w") or "").strip()
+        power_w: float | None = None
+        if power_raw:
+            try:
+                power_w = float(power_raw)
+            except ValueError:
+                return jsonify({"error": "Invalid power_w"}), 400
+
+        ctrl: Controller = getattr(current_app, "ctrl", None)
+        last = ctrl.get_last_car_heater_status() if ctrl is not None else None
+
+        if cabin_temp_c is None:
+            if last is not None and last.ambient_temp is not None:
+                cabin_temp_c = float(last.ambient_temp)
+            elif fallback_status.ambient_temp is not None:
+                cabin_temp_c = float(fallback_status.ambient_temp)
+
+        if cabin_temp_c is None:
+            return jsonify({"error": "No cabin temperature available"}), 503
+
+        if outside_temp_c is None:
+            try:
+                wsvc = getattr(current_app, "weather_service", None)
+                w = wsvc.get_latest() if wsvc is not None else None
+                if w is not None and w.t2m is not None:
+                    outside_temp_c = float(w.t2m.value)
+            except Exception:
+                outside_temp_c = None
+
+        if outside_temp_c is None:
+            return jsonify({"error": "No outside temperature available"}), 503
+
+        if power_w is None and last is not None:
+            try:
+                power_w = float(last.instant_power_w)
+            except Exception:
+                power_w = None
+
+        eta_min = svc.predict_time_to_target_minutes(
+            cabin_temp_c=cabin_temp_c,
+            target_temp_c=target_temp_c,
+            outside_temp_c=outside_temp_c,
+            power_w=power_w,
+        )
+
+        k_loss, eta = svc.get_active_params()
+        return jsonify(
+            {
+                "time_to_target_min": eta_min,
+                "reachable": eta_min is not None,
+                "active_params": {"k_loss_W_per_K": k_loss, "eta": eta},
+                "inputs": {
+                    "cabin_temp_c": cabin_temp_c,
+                    "target_temp_c": target_temp_c,
+                    "outside_temp_c": outside_temp_c,
+                    "power_w": power_w,
+                },
+            }
+        ), 200
+    except Exception as e:
+        logger.exception("Failed to compute Ready-by prediction: %s", e)
+    return jsonify({"error": "Failed to compute prediction"}), 500
