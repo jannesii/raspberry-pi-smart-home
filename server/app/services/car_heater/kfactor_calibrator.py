@@ -15,6 +15,7 @@ from flask import current_app
 
 from ...core import (
     CarHeaterKFactorActiveParams,
+    CarHeaterKFactorBucketParams,
     CarHeaterKFactorConfig,
     CarHeaterKFactorResult,
     CarHeaterKFactorSession,
@@ -187,6 +188,8 @@ class KFactorCalibrator:
         self._session_samples: list[KFactorSample] = []
         self._last_session: KFactorLastSession | None = None
         self._active_params_override: tuple[float, float] | None = None
+        # Mapping of (t_bucket, wind_bucket) -> (k_loss, eta)
+        self._bucket_params_override: dict[tuple[int, int | None], tuple[float, float]] = {}
 
         logger.info(
             "KFactorCalibrator initialized (window=%s..%s min=%s max=%s)",
@@ -366,20 +369,63 @@ class KFactorCalibrator:
         outside_temp_c: float | None = None,
         wind_m_s: float | None = None,
     ) -> tuple[float, float]:
-        """Return current best (k_loss, eta). Bucket logic can be added later."""
+        """Return current best (k_loss, eta), optionally bucketed by outside temp/wind."""
+        t_bucket = None
+        wind_bucket = None
+        if outside_temp_c is not None:
+            try:
+                t_bucket, wind_bucket = self._bucket_key(outside_temp_c, wind_m_s)
+            except Exception:
+                logger.warning("kfactor: _bucket_key failed; falling back to unbucketed params", exc_info=True)
+                t_bucket, wind_bucket = None, None
+
         with self._lock:
+            if t_bucket is not None:
+                override = self._bucket_params_override.get((t_bucket, wind_bucket))
+                # Fallback to "any wind" for this temperature bucket if a specific wind bucket is not found
+                if override is None and wind_bucket is not None:
+                    override = self._bucket_params_override.get((t_bucket, None))
+                # As a last resort, use the first override matching the temperature bucket only
+                if override is None:
+                    for (tb, wb), vals in self._bucket_params_override.items():
+                        if tb == t_bucket:
+                            override = vals
+                            break
+                if override is not None:
+                    return override
             if self._active_params_override is not None:
                 return self._active_params_override
-        params = None
+
+        bucket_params = None
+        if t_bucket is not None:
+            try:
+                if self._ctrl is not None:
+                    bucket_params = self._ctrl.get_kfactor_bucket_params(
+                        t_bucket=int(t_bucket),
+                        wind_bucket=wind_bucket,
+                    )
+                    if bucket_params is None:
+                        bucket_params = self._ctrl.get_kfactor_bucket_params_any_wind(
+                            t_bucket=int(t_bucket),
+                        )
+            except Exception:
+                logger.debug("kfactor: get_bucket_params failed", exc_info=True)
+
+        active_params = None
         try:
             if self._ctrl is not None:
-                params = self._ctrl.get_kfactor_active_params()
+                active_params = self._ctrl.get_kfactor_active_params()
         except Exception:
             logger.debug("kfactor: get_active_params failed", exc_info=True)
 
-        k_loss = _finite(getattr(params, "k_loss_W_per_K", None)
-                         ) if params else None
-        eta = _finite(getattr(params, "eta", None)) if params else None
+        k_loss = _finite(getattr(bucket_params, "k_loss_W_per_K", None)
+                         ) if bucket_params else None
+        eta = _finite(getattr(bucket_params, "eta", None)) if bucket_params else None
+        if k_loss is None:
+            k_loss = _finite(getattr(active_params, "k_loss_W_per_K", None)
+                             ) if active_params else None
+        if eta is None:
+            eta = _finite(getattr(active_params, "eta", None)) if active_params else None
         if k_loss is None:
             k_loss = float(self._cfg.default_k_loss_W_per_K)
         if eta is None:
@@ -470,7 +516,7 @@ class KFactorCalibrator:
         margin_c: float = 0.5,
     ) -> float | None:
         """Compute ETA (minutes) for reaching target temperature, or None if not reachable."""
-        k_loss, eta = self.get_active_params()
+        k_loss, eta = self.get_active_params(outside_temp_c=outside_temp_c)
         P = _finite(power_w) or HEATER_POWER_W
         C_eff = HEAT_CAPACITY_J_PER_K * _clamp(
             float(self._cfg.mass_factor),
@@ -798,6 +844,13 @@ class KFactorCalibrator:
             # In test mode (no DB writes), keep params in memory so repeated runs behave realistically.
             if is_test or self._ctrl is None:
                 self._active_params_override = (new_k, new_eta)
+            self._update_bucket_params(
+                fit=fit,
+                outside_mean=outside_mean,
+                wind_mean=wind_mean,
+                updated_at=end_ts,
+                is_test=is_test,
+            )
 
         self._last_session = KFactorLastSession(
             started_ts=_iso_no_micros(started),
@@ -927,6 +980,48 @@ class KFactorCalibrator:
         except Exception:
             logger.exception(
                 "kfactor: failed to write test output to %r", path)
+
+    def _update_bucket_params(
+        self,
+        *,
+        fit: KFactorFit,
+        outside_mean: float | None,
+        wind_mean: float | None,
+        updated_at: datetime,
+        is_test: bool,
+    ) -> None:
+        if outside_mean is None:
+            return
+        try:
+            t_bucket, wind_bucket = self._bucket_key(
+                float(outside_mean),
+                float(wind_mean) if wind_mean is not None else None,
+            )
+        except Exception:
+            return
+
+        self._bucket_params_override[(t_bucket, wind_bucket)] = (
+            float(fit.k_loss_W_per_K),
+            float(fit.eta),
+        )
+
+        if is_test or self._ctrl is None:
+            return
+
+        try:
+            self._ctrl.save_kfactor_bucket_params(
+                CarHeaterKFactorBucketParams(
+                    id=None,
+                    t_bucket=int(t_bucket),
+                    wind_bucket=int(wind_bucket) if wind_bucket is not None else None,
+                    k_loss_W_per_K=float(fit.k_loss_W_per_K),
+                    eta=float(fit.eta),
+                    updated_ts=_iso_no_micros(updated_at),
+                    source="bucket_update",
+                )
+            )
+        except Exception:
+            logger.debug("kfactor: failed to persist bucket params", exc_info=True)
 
     def _compute_weighted_update(
         self,

@@ -226,7 +226,7 @@ class ReadyByService:
             s.outside_temp_c = out
 
             # Predict ETA; if unreachable, start ASAP to best-effort warm.
-            used_k, used_eta = self._kfactor.get_active_params()
+            used_k, used_eta = self._kfactor.get_active_params(outside_temp_c=out)
             s.used_k_loss_W_per_K = float(used_k)
             s.used_eta = float(used_eta)
             eta_min = self._kfactor.predict_time_to_target_minutes(

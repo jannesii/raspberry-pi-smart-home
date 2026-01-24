@@ -2,12 +2,25 @@ import logging
 
 from .. import (
     CarHeaterKFactorActiveParams,
+    CarHeaterKFactorBucketParams,
     CarHeaterKFactorConfig,
     CarHeaterKFactorResult,
     CarHeaterKFactorSession,
 )
 
 logger = logging.getLogger(__name__)
+
+_WIND_BUCKET_UNKNOWN = -999
+
+
+def _encode_wind_bucket(wind_bucket: int | None) -> int:
+    return _WIND_BUCKET_UNKNOWN if wind_bucket is None else int(wind_bucket)
+
+
+def _decode_wind_bucket(wind_bucket: int | None) -> int | None:
+    if wind_bucket is None:
+        return None
+    return None if int(wind_bucket) == _WIND_BUCKET_UNKNOWN else int(wind_bucket)
 
 
 class CarHeaterKFactorMixin:
@@ -217,6 +230,112 @@ class CarHeaterKFactorMixin:
                 source = excluded.source
             """,
             (
+                params.k_loss_W_per_K,
+                params.eta,
+                params.updated_ts,
+                params.source,
+            ),
+        )
+
+    # --- Bucketed params (per outside temp + wind bucket) ---
+    def get_kfactor_bucket_params(
+        self,
+        *,
+        t_bucket: int,
+        wind_bucket: int | None,
+    ) -> CarHeaterKFactorBucketParams | None:
+        wind_bucket_db = _encode_wind_bucket(wind_bucket)
+        row = self.db.fetchone(
+            """
+            SELECT
+                id,
+                t_bucket,
+                wind_bucket,
+                k_loss_W_per_K,
+                eta,
+                updated_ts,
+                source
+            FROM car_heater_kfactor_bucket_params
+            WHERE t_bucket = ?
+              AND wind_bucket = ?
+            ORDER BY
+                CASE WHEN wind_bucket = ? THEN 0 ELSE 1 END,
+                updated_ts DESC,
+                id DESC
+            LIMIT 1
+            """,
+            (
+                t_bucket,
+                wind_bucket_db,
+                wind_bucket_db,
+            ),
+        )
+        if row is None:
+            return None
+        return CarHeaterKFactorBucketParams(
+            id=row["id"],
+            t_bucket=row["t_bucket"],
+            wind_bucket=_decode_wind_bucket(row["wind_bucket"]),
+            k_loss_W_per_K=row["k_loss_W_per_K"],
+            eta=row["eta"],
+            updated_ts=row["updated_ts"],
+            source=row["source"],
+        )
+
+    def get_kfactor_bucket_params_any_wind(
+        self,
+        *,
+        t_bucket: int,
+    ) -> CarHeaterKFactorBucketParams | None:
+        row = self.db.fetchone(
+            """
+            SELECT
+                id,
+                t_bucket,
+                wind_bucket,
+                k_loss_W_per_K,
+                eta,
+                updated_ts,
+                source
+            FROM car_heater_kfactor_bucket_params
+            WHERE t_bucket = ?
+            ORDER BY updated_ts DESC, id DESC
+            LIMIT 1
+            """,
+            (t_bucket,),
+        )
+        if row is None:
+            return None
+        return CarHeaterKFactorBucketParams(
+            id=row["id"],
+            t_bucket=row["t_bucket"],
+            wind_bucket=_decode_wind_bucket(row["wind_bucket"]),
+            k_loss_W_per_K=row["k_loss_W_per_K"],
+            eta=row["eta"],
+            updated_ts=row["updated_ts"],
+            source=row["source"],
+        )
+
+    def save_kfactor_bucket_params(
+        self,
+        params: CarHeaterKFactorBucketParams,
+    ) -> None:
+        wind_bucket_db = _encode_wind_bucket(params.wind_bucket)
+        self.db.execute_query(
+            """
+            INSERT INTO car_heater_kfactor_bucket_params (
+                t_bucket, wind_bucket, k_loss_W_per_K, eta, updated_ts, source
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(t_bucket, wind_bucket) DO UPDATE SET
+                k_loss_W_per_K = excluded.k_loss_W_per_K,
+                eta = excluded.eta,
+                updated_ts = excluded.updated_ts,
+                source = excluded.source
+            """,
+            (
+                params.t_bucket,
+                wind_bucket_db,
                 params.k_loss_W_per_K,
                 params.eta,
                 params.updated_ts,

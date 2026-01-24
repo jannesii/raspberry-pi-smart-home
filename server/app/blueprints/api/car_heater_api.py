@@ -284,7 +284,7 @@ def get_ready_by_prediction():
             power_w=power_w,
         )
 
-        k_loss, eta = svc.get_active_params()
+        k_loss, eta = svc.get_active_params(outside_temp_c=outside_temp_c)
         return jsonify(
             {
                 "time_to_target_min": eta_min,

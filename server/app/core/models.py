@@ -187,6 +187,17 @@ class CarHeaterKFactorActiveParams:
 
 
 @dataclass
+class CarHeaterKFactorBucketParams:
+    id: int | None = None
+    t_bucket: int | None = None
+    wind_bucket: int | None = None
+    k_loss_W_per_K: float | None = None
+    eta: float | None = None
+    updated_ts: str | None = None
+    source: str | None = None
+
+
+@dataclass
 class CarHeaterKFactorConfig:
     id: int = 1
     config_json: str | None = None

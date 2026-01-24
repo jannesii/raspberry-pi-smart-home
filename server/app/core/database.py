@@ -186,6 +186,16 @@ class DatabaseManager:
                 'updated_ts TEXT, '
                 'source TEXT'
             ),
+            'car_heater_kfactor_bucket_params': (
+                'id INTEGER PRIMARY KEY AUTOINCREMENT, '
+                't_bucket INTEGER, '
+                'wind_bucket INTEGER NOT NULL, '
+                'k_loss_W_per_K REAL, '
+                'eta REAL, '
+                'updated_ts TEXT, '
+                'source TEXT, '
+                'UNIQUE(t_bucket, wind_bucket)'
+            ),
             'car_heater_kfactor_config': (
                 'id INTEGER PRIMARY KEY CHECK (id = 1), '
                 'config_json TEXT, '
