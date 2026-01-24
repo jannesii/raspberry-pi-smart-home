@@ -185,6 +185,11 @@ class DatabaseManager:
                 'eta REAL, '
                 'updated_ts TEXT, '
                 'source TEXT'
+            ),
+            'car_heater_ready_by_state': (
+                'id INTEGER PRIMARY KEY CHECK (id = 1), '
+                'state_json TEXT, '
+                'updated_ts TEXT'
             )
         }
         for name, schema in tables.items():

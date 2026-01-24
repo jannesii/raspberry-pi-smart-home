@@ -80,8 +80,9 @@ def _iso_no_micros(dt: datetime) -> str:
     return dt.replace(microsecond=0).isoformat(sep=" ")
 
 
-@dataclass(frozen=True)
+@dataclass
 class KFactorConfig:
+    enabled: bool = True
     auto_calib_start_hhmm: str = "00:00"
     auto_calib_stop_hhmm: str = "23:59"
     grace_samples: int = 3
@@ -117,7 +118,7 @@ class KFactorConfig:
     alpha_min: float = 0.05
     alpha_max: float = 0.5
     # Test-mode output (when /status/test is used, persist calibration artifacts to a file)
-    test_output_path: str = "/tmp/car_heater_kfactor_test_results.jsonl"
+    test_output_path: str = "/home/jannesi/Code/server/app/services/car_heater/car_heater_kfactor_test_results.jsonl"
     model_version: str = "v1"
 
 
@@ -157,13 +158,13 @@ class KFactorCalibrator:
     def __init__(
         self,
         *,
-        ctrl: Controller | None,
+        ctrl: Controller,
         weather_service: WeatherService | None,
         config: KFactorConfig | None = None,
         tz_name: str = "Europe/Helsinki",
     ) -> None:
         self._tz = ZoneInfo(tz_name)
-        self._ctrl = ctrl
+        self._ctrl: Controller = ctrl
         self._weather = weather_service
         self._cfg = config or self._load_config_from_env()
 
@@ -197,6 +198,16 @@ class KFactorCalibrator:
     @property
     def config(self) -> KFactorConfig:
         return self._cfg
+    
+    @property
+    def is_enabled(self) -> bool:
+        return self._cfg.enabled
+    
+    @is_enabled.setter
+    def is_enabled(self, enabled: bool) -> None:
+        with self._lock:
+            self._cfg.enabled = enabled
+            logger.info("KFactorCalibrator enabled set to: %r", enabled)
 
     def tick(
         self,
@@ -207,6 +218,8 @@ class KFactorCalibrator:
         is_test: bool = False,
     ) -> None:
         """Process a new car heater status sample (called on every status POST)."""
+        if not self._cfg.enabled:
+            return
         now = _dt_from_any(getattr(car_status, "timestamp", None), self._tz)
         if now is None:
             return
@@ -491,6 +504,7 @@ class KFactorCalibrator:
             return raw.strip() if raw else default
 
         return KFactorConfig(
+            enabled=_get_str("CAR_HEATER_KFACTOR_ENABLED", "1").strip().lower() in ("1", "true", "yes", "y", "on"),
             auto_calib_start_hhmm=_get_str("CAR_HEATER_KFACTOR_AUTO_START_HHMM", "00:00"),
             auto_calib_stop_hhmm=_get_str("CAR_HEATER_KFACTOR_AUTO_STOP_HHMM", "23:59"),
             grace_samples=_get_int("CAR_HEATER_KFACTOR_GRACE_SAMPLES", 3),

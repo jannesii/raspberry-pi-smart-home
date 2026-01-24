@@ -184,3 +184,10 @@ class CarHeaterKFactorActiveParams:
     eta: float | None = None
     updated_ts: str | None = None
     source: str | None = None
+
+
+@dataclass
+class CarHeaterReadyByState:
+    id: int = 1
+    state_json: str | None = None
+    updated_ts: str | None = None

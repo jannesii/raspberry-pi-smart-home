@@ -3,6 +3,7 @@ from .ac import ACMixin
 from .auth import AuthMixin
 from .car_heater import CarHeaterMixin
 from .car_heater_kfactor import CarHeaterKFactorMixin
+from .car_heater_ready_by import CarHeaterReadyByMixin
 from .logs import LogsMixin
 from .sensors import SensorsMixin
 from .ThreeD import ThreeDMixin
@@ -13,6 +14,7 @@ __all__ = [
     "AuthMixin",
     "CarHeaterMixin",
     "CarHeaterKFactorMixin",
+    "CarHeaterReadyByMixin",
     "LogsMixin",
     "SensorsMixin",
     "ThreeDMixin",

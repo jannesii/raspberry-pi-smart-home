@@ -2,6 +2,7 @@ import logging
 import threading
 from .car_heater_models import KeepAtTempSettings
 from .car_heater_service import CarHeaterService
+from ...core.controller import Controller
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -14,10 +15,10 @@ class KeepAtTempService:
     This is a placeholder for the actual implementation.
     """
 
-    def __init__(self, car_heater_service: CarHeaterService, ctrl) -> None:
+    def __init__(self, car_heater_service: CarHeaterService, ctrl: Controller) -> None:
         self._lock = threading.Lock()
         self._car_heater_service = car_heater_service
-        self._ctrl = ctrl
+        self._ctrl: Controller = ctrl
         self._settings: KeepAtTempSettings | None = self._ctrl.get_keep_at_temp_settings()
         logger.info("KeepAtTempService initialized")
 
@@ -36,6 +37,25 @@ class KeepAtTempService:
         """
         with self._lock:
             return self._settings
+        
+    @property
+    def is_enabled(self) -> bool:
+        """
+        Check if keep-at-temperature is enabled.
+        """
+        with self._lock:
+            return self._settings.enabled if self._settings else False
+        
+    @is_enabled.setter
+    def is_enabled(self, enabled: bool) -> None:
+        """
+        Enable or disable keep-at-temperature.
+        """
+        with self._lock:
+            if self._settings:
+                self._settings.enabled = enabled
+                self._ctrl.save_keep_at_temp_settings(self._settings)
+                logger.debug("Set KeepAtTemp enabled to: %r", enabled)
 
     def thermostat_logic(
             self, 

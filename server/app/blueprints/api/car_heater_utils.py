@@ -309,6 +309,7 @@ def handle_status_update_request(
                 rsvc.tick(
                     car,
                     outside_temp_c=data.get("outside_temp"),
+                    is_test=is_test,
                 )
         except Exception as e:
             logger.exception("Failed to run ready-by tick: %s", e)
