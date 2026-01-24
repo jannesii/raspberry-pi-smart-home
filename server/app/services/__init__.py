@@ -163,5 +163,16 @@ def init_services(app) -> Dict[str, Any]:
         )
     except Exception as e:
         logger.exception("Failed to initialize Sodexo scheduler: %s", e)
+        
+    # --- Weather service ---
+    try:
+        from .weather import WeatherService
+
+        weather_service = WeatherService()
+        app.weather_service = weather_service
+        services["weather_service"] = weather_service
+        logger.info("Weather service initialized")
+    except Exception as e:
+        logger.exception("Failed to initialize weather service: %s", e)
 
     return services
