@@ -112,6 +112,7 @@ def init_services(app) -> Dict[str, Any]:
         logger.exception("Failed to initialize Hue routine: %s", e)
 
     # --- Car heater service (command queue for ESP) ---
+    car_heater_service = None
     try:
         from .car_heater import CarHeaterService
 
@@ -177,6 +178,7 @@ def init_services(app) -> Dict[str, Any]:
         logger.exception("Failed to initialize weather service: %s", e)
 
     # --- KFactor calibration (Ready-by model) ---
+    kfactor_calibrator = None
     try:
         from .car_heater import KFactorCalibrator
 
@@ -189,5 +191,22 @@ def init_services(app) -> Dict[str, Any]:
         logger.info("KFactor calibrator initialized")
     except Exception as e:
         logger.exception("Failed to initialize KFactor calibrator: %s", e)
+
+    # --- Ready-by scheduling service ---
+    try:
+        from .car_heater import ReadyByService
+
+        if car_heater_service is None or kfactor_calibrator is None:
+            raise RuntimeError("Missing car_heater_service or kfactor_calibrator")
+        ready_by_service = ReadyByService(
+            car_heater_service=car_heater_service,
+            kfactor_calibrator=kfactor_calibrator,
+            weather_service=weather_service,
+        )
+        app.ready_by_service = ready_by_service
+        services["ready_by_service"] = ready_by_service
+        logger.info("ReadyBy service initialized")
+    except Exception as e:
+        logger.exception("Failed to initialize ReadyBy service: %s", e)
 
     return services

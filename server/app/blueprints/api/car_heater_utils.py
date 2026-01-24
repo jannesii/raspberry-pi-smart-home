@@ -298,6 +298,20 @@ def handle_status_update_request(
                 )
         except Exception as e:
             logger.exception("Failed to run kfactor tick: %s", e)
+        # Ready-by scheduler tick (may queue turn_on/turn_off)
+        try:
+            from ...services.car_heater import ReadyByService
+
+            rsvc: ReadyByService | None = getattr(
+                current_app, "ready_by_service", None
+            )
+            if rsvc is not None:
+                rsvc.tick(
+                    car,
+                    outside_temp_c=data.get("outside_temp"),
+                )
+        except Exception as e:
+            logger.exception("Failed to run ready-by tick: %s", e)
     else:
         logger.debug("No shelly data provided in car heater status update")
         status_payload = build_fallback_payload(
