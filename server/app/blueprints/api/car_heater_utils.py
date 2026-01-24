@@ -5,6 +5,7 @@ from dataclasses import asdict
 import logging
 import json
 import time
+import os
 from zoneinfo import ZoneInfo
 
 from flask import current_app, jsonify
@@ -17,6 +18,22 @@ if TYPE_CHECKING:
     from .car_heater_api import FallbackStatus
 
 logger = logging.getLogger(__name__)
+
+_ALERT_MIN_POWER_W = float(os.getenv("CAR_HEATER_ALERT_MIN_POWER_W", "5"))
+_ALERT_NO_POWER_MINUTES = int(os.getenv("CAR_HEATER_ALERT_NO_POWER_MINUTES", "10"))
+_ALERT_STUCK_ON_MINUTES = int(os.getenv("CAR_HEATER_ALERT_STUCK_ON_MINUTES", "180"))
+_ALERT_SHELLY_MISSING_MINUTES = int(os.getenv("CAR_HEATER_ALERT_SHELLY_MISSING_MINUTES", "15"))
+
+
+class _CarHeaterAlertState:
+    def __init__(self) -> None:
+        self.low_power_since: datetime | None = None
+        self.heater_on_since: datetime | None = None
+        self.last_shelly_ts: datetime | None = None
+        self.last_heater_on: bool | None = None
+
+
+_ALERT_STATE = _CarHeaterAlertState()
 
 
 def parse_timestamp(raw_ts: str) -> datetime:
@@ -137,6 +154,7 @@ def process_commands(
 
     try:
         from ...services.car_heater import CarHeaterService
+        from ...services.alert_webhook import record_alert
 
         service: CarHeaterService | None = getattr(
             current_app, "car_heater_service", None
@@ -180,7 +198,8 @@ def process_commands(
                                     "success": bool(val),
                                 })
                     elif isinstance(item, str):
-                        normalized_results.append({"action": item, "success": True})
+                        normalized_results.append(
+                            {"action": item, "success": True})
             elif isinstance(action_results, dict):
                 if "action" in action_results:
                     normalized_results.append({
@@ -197,6 +216,17 @@ def process_commands(
                 service.mark_command_success(normalized_results)
 
         # Fetch and mark commands
+        try:
+            max_queue = int(os.getenv("CAR_HEATER_ALERT_QUEUE_LENGTH", "10"))
+            queued_len = len(service.peek_queued_commands())
+            if queued_len >= max_queue:
+                record_alert(
+                    key="car_heater_queue_backlog",
+                    title="Car heater command backlog",
+                    message=f"queued_commands={queued_len}",
+                )
+        except Exception:
+            pass
         commands = service.get_queued_commands()
         service.mark_commands_sent(commands)
 
@@ -281,11 +311,77 @@ def handle_status_update_request(
     if shelly and shelly_connected:
         car = build_car_heater_status(timestamp, shelly, ambient_temp)
         status_payload = record_and_build_payload(ctrl, car, skip_db=is_test)
+        _process_alerts(
+            car=car,
+            shelly_connected=shelly_connected,
+            timestamp=timestamp,
+            is_test=is_test,
+        )
         run_keep_at_temp_tick(car)
+        # KFactor calibration tick (Ready-by model)
+        try:
+            from ...services.car_heater import KFactorCalibrator
+
+            ksvc: KFactorCalibrator | None = getattr(
+                current_app, "kfactor_calibrator", None
+            )
+            if ksvc is not None:
+                ksvc.tick(
+                    car,
+                    outside_temp_c=data.get("outside_temp"),
+                    wind_m_s=data.get("wind_m_s"),
+                    is_test=is_test,
+                )
+        except Exception as e:
+            logger.exception("Failed to run kfactor tick: %s", e)
+        # Ready-by scheduler tick (may queue turn_on/turn_off)
+        try:
+            from ...services.car_heater import ReadyByService
+            from dataclasses import asdict
+
+            rsvc: ReadyByService | None = getattr(
+                current_app, "ready_by_service", None
+            )
+            if rsvc is not None:
+                rsvc.tick(
+                    car,
+                    outside_temp_c=data.get("outside_temp"),
+                    is_test=is_test,
+                )
+                # Broadcast Ready-by status to all connected views
+                try:
+                    schedule = rsvc.get_schedule(as_object=True)
+                    socketio.emit("ready_by_status", {
+                        "schedule": asdict(schedule) if schedule else None
+                    })
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.exception("Failed to run ready-by tick: %s", e)
+        # Broadcast kFactor status to all connected views
+        try:
+            if ksvc is not None:
+                snapshot = ksvc.get_debug_snapshot()
+                socketio.emit("kfactor_status", {
+                    "state": snapshot.get("state"),
+                    "enabled": snapshot.get("config", {}).get("enabled", True),
+                    "cooldown_until": snapshot.get("cooldown_until"),
+                    "active_params": snapshot.get("active_params"),
+                    "last_session": snapshot.get("last_session"),
+                    "session_sample_count": snapshot.get("session_sample_count", 0),
+                })
+        except Exception:
+            pass
     else:
         logger.debug("No shelly data provided in car heater status update")
         status_payload = build_fallback_payload(
             timestamp, ambient_temp, shelly_connected)
+        _process_alerts(
+            car=None,
+            shelly_connected=shelly_connected,
+            timestamp=timestamp,
+            is_test=is_test,
+        )
 
     # Process commands
     commands: List[Dict[str, Any]] = []
@@ -307,3 +403,66 @@ def handle_status_update_request(
         "Processed car heater status update in %.3f seconds", elapsed_time)
 
     return jsonify(commands), 200
+
+
+def _process_alerts(
+    *,
+    car: CarHeaterStatus | None,
+    shelly_connected: bool,
+    timestamp: datetime,
+    is_test: bool,
+) -> None:
+    if is_test:
+        return
+
+    from ...services.alert_webhook import record_alert
+
+    if car is not None:
+        _ALERT_STATE.last_shelly_ts = timestamp
+        _ALERT_STATE.last_heater_on = bool(car.is_heater_on)
+
+        if car.is_heater_on:
+            if _ALERT_STATE.heater_on_since is None:
+                _ALERT_STATE.heater_on_since = timestamp
+            duration_on = (timestamp - _ALERT_STATE.heater_on_since).total_seconds()
+            if duration_on >= _ALERT_STUCK_ON_MINUTES * 60:
+                record_alert(
+                    key="heater_stuck_on",
+                    title="Car heater stuck ON",
+                    message=f"heater_on_duration_min={duration_on/60:.1f}",
+                )
+
+            power_w = float(car.instant_power_w or 0.0)
+            if power_w < _ALERT_MIN_POWER_W:
+                if _ALERT_STATE.low_power_since is None:
+                    _ALERT_STATE.low_power_since = timestamp
+                low_power_s = (timestamp - _ALERT_STATE.low_power_since).total_seconds()
+                if low_power_s >= _ALERT_NO_POWER_MINUTES * 60:
+                    record_alert(
+                        key="heater_on_no_power",
+                        title="Heater ON but no power draw",
+                        message=(
+                            f"power_w={power_w:.1f} "
+                            f"duration_min={low_power_s/60:.1f}"
+                        ),
+                    )
+            else:
+                _ALERT_STATE.low_power_since = None
+        else:
+            _ALERT_STATE.heater_on_since = None
+            _ALERT_STATE.low_power_since = None
+
+    if not shelly_connected:
+        last_ts = _ALERT_STATE.last_shelly_ts
+        if last_ts is not None:
+            missing_s = (timestamp - last_ts).total_seconds()
+            if missing_s >= _ALERT_SHELLY_MISSING_MINUTES * 60:
+                last_heater = _ALERT_STATE.last_heater_on
+                record_alert(
+                    key="shelly_missing",
+                    title="Shelly telemetry missing",
+                    message=(
+                        f"missing_min={missing_s/60:.1f} "
+                        f"last_heater_on={last_heater}"
+                    ),
+                )

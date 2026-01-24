@@ -8,6 +8,7 @@ from ..core import Controller
 from ..services.ac import ACThermostat
 from ..services.car_heater import CarHeaterService
 
+
 class SocketEventHandler:
     _instance: "SocketEventHandler | None" = None
 
@@ -39,8 +40,12 @@ class SocketEventHandler:
                           self.handle_car_heater_control)
         socketio.on_event('car_heater_charge_mode',
                           self.handle_car_heater_charge_mode)
-        socketio.on_event('keep_at_temp_settings', 
+        socketio.on_event('keep_at_temp_settings',
                           self.handle_car_heater_keep_at_temp)
+        socketio.on_event('ready_by_schedule',
+                          self.handle_ready_by_schedule)
+        socketio.on_event('kfactor_control',
+                          self.handle_kfactor_control)
 
     def handle_connect(self, auth):
         # Use Flask-Login session cookie for auth instead of API key
@@ -518,7 +523,8 @@ class SocketEventHandler:
             return
 
         try:
-            svc: CarHeaterService = getattr(current_app, 'car_heater_service', None)
+            svc: CarHeaterService = getattr(
+                current_app, 'car_heater_service', None)
         except Exception:
             svc = None
         if svc is None:
@@ -544,7 +550,8 @@ class SocketEventHandler:
     def handle_car_heater_keep_at_temp(self, data):
         """Handle car heater keep-at-temperature settings from the web UI."""
         if data is None or not isinstance(data, dict):
-            self.socketio.emit('error', {'message': 'Invalid keep-at-temp payload'})
+            self.socketio.emit(
+                'error', {'message': 'Invalid keep-at-temp payload'})
             self.logger.warning("Bad keep_at_temp payload: %s", data)
             return
 
@@ -556,11 +563,13 @@ class SocketEventHandler:
         from ..services.car_heater import KeepAtTempSettings, KeepAtTempService
 
         try:
-            svc: KeepAtTempService | None = getattr(current_app, 'keep_at_temp_service', None)
+            svc: KeepAtTempService | None = getattr(
+                current_app, 'keep_at_temp_service', None)
         except Exception:
             svc = None
         if svc is None:
-            self.socketio.emit('error', {'message': 'Keep-at-temp service not initialized'})
+            self.socketio.emit(
+                'error', {'message': 'Keep-at-temp service not initialized'})
             return
 
         try:
@@ -608,4 +617,141 @@ class SocketEventHandler:
                 })
         except Exception as e:
             self.logger.exception("keep_at_temp_settings error: %s", e)
-            self.socketio.emit('error', {'message': 'Keep-at-temp settings error'})
+            self.socketio.emit(
+                'error', {'message': 'Keep-at-temp settings error'})
+
+    def handle_ready_by_schedule(self, data):
+        """Handle Ready-by scheduling from the web UI."""
+        if data is None or not isinstance(data, dict):
+            self.socketio.emit(
+                'error', {'message': 'Invalid ready-by payload'})
+            self.logger.warning("Bad ready_by_schedule payload: %s", data)
+            return
+
+        from dataclasses import asdict
+        from datetime import datetime
+        from ..services.car_heater import ReadyByService
+
+        try:
+            svc: ReadyByService | None = getattr(
+                current_app, 'ready_by_service', None)
+        except Exception:
+            svc = None
+        if svc is None:
+            self.socketio.emit(
+                'error', {'message': 'Ready-by service not initialized'})
+            return
+
+        action = (data.get('action') or '').strip()
+
+        try:
+            if action == 'schedule':
+                # Create a new schedule
+                ready_by_raw = (data.get('ready_by_ts') or '').strip()
+                if not ready_by_raw:
+                    self.socketio.emit(
+                        'error', {'message': 'Missing ready_by_ts'})
+                    return
+                try:
+                    ready_by_ts = datetime.fromisoformat(
+                        ready_by_raw.replace('Z', '+00:00'))
+                except ValueError:
+                    self.socketio.emit(
+                        'error', {'message': 'Invalid ready_by_ts format'})
+                    return
+
+                target_raw = data.get('target_temp_c')
+                if target_raw is None:
+                    self.socketio.emit(
+                        'error', {'message': 'Missing target_temp_c'})
+                    return
+                try:
+                    target_temp_c = float(target_raw)
+                except (ValueError, TypeError):
+                    self.socketio.emit(
+                        'error', {'message': 'Invalid target_temp_c'})
+                    return
+
+                schedule = svc.schedule(
+                    ready_by_ts=ready_by_ts, target_temp_c=target_temp_c)
+                self.logger.info("Ready-by scheduled via socket: %s target=%.1f°C",
+                                 schedule.ready_by_ts, target_temp_c)
+                self.emit_to_views('ready_by_status', {
+                                   'schedule': asdict(schedule)})
+
+            elif action == 'cancel':
+                reason = (data.get('reason') or 'user').strip()
+                turn_off = bool(data.get('turn_off', False))
+                schedule = svc.cancel(reason=reason, turn_off=turn_off)
+                self.logger.info(
+                    "Ready-by canceled via socket (reason=%s)", reason)
+                self.emit_to_views('ready_by_status', {
+                    'schedule': asdict(schedule) if schedule else None
+                })
+
+            elif action == 'status':
+                # Re-emit current schedule to requester(s)
+                result = svc.get_schedule(as_object=True)
+                self.emit_to_views('ready_by_status', {
+                    'schedule': asdict(result) if result else None
+                })
+
+            else:
+                self.socketio.emit(
+                    'error', {'message': f'Invalid ready-by action: {action}'})
+
+        except Exception as e:
+            self.logger.exception("ready_by_schedule error: %s", e)
+            self.socketio.emit('error', {'message': 'Ready-by schedule error'})
+
+    def handle_kfactor_control(self, data):
+        """Handle kFactor calibration control from the web UI."""
+        if data is None or not isinstance(data, dict):
+            self.socketio.emit('error', {'message': 'Invalid kfactor payload'})
+            self.logger.warning("Bad kfactor_control payload: %s", data)
+            return
+
+        from ..services.car_heater import KFactorCalibrator
+
+        try:
+            svc: KFactorCalibrator | None = getattr(
+                current_app, 'kfactor_calibrator', None)
+        except Exception:
+            svc = None
+        if svc is None:
+            self.socketio.emit(
+                'error', {'message': 'KFactor service not initialized'})
+            return
+
+        action = (data.get('action') or '').strip()
+
+        try:
+            if action == 'set_enabled':
+                enabled = bool(data.get('enabled', True))
+                svc.is_enabled = enabled
+                self.logger.info(
+                    "KFactor enabled set to %s via socket", enabled)
+                self._emit_kfactor_status(svc)
+
+            elif action == 'status':
+                self._emit_kfactor_status(svc)
+
+            else:
+                self.socketio.emit(
+                    'error', {'message': f'Invalid kfactor action: {action}'})
+
+        except Exception as e:
+            self.logger.exception("kfactor_control error: %s", e)
+            self.socketio.emit('error', {'message': 'KFactor control error'})
+
+    def _emit_kfactor_status(self, svc):
+        """Helper to emit kFactor status to all views."""
+        snapshot = svc.get_debug_snapshot()
+        self.emit_to_views('kfactor_status', {
+            'state': snapshot.get('state'),
+            'enabled': snapshot.get('config', {}).get('enabled', True),
+            'cooldown_until': snapshot.get('cooldown_until'),
+            'active_params': snapshot.get('active_params'),
+            'last_session': snapshot.get('last_session'),
+            'session_sample_count': snapshot.get('session_sample_count', 0),
+        })

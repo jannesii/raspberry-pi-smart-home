@@ -3,7 +3,7 @@ import logging
 from .. import (
     CarHeaterStatus,
 )
-from ...services.car_heater.car_heater_models import ChargeModeState, KeepAtTempSettings
+from ...services.car_heater import ChargeModeState, KeepAtTempSettings
 
 logger = logging.getLogger(__name__)
 
