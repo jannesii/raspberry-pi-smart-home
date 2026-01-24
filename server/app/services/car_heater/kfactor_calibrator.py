@@ -22,7 +22,7 @@ from ...core import (
     CarHeaterStatus,
 )
 from ..weather.weather_service import WeatherService
-from ..alert_webhook import send_alert_webhook
+from ..alert_webhook import record_alert
 
 if TYPE_CHECKING:
     from ...core import Controller
@@ -815,7 +815,8 @@ class KFactorCalibrator:
         flags["stop_reason"] = reason
         if reason == "disturbance_no_heating" and not is_test:
             details = flags.get("no_heating_detected", {})
-            send_alert_webhook(
+            record_alert(
+                key="kfactor_no_heating",
                 title="KFactor calibration aborted (no heating detected)",
                 message=(
                     f"duration_s={duration_s} "

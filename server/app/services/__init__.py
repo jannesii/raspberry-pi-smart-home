@@ -164,6 +164,14 @@ def init_services(app) -> Dict[str, Any]:
         )
     except Exception as e:
         logger.exception("Failed to initialize Sodexo scheduler: %s", e)
+
+    # --- Alert webhook batcher ---
+    try:
+        from .alert_webhook import start_alert_batcher
+        start_alert_batcher()
+        logger.info("Alert webhook batcher started.")
+    except Exception as e:
+        logger.exception("Failed to start alert webhook batcher: %s", e)
         
     # --- Weather service ---
     weather_service = None
