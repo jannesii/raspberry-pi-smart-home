@@ -11,12 +11,13 @@ from threading import RLock
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from flask import current_app
+
 from ...core import (
     CarHeaterKFactorActiveParams,
     CarHeaterKFactorResult,
     CarHeaterKFactorSession,
     CarHeaterStatus,
-    Controller,
 )
 from ..weather.weather_service import WeatherService
 
@@ -28,7 +29,8 @@ CABIN_VOLUME_M3 = 2.8
 HEATER_POWER_W = 1000.0
 AIR_DENSITY_KG_M3 = 1.2
 SPECIFIC_HEAT_J_KG_K = 1000.0
-HEAT_CAPACITY_J_PER_K = AIR_DENSITY_KG_M3 * CABIN_VOLUME_M3 * SPECIFIC_HEAT_J_KG_K
+HEAT_CAPACITY_J_PER_K = AIR_DENSITY_KG_M3 * \
+    CABIN_VOLUME_M3 * SPECIFIC_HEAT_J_KG_K
 
 
 def _clamp(x: float, lo: float, hi: float) -> float:
@@ -158,13 +160,13 @@ class KFactorCalibrator:
     def __init__(
         self,
         *,
-        ctrl: Controller,
+        ctrl,
         weather_service: WeatherService | None,
         config: KFactorConfig | None = None,
         tz_name: str = "Europe/Helsinki",
     ) -> None:
         self._tz = ZoneInfo(tz_name)
-        self._ctrl: Controller = ctrl
+        self._ctrl = ctrl
         self._weather = weather_service
         self._cfg = config or self._load_config_from_env()
 
@@ -198,11 +200,11 @@ class KFactorCalibrator:
     @property
     def config(self) -> KFactorConfig:
         return self._cfg
-    
+
     @property
     def is_enabled(self) -> bool:
         return self._cfg.enabled
-    
+
     @is_enabled.setter
     def is_enabled(self, enabled: bool) -> None:
         with self._lock:
@@ -226,7 +228,8 @@ class KFactorCalibrator:
 
         cabin_temp_c = _finite(getattr(car_status, "ambient_temp", None))
         heater_on = bool(getattr(car_status, "is_heater_on", False))
-        power_w_raw = _finite(getattr(car_status, "instant_power_w", None)) or 0.0
+        power_w_raw = _finite(
+            getattr(car_status, "instant_power_w", None)) or 0.0
 
         # Determine outside temperature and wind (override wins).
         outside_temp_c = _finite(outside_temp_c)
@@ -276,6 +279,44 @@ class KFactorCalibrator:
                 if not is_test and not self.should_calibrate(now, outside_temp_c, wind_m_s):
                     return
 
+                from .ready_by_service import ReadyByService, ReadyBySchedule
+
+                ready_by_svc: ReadyByService | None = getattr(
+                    current_app, "ready_by_service", None)
+                if ready_by_svc is not None:
+                    schedule: ReadyBySchedule | None = ready_by_svc.get_schedule(
+                        as_object=True)
+                    if schedule is not None:
+                        status = schedule.status
+                        if status == "running":
+                            logger.info(
+                                "kfactor: skipped calibration (Ready-by running)")
+                            return
+                        hours_ahead = ready_by_svc.hours_before_target
+                        if status == "scheduled" and hours_ahead is not None and hours_ahead < 2.0:
+                            logger.info(
+                                "kfactor: skipped calibration (Ready-by scheduled soon)")
+                            return
+
+                from .keep_at_temp_service import KeepAtTempService
+
+                keep_at_temp_svc: KeepAtTempService | None = getattr(
+                    current_app, "keep_at_temp_service", None)
+                if keep_at_temp_svc is not None and keep_at_temp_svc.is_enabled:
+                    logger.info(
+                        "kfactor: skipped calibration (Keep-at-temp enabled)")
+                    return
+
+                from .car_heater_service import CarHeaterService, ChargeModeState
+                car_heater_svc: CarHeaterService | None = getattr(
+                    current_app, "car_heater_service", None)
+                if car_heater_svc is not None:
+                    charge_mode_state: ChargeModeState | None = car_heater_svc.get_charge_mode_state()
+                    if charge_mode_state is not None and charge_mode_state.enabled:
+                        logger.info(
+                            "kfactor: skipped calibration (Charge mode active)")
+                        return
+
                 self._start_session(
                     now=now,
                     window_start=window_start,
@@ -301,15 +342,18 @@ class KFactorCalibrator:
 
                 duration_s = self._session_duration_s(now)
                 if not heater_on:
-                    self._finalize_session(end_ts=now, reason="heater_off", is_test=is_test)
+                    self._finalize_session(
+                        end_ts=now, reason="heater_off", is_test=is_test)
                     return
                 if duration_s is not None and duration_s >= int(self._cfg.max_session_minutes) * 60:
-                    self._finalize_session(end_ts=now, reason="max_duration", is_test=is_test)
+                    self._finalize_session(
+                        end_ts=now, reason="max_duration", is_test=is_test)
                     return
 
                 disturbance_reason = self._detect_disturbance()
                 if disturbance_reason is not None:
-                    self._finalize_session(end_ts=now, reason=disturbance_reason, is_test=is_test)
+                    self._finalize_session(
+                        end_ts=now, reason=disturbance_reason, is_test=is_test)
                     return
 
     def get_active_params(
@@ -329,7 +373,8 @@ class KFactorCalibrator:
         except Exception:
             logger.debug("kfactor: get_active_params failed", exc_info=True)
 
-        k_loss = _finite(getattr(params, "k_loss_W_per_K", None)) if params else None
+        k_loss = _finite(getattr(params, "k_loss_W_per_K", None)
+                         ) if params else None
         eta = _finite(getattr(params, "eta", None)) if params else None
         if k_loss is None:
             k_loss = float(self._cfg.default_k_loss_W_per_K)
@@ -353,7 +398,8 @@ class KFactorCalibrator:
             sessions = self._ctrl.get_recent_kfactor_sessions(
                 limit=200, accepted_only=True)
         except Exception:
-            logger.debug("kfactor: failed to query prior sessions", exc_info=True)
+            logger.debug(
+                "kfactor: failed to query prior sessions", exc_info=True)
             return True
 
         for s in sessions:
@@ -504,30 +550,51 @@ class KFactorCalibrator:
             return raw.strip() if raw else default
 
         return KFactorConfig(
-            enabled=_get_str("CAR_HEATER_KFACTOR_ENABLED", "1").strip().lower() in ("1", "true", "yes", "y", "on"),
-            auto_calib_start_hhmm=_get_str("CAR_HEATER_KFACTOR_AUTO_START_HHMM", "00:00"),
-            auto_calib_stop_hhmm=_get_str("CAR_HEATER_KFACTOR_AUTO_STOP_HHMM", "23:59"),
+            enabled=_get_str("CAR_HEATER_KFACTOR_ENABLED", "1").strip(
+            ).lower() in ("1", "true", "yes", "y", "on"),
+            auto_calib_start_hhmm=_get_str(
+                "CAR_HEATER_KFACTOR_AUTO_START_HHMM", "00:00"),
+            auto_calib_stop_hhmm=_get_str(
+                "CAR_HEATER_KFACTOR_AUTO_STOP_HHMM", "23:59"),
             grace_samples=_get_int("CAR_HEATER_KFACTOR_GRACE_SAMPLES", 3),
-            min_session_minutes=_get_int("CAR_HEATER_KFACTOR_MIN_SESSION_MINUTES", 15),
-            max_session_minutes=_get_int("CAR_HEATER_KFACTOR_MAX_SESSION_MINUTES", 120),
-            min_temp_rise_C=_get_float("CAR_HEATER_KFACTOR_MIN_TEMP_RISE_C", 2.0),
-            early_window_minutes=_get_int("CAR_HEATER_KFACTOR_EARLY_WINDOW_MINUTES", 5),
-            drop_threshold_C=_get_float("CAR_HEATER_KFACTOR_DROP_THRESHOLD_C", 0.5),
-            spike_threshold_C=_get_float("CAR_HEATER_KFACTOR_SPIKE_THRESHOLD_C", 5.0),
-            quality_threshold=_get_float("CAR_HEATER_KFACTOR_QUALITY_THRESHOLD", 0.6),
-            cooldown_minutes=_get_int("CAR_HEATER_KFACTOR_COOLDOWN_MINUTES", 120),
-            bucket_lookback_days=_get_int("CAR_HEATER_KFACTOR_BUCKET_LOOKBACK_DAYS", 7),
+            min_session_minutes=_get_int(
+                "CAR_HEATER_KFACTOR_MIN_SESSION_MINUTES", 15),
+            max_session_minutes=_get_int(
+                "CAR_HEATER_KFACTOR_MAX_SESSION_MINUTES", 120),
+            min_temp_rise_C=_get_float(
+                "CAR_HEATER_KFACTOR_MIN_TEMP_RISE_C", 2.0),
+            early_window_minutes=_get_int(
+                "CAR_HEATER_KFACTOR_EARLY_WINDOW_MINUTES", 5),
+            drop_threshold_C=_get_float(
+                "CAR_HEATER_KFACTOR_DROP_THRESHOLD_C", 0.5),
+            spike_threshold_C=_get_float(
+                "CAR_HEATER_KFACTOR_SPIKE_THRESHOLD_C", 5.0),
+            quality_threshold=_get_float(
+                "CAR_HEATER_KFACTOR_QUALITY_THRESHOLD", 0.6),
+            cooldown_minutes=_get_int(
+                "CAR_HEATER_KFACTOR_COOLDOWN_MINUTES", 120),
+            bucket_lookback_days=_get_int(
+                "CAR_HEATER_KFACTOR_BUCKET_LOOKBACK_DAYS", 7),
             mass_factor=_get_float("CAR_HEATER_KFACTOR_MASS_FACTOR", 30.0),
-            mass_factor_min=_get_float("CAR_HEATER_KFACTOR_MASS_FACTOR_MIN", 5.0),
-            mass_factor_max=_get_float("CAR_HEATER_KFACTOR_MASS_FACTOR_MAX", 150.0),
+            mass_factor_min=_get_float(
+                "CAR_HEATER_KFACTOR_MASS_FACTOR_MIN", 5.0),
+            mass_factor_max=_get_float(
+                "CAR_HEATER_KFACTOR_MASS_FACTOR_MAX", 150.0),
             default_eta=_get_float("CAR_HEATER_KFACTOR_DEFAULT_ETA", 0.6),
-            default_k_loss_W_per_K=_get_float("CAR_HEATER_KFACTOR_DEFAULT_K_LOSS", 40.0),
-            tout_smooth_window=_get_int("CAR_HEATER_KFACTOR_TOUT_SMOOTH_WINDOW", 3),
-            informative_min_minutes=_get_int("CAR_HEATER_KFACTOR_INFORMATIVE_MIN_MINUTES", 20),
-            curvature_ratio_max=_get_float("CAR_HEATER_KFACTOR_CURVATURE_RATIO_MAX", 0.6),
-            curvature_max_sample_distance_s=_get_int("CAR_HEATER_KFACTOR_CURVATURE_MAX_SAMPLE_DISTANCE_S", 120),
-            prior_lambda_k=_get_float("CAR_HEATER_KFACTOR_PRIOR_LAMBDA_K", 0.1),
-            prior_lambda_eta=_get_float("CAR_HEATER_KFACTOR_PRIOR_LAMBDA_ETA", 0.1),
+            default_k_loss_W_per_K=_get_float(
+                "CAR_HEATER_KFACTOR_DEFAULT_K_LOSS", 40.0),
+            tout_smooth_window=_get_int(
+                "CAR_HEATER_KFACTOR_TOUT_SMOOTH_WINDOW", 3),
+            informative_min_minutes=_get_int(
+                "CAR_HEATER_KFACTOR_INFORMATIVE_MIN_MINUTES", 20),
+            curvature_ratio_max=_get_float(
+                "CAR_HEATER_KFACTOR_CURVATURE_RATIO_MAX", 0.6),
+            curvature_max_sample_distance_s=_get_int(
+                "CAR_HEATER_KFACTOR_CURVATURE_MAX_SAMPLE_DISTANCE_S", 120),
+            prior_lambda_k=_get_float(
+                "CAR_HEATER_KFACTOR_PRIOR_LAMBDA_K", 0.1),
+            prior_lambda_eta=_get_float(
+                "CAR_HEATER_KFACTOR_PRIOR_LAMBDA_ETA", 0.1),
             base_alpha=_get_float("CAR_HEATER_KFACTOR_BASE_ALPHA", 0.3),
             alpha_min=_get_float("CAR_HEATER_KFACTOR_ALPHA_MIN", 0.05),
             alpha_max=_get_float("CAR_HEATER_KFACTOR_ALPHA_MAX", 0.5),
@@ -558,7 +625,8 @@ class KFactorCalibrator:
     @staticmethod
     def _bucket_key(outside_temp_c: float, wind_m_s: float | None) -> tuple[int, int | None]:
         t_bucket = int(round(outside_temp_c / 2.0) * 2)
-        wind_bucket = int(round(wind_m_s / 2.0) * 2) if wind_m_s is not None else None
+        wind_bucket = int(round(wind_m_s / 2.0) *
+                          2) if wind_m_s is not None else None
         return t_bucket, wind_bucket
 
     def _reset(self, reason: str) -> None:
@@ -643,7 +711,8 @@ class KFactorCalibrator:
         prev = samples[-2]
         dT = last.cabin_temp_c - prev.cabin_temp_c
         if abs(dT) >= float(self._cfg.spike_threshold_C):
-            self._session_flags["spike_outlier"] = {"dT": dT, "threshold": self._cfg.spike_threshold_C}
+            self._session_flags["spike_outlier"] = {
+                "dT": dT, "threshold": self._cfg.spike_threshold_C}
             return "disturbance_spike"
 
         # Early non-monotonic rise check
@@ -659,7 +728,8 @@ class KFactorCalibrator:
                 if samples[i].cabin_temp_c < (samples[i - 1].cabin_temp_c - thr):
                     drops += 1
             if drops >= 2:
-                self._session_flags["non_monotonic_early"] = {"drops": drops, "threshold": thr}
+                self._session_flags["non_monotonic_early"] = {
+                    "drops": drops, "threshold": thr}
                 return "disturbance_non_monotonic"
 
         return None
@@ -669,7 +739,8 @@ class KFactorCalibrator:
         samples = list(self._session_samples)
 
         self._state = "COOLDOWN"
-        self._cooldown_until = end_ts + timedelta(minutes=int(self._cfg.cooldown_minutes))
+        self._cooldown_until = end_ts + \
+            timedelta(minutes=int(self._cfg.cooldown_minutes))
         self._heater_on_streak = 0
 
         # Clear live session state early (even if we fail later).
@@ -695,8 +766,10 @@ class KFactorCalibrator:
         cabin_t_max = max(s.cabin_temp_c for s in samples)
         delta_t = cabin_t_end - cabin_t_start
 
-        outside_vals = [s.outside_temp_c for s in samples if math.isfinite(s.outside_temp_c)]
-        wind_vals = [s.wind_m_s for s in samples if s.wind_m_s is not None and math.isfinite(s.wind_m_s)]
+        outside_vals = [
+            s.outside_temp_c for s in samples if math.isfinite(s.outside_temp_c)]
+        wind_vals = [
+            s.wind_m_s for s in samples if s.wind_m_s is not None and math.isfinite(s.wind_m_s)]
         outside_mean = mean(outside_vals) if outside_vals else None
         outside_min = min(outside_vals) if outside_vals else None
         outside_max = max(outside_vals) if outside_vals else None
@@ -877,7 +950,8 @@ class KFactorCalibrator:
             with open(path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
         except Exception:
-            logger.exception("kfactor: failed to write test output to %r", path)
+            logger.exception(
+                "kfactor: failed to write test output to %r", path)
 
     def _compute_weighted_update(
         self,
@@ -892,7 +966,8 @@ class KFactorCalibrator:
             float(self._cfg.alpha_min),
             float(self._cfg.alpha_max),
         )
-        new_k = (1.0 - alpha) * float(old_k) + alpha * float(fit.k_loss_W_per_K)
+        new_k = (1.0 - alpha) * float(old_k) + \
+            alpha * float(fit.k_loss_W_per_K)
         new_eta = (1.0 - alpha) * float(old_eta) + alpha * float(fit.eta)
         return new_k, new_eta, alpha
 
@@ -909,12 +984,14 @@ class KFactorCalibrator:
         if duration_s < min_s:
             duration_score = 0.0
         else:
-            duration_score = _clamp((duration_s - min_s) / float(ideal_s - min_s), 0.0, 1.0)
+            duration_score = _clamp(
+                (duration_s - min_s) / float(ideal_s - min_s), 0.0, 1.0)
 
         if delta_t <= 0:
             delta_score = 0.0
         else:
-            delta_score = _clamp(delta_t / float(self._cfg.min_temp_rise_C * 2.0), 0.0, 1.0)
+            delta_score = _clamp(
+                delta_t / float(self._cfg.min_temp_rise_C * 2.0), 0.0, 1.0)
 
         disturbance = any(
             k.startswith("non_monotonic") or k.startswith("spike") for k in flags.keys()
@@ -996,7 +1073,8 @@ class KFactorCalibrator:
         T1 = self._temp_near_time(on, t1, max_distance_s=max_dist_s)
         T5 = self._temp_near_time(on, t5, max_distance_s=max_dist_s)
         Tend = self._temp_near_time(on, tend, max_distance_s=max_dist_s)
-        T_end_minus_5 = self._temp_near_time(on, t_end_minus_5, max_distance_s=max_dist_s)
+        T_end_minus_5 = self._temp_near_time(
+            on, t_end_minus_5, max_distance_s=max_dist_s)
 
         if None in (T1, T5, Tend, T_end_minus_5):
             details["reason"] = "missing_samples_for_curvature"
@@ -1065,7 +1143,8 @@ class KFactorCalibrator:
             if not s.heater_on:
                 continue
             series.append(
-                (s.ts, float(s.cabin_temp_c), float(s.power_w), float(s.outside_temp_c))
+                (s.ts, float(s.cabin_temp_c), float(
+                    s.power_w), float(s.outside_temp_c))
             )
 
         if len(series) < 3:
@@ -1075,7 +1154,8 @@ class KFactorCalibrator:
         obs = [v for (_, v, _, _) in series]
         powers = [p for (_, _, p, _) in series]
         tout = [x for (_, _, _, x) in series]
-        tout = self._smooth_series(tout, window=max(1, int(self._cfg.tout_smooth_window)))
+        tout = self._smooth_series(tout, window=max(
+            1, int(self._cfg.tout_smooth_window)))
 
         k0, eta0 = self.get_active_params()
         k0 = _clamp(float(k0), self._cfg.k_loss_min, self._cfg.k_loss_max)
@@ -1113,7 +1193,8 @@ class KFactorCalibrator:
             eta_start=best_eta,
         )
 
-        r2 = self._r2_for(times, obs, powers, tout=tout, k_loss=best_k, eta=best_eta)
+        r2 = self._r2_for(times, obs, powers, tout=tout,
+                          k_loss=best_k, eta=best_eta)
         return KFactorFit(k_loss_W_per_K=float(best_k), eta=float(best_eta), rmse_C=float(best_rmse), r2=r2)
 
     def _fit_k_loss_only(
@@ -1127,7 +1208,8 @@ class KFactorCalibrator:
         eta_fixed: float,
     ) -> tuple[float, float]:
         best_k = _clamp(float(k0), self._cfg.k_loss_min, self._cfg.k_loss_max)
-        best_rmse = self._rmse_for(times, obs, powers, tout=tout, k_loss=best_k, eta=eta_fixed)
+        best_rmse = self._rmse_for(
+            times, obs, powers, tout=tout, k_loss=best_k, eta=eta_fixed)
         best_loss = best_rmse
 
         stages = [
@@ -1137,10 +1219,13 @@ class KFactorCalibrator:
         ]
         lam_k = float(self._cfg.prior_lambda_k)
         for lo_fac, hi_fac, n in stages:
-            k_min = _clamp(best_k * lo_fac, self._cfg.k_loss_min, self._cfg.k_loss_max)
-            k_max = _clamp(best_k * hi_fac, self._cfg.k_loss_min, self._cfg.k_loss_max)
+            k_min = _clamp(best_k * lo_fac, self._cfg.k_loss_min,
+                           self._cfg.k_loss_max)
+            k_max = _clamp(best_k * hi_fac, self._cfg.k_loss_min,
+                           self._cfg.k_loss_max)
             for k in self._linspace(k_min, k_max, n):
-                rmse = self._rmse_for(times, obs, powers, tout=tout, k_loss=k, eta=eta_fixed)
+                rmse = self._rmse_for(times, obs, powers,
+                                      tout=tout, k_loss=k, eta=eta_fixed)
                 if not math.isfinite(rmse):
                     continue
                 loss = rmse + (lam_k * abs(k - k0) / max(1e-9, abs(k0)))
@@ -1162,7 +1247,8 @@ class KFactorCalibrator:
         k_fixed: float,
     ) -> tuple[float, float]:
         best_eta = _clamp(float(eta0), self._cfg.eta_min, self._cfg.eta_max)
-        best_rmse = self._rmse_for(times, obs, powers, tout=tout, k_loss=k_fixed, eta=best_eta)
+        best_rmse = self._rmse_for(
+            times, obs, powers, tout=tout, k_loss=k_fixed, eta=best_eta)
         best_loss = best_rmse
 
         stages = [
@@ -1172,10 +1258,13 @@ class KFactorCalibrator:
         ]
         lam_e = float(self._cfg.prior_lambda_eta)
         for span, n in stages:
-            eta_min = _clamp(best_eta - span, self._cfg.eta_min, self._cfg.eta_max)
-            eta_max = _clamp(best_eta + span, self._cfg.eta_min, self._cfg.eta_max)
+            eta_min = _clamp(
+                best_eta - span, self._cfg.eta_min, self._cfg.eta_max)
+            eta_max = _clamp(
+                best_eta + span, self._cfg.eta_min, self._cfg.eta_max)
             for eta in self._linspace(eta_min, eta_max, n):
-                rmse = self._rmse_for(times, obs, powers, tout=tout, k_loss=k_fixed, eta=eta)
+                rmse = self._rmse_for(times, obs, powers,
+                                      tout=tout, k_loss=k_fixed, eta=eta)
                 if not math.isfinite(rmse):
                     continue
                 loss = rmse + (lam_e * abs(eta - eta0))
@@ -1198,22 +1287,28 @@ class KFactorCalibrator:
         k_start: float,
         eta_start: float,
     ) -> tuple[float, float, float]:
-        best_k = _clamp(float(k_start), self._cfg.k_loss_min, self._cfg.k_loss_max)
-        best_eta = _clamp(float(eta_start), self._cfg.eta_min, self._cfg.eta_max)
-        best_rmse = self._rmse_for(times, obs, powers, tout=tout, k_loss=best_k, eta=best_eta)
+        best_k = _clamp(float(k_start), self._cfg.k_loss_min,
+                        self._cfg.k_loss_max)
+        best_eta = _clamp(float(eta_start),
+                          self._cfg.eta_min, self._cfg.eta_max)
+        best_rmse = self._rmse_for(
+            times, obs, powers, tout=tout, k_loss=best_k, eta=best_eta)
         best_loss = best_rmse
 
         lam_k = float(self._cfg.prior_lambda_k)
         lam_e = float(self._cfg.prior_lambda_eta)
 
-        k_min = _clamp(best_k * 0.85, self._cfg.k_loss_min, self._cfg.k_loss_max)
-        k_max = _clamp(best_k * 1.15, self._cfg.k_loss_min, self._cfg.k_loss_max)
+        k_min = _clamp(best_k * 0.85, self._cfg.k_loss_min,
+                       self._cfg.k_loss_max)
+        k_max = _clamp(best_k * 1.15, self._cfg.k_loss_min,
+                       self._cfg.k_loss_max)
         eta_min = _clamp(best_eta - 0.15, self._cfg.eta_min, self._cfg.eta_max)
         eta_max = _clamp(best_eta + 0.15, self._cfg.eta_min, self._cfg.eta_max)
 
         for k in self._linspace(k_min, k_max, 13):
             for eta in self._linspace(eta_min, eta_max, 13):
-                rmse = self._rmse_for(times, obs, powers, tout=tout, k_loss=k, eta=eta)
+                rmse = self._rmse_for(times, obs, powers,
+                                      tout=tout, k_loss=k, eta=eta)
                 if not math.isfinite(rmse):
                     continue
                 loss = rmse
@@ -1244,7 +1339,8 @@ class KFactorCalibrator:
         k_loss: float,
         eta: float,
     ) -> float:
-        pred = self._simulate(times, obs[0], powers, tout=tout, k_loss=k_loss, eta=eta)
+        pred = self._simulate(
+            times, obs[0], powers, tout=tout, k_loss=k_loss, eta=eta)
         if pred is None:
             return float("inf")
         err2 = 0.0
@@ -1267,7 +1363,8 @@ class KFactorCalibrator:
         k_loss: float,
         eta: float,
     ) -> float | None:
-        pred = self._simulate(times, obs[0], powers, tout=tout, k_loss=k_loss, eta=eta)
+        pred = self._simulate(
+            times, obs[0], powers, tout=tout, k_loss=k_loss, eta=eta)
         if pred is None:
             return None
         y_bar = mean(obs)
@@ -1316,7 +1413,8 @@ class KFactorCalibrator:
                 continue
 
             P = powers[i - 1] if i - 1 < len(powers) else powers[-1]
-            P = float(P) if (P is not None and math.isfinite(P)) else HEATER_POWER_W
+            P = float(P) if (P is not None and math.isfinite(P)
+                             ) else HEATER_POWER_W
             P = P if P > 1.0 else HEATER_POWER_W
 
             Tout_i = float(tout[i - 1])

@@ -201,6 +201,8 @@ def init_services(app) -> Dict[str, Any]:
         ready_by_service = ReadyByService(
             car_heater_service=car_heater_service,
             kfactor_calibrator=kfactor_calibrator,
+            keep_at_temp_service=keep_at_temp_service,
+            ctrl=app.ctrl,  # type: ignore[attr-defined]
             weather_service=weather_service,
         )
         app.ready_by_service = ready_by_service

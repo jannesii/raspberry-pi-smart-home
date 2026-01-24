@@ -1,12 +1,16 @@
 import logging
 import threading
-from .car_heater_models import KeepAtTempSettings
+from dataclasses import dataclass
 from .car_heater_service import CarHeaterService
-from ...core.controller import Controller
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
+@dataclass
+class KeepAtTempSettings:
+    target_temperature_c: float | None = None   
+    hysteresis_c: float | None = None   
+    enabled: bool | None = None 
 
 class KeepAtTempService:
     """
@@ -15,10 +19,10 @@ class KeepAtTempService:
     This is a placeholder for the actual implementation.
     """
 
-    def __init__(self, car_heater_service: CarHeaterService, ctrl: Controller) -> None:
+    def __init__(self, car_heater_service: CarHeaterService, ctrl) -> None:
         self._lock = threading.Lock()
         self._car_heater_service = car_heater_service
-        self._ctrl: Controller = ctrl
+        self._ctrl = ctrl
         self._settings: KeepAtTempSettings | None = self._ctrl.get_keep_at_temp_settings()
         logger.info("KeepAtTempService initialized")
 
@@ -56,6 +60,25 @@ class KeepAtTempService:
                 self._settings.enabled = enabled
                 self._ctrl.save_keep_at_temp_settings(self._settings)
                 logger.debug("Set KeepAtTemp enabled to: %r", enabled)
+                
+    @property
+    def target_temperature_c(self) -> float | None:
+        """
+        Get the target temperature in Celsius.
+        """
+        with self._lock:
+            return self._settings.target_temperature_c if self._settings else None
+        
+    @target_temperature_c.setter
+    def target_temperature_c(self, temp_c: float) -> None:
+        """
+        Set the target temperature in Celsius.
+        """
+        with self._lock:
+            if self._settings:
+                self._settings.target_temperature_c = temp_c
+                self._ctrl.save_keep_at_temp_settings(self._settings)
+                logger.debug("Set KeepAtTemp target_temperature_c to: %r", temp_c)
 
     def thermostat_logic(
             self, 

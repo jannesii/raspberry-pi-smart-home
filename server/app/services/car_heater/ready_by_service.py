@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 
 from app.services.car_heater.keep_at_temp_service import KeepAtTempService
 
-from ...core import CarHeaterReadyByState, CarHeaterStatus, Controller
+from ...core import CarHeaterReadyByState, CarHeaterStatus
 from ..weather.weather_service import WeatherService
 from .car_heater_service import CarHeaterService
 from .kfactor_calibrator import KFactorCalibrator
@@ -89,7 +89,7 @@ class ReadyByService:
         car_heater_service: CarHeaterService,
         kfactor_calibrator: KFactorCalibrator,
         keep_at_temp_service: KeepAtTempService,
-        ctrl: Controller | None = None,
+        ctrl: Any = None,
         weather_service: WeatherService | None = None,
         config: ReadyByConfig | None = None,
         tz_name: str = "Europe/Helsinki",
@@ -105,18 +105,31 @@ class ReadyByService:
 
         self._schedule: ReadyBySchedule | None = None
         self._last_persisted_json: str | None = None
-        
+
         self._restore_from_db()
-        
+
     @property
     def is_enabled(self) -> bool:
         return self._cfg.enabled
-    
+
     @is_enabled.setter
     def is_enabled(self, enabled: bool) -> None:
         with self._lock:
             self._cfg.enabled = enabled
             logger.info("ReadyByService enabled set to: %r", enabled)
+
+    @property
+    def hours_before_target(self) -> float | None:
+        """Get the estimated hours before target time for the active schedule."""
+        with self._lock:
+            if self._schedule is None:
+                return None
+            ready_by_dt = _dt_local(self._schedule.ready_by_ts, self._tz)
+            if ready_by_dt is None:
+                return None
+            now = datetime.now(self._tz)
+            delta = (ready_by_dt - now).total_seconds() / 3600.0
+            return float(delta)
 
     def schedule(
         self,
@@ -126,14 +139,16 @@ class ReadyByService:
     ) -> ReadyBySchedule:
         """Schedule a Ready-by run (timestamps interpreted in local timezone if naive)."""
         with self._lock:
-            dt = ready_by_ts.astimezone(self._tz) if ready_by_ts.tzinfo else ready_by_ts.replace(tzinfo=self._tz)
+            dt = ready_by_ts.astimezone(
+                self._tz) if ready_by_ts.tzinfo else ready_by_ts.replace(tzinfo=self._tz)
             now = datetime.now(self._tz).replace(microsecond=0)
             self._schedule = ReadyBySchedule(
                 created_ts=now.isoformat(sep=" "),
                 ready_by_ts=dt.replace(microsecond=0).isoformat(sep=" "),
                 target_temp_c=float(target_temp_c),
             )
-            logger.info("ready_by: scheduled for %s target=%.1fC", self._schedule.ready_by_ts, target_temp_c)
+            logger.info("ready_by: scheduled for %s target=%.1fC",
+                        self._schedule.ready_by_ts, target_temp_c)
             self._persist_if_changed(is_test=False)
             return ReadyBySchedule(**asdict(self._schedule))
 
@@ -150,8 +165,10 @@ class ReadyByService:
             self._persist_if_changed(is_test=False)
             return ReadyBySchedule(**asdict(self._schedule))
 
-    def get_status(self) -> dict[str, Any]:
+    def get_schedule(self, as_object: bool = False) -> ReadyBySchedule | dict[str, Any] | None:
         with self._lock:
+            if as_object:
+                return self._schedule if self._schedule else None
             return {"schedule": asdict(self._schedule) if self._schedule else None}
 
     def tick(
@@ -216,7 +233,8 @@ class ReadyByService:
                 outside_temp_c=out,
                 power_w=_finite(getattr(car_status, "instant_power_w", None)),
             )
-            s.predicted_eta_minutes = float(eta_min) if eta_min is not None else None
+            s.predicted_eta_minutes = float(
+                eta_min) if eta_min is not None else None
             s.unreachable = eta_min is None
 
             if eta_min is None:
@@ -226,7 +244,8 @@ class ReadyByService:
                 if planned_start < now:
                     planned_start = now
 
-            s.planned_start_ts = planned_start.replace(microsecond=0).isoformat(sep=" ")
+            s.planned_start_ts = planned_start.replace(
+                microsecond=0).isoformat(sep=" ")
 
             # Outcome: first time we reach target (can happen before ready_by).
             if s.reached_ts is None and cabin_temp_c >= float(s.target_temp_c):
@@ -244,16 +263,18 @@ class ReadyByService:
                     s.reached_too_early,
                     s.reached_too_late,
                 )
+                s.status = "completed"
 
             heater_on = bool(getattr(car_status, "is_heater_on", False))
             if now >= planned_start and not heater_on:
-                
                 s.status = "running"
                 self._queue_command("turn_on")
-            elif heater_on and now >= ready_by_dt and cabin_temp_c >= float(s.target_temp_c):
-                # Mark completed once we reach target at/after ready_by and the heater was on.
-                s.status = "completed"
             self._persist_if_changed(is_test=is_test)
+
+    def _after_completed(self) -> None:
+        """Actions to perform after a schedule is completed."""
+        self._keep_at_temp_service.target_temperature_c = self._schedule.target_temp_c
+        self._keep_at_temp_service.is_enabled = True
 
     def _queue_command(self, action: str) -> None:
         now = datetime.now(self._tz).replace(microsecond=0)
@@ -295,8 +316,10 @@ class ReadyByService:
 
         return ReadyByConfig(
             enabled=_get_bool("CAR_HEATER_READY_BY_ENABLED", True),
-            command_cooldown_s=_get_int("CAR_HEATER_READY_BY_COMMAND_COOLDOWN_S", 30),
-            reach_tolerance_minutes=_get_float("CAR_HEATER_READY_BY_REACH_TOLERANCE_MIN", 2.0),
+            command_cooldown_s=_get_int(
+                "CAR_HEATER_READY_BY_COMMAND_COOLDOWN_S", 30),
+            reach_tolerance_minutes=_get_float(
+                "CAR_HEATER_READY_BY_REACH_TOLERANCE_MIN", 2.0),
         )
 
     def _restore_from_db(self) -> None:
@@ -305,7 +328,8 @@ class ReadyByService:
         try:
             row = self._ctrl.get_ready_by_state()
         except Exception:
-            logger.debug("ready_by: failed to read persisted state", exc_info=True)
+            logger.debug(
+                "ready_by: failed to read persisted state", exc_info=True)
             return
         if row is None or not row.state_json:
             return
@@ -314,10 +338,12 @@ class ReadyByService:
             sched = data.get("schedule")
             if isinstance(sched, dict):
                 self._schedule = self._schedule_from_dict(sched)
-                logger.info("ready_by: restored schedule from DB (status=%s)", self._schedule.status)
+                logger.info(
+                    "ready_by: restored schedule from DB (status=%s)", self._schedule.status)
             self._last_persisted_json = row.state_json
         except Exception:
-            logger.debug("ready_by: failed to parse persisted state_json", exc_info=True)
+            logger.debug(
+                "ready_by: failed to parse persisted state_json", exc_info=True)
 
     @staticmethod
     def _schedule_from_dict(data: dict[str, Any]) -> ReadyBySchedule:
@@ -343,7 +369,8 @@ class ReadyByService:
                 CarHeaterReadyByState(
                     id=1,
                     state_json=state_json,
-                    updated_ts=datetime.now(self._tz).replace(microsecond=0).isoformat(sep=" "),
+                    updated_ts=datetime.now(self._tz).replace(
+                        microsecond=0).isoformat(sep=" "),
                 )
             )
         except Exception:

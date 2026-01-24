@@ -1,26 +1,7 @@
-import os
-import tempfile
-from typing import Optional, List, Dict, Any
-from datetime import datetime, timedelta
-from flask_login import current_user
-from werkzeug.security import generate_password_hash, check_password_hash
+from typing import List
+from datetime import datetime
 import logging
 
-from .. import (
-    User,
-    ESP32TemperatureHumidity,
-    Status,
-    ImageData,
-    TimelapseConf,
-    ThermostatConf,
-    ApiKey,
-    BMPData,
-    CarHeaterStatus,
-)
-from ...services.car_heater.car_heater_models import ChargeModeState, KeepAtTempSettings
-import pytz
-import sqlite3
-import secrets
 
 logger = logging.getLogger(__name__)
 

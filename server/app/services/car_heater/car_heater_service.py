@@ -1,8 +1,7 @@
 import logging
 import threading
 from typing import Any, Dict, List, TYPE_CHECKING
-
-from .car_heater_models import ChargeModeState, CommandStatus, KeepAtTempSettings
+from dataclasses import dataclass
 
 if TYPE_CHECKING:
     from ...core.controller import Controller
@@ -11,6 +10,24 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 status_levels = [None, "queued", "sent", "success", "failed"]
+
+@dataclass
+class CommandStatus:
+    turn_on: str | None = None
+    turn_off: str | None = None
+    get_logs: str | None = None
+    esp_restart: str | None = None
+    shelly_restart: str | None = None
+
+
+@dataclass
+class ChargeModeState:
+    enabled: bool = False
+    threshold_w: float = 20.0
+    power_cut: bool = False
+    power_cut_at: str | None = None
+    last_instant_power_w: float | None = None
+    seen_above_threshold: bool = False
 
 
 class CarHeaterService:
@@ -40,7 +57,6 @@ class CarHeaterService:
         else:
             self._charge_mode_state = ChargeModeState()
 
-        self._keep_at_temp_settings = KeepAtTempSettings()
         self._stop_event = threading.Event()
         self._thread = threading.Thread(
             target=self._run, name="CarHeaterService", daemon=True

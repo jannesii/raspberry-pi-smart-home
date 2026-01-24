@@ -157,6 +157,7 @@ def print_menu() -> None:
     print("  s. Run temperature simulation (Ctrl+C to stop)")
     print("  k. Run KFactor calibration simulation (fast, no waiting)")
     print("\nOptions:")
+    print("  d. Fetch KFactor debug snapshot (requires API key)")
     print("  u. Change URL (current: {url})")
     print("  q. Quit")
     print("-" * 60)
@@ -407,7 +408,7 @@ def run_kfactor_simulation(status_url: str, debug_url: str) -> None:
     if k_loss_true is None:
         k_loss_true = 40.0
 
-    duration_min = int(get_float_input("Session duration (minutes)", 20.0) or 20.0)
+    duration_min = int(get_float_input("Session duration (minutes)", 21.0) or 21.0)
     sample_period_s = int(get_float_input("Sample period (seconds)", 10.0) or 10.0)
     noise_std = get_float_input("Noise std-dev (°C)", 0.1)
     noise_std = float(noise_std) if noise_std is not None else 0.1
@@ -480,6 +481,8 @@ def main() -> None:
     # Check for URL argument
     if len(sys.argv) > 1:
         url = sys.argv[1]
+        if "/api/car_heater/status" in url:
+            debug_url = url.replace("/status/test", "/kfactor/debug").replace("/status", "/kfactor/debug")
 
     print(f"\nUsing endpoint: {url}")
 
@@ -517,6 +520,13 @@ def main() -> None:
             run_simulation(url)
         elif choice == "k":
             run_kfactor_simulation(url, debug_url)
+        elif choice == "d":
+            dbg = _get_json(debug_url)
+            if dbg is None:
+                print("[!] No debug snapshot returned.")
+            else:
+                print("\n--- KFactor debug snapshot ---")
+                print(json.dumps(dbg, indent=2))
         elif choice in presets:
             payload = presets[choice]()
             send_request(url, payload)
