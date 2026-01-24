@@ -6,6 +6,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/flash.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_chart.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_settings.css') }}">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 {% endblock %}
@@ -105,6 +106,80 @@
                 <span class="temp-input-unit">°C</span>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Ready by Time -->
+    <div class="ready-by-section">
+      <div class="ready-by-header">
+        <div class="ready-by-title-row">
+          <div class="ready-by-icon">🎯</div>
+          <div class="ready-by-title-info">
+            <h4>Ready by Time</h4>
+            <p id="readyByStatusText" class="ready-by-status">No schedule</p>
+          </div>
+        </div>
+        <button id="btnOpenReadyBySettings" class="settings-gear-btn" type="button" title="Advanced Settings">
+          ⚙️
+        </button>
+      </div>
+      
+      <!-- Progress bar (shown when scheduled/running) -->
+      <div id="readyByProgress" class="ready-by-progress" style="display: none;">
+        <div class="progress-bar">
+          <div id="readyByProgressFill" class="progress-fill"></div>
+        </div>
+        <div class="progress-labels">
+          <span id="readyByProgressStart">Start</span>
+          <span id="readyByProgressEnd">Target time</span>
+        </div>
+      </div>
+      
+      <div class="ready-by-inputs">
+        <div class="ready-by-input-group">
+          <label class="ready-by-input-label" for="readyByTimeInput">Ready by</label>
+          <input type="datetime-local" id="readyByTimeInput" name="readyByTimeInput" 
+                 autocomplete="off">
+        </div>
+        <div class="ready-by-input-group">
+          <label class="ready-by-input-label" for="readyByTargetInput">Target</label>
+          <div class="temp-input-wrapper">
+            <input type="number" id="readyByTargetInput" name="readyByTargetInput" 
+                   inputmode="decimal" step="0.5" min="-40" max="40" 
+                   placeholder="-5" value="-5" autocomplete="off">
+            <span class="temp-input-unit">°C</span>
+          </div>
+        </div>
+      </div>
+      <div class="ready-by-info" id="readyByInfoPanel" style="display: none;">
+        <div class="ready-by-info-row">
+          <span class="ready-by-info-label">ETA:</span>
+          <span id="readyByEtaText" class="ready-by-info-value">—</span>
+        </div>
+        <div class="ready-by-info-row">
+          <span class="ready-by-info-label">Planned start:</span>
+          <span id="readyByPlannedStart" class="ready-by-info-value">—</span>
+        </div>
+        <div class="ready-by-info-row">
+          <span class="ready-by-info-label">Current cabin:</span>
+          <span id="readyByCabinTemp" class="ready-by-info-value">—</span>
+        </div>
+        <div class="ready-by-info-row">
+          <span class="ready-by-info-label">Outside:</span>
+          <span id="readyByOutsideTemp" class="ready-by-info-value">—</span>
+        </div>
+        <div class="ready-by-info-row">
+          <span class="ready-by-info-label">Model params:</span>
+          <span id="readyByModelParams" class="ready-by-info-value ready-by-params">—</span>
+        </div>
+      </div>
+      <div class="ready-by-actions">
+        <button id="btnReadyBySchedule" class="ready-by-btn schedule-btn" type="button">
+          <span class="btn-icon">📅</span> Schedule
+        </button>
+        <button id="btnReadyByCancel" class="ready-by-btn cancel-btn" type="button" disabled>
+          <span class="btn-icon">✕</span> Cancel
+        </button>
       </div>
     </div>
 
@@ -238,8 +313,11 @@
   window.CAR_HEATER_CMD_STATUS = {{ command_status | tojson }};
   window.CAR_HEATER_CHARGE_STATE = {{ charge_mode_state | tojson }};
   window.CAR_HEATER_KEEP_AT_TEMP = {{ keep_at_temp_settings | tojson }};
+  window.CAR_HEATER_READY_BY = {{ ready_by_schedule | tojson }};
+  window.CAR_HEATER_KFACTOR = {{ kfactor_status | tojson }};
 </script>
 {% include 'car_heater_chart_modal.html' %}
+{% include 'car_heater_settings_modal.html' %}
 {% endblock %}
 
 {% block scripts %}
@@ -247,4 +325,5 @@
 <script src="{{ url_for('static', filename='js/car_heater.js') }}"></script>
 <script src="{{ url_for('static', filename='js/flash.js') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater_chart.js') }}"></script>
+<script src="{{ url_for('static', filename='js/car_heater_settings.js') }}"></script>
 {% endblock %}

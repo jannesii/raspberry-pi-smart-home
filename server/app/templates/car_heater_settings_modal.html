@@ -1,0 +1,109 @@
+<!-- Car Heater Settings Modal: Ready-by & kFactor calibration settings -->
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_settings.css') }}">
+
+<div id="carHeaterSettingsModal">
+  <div class="dialog">
+    <div class="header">
+      <h3>Car Heater Settings</h3>
+      <button id="carHeaterSettingsClose" aria-label="Close">✕</button>
+    </div>
+
+    <div class="content">
+      <!-- Ready-by Configuration Panel -->
+      <div class="settings-panel">
+        <div class="panel-header">
+          <span class="panel-icon">🎯</span>
+          <span class="panel-title">Ready-by Configuration</span>
+        </div>
+        <div class="panel-body">
+          <div class="setting-row">
+            <label for="readyByEnabled">Enabled</label>
+            <label class="ios-toggle">
+              <input type="checkbox" id="readyByEnabled" checked>
+              <span class="ios-toggle-track"></span>
+              <span class="ios-toggle-thumb"></span>
+            </label>
+          </div>
+          <div class="setting-row">
+            <label for="readyByTolerance">Reach tolerance</label>
+            <div class="setting-input-wrap">
+              <input type="number" id="readyByTolerance" step="0.5" min="0" max="30" value="2">
+              <span class="setting-unit">min</span>
+            </div>
+          </div>
+          <div class="setting-row">
+            <label for="readyByCooldown">Command cooldown</label>
+            <div class="setting-input-wrap">
+              <input type="number" id="readyByCooldown" step="5" min="5" max="300" value="30">
+              <span class="setting-unit">s</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- kFactor Calibration Panel -->
+      <div class="settings-panel">
+        <div class="panel-header">
+          <span class="panel-icon">📊</span>
+          <span class="panel-title">kFactor Calibration</span>
+        </div>
+        <div class="panel-body">
+          <div class="setting-row">
+            <label>Status</label>
+            <div class="kfactor-status">
+              <span id="kfactorStateIndicator" class="state-dot state-idle"></span>
+              <span id="kfactorStateText">IDLE</span>
+            </div>
+          </div>
+          <div class="setting-row">
+            <label for="kfactorEnabled">Auto-calibration</label>
+            <label class="ios-toggle">
+              <input type="checkbox" id="kfactorEnabled" checked>
+              <span class="ios-toggle-track"></span>
+              <span class="ios-toggle-thumb"></span>
+            </label>
+          </div>
+          
+          <div class="divider"></div>
+          
+          <div class="kfactor-params">
+            <div class="params-title">Active Parameters</div>
+            <div class="params-grid">
+              <div class="param-item">
+                <span class="param-label">k_loss</span>
+                <span id="kfactorKLoss" class="param-value">—</span>
+                <span class="param-unit">W/K</span>
+              </div>
+              <div class="param-item">
+                <span class="param-label">η (eta)</span>
+                <span id="kfactorEta" class="param-value">—</span>
+                <span class="param-unit"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="kfactor-last-session">
+            <div class="session-title">Last Session</div>
+            <div id="kfactorLastSessionInfo" class="session-info">
+              <span class="session-empty">No session data</span>
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="setting-row">
+            <label>Calibration window</label>
+            <span id="kfactorWindow" class="setting-value">00:00 – 23:59</span>
+          </div>
+          <div class="setting-row">
+            <label>Cooldown until</label>
+            <span id="kfactorCooldownUntil" class="setting-value">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="backdrop" aria-hidden="true"></div>
+</div>

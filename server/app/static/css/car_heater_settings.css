@@ -1,0 +1,579 @@
+/* ========================================
+   Car Heater Settings Modal CSS
+   ======================================== */
+
+/* Modal Container */
+#carHeaterSettingsModal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+#carHeaterSettingsModal.is-open {
+  display: flex;
+}
+
+#carHeaterSettingsModal .backdrop {
+  display: none;
+}
+
+/* Dialog */
+#carHeaterSettingsModal .dialog {
+  position: relative;
+  width: 90%;
+  max-width: 480px;
+  max-height: 85vh;
+  background: #1c1c1e;
+  color: #f5f5f7;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header */
+#carHeaterSettingsModal .header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: #2c2c2e;
+}
+
+#carHeaterSettingsModal .header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+#carHeaterSettingsModal #carHeaterSettingsClose {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: #fff;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+#carHeaterSettingsModal #carHeaterSettingsClose:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Content */
+#carHeaterSettingsModal .content {
+  padding: 16px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Settings Panel */
+.settings-panel {
+  background: #2c2c2e;
+  border-radius: 12px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.settings-panel:last-child {
+  margin-bottom: 0;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.panel-icon {
+  font-size: 18px;
+}
+
+.panel-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.panel-body {
+  padding: 12px 16px;
+}
+
+/* Setting Rows */
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+}
+
+.setting-row label {
+  color: #8e8e93;
+  font-size: 14px;
+}
+
+.setting-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.setting-input-wrap input {
+  width: 70px;
+  padding: 8px 10px;
+  background: rgba(118, 118, 128, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  text-align: right;
+}
+
+.setting-unit {
+  color: #8e8e93;
+  font-size: 13px;
+  min-width: 30px;
+}
+
+.setting-value {
+  color: #fff;
+  font-size: 14px;
+}
+
+/* Divider */
+.settings-panel .divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 8px 0;
+}
+
+/* iOS Toggle (copied from car_heater.css for consistency) */
+#carHeaterSettingsModal .ios-toggle {
+  position: relative;
+  display: inline-block;
+  width: 51px;
+  height: 31px;
+}
+
+#carHeaterSettingsModal .ios-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+#carHeaterSettingsModal .ios-toggle-track {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background: #39393d;
+  border-radius: 31px;
+  transition: background 0.3s;
+}
+
+#carHeaterSettingsModal .ios-toggle input:checked + .ios-toggle-track {
+  background: #30d158;
+}
+
+#carHeaterSettingsModal .ios-toggle-thumb {
+  position: absolute;
+  height: 27px;
+  width: 27px;
+  left: 2px;
+  bottom: 2px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.3s;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+#carHeaterSettingsModal .ios-toggle input:checked ~ .ios-toggle-thumb {
+  transform: translateX(20px);
+}
+
+/* kFactor Status */
+.kfactor-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.state-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #636366;
+}
+
+.state-dot.state-idle {
+  background: #636366;
+}
+
+.state-dot.state-armed {
+  background: #ffd60a;
+}
+
+.state-dot.state-recording {
+  background: #30d158;
+  animation: pulse 1.5s infinite;
+}
+
+.state-dot.state-cooldown {
+  background: #0a84ff;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+#kfactorStateText {
+  font-size: 14px;
+  font-weight: 500;
+  color: #fff;
+  text-transform: uppercase;
+}
+
+/* kFactor Parameters */
+.kfactor-params {
+  padding: 8px 0;
+}
+
+.params-title,
+.session-title {
+  font-size: 13px;
+  color: #8e8e93;
+  margin-bottom: 10px;
+}
+
+.params-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.param-item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.param-label {
+  color: #8e8e93;
+  font-size: 13px;
+}
+
+.param-value {
+  color: #fff;
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.param-unit {
+  color: #636366;
+  font-size: 12px;
+}
+
+/* Last Session */
+.kfactor-last-session {
+  padding: 8px 0;
+}
+
+.session-info {
+  font-size: 13px;
+  color: #8e8e93;
+  line-height: 1.5;
+}
+
+.session-info .session-empty {
+  color: #636366;
+  font-style: italic;
+}
+
+.session-info .session-accepted {
+  color: #30d158;
+}
+
+.session-info .session-rejected {
+  color: #ff453a;
+}
+
+.session-time {
+  display: block;
+  margin-top: 4px;
+  color: #636366;
+  font-size: 12px;
+}
+
+/* ========================================
+   Ready-by Section Styles (for main page)
+   ======================================== */
+
+.ready-by-section {
+  margin-top: 16px;
+  padding: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ready-by-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.ready-by-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ready-by-icon {
+  font-size: 24px;
+}
+
+.ready-by-title-info h4 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #f5f5f7;
+}
+
+.ready-by-status {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: #8e8e93;
+}
+
+.ready-by-status.status-scheduled {
+  color: #ffd60a;
+}
+
+.ready-by-status.status-running {
+  color: #30d158;
+}
+
+.ready-by-status.status-completed {
+  color: #0a84ff;
+}
+
+.ready-by-status.status-canceled,
+.ready-by-status.status-expired {
+  color: #ff453a;
+}
+
+.settings-gear-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.settings-gear-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Ready-by Inputs */
+.ready-by-inputs {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.ready-by-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ready-by-input-label {
+  font-size: 12px;
+  color: #8e8e93;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ready-by-inputs input[type="datetime-local"] {
+  padding: 10px 12px;
+  background: rgba(118, 118, 128, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  color: #fff;
+  font-size: 15px;
+  min-width: 180px;
+}
+
+.ready-by-inputs input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+}
+
+/* Ready-by Info Panel */
+.ready-by-info {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.ready-by-info-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+}
+
+.ready-by-info-label {
+  color: #8e8e93;
+  font-size: 13px;
+}
+
+.ready-by-info-value {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.ready-by-info-value.unreachable {
+  color: #ff9f0a;
+}
+
+/* Ready-by Actions */
+.ready-by-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.ready-by-btn {
+  padding: 12px 16px;
+  border: none;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.1s, background 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.ready-by-btn .btn-icon {
+  font-size: 14px;
+}
+
+.ready-by-btn:active {
+  transform: scale(0.98);
+}
+
+.ready-by-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.ready-by-btn.schedule-btn {
+  background: linear-gradient(145deg, rgba(48, 209, 88, 0.25), rgba(48, 209, 88, 0.15));
+  color: #30d158;
+  border: 1px solid rgba(48, 209, 88, 0.3);
+}
+
+.ready-by-btn.schedule-btn:hover:not(:disabled) {
+  background: rgba(48, 209, 88, 0.35);
+}
+
+.ready-by-btn.cancel-btn {
+  background: linear-gradient(145deg, rgba(255, 69, 58, 0.2), rgba(255, 69, 58, 0.1));
+  color: #ff453a;
+  border: 1px solid rgba(255, 69, 58, 0.25);
+}
+
+.ready-by-btn.cancel-btn:hover:not(:disabled) {
+  background: rgba(255, 69, 58, 0.3);
+}
+
+/* Progress Bar */
+.ready-by-progress {
+  margin-bottom: 14px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+}
+
+.progress-bar {
+  height: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #30d158, #0a84ff);
+  border-radius: 4px;
+  width: 0%;
+  transition: width 0.5s ease-out;
+}
+
+.progress-fill.heating {
+  background: linear-gradient(90deg, #ff9f0a, #ff453a);
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.progress-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #8e8e93;
+}
+
+/* Enhanced info panel */
+.ready-by-params {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  font-size: 11px !important;
+  color: #636366 !important;
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 480px) {
+  #carHeaterSettingsModal .dialog {
+    width: 100%;
+    max-width: none;
+    max-height: 100dvh;
+    border-radius: 0;
+  }
+  
+  .ready-by-inputs {
+    grid-template-columns: 1fr;
+  }
+  
+  .ready-by-inputs input[type="datetime-local"] {
+    min-width: unset;
+    width: 100%;
+  }
+}

@@ -180,7 +180,8 @@ def process_commands(
                                     "success": bool(val),
                                 })
                     elif isinstance(item, str):
-                        normalized_results.append({"action": item, "success": True})
+                        normalized_results.append(
+                            {"action": item, "success": True})
             elif isinstance(action_results, dict):
                 if "action" in action_results:
                     normalized_results.append({
@@ -301,6 +302,7 @@ def handle_status_update_request(
         # Ready-by scheduler tick (may queue turn_on/turn_off)
         try:
             from ...services.car_heater import ReadyByService
+            from dataclasses import asdict
 
             rsvc: ReadyByService | None = getattr(
                 current_app, "ready_by_service", None
@@ -311,8 +313,30 @@ def handle_status_update_request(
                     outside_temp_c=data.get("outside_temp"),
                     is_test=is_test,
                 )
+                # Broadcast Ready-by status to all connected views
+                try:
+                    schedule = rsvc.get_schedule(as_object=True)
+                    socketio.emit("ready_by_status", {
+                        "schedule": asdict(schedule) if schedule else None
+                    })
+                except Exception:
+                    pass
         except Exception as e:
             logger.exception("Failed to run ready-by tick: %s", e)
+        # Broadcast kFactor status to all connected views
+        try:
+            if ksvc is not None:
+                snapshot = ksvc.get_debug_snapshot()
+                socketio.emit("kfactor_status", {
+                    "state": snapshot.get("state"),
+                    "enabled": snapshot.get("config", {}).get("enabled", True),
+                    "cooldown_until": snapshot.get("cooldown_until"),
+                    "active_params": snapshot.get("active_params"),
+                    "last_session": snapshot.get("last_session"),
+                    "session_sample_count": snapshot.get("session_sample_count", 0),
+                })
+        except Exception:
+            pass
     else:
         logger.debug("No shelly data provided in car heater status update")
         status_payload = build_fallback_payload(

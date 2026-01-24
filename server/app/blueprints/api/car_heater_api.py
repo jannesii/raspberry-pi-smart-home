@@ -101,7 +101,8 @@ def get_car_heater_commands():
     commands: List[Dict[str, Any]] = []
     try:
         from ...services.car_heater import CarHeaterService
-        service: CarHeaterService | None = getattr(current_app, "car_heater_service", None)
+        service: CarHeaterService | None = getattr(
+            current_app, "car_heater_service", None)
         if service:
             commands = service.peek_queued_commands()
     except Exception as e:
@@ -126,7 +127,8 @@ def queue_car_heater_command():
     try:
         from ...services.car_heater import CarHeaterService
 
-        service: CarHeaterService | None = getattr(current_app, "car_heater_service", None)
+        service: CarHeaterService | None = getattr(
+            current_app, "car_heater_service", None)
     except Exception:
         service = None
 
@@ -301,3 +303,148 @@ def get_ready_by_prediction():
     except Exception as e:
         logger.exception("Failed to compute Ready-by prediction: %s", e)
     return jsonify({"error": "Failed to compute prediction"}), 500
+
+
+# =============================================================================
+# Ready-by Schedule Endpoints
+# =============================================================================
+
+@car_bp.route('/ready_by/schedule', methods=['GET'])
+@login_required
+def get_ready_by_schedule():
+    """Return the current Ready-by schedule (if any)."""
+    try:
+        from ...services.car_heater import ReadyByService
+
+        svc: ReadyByService | None = getattr(
+            current_app, "ready_by_service", None)
+        if svc is None:
+            return jsonify({"error": "ReadyByService not initialized"}), 503
+
+        result = svc.get_schedule(as_object=False)
+        return jsonify(result), 200
+    except Exception as e:
+        logger.exception("Failed to get Ready-by schedule: %s", e)
+    return jsonify({"error": "Failed to get schedule"}), 500
+
+
+@car_bp.route('/ready_by/schedule', methods=['POST'])
+@csrf.exempt
+@login_required
+def create_ready_by_schedule():
+    """Create a new Ready-by schedule."""
+    try:
+        from dataclasses import asdict
+        from ...services.car_heater import ReadyByService
+
+        svc: ReadyByService | None = getattr(
+            current_app, "ready_by_service", None)
+        if svc is None:
+            return jsonify({"error": "ReadyByService not initialized"}), 503
+
+        data: Dict[str, Any] = request.get_json() or {}
+
+        # Parse ready_by_ts (ISO format or datetime-local format)
+        ready_by_raw = (data.get("ready_by_ts") or "").strip()
+        if not ready_by_raw:
+            return jsonify({"error": "Missing ready_by_ts"}), 400
+        try:
+            # Support both ISO format and datetime-local (YYYY-MM-DDTHH:MM)
+            ready_by_ts = datetime.fromisoformat(
+                ready_by_raw.replace("Z", "+00:00"))
+        except ValueError:
+            return jsonify({"error": "Invalid ready_by_ts format"}), 400
+
+        # Parse target_temp_c
+        target_raw = data.get("target_temp_c")
+        if target_raw is None:
+            return jsonify({"error": "Missing target_temp_c"}), 400
+        try:
+            target_temp_c = float(target_raw)
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid target_temp_c"}), 400
+
+        schedule = svc.schedule(
+            ready_by_ts=ready_by_ts,
+            target_temp_c=target_temp_c,
+        )
+
+        logger.info(
+            "Ready-by schedule created by %s: %s target=%.1f°C",
+            current_user.get_id(),
+            schedule.ready_by_ts,
+            target_temp_c,
+        )
+
+        return jsonify({"ok": True, "schedule": asdict(schedule)}), 200
+    except Exception as e:
+        logger.exception("Failed to create Ready-by schedule: %s", e)
+    return jsonify({"error": "Failed to create schedule"}), 500
+
+
+@car_bp.route('/ready_by/schedule', methods=['DELETE'])
+@csrf.exempt
+@login_required
+def cancel_ready_by_schedule():
+    """Cancel the current Ready-by schedule."""
+    try:
+        from dataclasses import asdict
+        from ...services.car_heater import ReadyByService
+
+        svc: ReadyByService | None = getattr(
+            current_app, "ready_by_service", None)
+        if svc is None:
+            return jsonify({"error": "ReadyByService not initialized"}), 503
+
+        data: Dict[str, Any] = request.get_json() or {}
+        reason = (data.get("reason") or "user").strip()
+        turn_off = bool(data.get("turn_off", False))
+
+        schedule = svc.cancel(reason=reason, turn_off=turn_off)
+
+        if schedule is None:
+            return jsonify({"ok": True, "schedule": None, "message": "No active schedule"}), 200
+
+        logger.info(
+            "Ready-by schedule canceled by %s (reason=%s, turn_off=%s)",
+            current_user.get_id(),
+            reason,
+            turn_off,
+        )
+
+        return jsonify({"ok": True, "schedule": asdict(schedule)}), 200
+    except Exception as e:
+        logger.exception("Failed to cancel Ready-by schedule: %s", e)
+    return jsonify({"error": "Failed to cancel schedule"}), 500
+
+
+# =============================================================================
+# kFactor Status Endpoint (for frontend)
+# =============================================================================
+
+@car_bp.route('/kfactor/status', methods=['GET'])
+@login_required
+def get_kfactor_status():
+    """Return kFactor calibration status for the frontend."""
+    try:
+        from ...services.car_heater import KFactorCalibrator
+
+        svc: KFactorCalibrator | None = getattr(
+            current_app, "kfactor_calibrator", None)
+        if svc is None:
+            return jsonify({"error": "KFactorCalibrator not initialized"}), 503
+
+        snapshot = svc.get_debug_snapshot()
+
+        # Return a simplified view for the frontend
+        return jsonify({
+            "state": snapshot.get("state"),
+            "enabled": snapshot.get("config", {}).get("enabled", True),
+            "cooldown_until": snapshot.get("cooldown_until"),
+            "active_params": snapshot.get("active_params"),
+            "last_session": snapshot.get("last_session"),
+            "session_sample_count": snapshot.get("session_sample_count", 0),
+        }), 200
+    except Exception as e:
+        logger.exception("Failed to get kFactor status: %s", e)
+    return jsonify({"error": "Failed to get kFactor status"}), 500
