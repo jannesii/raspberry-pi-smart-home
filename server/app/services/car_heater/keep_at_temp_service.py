@@ -1,7 +1,11 @@
 import logging
 import threading
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 from .car_heater_service import CarHeaterService
+
+if TYPE_CHECKING:
+    from ...core import Controller
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -19,7 +23,7 @@ class KeepAtTempService:
     This is a placeholder for the actual implementation.
     """
 
-    def __init__(self, car_heater_service: CarHeaterService, ctrl) -> None:
+    def __init__(self, car_heater_service: CarHeaterService, ctrl: "Controller") -> None:
         self._lock = threading.Lock()
         self._car_heater_service = car_heater_service
         self._ctrl = ctrl

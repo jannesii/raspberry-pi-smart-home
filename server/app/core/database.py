@@ -186,9 +186,19 @@ class DatabaseManager:
                 'updated_ts TEXT, '
                 'source TEXT'
             ),
+            'car_heater_kfactor_config': (
+                'id INTEGER PRIMARY KEY CHECK (id = 1), '
+                'config_json TEXT, '
+                'updated_ts TEXT'
+            ),
             'car_heater_ready_by_state': (
                 'id INTEGER PRIMARY KEY CHECK (id = 1), '
                 'state_json TEXT, '
+                'updated_ts TEXT'
+            ),
+            'car_heater_ready_by_config': (
+                'id INTEGER PRIMARY KEY CHECK (id = 1), '
+                'config_json TEXT, '
                 'updated_ts TEXT'
             )
         }

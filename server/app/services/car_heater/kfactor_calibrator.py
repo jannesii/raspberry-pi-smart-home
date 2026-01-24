@@ -8,18 +8,22 @@ import math
 import os
 from statistics import mean
 from threading import RLock
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 from flask import current_app
 
 from ...core import (
     CarHeaterKFactorActiveParams,
+    CarHeaterKFactorConfig,
     CarHeaterKFactorResult,
     CarHeaterKFactorSession,
     CarHeaterStatus,
 )
 from ..weather.weather_service import WeatherService
+
+if TYPE_CHECKING:
+    from ...core import Controller
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +164,7 @@ class KFactorCalibrator:
     def __init__(
         self,
         *,
-        ctrl,
+        ctrl: "Controller",
         weather_service: WeatherService | None,
         config: KFactorConfig | None = None,
         tz_name: str = "Europe/Helsinki",
@@ -168,7 +172,7 @@ class KFactorCalibrator:
         self._tz = ZoneInfo(tz_name)
         self._ctrl = ctrl
         self._weather = weather_service
-        self._cfg = config or self._load_config_from_env()
+        self._cfg = config or self._load_config_from_db()
 
         self._lock = RLock()
         self._state: str = "IDLE"
@@ -526,83 +530,54 @@ class KFactorCalibrator:
     # --------------------
     # Internals
     # --------------------
-    def _load_config_from_env(self) -> KFactorConfig:
-        def _get_int(name: str, default: int) -> int:
-            raw = os.getenv(name)
-            if raw is None or raw == "":
-                return default
-            try:
-                return int(raw)
-            except ValueError:
-                return default
+    def _load_config_from_db(self) -> KFactorConfig:
+        defaults = KFactorConfig()
+        if self._ctrl is None:
+            return defaults
 
-        def _get_float(name: str, default: float) -> float:
-            raw = os.getenv(name)
-            if raw is None or raw == "":
-                return default
-            try:
-                return float(raw)
-            except ValueError:
-                return default
+        try:
+            row = self._ctrl.get_kfactor_config()
+        except Exception as e:
+            logger.warning("kfactor: failed to load config from DB: %s", e)
+            return defaults
 
-        def _get_str(name: str, default: str) -> str:
-            raw = os.getenv(name)
-            return raw.strip() if raw else default
+        if row is None or not row.config_json:
+            self._seed_config_in_db(defaults)
+            return defaults
 
-        return KFactorConfig(
-            enabled=_get_str("CAR_HEATER_KFACTOR_ENABLED", "1").strip(
-            ).lower() in ("1", "true", "yes", "y", "on"),
-            auto_calib_start_hhmm=_get_str(
-                "CAR_HEATER_KFACTOR_AUTO_START_HHMM", "00:00"),
-            auto_calib_stop_hhmm=_get_str(
-                "CAR_HEATER_KFACTOR_AUTO_STOP_HHMM", "23:59"),
-            grace_samples=_get_int("CAR_HEATER_KFACTOR_GRACE_SAMPLES", 3),
-            min_session_minutes=_get_int(
-                "CAR_HEATER_KFACTOR_MIN_SESSION_MINUTES", 15),
-            max_session_minutes=_get_int(
-                "CAR_HEATER_KFACTOR_MAX_SESSION_MINUTES", 120),
-            min_temp_rise_C=_get_float(
-                "CAR_HEATER_KFACTOR_MIN_TEMP_RISE_C", 2.0),
-            early_window_minutes=_get_int(
-                "CAR_HEATER_KFACTOR_EARLY_WINDOW_MINUTES", 5),
-            drop_threshold_C=_get_float(
-                "CAR_HEATER_KFACTOR_DROP_THRESHOLD_C", 0.5),
-            spike_threshold_C=_get_float(
-                "CAR_HEATER_KFACTOR_SPIKE_THRESHOLD_C", 5.0),
-            quality_threshold=_get_float(
-                "CAR_HEATER_KFACTOR_QUALITY_THRESHOLD", 0.6),
-            cooldown_minutes=_get_int(
-                "CAR_HEATER_KFACTOR_COOLDOWN_MINUTES", 120),
-            bucket_lookback_days=_get_int(
-                "CAR_HEATER_KFACTOR_BUCKET_LOOKBACK_DAYS", 7),
-            mass_factor=_get_float("CAR_HEATER_KFACTOR_MASS_FACTOR", 30.0),
-            mass_factor_min=_get_float(
-                "CAR_HEATER_KFACTOR_MASS_FACTOR_MIN", 5.0),
-            mass_factor_max=_get_float(
-                "CAR_HEATER_KFACTOR_MASS_FACTOR_MAX", 150.0),
-            default_eta=_get_float("CAR_HEATER_KFACTOR_DEFAULT_ETA", 0.6),
-            default_k_loss_W_per_K=_get_float(
-                "CAR_HEATER_KFACTOR_DEFAULT_K_LOSS", 40.0),
-            tout_smooth_window=_get_int(
-                "CAR_HEATER_KFACTOR_TOUT_SMOOTH_WINDOW", 3),
-            informative_min_minutes=_get_int(
-                "CAR_HEATER_KFACTOR_INFORMATIVE_MIN_MINUTES", 20),
-            curvature_ratio_max=_get_float(
-                "CAR_HEATER_KFACTOR_CURVATURE_RATIO_MAX", 0.6),
-            curvature_max_sample_distance_s=_get_int(
-                "CAR_HEATER_KFACTOR_CURVATURE_MAX_SAMPLE_DISTANCE_S", 120),
-            prior_lambda_k=_get_float(
-                "CAR_HEATER_KFACTOR_PRIOR_LAMBDA_K", 0.1),
-            prior_lambda_eta=_get_float(
-                "CAR_HEATER_KFACTOR_PRIOR_LAMBDA_ETA", 0.1),
-            base_alpha=_get_float("CAR_HEATER_KFACTOR_BASE_ALPHA", 0.3),
-            alpha_min=_get_float("CAR_HEATER_KFACTOR_ALPHA_MIN", 0.05),
-            alpha_max=_get_float("CAR_HEATER_KFACTOR_ALPHA_MAX", 0.5),
-            test_output_path=_get_str(
-                "CAR_HEATER_KFACTOR_TEST_OUTPUT_PATH",
-                "/tmp/car_heater_kfactor_test_results.jsonl",
-            ),
-        )
+        try:
+            raw = json.loads(row.config_json)
+            if not isinstance(raw, dict):
+                raise ValueError("config_json is not an object")
+            return self._merge_config(defaults, raw)
+        except Exception as e:
+            logger.warning(
+                "kfactor: failed to parse config JSON, using defaults: %s", e)
+            return defaults
+
+    def _seed_config_in_db(self, cfg: KFactorConfig) -> None:
+        if self._ctrl is None:
+            return
+        try:
+            payload = json.dumps(asdict(cfg), separators=(",", ":"), sort_keys=True)
+            now = _iso_no_micros(datetime.now(self._tz))
+            self._ctrl.save_kfactor_config(
+                CarHeaterKFactorConfig(
+                    id=1,
+                    config_json=payload,
+                    updated_ts=now,
+                )
+            )
+        except Exception as e:
+            logger.warning("kfactor: failed to seed config in DB: %s", e)
+
+    @staticmethod
+    def _merge_config(defaults: KFactorConfig, raw: dict[str, Any]) -> KFactorConfig:
+        merged = asdict(defaults)
+        for key, value in raw.items():
+            if key in merged:
+                merged[key] = value
+        return KFactorConfig(**merged)
 
     def _is_in_window(self, now: datetime) -> tuple[bool, datetime, datetime]:
         start_hhmm = _parse_hhmm(self._cfg.auto_calib_start_hhmm) or (0, 0)

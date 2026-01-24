@@ -2,6 +2,7 @@ import logging
 
 from .. import (
     CarHeaterKFactorActiveParams,
+    CarHeaterKFactorConfig,
     CarHeaterKFactorResult,
     CarHeaterKFactorSession,
 )
@@ -220,6 +221,38 @@ class CarHeaterKFactorMixin:
                 params.eta,
                 params.updated_ts,
                 params.source,
+            ),
+        )
+
+    # --- KFactor config (single-row settings) ---
+    def get_kfactor_config(self) -> CarHeaterKFactorConfig | None:
+        row = self.db.fetchone(
+            """
+            SELECT config_json, updated_ts
+              FROM car_heater_kfactor_config
+             WHERE id = 1
+            """
+        )
+        if row is None:
+            return None
+        return CarHeaterKFactorConfig(
+            id=1,
+            config_json=row["config_json"],
+            updated_ts=row["updated_ts"],
+        )
+
+    def save_kfactor_config(self, config: CarHeaterKFactorConfig) -> None:
+        self.db.execute_query(
+            """
+            INSERT INTO car_heater_kfactor_config (id, config_json, updated_ts)
+            VALUES (1, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                config_json = excluded.config_json,
+                updated_ts = excluded.updated_ts
+            """,
+            (
+                config.config_json,
+                config.updated_ts,
             ),
         )
 

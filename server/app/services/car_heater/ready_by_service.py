@@ -6,17 +6,19 @@ from datetime import datetime, timedelta
 import logging
 import math
 import json
-import os
 from threading import RLock
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 from app.services.car_heater.keep_at_temp_service import KeepAtTempService
 
-from ...core import CarHeaterReadyByState, CarHeaterStatus
+from ...core import CarHeaterReadyByConfig, CarHeaterReadyByState, CarHeaterStatus
 from ..weather.weather_service import WeatherService
 from .car_heater_service import CarHeaterService
 from .kfactor_calibrator import KFactorCalibrator
+
+if TYPE_CHECKING:
+    from ...core import Controller
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +91,7 @@ class ReadyByService:
         car_heater_service: CarHeaterService,
         kfactor_calibrator: KFactorCalibrator,
         keep_at_temp_service: KeepAtTempService,
-        ctrl: Any = None,
+        ctrl: "Controller" | None = None,
         weather_service: WeatherService | None = None,
         config: ReadyByConfig | None = None,
         tz_name: str = "Europe/Helsinki",
@@ -101,7 +103,7 @@ class ReadyByService:
         self._keep_at_temp_service = keep_at_temp_service
         self._ctrl = ctrl
         self._weather = weather_service
-        self._cfg = config or self._load_config_from_env()
+        self._cfg = config or self._load_config_from_db()
 
         self._schedule: ReadyBySchedule | None = None
         self._last_persisted_json: str | None = None
@@ -289,38 +291,54 @@ class ReadyByService:
         self._schedule.last_command = action
         self._schedule.last_command_ts = now.isoformat(sep=" ")
 
-    def _load_config_from_env(self) -> ReadyByConfig:
-        def _get_bool(name: str, default: bool) -> bool:
-            raw = (os.getenv(name) or "").strip().lower()
-            if raw == "":
-                return default
-            return raw in ("1", "true", "yes", "y", "on")
+    def _load_config_from_db(self) -> ReadyByConfig:
+        defaults = ReadyByConfig()
+        if self._ctrl is None:
+            return defaults
 
-        def _get_int(name: str, default: int) -> int:
-            raw = os.getenv(name)
-            if not raw:
-                return default
-            try:
-                return int(raw)
-            except ValueError:
-                return default
+        try:
+            row = self._ctrl.get_ready_by_config()
+        except Exception as e:
+            logger.warning("ready_by: failed to load config from DB: %s", e)
+            return defaults
 
-        def _get_float(name: str, default: float) -> float:
-            raw = os.getenv(name)
-            if not raw:
-                return default
-            try:
-                return float(raw)
-            except ValueError:
-                return default
+        if row is None or not row.config_json:
+            self._seed_config_in_db(defaults)
+            return defaults
 
-        return ReadyByConfig(
-            enabled=_get_bool("CAR_HEATER_READY_BY_ENABLED", True),
-            command_cooldown_s=_get_int(
-                "CAR_HEATER_READY_BY_COMMAND_COOLDOWN_S", 30),
-            reach_tolerance_minutes=_get_float(
-                "CAR_HEATER_READY_BY_REACH_TOLERANCE_MIN", 2.0),
-        )
+        try:
+            raw = json.loads(row.config_json)
+            if not isinstance(raw, dict):
+                raise ValueError("config_json is not an object")
+            return self._merge_config(defaults, raw)
+        except Exception as e:
+            logger.warning(
+                "ready_by: failed to parse config JSON, using defaults: %s", e)
+            return defaults
+
+    def _seed_config_in_db(self, cfg: ReadyByConfig) -> None:
+        if self._ctrl is None:
+            return
+        try:
+            payload = json.dumps(asdict(cfg), separators=(",", ":"), sort_keys=True)
+            now = datetime.now(self._tz).replace(microsecond=0).isoformat(sep=" ")
+            self._ctrl.save_ready_by_config(
+                CarHeaterReadyByConfig(
+                    id=1,
+                    config_json=payload,
+                    updated_ts=now,
+                )
+            )
+        except Exception as e:
+            logger.warning("ready_by: failed to seed config in DB: %s", e)
+
+    @staticmethod
+    def _merge_config(defaults: ReadyByConfig, raw: dict[str, Any]) -> ReadyByConfig:
+        merged = asdict(defaults)
+        for key, value in raw.items():
+            if key in merged:
+                merged[key] = value
+        return ReadyByConfig(**merged)
 
     def _restore_from_db(self) -> None:
         if self._ctrl is None:

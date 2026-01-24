@@ -187,7 +187,21 @@ class CarHeaterKFactorActiveParams:
 
 
 @dataclass
+class CarHeaterKFactorConfig:
+    id: int = 1
+    config_json: str | None = None
+    updated_ts: str | None = None
+
+
+@dataclass
 class CarHeaterReadyByState:
     id: int = 1
     state_json: str | None = None
+    updated_ts: str | None = None
+
+
+@dataclass
+class CarHeaterReadyByConfig:
+    id: int = 1
+    config_json: str | None = None
     updated_ts: str | None = None

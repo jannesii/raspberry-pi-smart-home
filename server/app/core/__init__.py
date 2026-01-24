@@ -14,7 +14,9 @@ from .models import (
     CarHeaterKFactorSession,
     CarHeaterKFactorResult,
     CarHeaterKFactorActiveParams,
+    CarHeaterKFactorConfig,
     CarHeaterReadyByState,
+    CarHeaterReadyByConfig,
 )
 from .controller import Controller
 from .database import DatabaseManager
@@ -33,7 +35,9 @@ __all__ = [
     "CarHeaterKFactorSession",
     "CarHeaterKFactorResult",
     "CarHeaterKFactorActiveParams",
+    "CarHeaterKFactorConfig",
     "CarHeaterReadyByState",
+    "CarHeaterReadyByConfig",
     "Controller",
     "DatabaseManager",
 ]
