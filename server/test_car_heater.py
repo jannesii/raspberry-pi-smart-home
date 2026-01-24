@@ -368,7 +368,7 @@ def run_kfactor_simulation(status_url: str, debug_url: str) -> None:
     cabin_volume_m3 = 2.8
     air_density_kg_m3 = 1.2
     specific_heat_J_kgK = 1000.0
-    C = air_density_kg_m3 * cabin_volume_m3 * specific_heat_J_kgK
+    C_air = air_density_kg_m3 * cabin_volume_m3 * specific_heat_J_kgK
 
     print("\n" + "=" * 60)
     print("  KFACTOR CALIBRATION SIMULATION")
@@ -393,6 +393,11 @@ def run_kfactor_simulation(status_url: str, debug_url: str) -> None:
     power_w = get_float_input("Heater power (W)", 1000.0)
     if power_w is None:
         power_w = 1000.0
+
+    mass_factor = get_float_input("Mass factor (C_eff / C_air)", 30.0)
+    if mass_factor is None:
+        mass_factor = 30.0
+    C = C_air * float(mass_factor)
 
     eta_true = get_float_input("TRUE eta (0..1)", 0.6)
     if eta_true is None:
