@@ -7,7 +7,7 @@ import logging
 import math
 import os
 from statistics import mean
-from threading import Lock
+from threading import RLock
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -116,6 +116,8 @@ class KFactorConfig:
     base_alpha: float = 0.3
     alpha_min: float = 0.05
     alpha_max: float = 0.5
+    # Test-mode output (when /status/test is used, persist calibration artifacts to a file)
+    test_output_path: str = "/tmp/car_heater_kfactor_test_results.jsonl"
     model_version: str = "v1"
 
 
@@ -165,7 +167,7 @@ class KFactorCalibrator:
         self._weather = weather_service
         self._cfg = config or self._load_config_from_env()
 
-        self._lock = Lock()
+        self._lock = RLock()
         self._state: str = "IDLE"
         self._heater_on_streak: int = 0
         self._cooldown_until: datetime | None = None
@@ -177,6 +179,7 @@ class KFactorCalibrator:
         self._session_flags: dict[str, Any] = {}
         self._session_samples: list[KFactorSample] = []
         self._last_session: KFactorLastSession | None = None
+        self._active_params_override: tuple[float, float] | None = None
 
         logger.info(
             "KFactorCalibrator initialized (window=%s..%s min=%s max=%s)",
@@ -303,6 +306,9 @@ class KFactorCalibrator:
         wind_m_s: float | None = None,
     ) -> tuple[float, float]:
         """Return current best (k_loss, eta). Bucket logic can be added later."""
+        with self._lock:
+            if self._active_params_override is not None:
+                return self._active_params_override
         params = None
         try:
             if self._ctrl is not None:
@@ -511,6 +517,10 @@ class KFactorCalibrator:
             base_alpha=_get_float("CAR_HEATER_KFACTOR_BASE_ALPHA", 0.3),
             alpha_min=_get_float("CAR_HEATER_KFACTOR_ALPHA_MIN", 0.05),
             alpha_max=_get_float("CAR_HEATER_KFACTOR_ALPHA_MAX", 0.5),
+            test_output_path=_get_str(
+                "CAR_HEATER_KFACTOR_TEST_OUTPUT_PATH",
+                "/tmp/car_heater_kfactor_test_results.jsonl",
+            ),
         )
 
     def _is_in_window(self, now: datetime) -> tuple[bool, datetime, datetime]:
@@ -707,6 +717,26 @@ class KFactorCalibrator:
 
         flags_json = json.dumps(flags, separators=(",", ":"), sort_keys=True)
 
+        active_before_k, active_before_eta = self.get_active_params()
+        promoted = False
+        active_after: dict[str, Any] | None = None
+        if fit is not None and accepted:
+            new_k, new_eta, alpha = self._compute_weighted_update(
+                old_k=active_before_k,
+                old_eta=active_before_eta,
+                fit=fit,
+                quality_score=quality,
+            )
+            active_after = {
+                "k_loss_W_per_K": new_k,
+                "eta": new_eta,
+                "alpha": alpha,
+            }
+            promoted = True
+            # In test mode (no DB writes), keep params in memory so repeated runs behave realistically.
+            if is_test or self._ctrl is None:
+                self._active_params_override = (new_k, new_eta)
+
         self._last_session = KFactorLastSession(
             started_ts=_iso_no_micros(started),
             ended_ts=_iso_no_micros(end_ts),
@@ -736,6 +766,38 @@ class KFactorCalibrator:
             )
 
         if is_test:
+            self._append_test_output(
+                {
+                    "type": "kfactor_session",
+                    "created_ts": _iso_no_micros(end_ts),
+                    "session": {
+                        "start_ts": _iso_no_micros(started),
+                        "end_ts": _iso_no_micros(end_ts),
+                        "duration_s": duration_s,
+                        "sample_count": len(samples),
+                        "heater_mode": "ON_continuous",
+                        "outside_t_mean": outside_mean,
+                        "outside_t_min": outside_min,
+                        "outside_t_max": outside_max,
+                        "wind_mean": wind_mean,
+                        "cabin_t_start": cabin_t_start,
+                        "cabin_t_end": cabin_t_end,
+                        "cabin_t_max": cabin_t_max,
+                        "delta_t": delta_t,
+                        "accepted": accepted,
+                        "quality_score": quality,
+                        "flags": flags,
+                        "flags_json": flags_json,
+                    },
+                    "fit": asdict(fit) if fit is not None else None,
+                    "active_params_before": {
+                        "k_loss_W_per_K": active_before_k,
+                        "eta": active_before_eta,
+                    },
+                    "active_params_after": active_after,
+                    "promoted": promoted,
+                }
+            )
             return
 
         # Persist session + result + active params (best-effort).
@@ -767,7 +829,6 @@ class KFactorCalibrator:
             persisted_session = self._ctrl.record_kfactor_session(session_row)
 
             if fit is not None:
-                promoted = False
                 if accepted:
                     promoted = self._update_active_params(
                         fit=fit,
@@ -790,6 +851,36 @@ class KFactorCalibrator:
                 self._ctrl.record_kfactor_result(result_row)
         except Exception:
             logger.exception("kfactor: failed to persist calibration results")
+
+    def _append_test_output(self, record: dict[str, Any]) -> None:
+        path = (self._cfg.test_output_path or "").strip()
+        if not path:
+            return
+        try:
+            dir_name = os.path.dirname(path)
+            if dir_name:
+                os.makedirs(dir_name, exist_ok=True)
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except Exception:
+            logger.exception("kfactor: failed to write test output to %r", path)
+
+    def _compute_weighted_update(
+        self,
+        *,
+        old_k: float,
+        old_eta: float,
+        fit: KFactorFit,
+        quality_score: float,
+    ) -> tuple[float, float, float]:
+        alpha = _clamp(
+            float(quality_score) * float(self._cfg.base_alpha),
+            float(self._cfg.alpha_min),
+            float(self._cfg.alpha_max),
+        )
+        new_k = (1.0 - alpha) * float(old_k) + alpha * float(fit.k_loss_W_per_K)
+        new_eta = (1.0 - alpha) * float(old_eta) + alpha * float(fit.eta)
+        return new_k, new_eta, alpha
 
     def _quality_score(
         self,
@@ -1240,14 +1331,12 @@ class KFactorCalibrator:
             return False
 
         old_k, old_eta = self.get_active_params()
-        alpha = _clamp(
-            float(quality_score) * float(self._cfg.base_alpha),
-            float(self._cfg.alpha_min),
-            float(self._cfg.alpha_max),
+        new_k, new_eta, _alpha = self._compute_weighted_update(
+            old_k=old_k,
+            old_eta=old_eta,
+            fit=fit,
+            quality_score=quality_score,
         )
-
-        new_k = (1.0 - alpha) * float(old_k) + alpha * float(fit.k_loss_W_per_K)
-        new_eta = (1.0 - alpha) * float(old_eta) + alpha * float(fit.eta)
 
         params = CarHeaterKFactorActiveParams(
             id=1,
@@ -1257,4 +1346,5 @@ class KFactorCalibrator:
             source="weighted_update",
         )
         self._ctrl.save_kfactor_active_params(params)
+        self._active_params_override = (float(new_k), float(new_eta))
         return True
