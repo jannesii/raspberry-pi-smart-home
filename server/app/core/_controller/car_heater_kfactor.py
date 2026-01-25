@@ -479,3 +479,175 @@ class CarHeaterKFactorMixin:
             )
             for row in rows
         ]
+
+    def get_all_bucket_params(self) -> list[CarHeaterKFactorBucketParams]:
+        """Get all bucket parameters for coverage display."""
+        rows = self.db.fetchall(
+            """
+            SELECT
+                id,
+                t_bucket,
+                wind_bucket,
+                k_loss_W_per_K,
+                eta,
+                updated_ts,
+                source
+            FROM car_heater_kfactor_bucket_params
+            ORDER BY t_bucket ASC, wind_bucket ASC
+            """
+        )
+        return [
+            CarHeaterKFactorBucketParams(
+                id=row["id"],
+                t_bucket=row["t_bucket"],
+                wind_bucket=_decode_wind_bucket(row["wind_bucket"]),
+                k_loss_W_per_K=row["k_loss_W_per_K"],
+                eta=row["eta"],
+                updated_ts=row["updated_ts"],
+                source=row["source"],
+            )
+            for row in rows
+        ]
+
+    def get_calibration_stats(self, lookback_days: int = 7) -> dict:
+        """Get calibration statistics for dashboard display."""
+        # Total sessions
+        total_row = self.db.fetchone(
+            "SELECT COUNT(*) as cnt FROM car_heater_kfactor_session"
+        )
+        total_sessions = total_row["cnt"] if total_row else 0
+
+        # Accepted sessions
+        accepted_row = self.db.fetchone(
+            "SELECT COUNT(*) as cnt FROM car_heater_kfactor_session WHERE accepted = 1"
+        )
+        accepted_sessions = accepted_row["cnt"] if accepted_row else 0
+
+        # Sessions in last N days
+        recent_row = self.db.fetchone(
+            """
+            SELECT COUNT(*) as cnt FROM car_heater_kfactor_session
+            WHERE start_ts >= datetime('now', ?)
+            """,
+            (f"-{lookback_days} days",),
+        )
+        sessions_recent = recent_row["cnt"] if recent_row else 0
+
+        # Average quality of accepted sessions
+        avg_row = self.db.fetchone(
+            """
+            SELECT AVG(quality_score) as avg_quality
+            FROM car_heater_kfactor_session
+            WHERE accepted = 1
+            """
+        )
+        avg_quality = avg_row["avg_quality"] if avg_row and avg_row["avg_quality"] else 0.0
+
+        # Average k_loss and eta from bucket params
+        avg_params_row = self.db.fetchone(
+            """
+            SELECT AVG(k_loss_W_per_K) as avg_k, AVG(eta) as avg_eta
+            FROM car_heater_kfactor_bucket_params
+            """
+        )
+        avg_k_loss = avg_params_row["avg_k"] if avg_params_row and avg_params_row["avg_k"] else None
+        avg_eta = avg_params_row["avg_eta"] if avg_params_row and avg_params_row["avg_eta"] else None
+
+        # Buckets covered (unique t_bucket, wind_bucket combinations)
+        buckets_row = self.db.fetchone(
+            "SELECT COUNT(*) as cnt FROM car_heater_kfactor_bucket_params"
+        )
+        buckets_covered = buckets_row["cnt"] if buckets_row else 0
+
+        # Days since last accepted session
+        last_row = self.db.fetchone(
+            """
+            SELECT start_ts FROM car_heater_kfactor_session
+            WHERE accepted = 1
+            ORDER BY start_ts DESC
+            LIMIT 1
+            """
+        )
+        days_since_last = None
+        if last_row and last_row["start_ts"]:
+            from datetime import datetime
+            try:
+                last_ts = datetime.fromisoformat(
+                    last_row["start_ts"].replace(" ", "T"))
+                now = datetime.now(
+                    last_ts.tzinfo) if last_ts.tzinfo else datetime.now()
+                days_since_last = (now - last_ts).days
+            except Exception:
+                pass
+
+        # Total possible buckets: temps from -30 to +10 (9 buckets) × wind 4 buckets = 36
+        # But we use 5°C buckets: -30, -25, -20, -15, -10, -5, 0, 5, 10 = 9 temp buckets
+        # Wind: 0-2, 2-5, 5-10, 10+ = 4 wind buckets + 1 for unknown
+        buckets_total = 9 * 5  # 45 possible combinations
+
+        return {
+            "total_sessions": total_sessions,
+            "accepted_sessions": accepted_sessions,
+            "sessions_last_7d": sessions_recent,
+            "avg_quality": round(avg_quality, 2) if avg_quality else 0.0,
+            "avg_k_loss": round(avg_k_loss, 1) if avg_k_loss else None,
+            "avg_eta": round(avg_eta, 3) if avg_eta else None,
+            "buckets_covered": buckets_covered,
+            "buckets_total": buckets_total,
+            "coverage_pct": round(100 * buckets_covered / buckets_total, 1) if buckets_total > 0 else 0,
+            "days_since_last_session": days_since_last,
+        }
+
+    def get_sessions_with_results(self, limit: int = 10) -> list[dict]:
+        """Get recent sessions joined with their fit results for display."""
+        rows = self.db.fetchall(
+            """
+            SELECT
+                s.id,
+                s.start_ts,
+                s.end_ts,
+                s.heater_mode,
+                s.outside_t_mean,
+                s.wind_mean,
+                s.cabin_t_start,
+                s.cabin_t_end,
+                s.duration_s,
+                s.sample_count,
+                s.quality_score,
+                s.accepted,
+                s.flags_json,
+                r.k_loss_W_per_K,
+                r.eta,
+                r.rmse_C,
+                r.r2
+            FROM car_heater_kfactor_session s
+            LEFT JOIN car_heater_kfactor_result r ON r.session_id = s.id AND r.promoted = 1
+            ORDER BY s.start_ts DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        return [
+            {
+                "id": row["id"],
+                "start_ts": row["start_ts"],
+                "end_ts": row["end_ts"],
+                "mode": row["heater_mode"] or "passive",
+                "outside_t_mean": row["outside_t_mean"],
+                "wind_mean": row["wind_mean"],
+                "cabin_t_start": row["cabin_t_start"],
+                "cabin_t_end": row["cabin_t_end"],
+                "duration_s": row["duration_s"],
+                "sample_count": row["sample_count"],
+                "quality_score": row["quality_score"],
+                "accepted": bool(row["accepted"]),
+                "flags_json": row["flags_json"],
+                "fit": {
+                    "k_loss": row["k_loss_W_per_K"],
+                    "eta": row["eta"],
+                    "rmse_C": row["rmse_C"],
+                    "r2": row["r2"],
+                } if row["k_loss_W_per_K"] is not None else None,
+            }
+            for row in rows
+        ]

@@ -903,6 +903,11 @@ class SocketEventHandler:
                     'reset': True,
                 })
 
+            elif action == 'extended_data':
+                # Return extended snapshot with live session, history, bucket coverage, stats
+                extended = svc.get_extended_snapshot()
+                self.socketio.emit('kfactor_extended_data', extended)
+
             else:
                 self.socketio.emit(
                     'error', {'message': f'Invalid kfactor action: {action}'})

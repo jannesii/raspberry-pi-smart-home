@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from ...core import Controller
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 
 # Fixed physical constants (defaults from TODO.md / plan)
@@ -132,11 +132,14 @@ class KFactorConfig:
     model_version: str = "v1"
     # --- Autonomous Mode Settings ---
     autonomous_max_session_minutes: int = 45  # Shorter sessions for autonomous
-    autonomous_cooldown_minutes: int = 60     # Shorter cooldown (survives reboots)
+    # Shorter cooldown (survives reboots)
+    autonomous_cooldown_minutes: int = 60
     autonomous_min_temp_rise_rate_C_per_min: float = 0.08  # Stop if heating too slow
     autonomous_rise_rate_window_samples: int = 5  # Samples to average for rise rate
-    autonomous_rise_rate_min_checks: int = 3  # Min consecutive slow readings before stopping
-    autonomous_target_temp_c: float = 10.0    # Stop autonomous session when cabin reaches this
+    # Min consecutive slow readings before stopping
+    autonomous_rise_rate_min_checks: int = 3
+    # Stop autonomous session when cabin reaches this
+    autonomous_target_temp_c: float = 10.0
 
 
 @dataclass(frozen=True)
@@ -171,7 +174,7 @@ class KFactorLastSession:
 
 class KFactorCalibrator:
     """Auto-calibrate (k_loss, eta) for cabin heating Ready-by prediction.
-    
+
     Operates in two modes:
     - Passive recording: Always active, observes heating sessions started by other services
     - Autonomous mode: When enabled=True, actively turns heater on/off to collect calibration data
@@ -193,12 +196,13 @@ class KFactorCalibrator:
         self._lock = RLock()
         # States: IDLE, PASSIVE_RECORDING, AUTONOMOUS_ARMED, AUTONOMOUS_RECORDING, COOLDOWN
         self._state: str = "IDLE"
-        self._is_autonomous_session: bool = False  # Track if current session is autonomous
+        # Track if current session is autonomous
+        self._is_autonomous_session: bool = False
         self._heater_on_streak: int = 0
         self._autonomous_cooldown_until: datetime | None = None
         self._passive_cooldown_until: datetime | None = None
         self._slow_rise_counter: int = 0  # Consecutive slow rise detections
-        
+
         # Load persistent cooldown from DB
         self._load_cooldown_from_db()
 
@@ -286,13 +290,13 @@ class KFactorCalibrator:
                 raw = json.loads(row.config_json)
             else:
                 raw = asdict(self._cfg)
-            
+
             if self._autonomous_cooldown_until:
                 raw["_autonomous_cooldown_until"] = _iso_no_micros(
                     self._autonomous_cooldown_until)
             else:
                 raw.pop("_autonomous_cooldown_until", None)
-            
+
             payload = json.dumps(raw, separators=(",", ":"), sort_keys=True)
             now = _iso_no_micros(datetime.now(self._tz))
             self._ctrl.save_kfactor_config(
@@ -314,7 +318,7 @@ class KFactorCalibrator:
         is_test: bool = False,
     ) -> None:
         """Process a new car heater status sample (called on every status POST).
-        
+
         This method runs both:
         1. Passive recording - always active, observes externally-triggered heating
         2. Autonomous calibration - when enabled, actively controls heater
@@ -361,7 +365,7 @@ class KFactorCalibrator:
                 wind_m_s=wind_m_s,
                 is_test=is_test,
             )
-            
+
             # Run autonomous calibration if enabled (and not in a passive session)
             if self._cfg.enabled and self._state not in ("PASSIVE_RECORDING",):
                 self._tick_autonomous(
@@ -389,14 +393,14 @@ class KFactorCalibrator:
         # Skip if already in autonomous mode
         if self._state in ("AUTONOMOUS_ARMED", "AUTONOMOUS_RECORDING"):
             return
-        
+
         # Check passive cooldown
         if self._passive_cooldown_until is not None and now < self._passive_cooldown_until:
             if self._state != "COOLDOWN":
                 logger.debug("kfactor: passive in cooldown until %s",
                              _iso_no_micros(self._passive_cooldown_until))
             return
-        
+
         # If we're in passive recording, continue the session
         if self._state == "PASSIVE_RECORDING":
             if cabin_temp_c is not None:
@@ -410,7 +414,7 @@ class KFactorCalibrator:
                 )
 
             duration_s = self._session_duration_s(now)
-            
+
             # End conditions for passive recording
             if not heater_on:
                 self._finalize_session(
@@ -426,27 +430,27 @@ class KFactorCalibrator:
                 self._finalize_session(
                     end_ts=now, reason=disturbance_reason, is_test=is_test)
             return
-        
+
         # Not currently recording - check if we should start passive recording
         if cabin_temp_c is None:
             return
-        
+
         if not heater_on:
             self._heater_on_streak = 0
             return
-        
+
         # Heater is on - track streak for debouncing
         self._heater_on_streak += 1
         if self._heater_on_streak < max(1, int(self._cfg.grace_samples)):
             logger.debug("kfactor: passive waiting (heater on streak %s/%s)",
                          self._heater_on_streak, self._cfg.grace_samples)
             return
-        
+
         # Check if we need calibration data for this bucket
         if not is_test and not self.should_calibrate(now, outside_temp_c, wind_m_s):
             logger.debug("kfactor: passive skipped (bucket already covered)")
             return
-        
+
         # Start passive recording session
         logger.info("kfactor: starting PASSIVE recording session")
         self._is_autonomous_session = False
@@ -479,11 +483,12 @@ class KFactorCalibrator:
         if not in_window:
             if self._state == "AUTONOMOUS_RECORDING":
                 self._turn_heater_off(f"Window ended at {window_stop}")
-                self._finalize_session(end_ts=now, reason="window_ended", is_test=is_test)
+                self._finalize_session(
+                    end_ts=now, reason="window_ended", is_test=is_test)
             elif self._state == "AUTONOMOUS_ARMED":
                 self._state = "IDLE"
             return
-        
+
         # Check autonomous cooldown
         if self._autonomous_cooldown_until is not None and now < self._autonomous_cooldown_until:
             if self._state not in ("COOLDOWN", "IDLE"):
@@ -491,11 +496,11 @@ class KFactorCalibrator:
             logger.debug("kfactor: autonomous in cooldown until %s",
                          _iso_no_micros(self._autonomous_cooldown_until))
             return
-        
+
         # Cooldown expired, transition to armed
         if self._state in ("COOLDOWN", "IDLE"):
             self._state = "AUTONOMOUS_ARMED"
-        
+
         # Handle autonomous recording session
         if self._state == "AUTONOMOUS_RECORDING":
             if cabin_temp_c is not None:
@@ -510,20 +515,21 @@ class KFactorCalibrator:
 
             duration_s = self._session_duration_s(now)
             max_duration_s = int(self._cfg.autonomous_max_session_minutes) * 60
-            
+
             # Check end conditions
             if not heater_on:
                 # Heater turned off externally
                 self._finalize_session(
                     end_ts=now, reason="heater_off_external", is_test=is_test)
                 return
-            
+
             if duration_s is not None and duration_s >= max_duration_s:
-                self._turn_heater_off(f"Max duration reached ({self._cfg.autonomous_max_session_minutes} min)")
+                self._turn_heater_off(
+                    f"Max duration reached ({self._cfg.autonomous_max_session_minutes} min)")
                 self._finalize_session(
                     end_ts=now, reason="autonomous_max_duration", is_test=is_test)
                 return
-            
+
             # Check target temperature
             if cabin_temp_c is not None and cabin_temp_c >= self._cfg.autonomous_target_temp_c:
                 self._turn_heater_off(
@@ -531,47 +537,50 @@ class KFactorCalibrator:
                 self._finalize_session(
                     end_ts=now, reason="target_reached", is_test=is_test)
                 return
-            
+
             # Check slow rise rate
-            slow_rise_info = self._check_slow_rise_rate(cabin_temp_c, outside_temp_c, power_w)
+            slow_rise_info = self._check_slow_rise_rate(
+                cabin_temp_c, outside_temp_c, power_w)
             if slow_rise_info:
                 self._turn_heater_off(slow_rise_info)
                 self._finalize_session(
                     end_ts=now, reason="slow_rise", is_test=is_test)
                 return
-            
+
             # Check disturbances
             disturbance_reason = self._detect_disturbance()
             if disturbance_reason is not None:
-                self._turn_heater_off(f"Disturbance detected: {disturbance_reason}")
+                self._turn_heater_off(
+                    f"Disturbance detected: {disturbance_reason}")
                 self._finalize_session(
                     end_ts=now, reason=disturbance_reason, is_test=is_test)
             return
-        
+
         # AUTONOMOUS_ARMED state - check if we should start a session
         if self._state != "AUTONOMOUS_ARMED":
             return
-        
+
         if cabin_temp_c is None:
             logger.debug("kfactor: autonomous skipped (missing cabin temp)")
             return
-        
+
         # Check for conflicts with other services
         if not self._check_autonomous_conflicts():
             return
-        
+
         # Check if we need calibration data for this bucket
         if not is_test and not self.should_calibrate(now, outside_temp_c, wind_m_s):
-            logger.debug("kfactor: autonomous skipped (bucket already covered)")
+            logger.debug(
+                "kfactor: autonomous skipped (bucket already covered)")
             return
-        
+
         # Start autonomous session - turn heater ON
         t_bucket, wind_bucket = self._bucket_key(outside_temp_c, wind_m_s)
         reason = f"Starting calibration (T={outside_temp_c:.1f}°C bucket={t_bucket}, wind={wind_m_s or 'N/A'}m/s)"
-        
+
         self._turn_heater_on(reason)
         logger.info("kfactor: starting AUTONOMOUS session - %s", reason)
-        
+
         self._is_autonomous_session = True
         self._slow_rise_counter = 0
         self._start_session(
@@ -588,7 +597,7 @@ class KFactorCalibrator:
 
     def _check_autonomous_conflicts(self) -> bool:
         """Check if other services are using or planning to use the heater.
-        
+
         Returns True if autonomous calibration can proceed.
         """
         from .car_heater_service import CarHeaterService, ChargeModeState
@@ -605,11 +614,13 @@ class KFactorCalibrator:
             if schedule is not None:
                 status = schedule.status
                 if status == "running":
-                    logger.debug("kfactor: autonomous blocked (Ready-by running)")
+                    logger.debug(
+                        "kfactor: autonomous blocked (Ready-by running)")
                     return False
                 hours_ahead = ready_by_svc.hours_before_target
                 if status == "scheduled" and hours_ahead is not None and hours_ahead < 2.0:
-                    logger.debug("kfactor: autonomous blocked (Ready-by scheduled soon)")
+                    logger.debug(
+                        "kfactor: autonomous blocked (Ready-by scheduled soon)")
                     return False
 
         from .keep_at_temp_service import KeepAtTempService
@@ -623,9 +634,10 @@ class KFactorCalibrator:
         if car_heater_svc is not None:
             charge_mode_state: ChargeModeState | None = car_heater_svc.get_charge_mode_state()
             if charge_mode_state is not None and charge_mode_state.enabled:
-                logger.debug("kfactor: autonomous blocked (Charge mode active)")
+                logger.debug(
+                    "kfactor: autonomous blocked (Charge mode active)")
                 return False
-        
+
         return True
 
     def _check_slow_rise_rate(
@@ -635,41 +647,41 @@ class KFactorCalibrator:
         power_w: float,
     ) -> str | None:
         """Check if temperature is rising too slowly.
-        
+
         Returns a detailed stop reason string if rising too slowly, None otherwise.
         """
         if cabin_temp_c is None:
             return None
-        
+
         samples = self._session_samples
         window = int(self._cfg.autonomous_rise_rate_window_samples)
         min_checks = int(self._cfg.autonomous_rise_rate_min_checks)
         min_rate = float(self._cfg.autonomous_min_temp_rise_rate_C_per_min)
-        
+
         # Need enough samples for rate calculation
         if len(samples) < window + 1:
             self._slow_rise_counter = 0
             return None
-        
+
         # Calculate rise rate over window
         recent = samples[-window:]
         oldest = recent[0]
         newest = recent[-1]
-        
+
         time_diff_s = (newest.ts - oldest.ts).total_seconds()
         if time_diff_s < 60:  # Need at least 1 minute
             return None
-        
+
         temp_diff = newest.cabin_temp_c - oldest.cabin_temp_c
         rate_c_per_min = (temp_diff / time_diff_s) * 60
-        
+
         if rate_c_per_min < min_rate:
             self._slow_rise_counter += 1
             logger.debug(
                 "kfactor: slow rise detected (%d/%d): %.3f°C/min < %.3f°C/min",
                 self._slow_rise_counter, min_checks, rate_c_per_min, min_rate,
             )
-            
+
             if self._slow_rise_counter >= min_checks:
                 return (
                     f"Slow rise rate ({rate_c_per_min:.3f}°C/min < {min_rate}°C/min) "
@@ -678,7 +690,7 @@ class KFactorCalibrator:
                 )
         else:
             self._slow_rise_counter = 0
-        
+
         return None
 
     def _turn_heater_on(self, reason: str) -> None:
@@ -930,6 +942,137 @@ class KFactorCalibrator:
                 "config": asdict(self._cfg),
             }
 
+    def get_extended_snapshot(self) -> dict[str, Any]:
+        """Return extended snapshot with live session data, history, and statistics."""
+        base = self.get_debug_snapshot()
+        logger.debug("get_extended_snapshot: _ctrl=%s", self._ctrl is not None)
+
+        # Live session metrics
+        live_session = None
+        with self._lock:
+            if self._state in ("PASSIVE_RECORDING", "AUTONOMOUS_RECORDING") and self._session_samples:
+                samples = self._session_samples
+                now = datetime.now(self._tz)
+                duration_s = self._session_duration_s(now) or 0
+
+                first_sample = samples[0]
+                last_sample = samples[-1]
+
+                # Calculate rise rate over recent samples (last 5 or available)
+                rise_rate = None
+                if len(samples) >= 2:
+                    recent = samples[-min(5, len(samples)):]
+                    time_span_s = (recent[-1].ts -
+                                   recent[0].ts).total_seconds()
+                    if time_span_s > 0:
+                        temp_change = recent[-1].cabin_temp_c - \
+                            recent[0].cabin_temp_c
+                        rise_rate = (temp_change / time_span_s) * 60  # °C/min
+
+                live_session = {
+                    "active": True,
+                    "mode": "autonomous" if self._is_autonomous_session else "passive",
+                    "started_ts": _iso_no_micros(self._session_started_at) if self._session_started_at else None,
+                    "duration_s": int(duration_s),
+                    "sample_count": len(samples),
+                    "cabin_temp_start": round(first_sample.cabin_temp_c, 1),
+                    "cabin_temp_current": round(last_sample.cabin_temp_c, 1),
+                    "cabin_temp_rise": round(last_sample.cabin_temp_c - first_sample.cabin_temp_c, 1),
+                    "outside_temp_current": round(last_sample.outside_temp_c, 1) if last_sample.outside_temp_c else None,
+                    "wind_current": round(last_sample.wind_m_s, 1) if last_sample.wind_m_s else None,
+                    "power_current": round(last_sample.power_w, 0) if last_sample.power_w else None,
+                    "rise_rate_c_per_min": round(rise_rate, 3) if rise_rate is not None else None,
+                    "slow_rise_counter": self._slow_rise_counter,
+                    "slow_rise_threshold": self._cfg.autonomous_slow_rise_samples,
+                }
+
+        base["live_session"] = live_session
+
+        # Recent sessions with fit results
+        recent_sessions = []
+        if self._ctrl:
+            try:
+                sessions = self._ctrl.get_sessions_with_results(limit=10)
+                logger.debug(
+                    "get_extended_snapshot: got %d sessions", len(sessions))
+                for s in sessions:
+                    # Parse flags to get rejection reason
+                    reason = None
+                    if s.get("flags_json"):
+                        try:
+                            flags = json.loads(s["flags_json"])
+                            reason = flags.get(
+                                "rejection_reason") or flags.get("end_reason")
+                        except Exception:
+                            pass
+
+                    recent_sessions.append({
+                        "id": s["id"],
+                        "start_ts": s["start_ts"],
+                        "end_ts": s["end_ts"],
+                        "mode": s["mode"],
+                        "duration_min": round(s["duration_s"] / 60, 1) if s["duration_s"] else None,
+                        "cabin_t_start": s["cabin_t_start"],
+                        "cabin_t_end": s["cabin_t_end"],
+                        "outside_t_mean": s["outside_t_mean"],
+                        "wind_mean": s["wind_mean"],
+                        "quality_score": s["quality_score"],
+                        "accepted": s["accepted"],
+                        "reason": reason,
+                        "fit": s["fit"],
+                    })
+            except Exception as e:
+                logger.warning("kfactor: failed to get recent sessions: %s", e)
+
+        logger.debug(
+            "get_extended_snapshot: returning %d recent_sessions", len(recent_sessions))
+        base["recent_sessions"] = recent_sessions
+
+        # Bucket coverage
+        bucket_coverage = []
+        if self._ctrl:
+            try:
+                buckets = self._ctrl.get_all_bucket_params()
+                logger.debug(
+                    "get_extended_snapshot: got %d buckets", len(buckets))
+                now = datetime.now(self._tz)
+                for b in buckets:
+                    age_days = None
+                    if b.updated_ts:
+                        try:
+                            updated = _dt_from_any(b.updated_ts, self._tz)
+                            if updated:
+                                age_days = (now - updated).days
+                        except Exception:
+                            pass
+
+                    bucket_coverage.append({
+                        "t_bucket": b.t_bucket,
+                        "wind_bucket": b.wind_bucket,
+                        "k_loss": round(b.k_loss_W_per_K, 1) if b.k_loss_W_per_K else None,
+                        "eta": round(b.eta, 3) if b.eta else None,
+                        "updated_ts": b.updated_ts,
+                        "age_days": age_days,
+                    })
+            except Exception as e:
+                logger.warning("kfactor: failed to get bucket coverage: %s", e)
+
+        logger.debug(
+            "get_extended_snapshot: returning %d bucket_coverage", len(bucket_coverage))
+        base["bucket_coverage"] = bucket_coverage
+
+        # Statistics
+        statistics = {}
+        if self._ctrl:
+            try:
+                statistics = self._ctrl.get_calibration_stats(lookback_days=7)
+            except Exception as e:
+                logger.debug("kfactor: failed to get statistics: %s", e)
+
+        base["statistics"] = statistics
+
+        return base
+
     # --------------------
     # Internals
     # --------------------
@@ -1147,16 +1290,18 @@ class KFactorCalibrator:
             cooldown_minutes = int(self._cfg.autonomous_cooldown_minutes)
             if reason == "disturbance_no_heating":
                 cooldown_minutes = 15  # Short cooldown for failed attempts
-            self._autonomous_cooldown_until = end_ts + timedelta(minutes=cooldown_minutes)
+            self._autonomous_cooldown_until = end_ts + \
+                timedelta(minutes=cooldown_minutes)
             self._save_cooldown_to_db()  # Persist autonomous cooldown
             logger.info("kfactor: autonomous cooldown set until %s (%d min)",
-                       _iso_no_micros(self._autonomous_cooldown_until), cooldown_minutes)
+                        _iso_no_micros(self._autonomous_cooldown_until), cooldown_minutes)
         else:
             cooldown_minutes = int(self._cfg.cooldown_minutes)
             if reason == "disturbance_no_heating":
                 cooldown_minutes = 15
-            self._passive_cooldown_until = end_ts + timedelta(minutes=cooldown_minutes)
-        
+            self._passive_cooldown_until = end_ts + \
+                timedelta(minutes=cooldown_minutes)
+
         self._heater_on_streak = 0
         self._slow_rise_counter = 0
         self._is_autonomous_session = False
@@ -1196,7 +1341,7 @@ class KFactorCalibrator:
         flags: dict[str, Any] = dict(self._session_flags)
         flags["stop_reason"] = reason
         flags["autonomous"] = is_autonomous
-        
+
         if reason == "disturbance_no_heating" and not is_test:
             details = flags.get("no_heating_detected", {})
             record_alert(

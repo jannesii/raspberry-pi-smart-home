@@ -763,6 +763,276 @@ function emitReadyByConfigChange() {
   }
 }
 
+// ============================================
+// KFactor Calibration Data Panel
+// ============================================
+
+let kfExtendedDataLoading = false;
+
+function requestKFactorExtendedData() {
+  if (!window.socket || kfExtendedDataLoading) return;
+  
+  kfExtendedDataLoading = true;
+  const btn = document.getElementById('kfRefreshDataBtn');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner">↻</span> Loading...';
+  }
+  
+  window.socket.emit('kfactor_control', { action: 'extended_data' });
+}
+
+function renderKFactorExtendedData(data) {
+  kfExtendedDataLoading = false;
+  
+  const btn = document.getElementById('kfDataRefresh');
+  if (btn) {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="btn-icon">🔄</span> Refresh Data';
+  }
+  
+  if (!data) return;
+  
+  console.log('📊 Rendering extended data:', data);
+  
+  // Update recent sessions count badge
+  const recentCount = document.getElementById('kfRecentCount');
+  if (recentCount) {
+    recentCount.textContent = (data.recent_sessions || []).length;
+  }
+  
+  // Render each section
+  renderKfLiveSession(data.live_session);
+  renderKfRecentSessions(data.recent_sessions || []);
+  renderKfBucketCoverage(data.bucket_coverage || []);
+  renderKfStatistics(data.statistics || {});
+}
+
+function renderKfLiveSession(session) {
+  const container = document.getElementById('kfDataLiveSession');
+  if (!container) return;
+  
+  // Update individual elements
+  const els = {
+    duration: document.getElementById('kfLiveDuration'),
+    samples: document.getElementById('kfLiveSamples'),
+    cabinTemp: document.getElementById('kfLiveCabinTemp'),
+    riseRate: document.getElementById('kfLiveRiseRate'),
+    outsideTemp: document.getElementById('kfLiveOutsideTemp'),
+    wind: document.getElementById('kfLiveWind'),
+    power: document.getElementById('kfLivePower'),
+    slowRise: document.getElementById('kfLiveSlowRise'),
+    slowRiseRow: document.getElementById('kfLiveSlowRiseRow'),
+    sessionMode: document.getElementById('kfLiveSessionMode')
+  };
+  
+  if (!session || !session.active) {
+    // Not recording - hide live session container
+    container.style.display = 'none';
+    return;
+  }
+  
+  // Show live session container
+  container.style.display = 'block';
+  
+  // Recording active - update values
+  if (els.sessionMode) {
+    els.sessionMode.textContent = session.mode || 'passive';
+    els.sessionMode.className = `kf-mode-badge ${session.mode || 'passive'}`;
+  }
+  
+  if (els.duration) {
+    const mins = Math.floor((session.duration_s || 0) / 60);
+    const secs = Math.floor((session.duration_s || 0) % 60);
+    els.duration.textContent = `${mins}:${String(secs).padStart(2, '0')}`;
+  }
+  
+  if (els.samples) {
+    els.samples.textContent = session.sample_count || 0;
+  }
+  
+  if (els.cabinTemp) {
+    const start = session.cabin_temp_start != null ? fmtNum(session.cabin_temp_start) : '?';
+    const current = session.cabin_temp_current != null ? fmtNum(session.cabin_temp_current) : '?';
+    const rise = session.cabin_temp_rise != null ? fmtNum(session.cabin_temp_rise) : '?';
+    els.cabinTemp.textContent = `${start}° → ${current}° (+${rise}°)`;
+  }
+  
+  if (els.outsideTemp) {
+    els.outsideTemp.textContent = session.outside_temp_current != null ? `${fmtNum(session.outside_temp_current)}°` : '—';
+  }
+  
+  if (els.wind) {
+    els.wind.textContent = session.wind_current != null ? `${fmtNum(session.wind_current)} m/s` : '—';
+  }
+  
+  if (els.power) {
+    els.power.textContent = session.power_current != null ? `${Math.round(session.power_current)} W` : '—';
+  }
+  
+  if (els.riseRate) {
+    const rate = session.rise_rate_c_per_min;
+    els.riseRate.textContent = rate != null ? `${fmtNum(rate, 2)}°/min` : '—';
+  }
+  
+  // Show slow rise counter for autonomous mode
+  if (els.slowRiseRow && els.slowRise) {
+    if (session.mode === 'autonomous' && session.slow_rise_counter != null) {
+      els.slowRiseRow.style.display = 'block';
+      els.slowRise.textContent = `${session.slow_rise_counter}/${session.slow_rise_threshold || '?'}`;
+    } else {
+      els.slowRiseRow.style.display = 'none';
+    }
+  }
+}
+
+function renderKfRecentSessions(sessions) {
+  const container = document.getElementById('kfRecentSessionsTable');
+  if (!container) return;
+  
+  if (!sessions || sessions.length === 0) {
+    container.innerHTML = '<div class="kf-sessions-empty">No recent sessions</div>';
+    return;
+  }
+  
+  let html = `
+    <table class="kf-sessions-table">
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Bucket</th>
+          <th>Quality</th>
+          <th>k</th>
+          <th>η</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+  
+  for (const s of sessions) {
+    const time = s.start_ts ? fmtTs(s.start_ts) : '—';
+    // Bucket info from outside_t_mean and wind_mean (rounded to bucket)
+    const tBucket = s.outside_t_mean != null ? Math.round(s.outside_t_mean / 5) * 5 : null;
+    const wBucket = s.wind_mean != null ? (s.wind_mean < 2 ? '0-2' : s.wind_mean < 5 ? '2-5' : s.wind_mean < 10 ? '5-10' : '10+') : null;
+    const bucket = tBucket != null ? `${tBucket}°/${wBucket || '?'}` : '—';
+    const quality = s.quality_score != null ? fmtNum(s.quality_score, 2) : '—';
+    // k_loss and eta are nested under fit object
+    const kLoss = s.fit && s.fit.k_loss != null ? fmtNum(s.fit.k_loss, 1) : '—';
+    const eta = s.fit && s.fit.eta != null ? fmtNum(s.fit.eta, 2) : '—';
+    
+    let statusClass = '';
+    let statusText = '';
+    if (s.accepted === true) {
+      statusClass = 'fit-ok';
+      statusText = '✓';
+    } else if (s.accepted === false) {
+      statusClass = 'fit-bad';
+      statusText = '✗';
+    } else {
+      statusClass = 'fit-warn';
+      statusText = '?';
+    }
+    
+    html += `
+      <tr>
+        <td>${time}</td>
+        <td class="mono">${bucket}</td>
+        <td class="mono">${quality}</td>
+        <td class="mono">${kLoss}</td>
+        <td class="mono">${eta}</td>
+        <td class="${statusClass}">${statusText}</td>
+      </tr>
+    `;
+  }
+  
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+function renderKfBucketCoverage(buckets) {
+  const container = document.getElementById('kfBucketGrid');
+  if (!container) return;
+  
+  if (!buckets || buckets.length === 0) {
+    container.innerHTML = '<div class="kf-sessions-empty">No bucket data</div>';
+    return;
+  }
+  
+  // Group buckets by temp_bucket for better organization
+  let html = '';
+  
+  for (const b of buckets) {
+    const label = `${b.t_bucket || '?'}° / ${b.wind_bucket ?? '?'}`;
+    const kLoss = b.k_loss;
+    const eta = b.eta;
+    const calibTs = b.updated_ts;
+    const ageDays = b.age_days;
+    
+    // Determine status: calibrated (recent), stale (old), or empty
+    let cellClass = 'empty';
+    let valueText = '—';
+    
+    if (kLoss != null && eta != null) {
+      // Check if recent (within 30 days)
+      cellClass = (ageDays != null && ageDays <= 30) ? 'calibrated' : 'stale';
+      valueText = `k=${fmtNum(kLoss, 1)}`;
+    }
+    
+    const ageLabel = ageDays != null ? `${ageDays}d ago` : '';
+    
+    html += `
+      <div class="kf-bucket-cell ${cellClass}" title="η=${eta != null ? fmtNum(eta, 2) : '—'}${ageLabel ? ', ' + ageLabel : ''}">
+        <span class="kf-bucket-label">${label}</span>
+        <span class="kf-bucket-value">${valueText}</span>
+        <span class="kf-bucket-samples">${ageLabel || '—'}</span>
+      </div>
+    `;
+  }
+  
+  container.innerHTML = html;
+}
+
+function renderKfStatistics(stats) {
+  const els = {
+    totalSessions: document.getElementById('kfStatTotalSessions'),
+    accepted: document.getElementById('kfStatAccepted'),
+    recent: document.getElementById('kfStatRecent'),
+    avgQuality: document.getElementById('kfStatAvgQuality'),
+    coverage: document.getElementById('kfStatCoverage'),
+    lastSession: document.getElementById('kfStatLastSession')
+  };
+  
+  if (els.totalSessions) {
+    els.totalSessions.textContent = stats.total_sessions ?? 0;
+  }
+  
+  if (els.accepted) {
+    els.accepted.textContent = stats.accepted_sessions ?? 0;
+  }
+  
+  if (els.recent) {
+    els.recent.textContent = stats.sessions_last_7d ?? 0;
+  }
+  
+  if (els.avgQuality) {
+    const avg = stats.avg_quality;
+    els.avgQuality.textContent = avg != null ? fmtNum(avg, 2) : '—';
+  }
+  
+  if (els.coverage) {
+    const covered = stats.buckets_covered ?? 0;
+    const total = stats.buckets_total ?? 45;
+    const pct = stats.coverage_pct ?? 0;
+    els.coverage.textContent = `${covered}/${total} (${pct}%)`;
+  }
+  
+  if (els.lastSession) {
+    const days = stats.days_since_last_session;
+    els.lastSession.textContent = days != null ? (days === 0 ? 'Today' : `${days}d ago`) : '—';
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   // Initialize from server-rendered data
   if (typeof window.CAR_HEATER_READY_BY !== 'undefined') {
@@ -918,5 +1188,27 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
     });
+    
+    window.socket.on('kfactor_extended_data', (data) => {
+      console.log('📡 kfactor_extended_data:', data);
+      renderKFactorExtendedData(data);
+    });
+  }
+  
+  // Calibration data panel accordion toggle (uses <details> element)
+  const kfDataPanel = document.getElementById('kfactorDataPanel');
+  if (kfDataPanel) {
+    kfDataPanel.addEventListener('toggle', () => {
+      // Auto-fetch data when opening
+      if (kfDataPanel.open) {
+        requestKFactorExtendedData();
+      }
+    });
+  }
+  
+  // Refresh button for calibration data
+  const kfRefreshBtn = document.getElementById('kfDataRefresh');
+  if (kfRefreshBtn) {
+    kfRefreshBtn.addEventListener('click', requestKFactorExtendedData);
   }
 });

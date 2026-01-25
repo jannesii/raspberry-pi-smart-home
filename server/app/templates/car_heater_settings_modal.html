@@ -401,6 +401,139 @@
               </div>
             </div>
           </details>
+
+          <!-- Calibration Data Accordion -->
+          <div class="divider"></div>
+          
+          <details class="config-accordion" id="kfactorDataPanel">
+            <summary class="accordion-header">
+              <span class="accordion-icon">📈</span>
+              <span class="accordion-title">Calibration Data</span>
+              <span class="accordion-arrow">▶</span>
+            </summary>
+            
+            <div class="accordion-content">
+              <!-- Live Session Section (shown when recording) -->
+              <div id="kfDataLiveSession" class="kf-data-section" style="display: none;">
+                <div class="kf-data-header">
+                  <span class="kf-data-icon">⚡</span>
+                  <span class="kf-data-title">Live Session</span>
+                  <span id="kfLiveSessionMode" class="kf-mode-badge">passive</span>
+                </div>
+                <div class="kf-data-body">
+                  <div class="kf-live-grid">
+                    <div class="kf-live-item">
+                      <span class="kf-live-label">Duration</span>
+                      <span id="kfLiveDuration" class="kf-live-value">—</span>
+                    </div>
+                    <div class="kf-live-item">
+                      <span class="kf-live-label">Samples</span>
+                      <span id="kfLiveSamples" class="kf-live-value">—</span>
+                    </div>
+                    <div class="kf-live-item wide">
+                      <span class="kf-live-label">Cabin Temp</span>
+                      <span id="kfLiveCabinTemp" class="kf-live-value">—</span>
+                    </div>
+                    <div class="kf-live-item">
+                      <span class="kf-live-label">Outside</span>
+                      <span id="kfLiveOutsideTemp" class="kf-live-value">—</span>
+                    </div>
+                    <div class="kf-live-item">
+                      <span class="kf-live-label">Wind</span>
+                      <span id="kfLiveWind" class="kf-live-value">—</span>
+                    </div>
+                    <div class="kf-live-item">
+                      <span class="kf-live-label">Power</span>
+                      <span id="kfLivePower" class="kf-live-value">—</span>
+                    </div>
+                    <div class="kf-live-item">
+                      <span class="kf-live-label">Rise Rate</span>
+                      <span id="kfLiveRiseRate" class="kf-live-value">—</span>
+                    </div>
+                    <div id="kfLiveSlowRiseRow" class="kf-live-item" style="display: none;">
+                      <span class="kf-live-label">Slow Rise</span>
+                      <span id="kfLiveSlowRise" class="kf-live-value">—</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Recent Sessions Section -->
+              <div class="kf-data-section">
+                <div class="kf-data-header">
+                  <span class="kf-data-icon">📋</span>
+                  <span class="kf-data-title">Recent Sessions</span>
+                  <span id="kfRecentCount" class="kf-count-badge">0</span>
+                </div>
+                <div class="kf-data-body">
+                  <div id="kfRecentSessionsTable" class="kf-sessions-table">
+                    <div class="kf-sessions-empty">No sessions recorded yet</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Bucket Coverage Section -->
+              <div class="kf-data-section">
+                <div class="kf-data-header">
+                  <span class="kf-data-icon">🗺️</span>
+                  <span class="kf-data-title">Bucket Coverage</span>
+                </div>
+                <div class="kf-data-body">
+                  <div id="kfBucketGrid" class="kf-bucket-grid">
+                    <!-- Grid will be populated by JavaScript -->
+                  </div>
+                  <div class="kf-bucket-legend">
+                    <span class="kf-legend-item"><span class="kf-legend-dot recent"></span> Recent (&lt;7d)</span>
+                    <span class="kf-legend-item"><span class="kf-legend-dot stale"></span> Stale (7-30d)</span>
+                    <span class="kf-legend-item"><span class="kf-legend-dot empty"></span> No data</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Statistics Section -->
+              <div class="kf-data-section">
+                <div class="kf-data-header">
+                  <span class="kf-data-icon">📊</span>
+                  <span class="kf-data-title">Statistics</span>
+                </div>
+                <div class="kf-data-body">
+                  <div class="kf-stats-grid">
+                    <div class="kf-stat-item">
+                      <span class="kf-stat-value" id="kfStatTotalSessions">—</span>
+                      <span class="kf-stat-label">Total Sessions</span>
+                    </div>
+                    <div class="kf-stat-item">
+                      <span class="kf-stat-value" id="kfStatAccepted">—</span>
+                      <span class="kf-stat-label">Accepted</span>
+                    </div>
+                    <div class="kf-stat-item">
+                      <span class="kf-stat-value" id="kfStatRecent">—</span>
+                      <span class="kf-stat-label">Last 7 Days</span>
+                    </div>
+                    <div class="kf-stat-item">
+                      <span class="kf-stat-value" id="kfStatAvgQuality">—</span>
+                      <span class="kf-stat-label">Avg Quality</span>
+                    </div>
+                    <div class="kf-stat-item">
+                      <span class="kf-stat-value" id="kfStatCoverage">—</span>
+                      <span class="kf-stat-label">Coverage</span>
+                    </div>
+                    <div class="kf-stat-item">
+                      <span class="kf-stat-value" id="kfStatLastSession">—</span>
+                      <span class="kf-stat-label">Days Since Last</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Refresh Button -->
+              <div class="kf-data-actions">
+                <button type="button" id="kfDataRefresh" class="kf-refresh-btn">
+                  <span class="btn-icon">🔄</span> Refresh Data
+                </button>
+              </div>
+            </div>
+          </details>
         </div>
       </div>
     </div>
