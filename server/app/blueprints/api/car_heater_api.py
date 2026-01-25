@@ -3,7 +3,7 @@ from datetime import datetime
 import time
 from typing import Any, Dict, List
 import logging
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from zoneinfo import ZoneInfo
 from flask import Blueprint, request, jsonify, current_app
 from flask_login import login_required, current_user
@@ -321,8 +321,9 @@ def get_ready_by_schedule():
         if svc is None:
             return jsonify({"error": "ReadyByService not initialized"}), 503
 
-        result = svc.get_schedule(as_object=False)
-        return jsonify(result), 200
+        ready_by_data = svc.ready_by_payload
+        
+        return jsonify(ready_by_data), 200
     except Exception as e:
         logger.exception("Failed to get Ready-by schedule: %s", e)
     return jsonify({"error": "Failed to get schedule"}), 500

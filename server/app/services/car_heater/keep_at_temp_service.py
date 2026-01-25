@@ -10,11 +10,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
+
 @dataclass
 class KeepAtTempSettings:
-    target_temperature_c: float | None = None   
-    hysteresis_c: float | None = None   
-    enabled: bool | None = None 
+    target_temperature_c: float | None = None
+    hysteresis_c: float | None = None
+    enabled: bool | None = None
+
 
 class KeepAtTempService:
     """
@@ -45,17 +47,17 @@ class KeepAtTempService:
         """
         with self._lock:
             return self._settings
-        
+
     @property
-    def is_enabled(self) -> bool:
+    def enabled(self) -> bool:
         """
         Check if keep-at-temperature is enabled.
         """
         with self._lock:
             return self._settings.enabled if self._settings else False
-        
-    @is_enabled.setter
-    def is_enabled(self, enabled: bool) -> None:
+
+    @enabled.setter
+    def enabled(self, enabled: bool) -> None:
         """
         Enable or disable keep-at-temperature.
         """
@@ -64,7 +66,7 @@ class KeepAtTempService:
                 self._settings.enabled = enabled
                 self._ctrl.save_keep_at_temp_settings(self._settings)
                 logger.debug("Set KeepAtTemp enabled to: %r", enabled)
-                
+
     @property
     def target_temperature_c(self) -> float | None:
         """
@@ -72,7 +74,7 @@ class KeepAtTempService:
         """
         with self._lock:
             return self._settings.target_temperature_c if self._settings else None
-        
+
     @target_temperature_c.setter
     def target_temperature_c(self, temp_c: float) -> None:
         """
@@ -82,13 +84,14 @@ class KeepAtTempService:
             if self._settings:
                 self._settings.target_temperature_c = temp_c
                 self._ctrl.save_keep_at_temp_settings(self._settings)
-                logger.debug("Set KeepAtTemp target_temperature_c to: %r", temp_c)
+                logger.debug(
+                    "Set KeepAtTemp target_temperature_c to: %r", temp_c)
 
     def thermostat_logic(
-            self, 
-            current_temp: float, 
-            heater_on: bool,
-        ) -> None:
+        self,
+        current_temp: float,
+        heater_on: bool,
+    ) -> None:
         """
         Logic to control the car heater based on temperature settings.
         """

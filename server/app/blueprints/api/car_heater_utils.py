@@ -12,17 +12,20 @@ from flask import current_app, jsonify
 
 from ...core import Controller
 from ...core.models import CarHeaterStatus
-from ...extensions import socketio
 
 if TYPE_CHECKING:
     from .car_heater_api import FallbackStatus
+    from ...sockets import SocketEventHandler
 
 logger = logging.getLogger(__name__)
 
 _ALERT_MIN_POWER_W = float(os.getenv("CAR_HEATER_ALERT_MIN_POWER_W", "5"))
-_ALERT_NO_POWER_MINUTES = int(os.getenv("CAR_HEATER_ALERT_NO_POWER_MINUTES", "10"))
-_ALERT_STUCK_ON_MINUTES = int(os.getenv("CAR_HEATER_ALERT_STUCK_ON_MINUTES", "180"))
-_ALERT_SHELLY_MISSING_MINUTES = int(os.getenv("CAR_HEATER_ALERT_SHELLY_MISSING_MINUTES", "15"))
+_ALERT_NO_POWER_MINUTES = int(
+    os.getenv("CAR_HEATER_ALERT_NO_POWER_MINUTES", "10"))
+_ALERT_STUCK_ON_MINUTES = int(
+    os.getenv("CAR_HEATER_ALERT_STUCK_ON_MINUTES", "180"))
+_ALERT_SHELLY_MISSING_MINUTES = int(
+    os.getenv("CAR_HEATER_ALERT_SHELLY_MISSING_MINUTES", "15"))
 
 
 class _CarHeaterAlertState:
@@ -249,24 +252,6 @@ def process_commands(
     return commands, command_status, charge_mode_state
 
 
-def emit_status_to_views(
-    status_payload: Dict[str, Any],
-    command_status: Dict[str, Any] | None,
-    charge_mode_state: Dict[str, Any] | None,
-) -> None:
-    """Emit car heater status to connected browser views via Socket.IO."""
-    try:
-        payload: Dict[str, Any] = {"status": status_payload}
-        if command_status is not None:
-            payload["command_status"] = command_status
-        if charge_mode_state is not None:
-            payload["charge_mode"] = charge_mode_state
-        socketio.emit("car_heater_status", payload)
-    except Exception as e:
-        logger.exception(
-            "Failed to emit car_heater_status over Socket.IO: %s", e)
-
-
 def handle_status_update_request(
     data: Dict[str, Any] | None,
     fallback_status: "FallbackStatus",
@@ -289,6 +274,10 @@ def handle_status_update_request(
     ctrl: Controller = getattr(current_app, "ctrl", None)
     if ctrl is None:
         return jsonify({"error": "Controller not initialized"}), 500
+
+    sio: "SocketEventHandler" = getattr(current_app, "sio_handler", None)
+    if sio is None:
+        return jsonify({"error": "SocketEventHandler not initialized"}), 500
 
     if not data:
         return jsonify({"error": "Invalid JSON payload"}), 400
@@ -350,10 +339,8 @@ def handle_status_update_request(
                 )
                 # Broadcast Ready-by status to all connected views
                 try:
-                    schedule = rsvc.get_schedule(as_object=True)
-                    socketio.emit("ready_by_status", {
-                        "schedule": asdict(schedule) if schedule else None
-                    })
+                    ready_by_data = rsvc.ready_by_payload
+                    sio.emit_ready_by_status_to_views()
                 except Exception:
                     pass
         except Exception as e:
@@ -361,15 +348,7 @@ def handle_status_update_request(
         # Broadcast kFactor status to all connected views
         try:
             if ksvc is not None:
-                snapshot = ksvc.get_debug_snapshot()
-                socketio.emit("kfactor_status", {
-                    "state": snapshot.get("state"),
-                    "enabled": snapshot.get("config", {}).get("enabled", True),
-                    "cooldown_until": snapshot.get("cooldown_until"),
-                    "active_params": snapshot.get("active_params"),
-                    "last_session": snapshot.get("last_session"),
-                    "session_sample_count": snapshot.get("session_sample_count", 0),
-                })
+                sio.emit_kfactor_status(ksvc)
         except Exception:
             pass
     else:
@@ -396,7 +375,8 @@ def handle_status_update_request(
             "Car heater commands are disabled; skipping command queue handling.")
 
     # Notify browser clients
-    emit_status_to_views(status_payload, command_status, charge_mode_state)
+    sio.emit_car_heater_status_to_views(
+        status_payload, command_status, charge_mode_state)
 
     elapsed_time = time.perf_counter() - start_time
     logger.debug(
@@ -424,7 +404,8 @@ def _process_alerts(
         if car.is_heater_on:
             if _ALERT_STATE.heater_on_since is None:
                 _ALERT_STATE.heater_on_since = timestamp
-            duration_on = (timestamp - _ALERT_STATE.heater_on_since).total_seconds()
+            duration_on = (
+                timestamp - _ALERT_STATE.heater_on_since).total_seconds()
             if duration_on >= _ALERT_STUCK_ON_MINUTES * 60:
                 record_alert(
                     key="heater_stuck_on",
@@ -436,7 +417,8 @@ def _process_alerts(
             if power_w < _ALERT_MIN_POWER_W:
                 if _ALERT_STATE.low_power_since is None:
                     _ALERT_STATE.low_power_since = timestamp
-                low_power_s = (timestamp - _ALERT_STATE.low_power_since).total_seconds()
+                low_power_s = (
+                    timestamp - _ALERT_STATE.low_power_since).total_seconds()
                 if low_power_s >= _ALERT_NO_POWER_MINUTES * 60:
                     record_alert(
                         key="heater_on_no_power",

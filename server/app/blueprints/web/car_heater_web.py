@@ -50,18 +50,16 @@ def get_car_heater_page():
 
     # Keep-at-temp settings from database
     keep_at_temp_settings: KeepAtTempSettings = ctrl.get_keep_at_temp_settings()
-
     # Ready-by schedule (if available)
-    ready_by_schedule = None
+    ready_by_data = None
     try:
         from ...services.car_heater import ReadyByService
         ready_by_svc: ReadyByService | None = getattr(
             current_app, "ready_by_service", None)
-        if ready_by_svc is not None:
-            schedule = ready_by_svc.get_schedule(as_object=True)
-            ready_by_schedule = asdict(schedule) if schedule else None
+        ready_by_data = ready_by_svc.ready_by_payload
+        logger.info("Ready-by schedule data: %s", ready_by_data)
     except Exception as e:
-        logger.debug("Failed to get ready-by schedule: %s", e)
+        logger.exception("Failed to get ready-by schedule: %s", e)
 
     # kFactor calibration status (if available)
     kfactor_status = None
@@ -71,16 +69,15 @@ def get_car_heater_page():
             current_app, "kfactor_calibrator", None)
         if kfactor_svc is not None:
             snapshot = kfactor_svc.get_debug_snapshot()
+            # Include full config for advanced settings UI
+            full_config = snapshot.get("config", {})
             kfactor_status = {
                 "state": snapshot.get("state"),
-                "enabled": snapshot.get("config", {}).get("enabled", True),
+                "enabled": full_config.get("enabled", True),
                 "cooldown_until": snapshot.get("cooldown_until"),
                 "active_params": snapshot.get("active_params"),
                 "last_session": snapshot.get("last_session"),
-                "config": {
-                    "auto_calib_start_hhmm": snapshot.get("config", {}).get("auto_calib_start_hhmm", "00:00"),
-                    "auto_calib_stop_hhmm": snapshot.get("config", {}).get("auto_calib_stop_hhmm", "23:59"),
-                },
+                "config": full_config,
             }
     except Exception as e:
         logger.debug("Failed to get kfactor status: %s", e)
@@ -91,6 +88,6 @@ def get_car_heater_page():
         command_status=command_status,
         charge_mode_state=charge_mode_state,
         keep_at_temp_settings=asdict(keep_at_temp_settings),
-        ready_by_schedule=ready_by_schedule,
+        ready_by_schedule=ready_by_data,
         kfactor_status=kfactor_status,
     )

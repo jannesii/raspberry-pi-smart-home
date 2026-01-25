@@ -1,13 +1,15 @@
 import logging
 from flask import request, current_app
 from flask_socketio import SocketIO
-from typing import Set, Any
+from typing import Dict, Set, Any, TYPE_CHECKING
 from flask_login import current_user
 
 from ..core import Controller
 from ..services.ac import ACThermostat
 from ..services.car_heater import CarHeaterService
 
+if TYPE_CHECKING:
+    from ..services.car_heater import KFactorCalibrator
 
 class SocketEventHandler:
     _instance: "SocketEventHandler | None" = None
@@ -44,8 +46,14 @@ class SocketEventHandler:
                           self.handle_car_heater_keep_at_temp)
         socketio.on_event('ready_by_schedule',
                           self.handle_ready_by_schedule)
+        socketio.on_event('ready_by_control',
+                          self.handle_ready_by_control)
         socketio.on_event('kfactor_control',
                           self.handle_kfactor_control)
+        
+    def emit(self, event: str, payload: Any = None) -> None:
+        """Emit event to all connected clients."""
+        self.socketio.emit(event, payload)
 
     def handle_connect(self, auth):
         # Use Flask-Login session cookie for auth instead of API key
@@ -468,6 +476,24 @@ class SocketEventHandler:
             self.logger.exception("ac_control error: %s", e)
             self.socketio.emit('error', {'message': 'AC control error'})
 
+    def emit_car_heater_status_to_views(
+        self,
+        status_payload: Dict[str, Any],
+        command_status: Dict[str, Any] | None,
+        charge_mode_state: Dict[str, Any] | None,
+    ) -> None:
+        """Emit car heater status to connected browser views via Socket.IO."""
+        try:
+            payload: Dict[str, Any] = {"status": status_payload}
+            if command_status is not None:
+                payload["command_status"] = command_status
+            if charge_mode_state is not None:
+                payload["charge_mode"] = charge_mode_state
+            self.emit("car_heater_status", payload)
+        except Exception as e:
+            self.logger.exception(
+                "Failed to emit car_heater_status over Socket.IO: %s", e)
+
     def handle_car_heater_control(self, data):
         """
         Handle car heater actions from the web UI.
@@ -620,6 +646,22 @@ class SocketEventHandler:
             self.socketio.emit(
                 'error', {'message': 'Keep-at-temp settings error'})
 
+    def emit_ready_by_status_to_views(self):
+        """Emit current Ready-by schedule status to all views."""
+        from dataclasses import asdict
+        from ..services.car_heater import ReadyByService
+
+        try:
+            svc: ReadyByService | None = getattr(
+                current_app, 'ready_by_service', None)
+        except Exception:
+            svc = None
+        if svc is None:
+            return
+
+        data = svc.ready_by_payload
+        self.emit_to_views('ready_by_status', data)
+
     def handle_ready_by_schedule(self, data):
         """Handle Ready-by scheduling from the web UI."""
         if data is None or not isinstance(data, dict):
@@ -676,8 +718,7 @@ class SocketEventHandler:
                     ready_by_ts=ready_by_ts, target_temp_c=target_temp_c)
                 self.logger.info("Ready-by scheduled via socket: %s target=%.1f°C",
                                  schedule.ready_by_ts, target_temp_c)
-                self.emit_to_views('ready_by_status', {
-                                   'schedule': asdict(schedule)})
+                self.emit_ready_by_status_to_views()
 
             elif action == 'cancel':
                 reason = (data.get('reason') or 'user').strip()
@@ -685,16 +726,11 @@ class SocketEventHandler:
                 schedule = svc.cancel(reason=reason, turn_off=turn_off)
                 self.logger.info(
                     "Ready-by canceled via socket (reason=%s)", reason)
-                self.emit_to_views('ready_by_status', {
-                    'schedule': asdict(schedule) if schedule else None
-                })
+                self.emit_ready_by_status_to_views()
 
             elif action == 'status':
                 # Re-emit current schedule to requester(s)
-                result = svc.get_schedule(as_object=True)
-                self.emit_to_views('ready_by_status', {
-                    'schedule': asdict(result) if result else None
-                })
+                self.emit_ready_by_status_to_views()
 
             else:
                 self.socketio.emit(
@@ -704,6 +740,45 @@ class SocketEventHandler:
             self.logger.exception("ready_by_schedule error: %s", e)
             self.socketio.emit('error', {'message': 'Ready-by schedule error'})
 
+    def handle_ready_by_control(self, data):
+        """Handle Ready-by control actions from the web UI."""
+        if data is None or not isinstance(data, dict):
+            self.socketio.emit(
+                'error', {'message': 'Invalid ready-by control payload'})
+            self.logger.warning("Bad ready_by_control payload: %s", data)
+            return
+
+        from ..services.car_heater import ReadyByService, ReadyByConfig
+
+        try:
+            svc: ReadyByService | None = getattr(
+                current_app, 'ready_by_service', None)
+        except Exception:
+            svc = None
+        if svc is None:
+            self.socketio.emit(
+                'error', {'message': 'Ready-by service not initialized'})
+            return
+
+        action = (data.get('action') or '').strip()
+        if not action:
+            self.socketio.emit(
+                'error', {'message': 'Missing action for ready-by control'})
+            return
+
+        try:
+            if action == 'update_config':
+                config = data.get('config')
+                svc.config = ReadyByConfig(**config)
+                self.logger.info(
+                    "Ready-by config set via socket %s", config)
+                self.emit_to_views('ready_by_config', {
+                                   'enabled': svc.config.enabled})
+        except Exception as e:
+            self.logger.exception("ready_by_control error: %s", e)
+            self.socketio.emit(
+                'error', {'message': 'Ready-by control error'})
+
     def handle_kfactor_control(self, data):
         """Handle kFactor calibration control from the web UI."""
         if data is None or not isinstance(data, dict):
@@ -712,6 +787,7 @@ class SocketEventHandler:
             return
 
         from ..services.car_heater import KFactorCalibrator
+        from dataclasses import asdict
 
         try:
             svc: KFactorCalibrator | None = getattr(
@@ -728,13 +804,78 @@ class SocketEventHandler:
         try:
             if action == 'set_enabled':
                 enabled = bool(data.get('enabled', True))
-                svc.is_enabled = enabled
+                svc.enabled = enabled
                 self.logger.info(
                     "KFactor enabled set to %s via socket", enabled)
-                self._emit_kfactor_status(svc)
+                self.emit_kfactor_status(svc)
 
             elif action == 'status':
-                self._emit_kfactor_status(svc)
+                self.emit_kfactor_status(svc)
+
+            elif action == 'get_config':
+                # Return full config for populating the UI
+                config = asdict(svc.config)
+                self.emit_to_views('kfactor_config', {'config': config})
+
+            elif action == 'update_config':
+                # Update config fields from the UI
+                updates = data.get('config', {})
+                if not isinstance(updates, dict):
+                    self.socketio.emit(
+                        'error', {'message': 'Invalid config payload'})
+                    return
+
+                # Get current config and merge updates
+                current_config = asdict(svc.config)
+                for key, value in updates.items():
+                    if key in current_config:
+                        # Type coercion based on current type
+                        current_type = type(current_config[key])
+                        try:
+                            if current_type == bool:
+                                current_config[key] = bool(value)
+                            elif current_type == int:
+                                current_config[key] = int(value)
+                            elif current_type == float:
+                                current_config[key] = float(value)
+                            elif current_type == str:
+                                current_config[key] = str(value)
+                            else:
+                                current_config[key] = value
+                        except (TypeError, ValueError) as e:
+                            self.logger.warning(
+                                "kfactor config: invalid value for %s: %s", key, e)
+                            continue
+
+                # Create new config and save
+                from ..services.car_heater.kfactor_calibrator import KFactorConfig
+                new_config = KFactorConfig(**current_config)
+                svc._cfg = new_config
+                svc._save_config_in_db(new_config)
+
+                self.logger.info(
+                    "KFactor config updated via socket: %s", list(updates.keys()))
+
+                # Emit updated config back to all views
+                self.emit_to_views('kfactor_config', {
+                    'config': asdict(new_config),
+                    'saved': True,
+                })
+
+            elif action == 'reset_defaults':
+                # Reset to default config
+                from ..services.car_heater.kfactor_calibrator import KFactorConfig
+                default_config = KFactorConfig()
+                svc._cfg = default_config
+                svc._save_config_in_db(default_config)
+
+                self.logger.info("KFactor config reset to defaults via socket")
+
+                self.emit_to_views('kfactor_config', {
+                    'config': asdict(default_config),
+                    'saved': True,
+                    'reset': True,
+                })
 
             else:
                 self.socketio.emit(
@@ -744,7 +885,7 @@ class SocketEventHandler:
             self.logger.exception("kfactor_control error: %s", e)
             self.socketio.emit('error', {'message': 'KFactor control error'})
 
-    def _emit_kfactor_status(self, svc):
+    def emit_kfactor_status(self, svc: "KFactorCalibrator") -> None:
         """Helper to emit kFactor status to all views."""
         snapshot = svc.get_debug_snapshot()
         self.emit_to_views('kfactor_status', {
@@ -754,4 +895,5 @@ class SocketEventHandler:
             'active_params': snapshot.get('active_params'),
             'last_session': snapshot.get('last_session'),
             'session_sample_count': snapshot.get('session_sample_count', 0),
+            'config': snapshot.get('config', {}),
         })

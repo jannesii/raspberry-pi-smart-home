@@ -101,6 +101,306 @@
             <label>Cooldown until</label>
             <span id="kfactorCooldownUntil" class="setting-value">—</span>
           </div>
+
+          <!-- Advanced Configuration Accordion -->
+          <div class="divider"></div>
+          
+          <details class="config-accordion" id="kfactorAdvancedConfig">
+            <summary class="accordion-header">
+              <span class="accordion-icon">⚙️</span>
+              <span class="accordion-title">Advanced Configuration</span>
+              <span class="accordion-arrow">▶</span>
+            </summary>
+            
+            <div class="accordion-content">
+              <!-- Save indicator -->
+              <div id="kfactorConfigSaveIndicator" class="config-save-indicator" style="display: none;">
+                <span class="save-icon">💾</span>
+                <span class="save-text">Saving...</span>
+              </div>
+
+              <!-- Calibration Window Group -->
+              <div class="config-group">
+                <div class="config-group-header" title="Time window during which auto-calibration sessions are allowed to start. Sessions outside this window will not be initiated.">
+                  <span class="config-group-title">Calibration Window</span>
+                  <span class="config-tooltip-icon">ℹ️</span>
+                </div>
+                <div class="config-group-body">
+                  <div class="setting-row">
+                    <label for="kfCfgCalibStart" title="Start time for the calibration window (HH:MM)">Start time</label>
+                    <div class="setting-input-wrap">
+                      <input type="time" id="kfCfgCalibStart" value="00:00">
+                    </div>
+                  </div>
+                  <div class="setting-row">
+                    <label for="kfCfgCalibStop" title="End time for the calibration window (HH:MM)">End time</label>
+                    <div class="setting-input-wrap">
+                      <input type="time" id="kfCfgCalibStop" value="23:59">
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Session Rules Group -->
+              <div class="config-group">
+                <div class="config-group-header" title="Rules that determine when a calibration session starts, how long it runs, and when it's considered valid.">
+                  <span class="config-group-title">Session Rules</span>
+                  <span class="config-tooltip-icon">ℹ️</span>
+                </div>
+                <div class="config-group-body">
+                  <div class="setting-row">
+                    <label for="kfCfgGraceSamples" title="Number of consecutive 'heater on' samples required before starting a session. Prevents false starts from brief heater activations.">Grace samples</label>
+                    <div class="setting-input-wrap">
+                      <input type="number" id="kfCfgGraceSamples" min="1" max="10" step="1" value="3">
+                    </div>
+                  </div>
+                  <div class="setting-row">
+                    <label for="kfCfgMinSessionMin" title="Minimum session duration in minutes. Sessions shorter than this are rejected as they don't provide enough data.">Min duration</label>
+                    <div class="setting-input-wrap">
+                      <input type="number" id="kfCfgMinSessionMin" min="5" max="60" step="1" value="15">
+                      <span class="setting-unit">min</span>
+                    </div>
+                  </div>
+                  <div class="setting-row">
+                    <label for="kfCfgMaxSessionMin" title="Maximum session duration in minutes. Sessions are automatically finalized after this time to prevent runaway recordings.">Max duration</label>
+                    <div class="setting-input-wrap">
+                      <input type="number" id="kfCfgMaxSessionMin" min="30" max="240" step="5" value="120">
+                      <span class="setting-unit">min</span>
+                    </div>
+                  </div>
+                  <div class="setting-row">
+                    <label for="kfCfgMinTempRise" title="Minimum temperature rise (°C) required for a session to be considered valid. Ensures meaningful heating occurred.">Min temp rise</label>
+                    <div class="setting-input-wrap">
+                      <input type="number" id="kfCfgMinTempRise" min="0.5" max="10" step="0.5" value="2.0">
+                      <span class="setting-unit">°C</span>
+                    </div>
+                  </div>
+                  <div class="setting-row">
+                    <label for="kfCfgCooldownMin" title="Cooldown period in minutes after a session ends before a new one can start. Prevents back-to-back sessions.">Cooldown</label>
+                    <div class="setting-input-wrap">
+                      <input type="number" id="kfCfgCooldownMin" min="15" max="480" step="15" value="120">
+                      <span class="setting-unit">min</span>
+                    </div>
+                  </div>
+                  <div class="setting-row">
+                    <label for="kfCfgBucketLookback" title="Number of days to look back when checking if a temperature/wind bucket already has calibration data.">Bucket lookback</label>
+                    <div class="setting-input-wrap">
+                      <input type="number" id="kfCfgBucketLookback" min="1" max="30" step="1" value="7">
+                      <span class="setting-unit">days</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Quality & Acceptance Group -->
+              <div class="config-group">
+                <div class="config-group-header" title="Thresholds that determine session quality and whether fitted parameters are accepted and stored.">
+                  <span class="config-group-title">Quality & Acceptance</span>
+                  <span class="config-tooltip-icon">ℹ️</span>
+                </div>
+                <div class="config-group-body">
+                  <div class="setting-row">
+                    <label for="kfCfgQualityThreshold" title="Minimum quality score (0-1) required for a session to be accepted. Higher values are more strict.">Quality threshold</label>
+                    <div class="setting-input-wrap">
+                      <input type="number" id="kfCfgQualityThreshold" min="0.1" max="1.0" step="0.05" value="0.6">
+                    </div>
+                  </div>
+                  <div class="setting-row">
+                    <label for="kfCfgEarlyWindowMin" title="Early detection window in minutes. Used to detect disturbances like door openings early in the session.">Early window</label>
+                    <div class="setting-input-wrap">
+                      <input type="number" id="kfCfgEarlyWindowMin" min="1" max="15" step="1" value="5">
+                      <span class="setting-unit">min</span>
+                    </div>
+                  </div>
+                  <div class="setting-row">
+                    <label for="kfCfgDropThreshold" title="Temperature drop threshold (°C) to detect disturbances like door openings.">Drop threshold</label>
+                    <div class="setting-input-wrap">
+                      <input type="number" id="kfCfgDropThreshold" min="0.1" max="2.0" step="0.1" value="0.5">
+                      <span class="setting-unit">°C</span>
+                    </div>
+                  </div>
+                  <div class="setting-row">
+                    <label for="kfCfgSpikeThreshold" title="Temperature spike threshold (°C) to detect sensor glitches or outliers.">Spike threshold</label>
+                    <div class="setting-input-wrap">
+                      <input type="number" id="kfCfgSpikeThreshold" min="1" max="15" step="0.5" value="5.0">
+                      <span class="setting-unit">°C</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Physical Model Defaults Group -->
+              <div class="config-group">
+                <div class="config-group-header" title="Default values for the thermal model parameters. Used when no calibration data is available for current conditions.">
+                  <span class="config-group-title">Physical Model Defaults</span>
+                  <span class="config-tooltip-icon">ℹ️</span>
+                </div>
+                <div class="config-group-body">
+                  <div class="setting-row">
+                    <label for="kfCfgDefaultEta" title="Default heater efficiency (0-1). Fraction of electrical power converted to cabin heat.">Default η (eta)</label>
+                    <div class="setting-input-wrap">
+                      <input type="number" id="kfCfgDefaultEta" min="0.1" max="1.0" step="0.05" value="0.6">
+                    </div>
+                  </div>
+                  <div class="setting-row">
+                    <label for="kfCfgDefaultKLoss" title="Default heat loss coefficient (W/K). Higher values mean faster heat loss to the environment.">Default k_loss</label>
+                    <div class="setting-input-wrap">
+                      <input type="number" id="kfCfgDefaultKLoss" min="10" max="200" step="5" value="40">
+                      <span class="setting-unit">W/K</span>
+                    </div>
+                  </div>
+                  <div class="setting-row">
+                    <label for="kfCfgMassFactor" title="Effective thermal mass multiplier. Accounts for heat absorbed by seats, dashboard, etc. beyond just air.">Mass factor</label>
+                    <div class="setting-input-wrap">
+                      <input type="number" id="kfCfgMassFactor" min="5" max="150" step="5" value="30">
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Expert Tuning Group (nested accordion) -->
+              <details class="config-accordion nested">
+                <summary class="accordion-header">
+                  <span class="accordion-icon">🔬</span>
+                  <span class="accordion-title">Expert Tuning</span>
+                  <span class="accordion-arrow">▶</span>
+                </summary>
+                
+                <div class="accordion-content">
+                  <!-- Parameter Bounds -->
+                  <div class="config-group">
+                    <div class="config-group-header" title="Hard limits for fitted parameter values. Prevents unrealistic results from noisy data.">
+                      <span class="config-group-title">Parameter Bounds</span>
+                      <span class="config-tooltip-icon">ℹ️</span>
+                    </div>
+                    <div class="config-group-body">
+                      <div class="setting-row">
+                        <label for="kfCfgEtaMin" title="Minimum allowed eta value from fitting">η min</label>
+                        <div class="setting-input-wrap">
+                          <input type="number" id="kfCfgEtaMin" min="0.01" max="0.5" step="0.01" value="0.05">
+                        </div>
+                      </div>
+                      <div class="setting-row">
+                        <label for="kfCfgEtaMax" title="Maximum allowed eta value from fitting">η max</label>
+                        <div class="setting-input-wrap">
+                          <input type="number" id="kfCfgEtaMax" min="0.5" max="1.0" step="0.05" value="1.0">
+                        </div>
+                      </div>
+                      <div class="setting-row">
+                        <label for="kfCfgKLossMin" title="Minimum allowed k_loss value from fitting (W/K)">k_loss min</label>
+                        <div class="setting-input-wrap">
+                          <input type="number" id="kfCfgKLossMin" min="1" max="50" step="1" value="10">
+                          <span class="setting-unit">W/K</span>
+                        </div>
+                      </div>
+                      <div class="setting-row">
+                        <label for="kfCfgKLossMax" title="Maximum allowed k_loss value from fitting (W/K)">k_loss max</label>
+                        <div class="setting-input-wrap">
+                          <input type="number" id="kfCfgKLossMax" min="50" max="1000" step="10" value="400">
+                          <span class="setting-unit">W/K</span>
+                        </div>
+                      </div>
+                      <div class="setting-row">
+                        <label for="kfCfgMassFactorMin" title="Minimum allowed mass factor value">Mass factor min</label>
+                        <div class="setting-input-wrap">
+                          <input type="number" id="kfCfgMassFactorMin" min="1" max="20" step="1" value="5">
+                        </div>
+                      </div>
+                      <div class="setting-row">
+                        <label for="kfCfgMassFactorMax" title="Maximum allowed mass factor value">Mass factor max</label>
+                        <div class="setting-input-wrap">
+                          <input type="number" id="kfCfgMassFactorMax" min="50" max="500" step="10" value="150">
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Fitting Algorithm -->
+                  <div class="config-group">
+                    <div class="config-group-header" title="Parameters that control the curve fitting algorithm and session informativeness checks.">
+                      <span class="config-group-title">Fitting Algorithm</span>
+                      <span class="config-tooltip-icon">ℹ️</span>
+                    </div>
+                    <div class="config-group-body">
+                      <div class="setting-row">
+                        <label for="kfCfgToutSmoothWindow" title="Window size for smoothing outside temperature readings (samples)">T_out smooth window</label>
+                        <div class="setting-input-wrap">
+                          <input type="number" id="kfCfgToutSmoothWindow" min="1" max="10" step="1" value="3">
+                        </div>
+                      </div>
+                      <div class="setting-row">
+                        <label for="kfCfgInformativeMinMin" title="Minimum session duration (minutes) required for informativeness check">Informative min</label>
+                        <div class="setting-input-wrap">
+                          <input type="number" id="kfCfgInformativeMinMin" min="5" max="60" step="5" value="20">
+                          <span class="setting-unit">min</span>
+                        </div>
+                      </div>
+                      <div class="setting-row">
+                        <label for="kfCfgCurvatureRatioMax" title="Maximum curvature ratio for session to be considered informative. Lower values require more curved heating profiles.">Curvature ratio max</label>
+                        <div class="setting-input-wrap">
+                          <input type="number" id="kfCfgCurvatureRatioMax" min="0.1" max="1.0" step="0.05" value="0.6">
+                        </div>
+                      </div>
+                      <div class="setting-row">
+                        <label for="kfCfgCurvatureMaxSampleDist" title="Maximum time gap between samples (seconds) for curvature calculation">Curvature sample dist</label>
+                        <div class="setting-input-wrap">
+                          <input type="number" id="kfCfgCurvatureMaxSampleDist" min="30" max="300" step="10" value="120">
+                          <span class="setting-unit">s</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Prior & Smoothing -->
+                  <div class="config-group">
+                    <div class="config-group-header" title="Regularization priors and exponential moving average smoothing for parameter updates.">
+                      <span class="config-group-title">Prior & Smoothing</span>
+                      <span class="config-tooltip-icon">ℹ️</span>
+                    </div>
+                    <div class="config-group-body">
+                      <div class="setting-row">
+                        <label for="kfCfgPriorLambdaK" title="Regularization strength for k_loss prior. Higher values pull estimates toward defaults.">Prior λ (k_loss)</label>
+                        <div class="setting-input-wrap">
+                          <input type="number" id="kfCfgPriorLambdaK" min="0" max="1" step="0.05" value="0.1">
+                        </div>
+                      </div>
+                      <div class="setting-row">
+                        <label for="kfCfgPriorLambdaEta" title="Regularization strength for eta prior. Higher values pull estimates toward defaults.">Prior λ (eta)</label>
+                        <div class="setting-input-wrap">
+                          <input type="number" id="kfCfgPriorLambdaEta" min="0" max="1" step="0.05" value="0.1">
+                        </div>
+                      </div>
+                      <div class="setting-row">
+                        <label for="kfCfgBaseAlpha" title="Base EMA alpha for updating active parameters. Higher = faster adaptation.">Base alpha</label>
+                        <div class="setting-input-wrap">
+                          <input type="number" id="kfCfgBaseAlpha" min="0.05" max="1.0" step="0.05" value="0.3">
+                        </div>
+                      </div>
+                      <div class="setting-row">
+                        <label for="kfCfgAlphaMin" title="Minimum EMA alpha (slowest adaptation)">Alpha min</label>
+                        <div class="setting-input-wrap">
+                          <input type="number" id="kfCfgAlphaMin" min="0.01" max="0.5" step="0.01" value="0.05">
+                        </div>
+                      </div>
+                      <div class="setting-row">
+                        <label for="kfCfgAlphaMax" title="Maximum EMA alpha (fastest adaptation)">Alpha max</label>
+                        <div class="setting-input-wrap">
+                          <input type="number" id="kfCfgAlphaMax" min="0.1" max="1.0" step="0.05" value="0.5">
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </details>
+
+              <!-- Reset to Defaults Button -->
+              <div class="config-actions">
+                <button type="button" id="kfCfgResetDefaults" class="config-reset-btn">
+                  <span class="btn-icon">↺</span> Reset to Defaults
+                </button>
+              </div>
+            </div>
+          </details>
         </div>
       </div>
     </div>

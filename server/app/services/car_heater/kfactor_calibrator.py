@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from ...core import Controller
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
 # Fixed physical constants (defaults from TODO.md / plan)
@@ -190,7 +191,8 @@ class KFactorCalibrator:
         self._last_session: KFactorLastSession | None = None
         self._active_params_override: tuple[float, float] | None = None
         # Mapping of (t_bucket, wind_bucket) -> (k_loss, eta)
-        self._bucket_params_override: dict[tuple[int, int | None], tuple[float, float]] = {}
+        self._bucket_params_override: dict[tuple[int,
+                                                 int | None], tuple[float, float]] = {}
 
         logger.info(
             "KFactorCalibrator initialized (window=%s..%s min=%s max=%s)",
@@ -210,11 +212,11 @@ class KFactorCalibrator:
         return self._cfg
 
     @property
-    def is_enabled(self) -> bool:
+    def enabled(self) -> bool:
         return self._cfg.enabled
 
-    @is_enabled.setter
-    def is_enabled(self, enabled: bool) -> None:
+    @enabled.setter
+    def enabled(self, enabled: bool) -> None:
         with self._lock:
             self._cfg.enabled = enabled
             self._save_config_in_db(self._cfg)
@@ -230,10 +232,12 @@ class KFactorCalibrator:
     ) -> None:
         """Process a new car heater status sample (called on every status POST)."""
         if not self._cfg.enabled:
+            logger.debug("kfactor: tick skipped (disabled)")
             self._reset("disabled")
             return
         now = _dt_from_any(getattr(car_status, "timestamp", None), self._tz)
         if now is None:
+            logger.debug("kfactor: tick skipped (invalid timestamp)")
             return
 
         cabin_temp_c = _finite(getattr(car_status, "ambient_temp", None))
@@ -256,6 +260,7 @@ class KFactorCalibrator:
                 logger.debug("kfactor: weather lookup failed", exc_info=True)
 
         if outside_temp_c is None:
+            logger.debug("kfactor: tick skipped (missing outside temp)")
             return
 
         # Use Shelly power when it looks valid; otherwise fall back to the fixed constant.
@@ -266,10 +271,13 @@ class KFactorCalibrator:
             if not in_window:
                 if self._state != "IDLE":
                     self._reset("window ended")
+                logger.debug("kfactor: tick skipped (outside window)")
                 return
 
             if self._cooldown_until is not None and now < self._cooldown_until:
                 self._state = "COOLDOWN"
+                logger.debug("kfactor: tick skipped (in cooldown until %s)",
+                             self._cooldown_until.isoformat())
                 return
             if self._state == "COOLDOWN" and self._cooldown_until is not None and now >= self._cooldown_until:
                 self._state = "ARMED"
@@ -278,16 +286,14 @@ class KFactorCalibrator:
                 self._state = "ARMED"
 
             if self._state == "ARMED":
-                if not heater_on or cabin_temp_c is None:
-                    self._heater_on_streak = 0
+                if cabin_temp_c is None:
+                    logger.debug("kfactor: tick skipped (missing cabin temp)")
                     return
 
-                self._heater_on_streak += 1
-                if self._heater_on_streak < max(1, int(self._cfg.grace_samples)):
-                    return
-
-                if not is_test and not self.should_calibrate(now, outside_temp_c, wind_m_s):
-                    return
+                from .car_heater_service import CarHeaterService, ChargeModeState
+                car_heater_svc: CarHeaterService | None = getattr(
+                    current_app, "car_heater_service", None)
+                
 
                 from .ready_by_service import ReadyByService, ReadyBySchedule
 
@@ -299,12 +305,12 @@ class KFactorCalibrator:
                     if schedule is not None:
                         status = schedule.status
                         if status == "running":
-                            logger.info(
+                            logger.debug(
                                 "kfactor: skipped calibration (Ready-by running)")
                             return
                         hours_ahead = ready_by_svc.hours_before_target
                         if status == "scheduled" and hours_ahead is not None and hours_ahead < 2.0:
-                            logger.info(
+                            logger.debug(
                                 "kfactor: skipped calibration (Ready-by scheduled soon)")
                             return
 
@@ -312,20 +318,32 @@ class KFactorCalibrator:
 
                 keep_at_temp_svc: KeepAtTempService | None = getattr(
                     current_app, "keep_at_temp_service", None)
-                if keep_at_temp_svc is not None and keep_at_temp_svc.is_enabled:
-                    logger.info(
+                if keep_at_temp_svc is not None and keep_at_temp_svc.enabled:
+                    logger.debug(
                         "kfactor: skipped calibration (Keep-at-temp enabled)")
                     return
 
-                from .car_heater_service import CarHeaterService, ChargeModeState
-                car_heater_svc: CarHeaterService | None = getattr(
-                    current_app, "car_heater_service", None)
                 if car_heater_svc is not None:
                     charge_mode_state: ChargeModeState | None = car_heater_svc.get_charge_mode_state()
                     if charge_mode_state is not None and charge_mode_state.enabled:
-                        logger.info(
+                        logger.debug(
                             "kfactor: skipped calibration (Charge mode active)")
                         return
+                if not heater_on:
+                    self._heater_on_streak = 0
+                    car_heater_svc.queue_command({'action': 'turn_on'})
+                    logger.debug("kfactor: tick skipped (heater off) %s", heater_on)
+                    return
+
+                self._heater_on_streak += 1
+                if self._heater_on_streak < max(1, int(self._cfg.grace_samples)):
+                    logger.debug("kfactor: tick skipped (heater on streak %s/%s)",
+                                 self._heater_on_streak, self._cfg.grace_samples)
+                    return
+
+                if not is_test and not self.should_calibrate(now, outside_temp_c, wind_m_s):
+                    logger.debug("kfactor: tick skipped (should_calibrate returned False)")
+                    return
 
                 self._start_session(
                     now=now,
@@ -377,17 +395,21 @@ class KFactorCalibrator:
         wind_bucket = None
         if outside_temp_c is not None:
             try:
-                t_bucket, wind_bucket = self._bucket_key(outside_temp_c, wind_m_s)
+                t_bucket, wind_bucket = self._bucket_key(
+                    outside_temp_c, wind_m_s)
             except Exception:
-                logger.warning("kfactor: _bucket_key failed; falling back to unbucketed params", exc_info=True)
+                logger.warning(
+                    "kfactor: _bucket_key failed; falling back to unbucketed params", exc_info=True)
                 t_bucket, wind_bucket = None, None
 
         with self._lock:
             if t_bucket is not None:
-                override = self._bucket_params_override.get((t_bucket, wind_bucket))
+                override = self._bucket_params_override.get(
+                    (t_bucket, wind_bucket))
                 # Fallback to "any wind" for this temperature bucket if a specific wind bucket is not found
                 if override is None and wind_bucket is not None:
-                    override = self._bucket_params_override.get((t_bucket, None))
+                    override = self._bucket_params_override.get(
+                        (t_bucket, None))
                 # As a last resort, use the first override matching the temperature bucket only
                 if override is None:
                     for (tb, wb), vals in self._bucket_params_override.items():
@@ -412,7 +434,8 @@ class KFactorCalibrator:
                             t_bucket=int(t_bucket),
                         )
             except Exception:
-                logger.debug("kfactor: get_bucket_params failed", exc_info=True)
+                logger.debug(
+                    "kfactor: get_bucket_params failed", exc_info=True)
 
         active_params = None
         try:
@@ -423,12 +446,14 @@ class KFactorCalibrator:
 
         k_loss = _finite(getattr(bucket_params, "k_loss_W_per_K", None)
                          ) if bucket_params else None
-        eta = _finite(getattr(bucket_params, "eta", None)) if bucket_params else None
+        eta = _finite(getattr(bucket_params, "eta", None)
+                      ) if bucket_params else None
         if k_loss is None:
             k_loss = _finite(getattr(active_params, "k_loss_W_per_K", None)
                              ) if active_params else None
         if eta is None:
-            eta = _finite(getattr(active_params, "eta", None)) if active_params else None
+            eta = _finite(getattr(active_params, "eta", None)
+                          ) if active_params else None
         if k_loss is None:
             k_loss = float(self._cfg.default_k_loss_W_per_K)
         if eta is None:
@@ -608,7 +633,8 @@ class KFactorCalibrator:
         if self._ctrl is None:
             return
         try:
-            payload = json.dumps(asdict(cfg), separators=(",", ":"), sort_keys=True)
+            payload = json.dumps(
+                asdict(cfg), separators=(",", ":"), sort_keys=True)
             now = _iso_no_micros(datetime.now(self._tz))
             self._ctrl.save_kfactor_config(
                 CarHeaterKFactorConfig(
@@ -709,6 +735,15 @@ class KFactorCalibrator:
         outside_temp_c: float,
         wind_m_s: float | None,
     ) -> None:
+        logger.debug(
+            "kfactor: sample appended (ts=%s, T_cabin=%.2fC, heater_on=%s, power=%.1fW, T_out=%.2fC, wind=%.2f m/s)",
+            ts.isoformat(),
+            cabin_temp_c,
+            heater_on,
+            power_w,
+            outside_temp_c,
+            wind_m_s if wind_m_s is not None else float('nan'),
+        )
         self._session_samples.append(
             KFactorSample(
                 ts=ts,
@@ -747,7 +782,8 @@ class KFactorCalibrator:
         early_s = int(self._cfg.early_window_minutes) * 60
         # If we don't see a meaningful rise early on, abort to avoid recording forever.
         if (samples[-1].ts - started).total_seconds() >= early_s:
-            temp_rise = max(s.cabin_temp_c for s in samples) - samples[0].cabin_temp_c
+            temp_rise = max(s.cabin_temp_c for s in samples) - \
+                samples[0].cabin_temp_c
             min_rise = max(0.3, float(self._cfg.min_temp_rise_C) * 0.25)
             if temp_rise < min_rise:
                 self._session_flags["no_heating_detected"] = {
@@ -1045,7 +1081,8 @@ class KFactorCalibrator:
                 CarHeaterKFactorBucketParams(
                     id=None,
                     t_bucket=int(t_bucket),
-                    wind_bucket=int(wind_bucket) if wind_bucket is not None else None,
+                    wind_bucket=int(
+                        wind_bucket) if wind_bucket is not None else None,
                     k_loss_W_per_K=float(fit.k_loss_W_per_K),
                     eta=float(fit.eta),
                     updated_ts=_iso_no_micros(updated_at),
@@ -1053,7 +1090,8 @@ class KFactorCalibrator:
                 )
             )
         except Exception:
-            logger.debug("kfactor: failed to persist bucket params", exc_info=True)
+            logger.debug(
+                "kfactor: failed to persist bucket params", exc_info=True)
 
     def _compute_weighted_update(
         self,

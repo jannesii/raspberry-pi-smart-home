@@ -9,8 +9,8 @@ console.log('⚙️ car_heater_settings.js loaded');
 // Ready-by State
 // ============================================
 
-let readyBySchedule = null;
 let kfactorStatus = null;
+let readyBySchedule = null;
 
 // ============================================
 // Utility Functions
@@ -68,10 +68,27 @@ function getDefaultReadyByTime() {
 // ============================================
 // Ready-by UI Updates
 // ============================================
+function updateReadyByUI(data) {
+  if (!data) return;
+  updateReadyByConfig(data.config || null);
+  updateReadyBySchedule(data.schedule || null);
+}
 
-function updateReadyByUI(schedule) {
-  readyBySchedule = schedule || null;
+function updateReadyByConfig(config) {
+  if (!config) return;
+
+  const readyByEnabledToggle = document.getElementById('readyByEnabled');
+  const readyByToleranceInput = document.getElementById('readyByTolerance');
+  const readyByCooldownInput = document.getElementById('readyByCooldown');
   
+  if (readyByEnabledToggle) readyByEnabledToggle.checked = config.enabled;
+  if (readyByToleranceInput) readyByToleranceInput.value = config.reach_tolerance_minutes;
+  if (readyByCooldownInput) readyByCooldownInput.value = config.command_cooldown_s;
+}
+
+function updateReadyBySchedule(schedule) {
+  readyBySchedule = schedule || null;
+
   const statusText = document.getElementById('readyByStatusText');
   const infoPanel = document.getElementById('readyByInfoPanel');
   const etaText = document.getElementById('readyByEtaText');
@@ -87,7 +104,6 @@ function updateReadyByUI(schedule) {
   const progressFill = document.getElementById('readyByProgressFill');
   const progressStart = document.getElementById('readyByProgressStart');
   const progressEnd = document.getElementById('readyByProgressEnd');
-  
   if (!statusText) return;
   
   // Remove all status classes
@@ -113,7 +129,6 @@ function updateReadyByUI(schedule) {
     if (cancelBtn) cancelBtn.disabled = true;
     if (timeInput) timeInput.disabled = false;
     if (targetInput) targetInput.disabled = false;
-    
     // Set default time if empty
     if (timeInput && !timeInput.value) {
       timeInput.value = getDefaultReadyByTime();
@@ -408,8 +423,8 @@ function scheduleReadyBy() {
     })
     .then(r => r.json())
     .then(data => {
-      if (data.schedule) {
-        updateReadyByUI(data.schedule);
+      if (data) {
+        updateReadyByUI(data);
       }
     })
     .catch(err => {
@@ -446,7 +461,7 @@ function cancelReadyBy() {
     })
     .then(r => r.json())
     .then(data => {
-      updateReadyByUI(data.schedule);
+      updateReadyByUI(data);
     })
     .catch(err => {
       console.error('Failed to cancel ready-by:', err);
@@ -539,6 +554,192 @@ toastStyles.textContent = `
 `;
 document.head.appendChild(toastStyles);
 
+// ============================================
+// KFactor Config Management
+// ============================================
+
+// Config field mappings: input ID -> config key
+const KFACTOR_CONFIG_FIELDS = {
+  // Calibration Window
+  'kfCfgCalibStart': 'auto_calib_start_hhmm',
+  'kfCfgCalibStop': 'auto_calib_stop_hhmm',
+  // Session Rules
+  'kfCfgGraceSamples': 'grace_samples',
+  'kfCfgMinSessionMin': 'min_session_minutes',
+  'kfCfgMaxSessionMin': 'max_session_minutes',
+  'kfCfgMinTempRise': 'min_temp_rise_C',
+  'kfCfgCooldownMin': 'cooldown_minutes',
+  'kfCfgBucketLookback': 'bucket_lookback_days',
+  // Quality & Acceptance
+  'kfCfgQualityThreshold': 'quality_threshold',
+  'kfCfgEarlyWindowMin': 'early_window_minutes',
+  'kfCfgDropThreshold': 'drop_threshold_C',
+  'kfCfgSpikeThreshold': 'spike_threshold_C',
+  // Physical Model Defaults
+  'kfCfgDefaultEta': 'default_eta',
+  'kfCfgDefaultKLoss': 'default_k_loss_W_per_K',
+  'kfCfgMassFactor': 'mass_factor',
+  // Parameter Bounds
+  'kfCfgEtaMin': 'eta_min',
+  'kfCfgEtaMax': 'eta_max',
+  'kfCfgKLossMin': 'k_loss_min',
+  'kfCfgKLossMax': 'k_loss_max',
+  'kfCfgMassFactorMin': 'mass_factor_min',
+  'kfCfgMassFactorMax': 'mass_factor_max',
+  // Fitting Algorithm
+  'kfCfgToutSmoothWindow': 'tout_smooth_window',
+  'kfCfgInformativeMinMin': 'informative_min_minutes',
+  'kfCfgCurvatureRatioMax': 'curvature_ratio_max',
+  'kfCfgCurvatureMaxSampleDist': 'curvature_max_sample_distance_s',
+  // Prior & Smoothing
+  'kfCfgPriorLambdaK': 'prior_lambda_k',
+  'kfCfgPriorLambdaEta': 'prior_lambda_eta',
+  'kfCfgBaseAlpha': 'base_alpha',
+  'kfCfgAlphaMin': 'alpha_min',
+  'kfCfgAlphaMax': 'alpha_max',
+};
+
+// Debounce timer for config saves
+let configSaveTimeout = null;
+const CONFIG_SAVE_DEBOUNCE_MS = 500;
+
+function populateKFactorConfig(config) {
+  if (!config) return;
+  
+  for (const [inputId, configKey] of Object.entries(KFACTOR_CONFIG_FIELDS)) {
+    const input = document.getElementById(inputId);
+    if (!input) continue;
+    
+    const value = config[configKey];
+    if (value === undefined || value === null) continue;
+    
+    if (input.type === 'time') {
+      // Time inputs expect HH:MM format
+      input.value = String(value).padStart(5, '0');
+    } else if (input.type === 'checkbox') {
+      input.checked = Boolean(value);
+    } else {
+      input.value = value;
+    }
+  }
+}
+
+function getKFactorConfigChanges() {
+  const changes = {};
+  
+  for (const [inputId, configKey] of Object.entries(KFACTOR_CONFIG_FIELDS)) {
+    const input = document.getElementById(inputId);
+    if (!input) continue;
+    
+    let value;
+    if (input.type === 'time') {
+      value = input.value;
+    } else if (input.type === 'checkbox') {
+      value = input.checked;
+    } else if (input.type === 'number') {
+      value = input.valueAsNumber;
+      if (isNaN(value)) continue;
+    } else {
+      value = input.value;
+    }
+    
+    changes[configKey] = value;
+  }
+  
+  return changes;
+}
+
+function showConfigSaveIndicator(show, text = 'Saving...') {
+  const indicator = document.getElementById('kfactorConfigSaveIndicator');
+  if (!indicator) return;
+  
+  const textEl = indicator.querySelector('.save-text');
+  if (textEl) textEl.textContent = text;
+  
+  indicator.style.display = show ? 'flex' : 'none';
+}
+
+function saveKFactorConfig() {
+  // Clear existing timeout
+  if (configSaveTimeout) {
+    clearTimeout(configSaveTimeout);
+  }
+  
+  // Show saving indicator
+  showConfigSaveIndicator(true, 'Saving...');
+  
+  // Debounce the save
+  configSaveTimeout = setTimeout(() => {
+    const config = getKFactorConfigChanges();
+    
+    if (window.socket) {
+      window.socket.emit('kfactor_control', {
+        action: 'update_config',
+        config: config,
+      });
+    }
+  }, CONFIG_SAVE_DEBOUNCE_MS);
+}
+
+function resetKFactorConfigToDefaults() {
+  if (!confirm('Reset all kFactor calibration settings to defaults?')) {
+    return;
+  }
+  
+  showConfigSaveIndicator(true, 'Resetting...');
+  
+  if (window.socket) {
+    window.socket.emit('kfactor_control', { action: 'reset_defaults' });
+  }
+}
+
+function setupKFactorConfigListeners() {
+  // Add change listeners to all config inputs
+  for (const inputId of Object.keys(KFACTOR_CONFIG_FIELDS)) {
+    const input = document.getElementById(inputId);
+    if (!input) continue;
+    
+    // Use 'input' event for immediate feedback, 'change' for final value
+    input.addEventListener('input', saveKFactorConfig);
+    input.addEventListener('change', saveKFactorConfig);
+  }
+  
+  // Reset button
+  const resetBtn = document.getElementById('kfCfgResetDefaults');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', resetKFactorConfigToDefaults);
+  }
+  
+  // Request config when accordion opens
+  const accordion = document.getElementById('kfactorAdvancedConfig');
+  if (accordion) {
+    accordion.addEventListener('toggle', () => {
+      if (accordion.open && window.socket) {
+        window.socket.emit('kfactor_control', { action: 'get_config' });
+      }
+    });
+  }
+}
+
+function emitReadyByConfigChange() {
+  const readyByEnabledToggle = document.getElementById('readyByEnabled');
+  const readyByCooldownInput = document.getElementById('readyByCooldown');
+  const readyByToleranceInput = document.getElementById('readyByTolerance');
+  
+  const enabled = readyByEnabledToggle ? readyByEnabledToggle.checked : true;
+  const commandCooldownS = readyByCooldownInput ? parseInt(readyByCooldownInput.value) : null;
+  const reachToleranceMinutes = readyByToleranceInput ? parseInt(readyByToleranceInput.value) : null;
+  
+  const config = {
+    enabled: enabled,
+    command_cooldown_s: commandCooldownS,
+    reach_tolerance_minutes: reachToleranceMinutes,
+  };
+  if (window.socket) {
+    window.socket.emit('ready_by_control', { action: 'update_config', config });
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   // Initialize from server-rendered data
   if (typeof window.CAR_HEATER_READY_BY !== 'undefined') {
@@ -557,7 +758,14 @@ document.addEventListener('DOMContentLoaded', () => {
   
   if (typeof window.CAR_HEATER_KFACTOR !== 'undefined') {
     updateKFactorUI(window.CAR_HEATER_KFACTOR);
+    // Also populate config if available
+    if (window.CAR_HEATER_KFACTOR.config) {
+      populateKFactorConfig(window.CAR_HEATER_KFACTOR.config);
+    }
   }
+  
+  // Setup kFactor config listeners
+  setupKFactorConfigListeners();
   
   // Settings modal buttons
   const openSettingsBtn = document.getElementById('btnOpenReadyBySettings');
@@ -587,10 +795,15 @@ document.addEventListener('DOMContentLoaded', () => {
       closeSettingsModal();
     }
   });
+
   
   // Ready-by action buttons
   const scheduleBtn = document.getElementById('btnReadyBySchedule');
   const cancelBtn = document.getElementById('btnReadyByCancel');
+  const readyByEnabledToggle = document.getElementById('readyByEnabled');
+  const readyByToleranceInput = document.getElementById('readyByTolerance');
+  const readyByCooldownInput = document.getElementById('readyByCooldown');
+  
   
   if (scheduleBtn) {
     scheduleBtn.addEventListener('click', scheduleReadyBy);
@@ -598,6 +811,28 @@ document.addEventListener('DOMContentLoaded', () => {
   
   if (cancelBtn) {
     cancelBtn.addEventListener('click', cancelReadyBy);
+  }
+
+  if (readyByEnabledToggle) {
+    readyByEnabledToggle.addEventListener('change', () => {
+      if (window.socket) {
+        emitReadyByConfigChange();
+      }
+    });
+  }
+  if (readyByToleranceInput) {
+    readyByToleranceInput.addEventListener('change', () => {
+      if (window.socket) {
+        emitReadyByConfigChange();
+      }
+    });
+  }
+  if (readyByCooldownInput) {
+    readyByCooldownInput.addEventListener('change', () => {
+      if (window.socket) {
+        emitReadyByConfigChange();
+      }
+    });
   }
   
   // kFactor enabled toggle
@@ -615,11 +850,10 @@ document.addEventListener('DOMContentLoaded', () => {
   if (window.socket) {
     window.socket.on('ready_by_status', (data) => {
       console.log('📡 ready_by_status:', data);
+      updateReadyByUI(data);
       if (data && data.schedule !== undefined) {
         const prevStatus = readyBySchedule ? readyBySchedule.status : null;
         const newStatus = data.schedule ? data.schedule.status : null;
-        
-        updateReadyByUI(data.schedule);
         
         // Show toast on status changes
         if (newStatus && newStatus !== prevStatus) {
@@ -643,6 +877,22 @@ document.addEventListener('DOMContentLoaded', () => {
       console.log('📡 kfactor_status:', data);
       if (data) {
         updateKFactorUI(data);
+        // Also update config if included
+        if (data.config) {
+          populateKFactorConfig(data.config);
+        }
+      }
+    });
+    
+    window.socket.on('kfactor_config', (data) => {
+      console.log('📡 kfactor_config:', data);
+      if (data && data.config) {
+        populateKFactorConfig(data.config);
+        
+        if (data.saved) {
+          showConfigSaveIndicator(true, data.reset ? 'Reset!' : 'Saved!');
+          setTimeout(() => showConfigSaveIndicator(false), 1500);
+        }
       }
     });
   }

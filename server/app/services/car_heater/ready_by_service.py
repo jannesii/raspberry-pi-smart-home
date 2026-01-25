@@ -116,9 +116,10 @@ class ReadyByService:
         return self._cfg.enabled
 
     @is_enabled.setter
-    def is_enabled(self, enabled: bool) -> None:
+    def set_enabled(self, enabled: bool) -> None:
         with self._lock:
             self._cfg.enabled = enabled
+            self._save_config_in_db(self._cfg)
             logger.info("ReadyByService enabled set to: %r", enabled)
 
     @property
@@ -133,6 +134,27 @@ class ReadyByService:
             now = datetime.now(self._tz)
             delta = (ready_by_dt - now).total_seconds() / 3600.0
             return float(delta)
+
+    @property
+    def config(self) -> ReadyByConfig:
+        """Get the current Ready-by configuration."""
+        with self._lock:
+            return ReadyByConfig(**asdict(self._cfg))
+
+    @config.setter
+    def config(self, cfg: ReadyByConfig) -> None:
+        with self._lock:
+            self._cfg = cfg
+            self._save_config_in_db(cfg)
+
+    @property
+    def ready_by_payload(self) -> dict[str, Any] | None:
+        """Get the current Ready-by schedule and config as a dict payload."""
+        with self._lock:
+            return {
+                "schedule": asdict(self._schedule) if self._schedule else None,
+                "config": asdict(self._cfg),
+            }
 
     def schedule(
         self,
@@ -223,7 +245,8 @@ class ReadyByService:
                 if self._schedule is not None:
                     if self._missing_outside_since is None:
                         self._missing_outside_since = now
-                    missing_s = (now - self._missing_outside_since).total_seconds()
+                    missing_s = (
+                        now - self._missing_outside_since).total_seconds()
                     if missing_s >= 15 * 60 and not is_test:
                         from ..alert_webhook import record_alert
                         record_alert(
@@ -239,7 +262,8 @@ class ReadyByService:
             s.outside_temp_c = out
 
             # Predict ETA; if unreachable, start ASAP to best-effort warm.
-            used_k, used_eta = self._kfactor.get_active_params(outside_temp_c=out)
+            used_k, used_eta = self._kfactor.get_active_params(
+                outside_temp_c=out)
             s.used_k_loss_W_per_K = float(used_k)
             s.used_eta = float(used_eta)
             eta_min = self._kfactor.predict_time_to_target_minutes(
@@ -289,7 +313,7 @@ class ReadyByService:
     def _after_completed(self) -> None:
         """Actions to perform after a schedule is completed."""
         self._keep_at_temp_service.target_temperature_c = self._schedule.target_temp_c
-        self._keep_at_temp_service.is_enabled = True
+        self._keep_at_temp_service.enabled = True
 
     def _queue_command(self, action: str) -> None:
         now = datetime.now(self._tz).replace(microsecond=0)
@@ -316,7 +340,7 @@ class ReadyByService:
             return defaults
 
         if row is None or not row.config_json:
-            self._seed_config_in_db(defaults)
+            self._save_config_in_db(defaults)
             return defaults
 
         try:
@@ -329,12 +353,15 @@ class ReadyByService:
                 "ready_by: failed to parse config JSON, using defaults: %s", e)
             return defaults
 
-    def _seed_config_in_db(self, cfg: ReadyByConfig) -> None:
+    def _save_config_in_db(self, cfg: ReadyByConfig) -> None:
         if self._ctrl is None:
             return
         try:
-            payload = json.dumps(asdict(cfg), separators=(",", ":"), sort_keys=True)
-            now = datetime.now(self._tz).replace(microsecond=0).isoformat(sep=" ")
+            logger.info("ready_by: saving config to DB: %r", cfg)
+            payload = json.dumps(
+                asdict(cfg), separators=(",", ":"), sort_keys=True)
+            now = datetime.now(self._tz).replace(
+                microsecond=0).isoformat(sep=" ")
             self._ctrl.save_ready_by_config(
                 CarHeaterReadyByConfig(
                     id=1,
