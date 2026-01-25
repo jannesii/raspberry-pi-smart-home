@@ -259,4 +259,152 @@ document.addEventListener('DOMContentLoaded', () => {
   if (!csrf) {
     setStatus('Warning: CSRF token missing', 'error');
   }
+
+  // ============================================
+  // Live Log Console
+  // ============================================
+  const logConsole = document.getElementById('logConsole');
+  const logToggleBtn = document.getElementById('logToggleBtn');
+  const logClearBtn = document.getElementById('logClearBtn');
+  const logAutoScroll = document.getElementById('logAutoScroll');
+
+  let socket = null;
+  let isStreaming = false;
+  const MAX_LINES = 1000;
+
+  function detectLogLevel(line) {
+    const upper = line.toUpperCase();
+    if (upper.includes(' CRITICAL ') || upper.includes(' CRITICAL:')) return 'critical';
+    if (upper.includes(' ERROR ') || upper.includes(' ERROR:')) return 'error';
+    if (upper.includes(' WARNING ') || upper.includes(' WARNING:') || upper.includes(' WARN ')) return 'warning';
+    if (upper.includes(' DEBUG ') || upper.includes(' DEBUG:')) return 'debug';
+    if (upper.includes(' INFO ') || upper.includes(' INFO:')) return 'info';
+    return 'info';
+  }
+
+  function formatLogLine(raw) {
+    const level = detectLogLevel(raw);
+    const div = document.createElement('div');
+    div.className = `log-line level-${level}`;
+    div.textContent = raw;
+    return div;
+  }
+
+  function appendLogLine(line) {
+    if (!logConsole) return;
+    
+    // Remove placeholder if present
+    const placeholder = logConsole.querySelector('.console-placeholder');
+    if (placeholder) placeholder.remove();
+
+    const lineEl = formatLogLine(line);
+    logConsole.appendChild(lineEl);
+
+    // Trim old lines
+    while (logConsole.children.length > MAX_LINES) {
+      logConsole.removeChild(logConsole.firstChild);
+    }
+
+    // Auto-scroll
+    if (logAutoScroll?.checked) {
+      logConsole.scrollTop = logConsole.scrollHeight;
+    }
+  }
+
+  function clearConsole() {
+    if (!logConsole) return;
+    logConsole.innerHTML = '<div class="console-placeholder">Console cleared</div>';
+  }
+
+  function startLogStream() {
+    if (socket) return;
+
+    try {
+      socket = io({
+        transports: ['websocket', 'polling'],
+      });
+
+      socket.on('connect', () => {
+        console.log('Log stream socket connected');
+        socket.emit('log_stream', { action: 'subscribe', lines: 100 });
+      });
+
+      socket.on('log_line', (data) => {
+        if (data?.line) {
+          appendLogLine(data.line);
+        }
+      });
+
+      socket.on('error', (data) => {
+        console.error('Log stream error:', data);
+        appendLogLine(`[ERROR] ${data?.message || 'Connection error'}`);
+      });
+
+      socket.on('disconnect', () => {
+        console.log('Log stream socket disconnected');
+        if (isStreaming) {
+          appendLogLine('[DISCONNECTED] Reconnecting...');
+        }
+      });
+
+      isStreaming = true;
+      updateToggleButton();
+      
+      // Remove placeholder
+      const placeholder = logConsole?.querySelector('.console-placeholder');
+      if (placeholder) {
+        placeholder.textContent = 'Connecting...';
+      }
+    } catch (e) {
+      console.error('Failed to start log stream:', e);
+      setStatus('Failed to connect to log stream', 'error');
+    }
+  }
+
+  function stopLogStream() {
+    if (!socket) return;
+
+    try {
+      socket.emit('log_stream', { action: 'unsubscribe' });
+      socket.disconnect();
+    } catch (e) {
+      console.error('Error stopping log stream:', e);
+    }
+    
+    socket = null;
+    isStreaming = false;
+    updateToggleButton();
+    appendLogLine('[STOPPED] Log stream stopped');
+  }
+
+  function updateToggleButton() {
+    if (!logToggleBtn) return;
+    logToggleBtn.dataset.streaming = isStreaming ? 'true' : 'false';
+    logToggleBtn.textContent = isStreaming ? 'Stop' : 'Start';
+  }
+
+  // Log console event listeners
+  if (logToggleBtn) {
+    logToggleBtn.addEventListener('click', () => {
+      if (isStreaming) {
+        stopLogStream();
+      } else {
+        startLogStream();
+      }
+    });
+  }
+
+  if (logClearBtn) {
+    logClearBtn.addEventListener('click', clearConsole);
+  }
+
+  // Clean up on page unload
+  window.addEventListener('beforeunload', () => {
+    if (socket) {
+      try {
+        socket.emit('log_stream', { action: 'unsubscribe' });
+        socket.disconnect();
+      } catch (e) {}
+    }
+  });
 });

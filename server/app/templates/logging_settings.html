@@ -105,6 +105,26 @@
     </div>
   </div>
 
+  <!-- Live Log Console -->
+  <div class="settings-panel">
+    <div class="panel-header">
+      <span class="panel-title">🖥️ Live Logs</span>
+      <div class="console-controls">
+        <label class="console-toggle">
+          <input type="checkbox" id="logAutoScroll" checked>
+          <span>Auto-scroll</span>
+        </label>
+        <button type="button" id="logClearBtn" class="btn-small">Clear</button>
+        <button type="button" id="logToggleBtn" class="btn-small btn-primary" data-streaming="false">Start</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div id="logConsole" class="log-console">
+        <div class="console-placeholder">Click "Start" to stream logs from jannenkoti.service</div>
+      </div>
+    </div>
+  </div>
+
   <!-- Handlers Panel (Advanced) -->
   <details class="settings-panel accordion">
     <summary class="panel-header accordion-trigger">
@@ -140,5 +160,6 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
 <script src="{{ url_for('static', filename='js/logging_settings.js') }}"></script>
 {% endblock %}

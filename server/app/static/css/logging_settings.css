@@ -390,3 +390,148 @@
     width: 100%;
   }
 }
+
+/* Live Log Console */
+.console-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.console-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #8e8e93;
+  font-size: 0.8em;
+  cursor: pointer;
+}
+
+.console-toggle input {
+  accent-color: #007aff;
+}
+
+.btn-small {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid #3a3a3c;
+  background: #2c2c2e;
+  color: #fff;
+  font-size: 0.8em;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-small:hover {
+  background: #3a3a3c;
+}
+
+.btn-small.btn-primary {
+  border-color: #007aff;
+  background: rgba(0, 122, 255, 0.2);
+  color: #007aff;
+}
+
+.btn-small.btn-primary:hover {
+  background: rgba(0, 122, 255, 0.3);
+}
+
+.btn-small.btn-primary[data-streaming="true"] {
+  border-color: #ff3b30;
+  background: rgba(255, 59, 48, 0.2);
+  color: #ff3b30;
+}
+
+.btn-small.btn-primary[data-streaming="true"]:hover {
+  background: rgba(255, 59, 48, 0.3);
+}
+
+.log-console {
+  background: #0d0d0d;
+  border-radius: 0 0 8px 8px;
+  height: 300px;
+  overflow-y: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.8em;
+  line-height: 1.5;
+  padding: 12px;
+}
+
+.console-placeholder {
+  color: #636366;
+  text-align: center;
+  padding: 40px 20px;
+}
+
+.log-line {
+  white-space: pre-wrap;
+  word-break: break-all;
+  padding: 1px 0;
+  border-bottom: 1px solid #1a1a1a;
+}
+
+/* Log level coloring */
+.log-line.level-debug {
+  color: #8e8e93;
+}
+
+.log-line.level-info {
+  color: #ebebf5;
+}
+
+.log-line.level-warning {
+  color: #ff9f0a;
+}
+
+.log-line.level-error {
+  color: #ff453a;
+}
+
+.log-line.level-critical {
+  color: #ff375f;
+  font-weight: 600;
+}
+
+/* Timestamp highlighting */
+.log-timestamp {
+  color: #636366;
+}
+
+.log-logger {
+  color: #64d2ff;
+}
+
+/* Console scrollbar */
+.log-console::-webkit-scrollbar {
+  width: 8px;
+}
+
+.log-console::-webkit-scrollbar-track {
+  background: #0d0d0d;
+}
+
+.log-console::-webkit-scrollbar-thumb {
+  background: #3a3a3c;
+  border-radius: 4px;
+}
+
+.log-console::-webkit-scrollbar-thumb:hover {
+  background: #48484a;
+}
+
+/* Mobile: shorter console */
+@media (max-width: 480px) {
+  .log-console {
+    height: 200px;
+    font-size: 0.7em;
+  }
+
+  .console-controls {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .console-toggle span {
+    display: none;
+  }
+}
