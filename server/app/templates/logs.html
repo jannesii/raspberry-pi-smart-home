@@ -1,44 +1,84 @@
 {% extends 'base.html' %}
 
-{% block title %}Lokitiedot{% endblock %}
+{% block title %}Logs{% endblock %}
 
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/logs.css') }}">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 {% endblock %}
 
 {% block content %}
-{% include 'settings_flash.html' %}
-<div class="container">
-    <h2>Lokitiedot</h2>
-    <div class="logs-toolbar">
-        <button class="filter-btn active" data-filter="all">Kaikki</button>
-        <button class="filter-btn" data-filter="info">Info</button>
-        <button class="filter-btn" data-filter="ac">AC</button>
-        <button class="filter-btn" data-filter="warning">Varoitus</button>
-        <button class="filter-btn" data-filter="auth">Auth</button>
-        <button class="filter-btn" data-filter="error">Virhe</button>
+<div class="logs-page">
+  <!-- Sticky Header -->
+  <header class="page-header">
+    <div class="page-header-content">
+      <h2>📋 Logs</h2>
+      <div class="header-stats">
+        <button id="liveIndicator" class="live-indicator" title="Toggle live updates">
+          <span class="live-dot"></span>
+          <span id="liveText">Live</span>
+        </button>
+        <span id="totalCount" class="total-count">{{ total_count }} total</span>
+      </div>
     </div>
-    <div class="logs-grid">
-        <div class="logs-header">
-            <span class="header-time">Aika</span>
-            <span class="header-type">Tyyppi</span>
-            <span class="header-message">Viesti</span>
-        </div>
-        {% if logs|length == 0 %}
-          <div class="log-empty">Ei lokitietoja.</div>
-        {% else %}
-          {% for log in logs %}
-          <div class="log-row {{ log.type }}">
-              <span class="log-timestamp" data-raw="{{ log.timestamp }}">{{ log.timestamp }}</span>
-              <span class="log-type"><span class="badge {{ log.type }}">{{ log.type }}</span></span>
-              <span class="log-message">{{ log.message }}</span>
-          </div>
-          {% endfor %}
-        {% endif %}
+  </header>
+
+  <!-- New Logs Banner (shown when paused) -->
+  <div id="newLogsBanner" class="new-logs-banner"></div>
+
+  <!-- Search Bar -->
+  <div class="search-container">
+    <div class="search-wrapper">
+      <span class="search-icon">🔍</span>
+      <input type="text" 
+             id="searchInput" 
+             class="search-input" 
+             placeholder="Search logs..." 
+             autocomplete="off"
+             autocapitalize="off"
+             spellcheck="false">
+      <button id="clearSearch" class="clear-search">×</button>
     </div>
+  </div>
+
+  <!-- Filter Buttons -->
+  <div class="filter-container">
+    <button class="filter-btn active" data-filter="all">All</button>
+    <button class="filter-btn" data-filter="info">Info</button>
+    <button class="filter-btn" data-filter="ac">AC</button>
+    <button class="filter-btn" data-filter="car_heater">Heater</button>
+    <button class="filter-btn" data-filter="warning">Warning</button>
+    <button class="filter-btn" data-filter="auth">Auth</button>
+    <button class="filter-btn" data-filter="error">Error</button>
+  </div>
+
+  <!-- Logs Container -->
+  <div class="logs-container">
+    <div id="logsList" class="logs-list">
+      <!-- Logs will be rendered here by JavaScript -->
+    </div>
+    
+    <!-- Load More -->
+    <div id="loadMoreContainer" class="load-more-container" {% if not has_more %}style="display:none"{% endif %}>
+      <button id="loadMoreBtn" class="load-more-btn">Load more</button>
+    </div>
+  </div>
+
+  <!-- Scroll to Top Button -->
+  <button id="scrollTopBtn" class="scroll-top-btn" title="Scroll to top">↑</button>
 </div>
+
+<!-- Initial Data (passed to JavaScript) -->
+<script type="application/json" id="initialLogsData">
+{
+  "logs": {{ logs | tojson | safe }},
+  "hasMore": {{ has_more | tojson }}
+}
+</script>
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
 <script src="{{ url_for('static', filename='js/logs.js') }}"></script>
 {% endblock %}

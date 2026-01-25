@@ -15,6 +15,7 @@ from . import (
     pages_web,
     settings_core_web,
     settings_novpn_web,
+    settings_logging_web,
     settings_ops_web,
     settings_timelapse_web,
     settings_users_web,

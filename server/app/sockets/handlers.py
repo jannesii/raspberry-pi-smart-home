@@ -11,6 +11,7 @@ from ..services.car_heater import CarHeaterService
 if TYPE_CHECKING:
     from ..services.car_heater import KFactorCalibrator
 
+
 class SocketEventHandler:
     _instance: "SocketEventHandler | None" = None
 
@@ -50,7 +51,13 @@ class SocketEventHandler:
                           self.handle_ready_by_control)
         socketio.on_event('kfactor_control',
                           self.handle_kfactor_control)
-        
+        socketio.on_event('log_stream',
+                          self.handle_log_stream)
+
+        # Track active log stream subscriptions
+        self._log_stream_sids: Set[str] = set()
+        self._log_stream_process = None
+
     def emit(self, event: str, payload: Any = None) -> None:
         """Emit event to all connected clients."""
         self.socketio.emit(event, payload)
@@ -111,6 +118,11 @@ class SocketEventHandler:
             self.esp32_sids.discard(sid)
             removed = True
             self.logger.info("ESP32 server disconnected: %s (untracked)", sid)
+        # Clean up log stream subscription
+        if sid in self._log_stream_sids:
+            self._log_stream_sids.discard(sid)
+            self.logger.info("Log stream subscriber disconnected: %s", sid)
+            self._maybe_stop_log_stream()
         if not removed:
             self.logger.info("Client disconnected: %s", sid)
 
@@ -520,8 +532,22 @@ class SocketEventHandler:
                 'error', {'message': 'Car heater service not initialized'})
             return
         try:
-            cmd = {'action': action}
-            svc.queue_command(cmd)
+            # Get username for logging
+            username = "unknown"
+            if current_user and current_user.is_authenticated:
+                username = current_user.get_id() or "unknown"
+
+            # Use centralized turn_on/turn_off methods
+            if action == "turn_on":
+                svc.turn_on(source="web_ui",
+                            reason=f"Manual control by {username}")
+            elif action == "turn_off":
+                svc.turn_off(source="web_ui",
+                             reason=f"Manual control by {username}")
+            else:
+                # Other commands (get_logs, esp_restart, etc.)
+                svc.queue_command({'action': action})
+
             self.emit_to_views('car_heater_action_result', {
                 'ok': True,
                 'action': action,
@@ -897,3 +923,115 @@ class SocketEventHandler:
             'session_sample_count': snapshot.get('session_sample_count', 0),
             'config': snapshot.get('config', {}),
         })
+
+    def handle_log_stream(self, data: Dict[str, Any]) -> None:
+        """Handle log stream subscription/unsubscription."""
+        if not current_user.is_authenticated:
+            return
+        if not getattr(current_user, 'is_admin', False):
+            self.socketio.emit(
+                'error', {'message': 'Admin required for log stream'})
+            return
+
+        sid = request.sid
+        action = str(data.get('action', '')).lower()
+
+        try:
+            if action == 'subscribe':
+                lines = int(data.get('lines', 50))
+                lines = min(max(lines, 10), 500)  # Clamp 10-500
+
+                self._log_stream_sids.add(sid)
+                self.logger.info(
+                    "Log stream subscriber added: %s (lines=%d)", sid, lines)
+
+                # Start the stream if not running
+                self._start_log_stream(lines)
+
+            elif action == 'unsubscribe':
+                self._log_stream_sids.discard(sid)
+                self.logger.info("Log stream subscriber removed: %s", sid)
+                self._maybe_stop_log_stream()
+
+            else:
+                self.socketio.emit(
+                    'error', {'message': f'Invalid log_stream action: {action}'})
+
+        except Exception as e:
+            self.logger.exception("log_stream error: %s", e)
+            self.socketio.emit('error', {'message': 'Log stream error'})
+
+    def _start_log_stream(self, initial_lines: int = 50) -> None:
+        """Start the journalctl subprocess if not running."""
+        import subprocess
+        import threading
+
+        if self._log_stream_process is not None:
+            # Already running
+            return
+
+        def stream_reader():
+            try:
+                # Start journalctl with follow mode
+                # -o short-iso: cleaner timestamp format
+                # Then we strip the hostname/process prefix in post-processing
+                self._log_stream_process = subprocess.Popen(
+                    ['/usr/bin/journalctl', '-u', 'jannenkoti.service',
+                        '-f', '-n', str(initial_lines), '--no-pager', '-o', 'short-iso'],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                )
+
+                for line in iter(self._log_stream_process.stdout.readline, ''):
+                    if self._log_stream_process is None:
+                        break
+                    if not self._log_stream_sids:
+                        break
+
+                    line = line.rstrip('\n')
+                    if line:
+                        # Strip "hostname process[pid]: " prefix
+                        # Format: "2026-01-25T17:16:48+0200 raspberrypi gunicorn[123]: actual message"
+                        # We want: "17:16:48 actual message"
+                        import re
+                        match = re.match(
+                            r'^\d{4}-\d{2}-\d{2}T(\d{2}:\d{2}:\d{2})\+\d{4}\s+\S+\s+\S+\[\d+\]:\s*(.*)$', line)
+                        if match:
+                            line = f"{match.group(1)} {match.group(2)}"
+
+                        # Emit to all subscribers
+                        for sub_sid in list(self._log_stream_sids):
+                            try:
+                                self.socketio.emit(
+                                    'log_line', {'line': line}, to=sub_sid)
+                            except Exception:
+                                self._log_stream_sids.discard(sub_sid)
+
+            except Exception as e:
+                self.logger.error("Log stream reader error: %s", e)
+            finally:
+                self._cleanup_log_stream()
+
+        thread = threading.Thread(target=stream_reader, daemon=True)
+        thread.start()
+
+    def _maybe_stop_log_stream(self) -> None:
+        """Stop the log stream if no subscribers remain."""
+        if not self._log_stream_sids:
+            self._cleanup_log_stream()
+
+    def _cleanup_log_stream(self) -> None:
+        """Clean up the journalctl subprocess."""
+        if self._log_stream_process is not None:
+            try:
+                self._log_stream_process.terminate()
+                self._log_stream_process.wait(timeout=2)
+            except Exception:
+                try:
+                    self._log_stream_process.kill()
+                except Exception:
+                    pass
+            self._log_stream_process = None
+            self.logger.info("Log stream process terminated")

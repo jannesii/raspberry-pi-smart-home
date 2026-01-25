@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from ...core import Controller
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 
 # Fixed physical constants (defaults from TODO.md / plan)
@@ -293,7 +293,6 @@ class KFactorCalibrator:
                 from .car_heater_service import CarHeaterService, ChargeModeState
                 car_heater_svc: CarHeaterService | None = getattr(
                     current_app, "car_heater_service", None)
-                
 
                 from .ready_by_service import ReadyByService, ReadyBySchedule
 
@@ -331,8 +330,7 @@ class KFactorCalibrator:
                         return
                 if not heater_on:
                     self._heater_on_streak = 0
-                    car_heater_svc.queue_command({'action': 'turn_on'})
-                    logger.debug("kfactor: tick skipped (heater off) %s", heater_on)
+                    logger.debug("kfactor: tick skipped (heater off)")
                     return
 
                 self._heater_on_streak += 1
@@ -342,7 +340,8 @@ class KFactorCalibrator:
                     return
 
                 if not is_test and not self.should_calibrate(now, outside_temp_c, wind_m_s):
-                    logger.debug("kfactor: tick skipped (should_calibrate returned False)")
+                    logger.debug(
+                        "kfactor: tick skipped (should_calibrate returned False)")
                     return
 
                 self._start_session(

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 
-from flask import render_template, request
+from flask import render_template, request, jsonify
 from flask_login import login_required, current_user
 
 from ...utils import (
@@ -27,8 +27,45 @@ def logs():
     if guard:
         return guard
     ctrl = get_ctrl()
-    logs = ctrl.get_logs(limit=200)
-    return render_template('logs.html', logs=logs)
+    # Get initial logs and available types
+    initial_logs, has_more = ctrl.get_logs_filtered(limit=50)
+    log_types = ctrl.get_log_types()
+    total_count = ctrl.get_logs_count()
+    return render_template(
+        'logs.html',
+        logs=initial_logs,
+        has_more=has_more,
+        log_types=log_types,
+        total_count=total_count,
+    )
+
+
+@web_bp.route('/api/logs')
+@login_required
+def api_logs():
+    """JSON API for filtered log retrieval with pagination."""
+    if not getattr(current_user, 'is_admin', False):
+        return jsonify({'error': 'Admin required'}), 403
+
+    ctrl = get_ctrl()
+
+    # Parse query parameters
+    log_type = request.args.get('type', '').strip() or None
+    search = request.args.get('search', '').strip() or None
+    before_id = request.args.get('before_id', type=int)
+    limit = min(request.args.get('limit', 50, type=int), 100)
+
+    logs_list, has_more = ctrl.get_logs_filtered(
+        log_type=log_type,
+        search=search,
+        before_id=before_id,
+        limit=limit,
+    )
+
+    return jsonify({
+        'logs': logs_list,
+        'has_more': has_more,
+    })
 
 
 @web_bp.route('/settings/api_keys', methods=['GET', 'POST'])

@@ -210,6 +210,11 @@ class DatabaseManager:
                 'id INTEGER PRIMARY KEY CHECK (id = 1), '
                 'config_json TEXT, '
                 'updated_ts TEXT'
+            ),
+            'logging_control': (
+                'id INTEGER PRIMARY KEY CHECK (id = 1), '
+                'config_json TEXT, '
+                'updated_ts TEXT'
             )
         }
         for name, schema in tables.items():

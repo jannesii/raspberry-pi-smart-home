@@ -83,6 +83,16 @@ def create_app():
     except Exception as e:
         logger.warning("Failed to install DBLogHandler: %s", e)
 
+    # ─── Apply persisted logging overrides (if any) ───
+    try:
+        from .logging_control import apply_logging_control_config
+        cfg = app.ctrl.get_logging_control_config()  # type: ignore[attr-defined]
+        if cfg:
+            apply_logging_control_config(cfg)
+            logger.info("Applied persisted logging control config")
+    except Exception as e:
+        logger.warning("Failed to apply logging control config: %s", e)
+
     # ─── Seed admin user (Root-Admin) ───
     try:
         app.ctrl.register_user(  # type: ignore

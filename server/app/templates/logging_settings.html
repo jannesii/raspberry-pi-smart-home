@@ -1,0 +1,165 @@
+{% extends 'base.html' %}
+
+{% block title %}Logging Control{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/logging_settings.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="logging-container">
+  <div class="page-header">
+    <h2>📋 Logging Control</h2>
+    <p class="hint">Changes apply automatically</p>
+  </div>
+
+  <div id="autoSaveStatus" class="autosave-status" aria-live="polite"></div>
+  <input type="hidden" id="csrfToken" value="{{ csrf_token() }}">
+
+  <!-- Root Level Panel -->
+  <div class="settings-panel">
+    <div class="panel-header">
+      <span class="panel-title">Root Level</span>
+    </div>
+    <div class="panel-body">
+      <div class="setting-row">
+        <label for="rootLevelSelect">Default level for all loggers</label>
+        {% set root_override = saved_cfg.get('root_level', '') %}
+        {% set root_effective = root_override if root_override else state.root_level %}
+        <select id="rootLevelSelect" data-kind="root" data-original="{{ root_effective }}">
+          {% for lvl in state.levels %}
+            {% if lvl %}
+              <option value="{{ lvl }}" {% if lvl == root_effective %}selected{% endif %}>{{ lvl }}</option>
+            {% endif %}
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Active Overrides Panel -->
+  {% set logger_overrides = saved_cfg.get('logger_levels', {}) or {} %}
+  {% set handler_overrides = saved_cfg.get('handler_levels', {}) or {} %}
+  {% set total_overrides = (logger_overrides|length) + (handler_overrides|length) + (1 if saved_cfg.get('root_level') else 0) %}
+  
+  <div class="settings-panel" id="overridesPanel" {% if total_overrides == 0 %}style="display: none;"{% endif %}>
+    <div class="panel-header">
+      <span class="panel-title">Active Overrides</span>
+      <span class="override-count" id="overrideCount">{{ total_overrides }}</span>
+      <button type="button" id="resetAllBtn" class="btn-reset">
+        Reset All
+      </button>
+    </div>
+    <div class="panel-body">
+      <div id="overridesList" class="overrides-list">
+        {% if saved_cfg.get('root_level') %}
+          <div class="override-item" data-type="root">
+            <span class="override-name">root</span>
+            <span class="override-arrow">→</span>
+            <span class="override-level">{{ saved_cfg.get('root_level') }}</span>
+          </div>
+        {% endif %}
+        {% for name, level in logger_overrides.items() %}
+          <div class="override-item" data-type="logger" data-name="{{ name }}">
+            <span class="override-name">{{ name }}</span>
+            <span class="override-arrow">→</span>
+            <span class="override-level">{{ level }}</span>
+          </div>
+        {% endfor %}
+        {% for key, level in handler_overrides.items() %}
+          <div class="override-item" data-type="handler" data-name="{{ key }}">
+            <span class="override-name">{{ key }}</span>
+            <span class="override-arrow">→</span>
+            <span class="override-level">{{ level }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Loggers Panel -->
+  <div class="settings-panel">
+    <div class="panel-header">
+      <span class="panel-title">Loggers</span>
+      <input type="text" id="filterInput" class="filter-input" placeholder="🔍 Filter..." autocomplete="off">
+    </div>
+    <div class="panel-body logger-list" id="loggerList">
+      {% for lg in state.loggers %}
+        {% set saved_level = logger_overrides.get(lg.name, '') %}
+        {% set display_level = saved_level if saved_level else lg.effective_level %}
+        {% set is_overridden = saved_level != '' %}
+        <div class="logger-row {% if is_overridden %}has-override{% endif %}" data-filter="{{ lg.name|lower }}">
+          <span class="logger-name">{{ lg.name }}</span>
+          <div class="logger-control">
+            {% if is_overridden %}<span class="override-dot" title="Has override">●</span>{% endif %}
+            <select data-kind="logger" data-name="{{ lg.name }}" data-effective="{{ lg.effective_level }}" data-override="{{ saved_level }}">
+              {% for lvl in state.levels %}
+                {% if lvl %}
+                  <option value="{{ lvl }}" {% if lvl == display_level %}selected{% endif %}>{{ lvl }}</option>
+                {% endif %}
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Live Log Console -->
+  <div class="settings-panel">
+    <div class="panel-header">
+      <span class="panel-title">🖥️ Live Logs</span>
+      <div class="console-controls">
+        <label class="console-toggle">
+          <input type="checkbox" id="logAutoScroll" checked>
+          <span>Auto-scroll</span>
+        </label>
+        <button type="button" id="logClearBtn" class="btn-small">Clear</button>
+        <button type="button" id="logToggleBtn" class="btn-small btn-primary" data-streaming="false">Start</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div id="logConsole" class="log-console">
+        <div class="console-placeholder">Click "Start" to stream logs from jannenkoti.service</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Handlers Panel (Advanced) -->
+  <details class="settings-panel accordion">
+    <summary class="panel-header accordion-trigger">
+      <span class="panel-title">Handlers</span>
+      <span class="accordion-hint">Advanced</span>
+      <span class="accordion-arrow">▶</span>
+    </summary>
+    <div class="panel-body handler-list">
+      {% for h in state.handlers %}
+        {% set saved_level = handler_overrides.get(h.key, '') %}
+        {% set display_level = saved_level if saved_level else h.level %}
+        {% set is_overridden = saved_level != '' %}
+        <div class="handler-row {% if is_overridden %}has-override{% endif %}">
+          <div class="handler-info">
+            <span class="handler-name">{{ h.key }}</span>
+            <span class="handler-class">{{ h.class_name }}</span>
+          </div>
+          <div class="handler-control">
+            {% if is_overridden %}<span class="override-dot" title="Has override">●</span>{% endif %}
+            <select data-kind="handler" data-name="{{ h.key }}" data-effective="{{ h.level }}" data-override="{{ saved_level }}">
+              {% for lvl in state.levels %}
+                {% if lvl %}
+                  <option value="{{ lvl }}" {% if lvl == display_level %}selected{% endif %}>{{ lvl }}</option>
+                {% endif %}
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </details>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+<script src="{{ url_for('static', filename='js/logging_settings.js') }}"></script>
+{% endblock %}
