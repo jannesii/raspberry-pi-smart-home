@@ -57,7 +57,7 @@ def get_car_heater_page():
         ready_by_svc: ReadyByService | None = getattr(
             current_app, "ready_by_service", None)
         ready_by_data = ready_by_svc.ready_by_payload
-        logger.info("Ready-by schedule data: %s", ready_by_data)
+        logger.debug("Ready-by schedule data: %s", ready_by_data)
     except Exception as e:
         logger.exception("Failed to get ready-by schedule: %s", e)
 
