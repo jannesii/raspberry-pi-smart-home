@@ -245,11 +245,14 @@
   background: #636366;
 }
 
-.state-dot.state-armed {
+.state-dot.state-armed,
+.state-dot.state-autonomous_armed {
   background: #ffd60a;
 }
 
-.state-dot.state-recording {
+.state-dot.state-recording,
+.state-dot.state-passive_recording,
+.state-dot.state-autonomous_recording {
   background: #30d158;
   animation: pulse 1.5s infinite;
 }
@@ -267,6 +270,18 @@
   font-size: 14px;
   font-weight: 500;
   color: #fff;
+}
+
+/* Session mode badge */
+.session-mode-auto {
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 5px;
+  background: #5e5ce6;
+  color: #fff;
+  border-radius: 4px;
+  margin-left: 4px;
+  font-weight: 500;
   text-transform: uppercase;
 }
 

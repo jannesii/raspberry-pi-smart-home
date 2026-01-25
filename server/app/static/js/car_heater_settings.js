@@ -284,16 +284,25 @@ function updateKFactorUI(status) {
   // Update state indicator
   const state = (status.state || 'IDLE').toUpperCase();
   if (stateIndicator) {
-    stateIndicator.classList.remove('state-idle', 'state-armed', 'state-recording', 'state-cooldown');
+    stateIndicator.classList.remove('state-idle', 'state-armed', 'state-recording', 'state-cooldown', 
+                                   'state-passive_recording', 'state-autonomous_armed', 'state-autonomous_recording');
     stateIndicator.classList.add(`state-${state.toLowerCase()}`);
   }
   if (stateText) {
-    stateText.textContent = state;
+    // Make state text more readable
+    const stateLabels = {
+      'IDLE': 'Idle',
+      'PASSIVE_RECORDING': 'Recording (passive)',
+      'AUTONOMOUS_ARMED': 'Armed (autonomous)',
+      'AUTONOMOUS_RECORDING': 'Recording (autonomous)',
+      'COOLDOWN': 'Cooldown'
+    };
+    stateText.textContent = stateLabels[state] || state;
   }
   
-  // Update enabled toggle
+  // Update enabled toggle (now controls autonomous mode)
   if (enabledToggle) {
-    enabledToggle.checked = status.enabled !== false;
+    enabledToggle.checked = status.autonomous_enabled !== false;
   }
   
   // Update active params
@@ -312,9 +321,18 @@ function updateKFactorUI(status) {
     windowEl.textContent = `${start} – ${stop}`;
   }
   
-  // Update cooldown
+  // Update cooldown - show whichever is later
   if (cooldownEl) {
-    cooldownEl.textContent = status.cooldown_until ? fmtTs(status.cooldown_until) : '—';
+    const autoCd = status.autonomous_cooldown_until;
+    const passiveCd = status.passive_cooldown_until;
+    if (autoCd || passiveCd) {
+      const parts = [];
+      if (autoCd) parts.push(`Auto: ${fmtTs(autoCd)}`);
+      if (passiveCd) parts.push(`Passive: ${fmtTs(passiveCd)}`);
+      cooldownEl.textContent = parts.join(' | ');
+    } else {
+      cooldownEl.textContent = '—';
+    }
   }
   
   // Update last session
@@ -328,10 +346,15 @@ function updateKFactorUI(status) {
       const reason = session.reason || '';
       const startTs = session.started_ts;
       const endTs = session.ended_ts;
+      const isAuto = session.is_autonomous;
       
       let html = `<span class="${accepted ? 'session-accepted' : 'session-rejected'}">`;
       html += accepted ? '✓ Accepted' : '✗ Rejected';
       html += `</span> (quality: ${quality})`;
+      
+      if (isAuto) {
+        html += ' <span class="session-mode-auto">auto</span>';
+      }
       
       if (reason && !accepted) {
         html += ` — ${reason}`;

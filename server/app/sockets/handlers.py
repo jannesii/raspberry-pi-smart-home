@@ -916,8 +916,10 @@ class SocketEventHandler:
         snapshot = svc.get_debug_snapshot()
         self.emit_to_views('kfactor_status', {
             'state': snapshot.get('state'),
-            'enabled': snapshot.get('config', {}).get('enabled', True),
-            'cooldown_until': snapshot.get('cooldown_until'),
+            'autonomous_enabled': snapshot.get('autonomous_enabled', False),
+            'is_autonomous_session': snapshot.get('is_autonomous_session', False),
+            'autonomous_cooldown_until': snapshot.get('autonomous_cooldown_until'),
+            'passive_cooldown_until': snapshot.get('passive_cooldown_until'),
             'active_params': snapshot.get('active_params'),
             'last_session': snapshot.get('last_session'),
             'session_sample_count': snapshot.get('session_sample_count', 0),
