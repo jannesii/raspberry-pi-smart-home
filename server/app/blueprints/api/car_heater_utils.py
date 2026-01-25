@@ -316,10 +316,9 @@ def handle_status_update_request(
             )
             if ksvc is not None:
                 ksvc.tick(
-                    car,
-                    outside_temp_c=data.get("outside_temp"),
-                    wind_m_s=data.get("wind_m_s"),
-                    is_test=is_test,
+                    is_heater_on=bool(car.is_heater_on),
+                    power_w=float(car.instant_power_w or 0),
+                    cabin_temp_c=float(ambient_temp or 0),
                 )
         except Exception as e:
             logger.exception("Failed to run kfactor tick: %s", e)
