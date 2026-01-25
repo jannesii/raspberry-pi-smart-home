@@ -192,7 +192,6 @@ def init_services(app) -> Dict[str, Any]:
 
         kfactor_calibrator = KFactorCalibrator(
             ctrl=getattr(app, "ctrl", None),
-            weather_service=weather_service,
         )
         app.kfactor_calibrator = kfactor_calibrator
         services["kfactor_calibrator"] = kfactor_calibrator
