@@ -11,7 +11,7 @@ from .hvac_api import hvac_bp
 from .novpn_api import novpn_bp
 from .esp32_api import esp32_bp
 from .bmp_sensor import bmp_bp
-from .car_heater_api import car_bp
+from .car_heater import car_bp
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 

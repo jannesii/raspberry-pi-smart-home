@@ -11,7 +11,7 @@ from ...utils import get_ctrl
 from ...core import Controller, CarHeaterStatus
 from ...services.car_heater import CarHeaterService
 from ...services.car_heater import KeepAtTempSettings
-from ..api.car_heater_api import fallback_status
+from ..api.car_heater.status import fallback_status
 
 from . import web_bp
 
