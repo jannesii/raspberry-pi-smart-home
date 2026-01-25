@@ -15,7 +15,7 @@ from flask import request, jsonify, current_app
 from flask_login import login_required, current_user
 
 from ....extensions import csrf
-from . import car_bp
+from ._blueprint import car_bp
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

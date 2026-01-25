@@ -14,7 +14,7 @@ from ....core import Controller
 from ....extensions import csrf
 from ....security import require_api_key
 from .status import fallback_status
-from . import car_bp
+from ._blueprint import car_bp
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

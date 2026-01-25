@@ -7,15 +7,13 @@ Organizes car heater functionality by feature:
 - ready_by.py: Ready-by scheduling endpoints
 """
 
-from . import ready_by
-from . import kfactor
-from . import control
-from . import status
-from flask import Blueprint
+# Import blueprint first (no dependencies)
+from ._blueprint import car_bp
 
-# Create main car heater blueprint
-car_bp = Blueprint('car_bp', __name__, url_prefix='/car_heater')
-
-# Import and register route modules (they attach routes to car_bp)
+# Import route modules to register routes on car_bp
+from . import status  # noqa: E402, F401
+from . import control  # noqa: E402, F401
+from . import kfactor  # noqa: E402, F401
+from . import ready_by  # noqa: E402, F401
 
 __all__ = ['car_bp']

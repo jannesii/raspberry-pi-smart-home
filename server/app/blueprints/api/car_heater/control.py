@@ -21,7 +21,7 @@ from ....core import Controller
 from ....core.models import CarHeaterStatus
 from ....extensions import csrf
 from ....security import require_api_key
-from . import car_bp
+from ._blueprint import car_bp
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
