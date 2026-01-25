@@ -32,8 +32,11 @@
   const AGGREGATION_ENABLED      = true;  // set to false to render raw 1-minute points
   const AGGREGATION_MINUTES      = 10;    // averaging window in minutes when aggregation is enabled
   const TEMP_RANGE_LIMIT_ENABLED = true;  // clamp temperature y-axis to a fixed range
-  const TEMP_RANGE_MIN          = 18;     // ºC lower bound when range limit is applied
-  const TEMP_RANGE_MAX          = 26;     // ºC upper bound when range limit is applied
+  const TEMP_RANGE_MIN          = 18;     // ºC lower bound when range limit is applied (indoor)
+  const TEMP_RANGE_MAX          = 26;     // ºC upper bound when range limit is applied (indoor)
+  const OUTSIDE_TEMP_RANGE_MIN  = -30;    // ºC lower bound for outside location
+  const OUTSIDE_TEMP_RANGE_MAX  = 35;     // ºC upper bound for outside location
+  const OUTSIDE_LOCATION_NAME   = 'Outside'; // location name that uses outdoor temp range
 
   const DEFAULT_AVG_MINUTES = AGGREGATION_ENABLED ? AGGREGATION_MINUTES : 0;
   let averagingMinutes = Number(window?.CHART_AVG_MINUTES ?? DEFAULT_AVG_MINUTES) || 0;
@@ -96,11 +99,17 @@
     return { labels, temps, hums };
   }
 
-  function getTempYAxisConfig() {
+  function getTempYAxisConfig(location) {
     const axis = { beginAtZero: false };
     if (TEMP_RANGE_LIMIT_ENABLED) {
-      axis.min = TEMP_RANGE_MIN;
-      axis.max = TEMP_RANGE_MAX;
+      const isOutside = (location || '').trim() === OUTSIDE_LOCATION_NAME;
+      if (isOutside) {
+        axis.min = OUTSIDE_TEMP_RANGE_MIN;
+        axis.max = OUTSIDE_TEMP_RANGE_MAX;
+      } else {
+        axis.min = TEMP_RANGE_MIN;
+        axis.max = TEMP_RANGE_MAX;
+      }
     }
     return axis;
   }
@@ -186,13 +195,15 @@
               },
               scales: {
                 x: { display: true, title: { display: true, text: 'Aika' } },
-                y: getTempYAxisConfig()
+                y: getTempYAxisConfig(location)
               }
             }
           });
         } else {
           chartTemp.data.labels = labels;
           chartTemp.data.datasets[0].data = temps;
+          // Update y-axis config based on location (indoor vs outdoor range)
+          chartTemp.options.scales.y = getTempYAxisConfig(location);
           chartTemp.update();
         }
 

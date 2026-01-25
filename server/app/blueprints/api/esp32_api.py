@@ -90,7 +90,7 @@ def post_esp32_temphum():
         }), 400
 
     valid_locations = ["Keittiö", "Makuuhuone",
-                       "Tietokonepöytä", "WC", "Parveke", "test"]
+                       "Tietokonepöytä", "WC", "Parveke", "Outside", "test"]
     if location not in valid_locations:
         logger.warning(f"Invalid esp32 location: {location}")
         return jsonify({
@@ -122,13 +122,56 @@ def post_esp32_temphum():
         'humidity':    saved.humidity,
         'ac_on':       saved.ac_on
     })
-    
+
     logger.debug("Recorded ESP32 temphum: loc=%s temp=%.2f hum=%.2f",
                  saved.location, saved.temperature, saved.humidity)
 
     def reset_flag():
         global ac_check_flag
         ac_check_flag = True
+
+    def fetch_and_log_outside_weather():
+        """Fetch FMI weather data and log as 'Outside' sensor reading."""
+        try:
+            from ...services.weather import WeatherService
+            weather_svc: WeatherService | None = getattr(
+                current_app, 'weather_service', None)
+            if weather_svc is None:
+                logger.debug(
+                    "No weather_service available for Outside reading")
+                return
+
+            weather_data = weather_svc.get_latest()
+            logger.debug("FMI weather data: t2m=%s, rh=%s",
+                         weather_data.t2m, weather_data.rh)
+
+            if weather_data.t2m is None or weather_data.t2m.value is None:
+                logger.debug("No t2m value from FMI, skipping Outside reading")
+                return
+
+            outside_temp = weather_data.t2m.value
+            outside_hum = weather_data.rh.value if weather_data.rh else None
+
+            # Use 0.0 humidity if not available (FMI sometimes doesn't report rh)
+            if outside_hum is None:
+                outside_hum = 0.0
+
+            # Record to DB as "Outside" location
+            outside_saved = ctrl.record_esp32_temphum(
+                "Outside", outside_temp, outside_hum, ac_on=None)
+
+            # Broadcast to views
+            current_app.sio_handler.emit_to_views('esp32_temphum', {
+                'location': outside_saved.location,
+                'temperature': outside_saved.temperature,
+                'humidity': outside_saved.humidity,
+                'ac_on': None
+            })
+
+            logger.debug("Recorded Outside weather: temp=%.1f°C hum=%.0f%%",
+                        outside_saved.temperature, outside_saved.humidity)
+        except Exception as e:
+            logger.exception("Failed to fetch/log Outside weather: %s", e)
 
     # Trigger immediate thermostat check once per minute at most
     global ac_check_flag
@@ -137,6 +180,8 @@ def post_esp32_temphum():
         # Wait a second to make sure all sensors have reported
         threading.Timer(1, ac_thermo.step_on_off_check).start(
         ) if ac_thermo._enabled else None
+        # Also fetch and log outside weather from FMI
+        fetch_and_log_outside_weather()
         # Reset flag after 10 seconds
         threading.Timer(10, reset_flag).start()
 

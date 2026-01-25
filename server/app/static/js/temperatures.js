@@ -2,7 +2,7 @@ console.log('🧊 temperatures.js loaded');
 
 const STALE_MINUTES = 10; // mark readings stale when older than this
 const STALE_MS = STALE_MINUTES * 60 * 1000;
-const OUTSIDE_LOCATION_NAME = 'Parveke'; // treated as outside sensor
+const OUTSIDE_LOCATION_NAME = 'Outside'; // treated as outside sensor (FMI weather data)
 
 const state = {
   items: [],  // { name, temp, hum, ts }
