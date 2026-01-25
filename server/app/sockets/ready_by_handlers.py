@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Dict
 from flask import current_app
 
 if TYPE_CHECKING:
-    from .handlers import SocketEventHandler
+    from ._handlers import SocketEventHandler
     from ..services.car_heater import ReadyByService
 
 logger = logging.getLogger(__name__)

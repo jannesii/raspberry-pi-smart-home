@@ -15,7 +15,7 @@ from flask import request
 from flask_login import current_user
 
 if TYPE_CHECKING:
-    from .handlers import SocketEventHandler
+    from ._handlers import SocketEventHandler
 
 logger = logging.getLogger(__name__)
 

@@ -13,7 +13,7 @@ from flask import current_app
 from flask_login import current_user
 
 if TYPE_CHECKING:
-    from .handlers import SocketEventHandler
+    from ._handlers import SocketEventHandler
     from ..services.car_heater import CarHeaterService
 
 logger = logging.getLogger(__name__)
