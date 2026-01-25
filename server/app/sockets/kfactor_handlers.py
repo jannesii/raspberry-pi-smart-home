@@ -125,7 +125,7 @@ def _handle_update_config(
                 continue
 
     # Create new config and save
-    from ..services.car_heater.kfactor_calibrator import KFactorConfig
+    from ..services.car_heater import KFactorConfig
     new_config = KFactorConfig(**current_config)
     svc._cfg = new_config
     svc._save_config_in_db(new_config)
@@ -144,7 +144,7 @@ def _handle_reset_defaults(
     svc: "KFactorCalibrator"
 ) -> None:
     """Reset to default config."""
-    from ..services.car_heater.kfactor_calibrator import KFactorConfig
+    from ..services.car_heater import KFactorConfig
     default_config = KFactorConfig()
     svc._cfg = default_config
     svc._save_config_in_db(default_config)

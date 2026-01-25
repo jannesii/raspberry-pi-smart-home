@@ -15,7 +15,7 @@ from app.services.car_heater.keep_at_temp_service import KeepAtTempService
 from ...core import CarHeaterReadyByConfig, CarHeaterReadyByState, CarHeaterStatus
 from ..weather.weather_service import WeatherService
 from .car_heater_service import CarHeaterService
-from .kfactor_calibrator import KFactorCalibrator
+from .kfactor import KFactorCalibrator
 
 if TYPE_CHECKING:
     from ...core import Controller
