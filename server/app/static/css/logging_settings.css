@@ -1,0 +1,126 @@
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.hint {
+  color: #bbb;
+  margin: 8px 0 14px 0;
+  font-size: 0.95em;
+}
+
+.autosave-status {
+  min-height: 18px;
+  margin: 0 0 10px 0;
+  color: #bbb;
+  font-size: 0.92em;
+}
+.autosave-status[data-kind="ok"] { color: #7ddc7d; }
+.autosave-status[data-kind="pending"] { color: #bcd3ff; }
+.autosave-status[data-kind="error"] { color: #ff9da5; }
+
+.logging-form .toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  background: #222;
+  border: 1px solid #333;
+  border-radius: 10px;
+  padding: 14px;
+  margin: 12px 0 18px 0;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 220px;
+}
+
+.field.grow {
+  flex: 1 1 320px;
+}
+
+.field span {
+  color: #ddd;
+  font-size: 0.9em;
+}
+
+select,
+input[type="text"] {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #444;
+  background: #1e1e1e;
+  color: #fff;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.btn {
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid #444;
+  background: #2a2a2a;
+  color: #fff;
+  cursor: pointer;
+}
+
+.btn.primary {
+  border-color: #2f6fed;
+  background: #1f3d78;
+}
+
+.btn.danger {
+  border-color: #a3343d;
+  background: #5a1f24;
+}
+
+.table-wrap {
+  overflow: auto;
+  border: 1px solid #333;
+  border-radius: 10px;
+  background: #1b1b1b;
+  margin: 10px 0 24px 0;
+}
+
+.logging-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 900px;
+}
+
+.logging-table th,
+.logging-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #2a2a2a;
+  vertical-align: top;
+}
+
+.logging-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #2a2a2a;
+  color: #fff;
+  text-align: left;
+}
+
+.logging-table tbody tr:hover {
+  background: #212121;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.small {
+  font-size: 0.9em;
+  color: #ccc;
+}
