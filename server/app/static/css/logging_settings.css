@@ -1,126 +1,392 @@
-.container {
-  max-width: 1100px;
+/* Logging Settings - iOS/Car Heater Style */
+
+.logging-container {
+  max-width: 600px;
   margin: 0 auto;
-  padding: 20px;
+  padding: 16px;
 }
 
-.hint {
-  color: #bbb;
-  margin: 8px 0 14px 0;
-  font-size: 0.95em;
+.page-header {
+  margin-bottom: 16px;
 }
 
+.page-header h2 {
+  margin: 0 0 4px 0;
+  font-size: 1.4em;
+  color: #fff;
+}
+
+.page-header .hint {
+  margin: 0;
+  color: #8e8e93;
+  font-size: 0.9em;
+}
+
+/* Auto-save status */
 .autosave-status {
-  min-height: 18px;
-  margin: 0 0 10px 0;
-  color: #bbb;
-  font-size: 0.92em;
+  min-height: 20px;
+  margin-bottom: 12px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 0.85em;
+  text-align: center;
+  transition: all 0.2s ease;
 }
-.autosave-status[data-kind="ok"] { color: #7ddc7d; }
-.autosave-status[data-kind="pending"] { color: #bcd3ff; }
-.autosave-status[data-kind="error"] { color: #ff9da5; }
 
-.logging-form .toolbar {
+.autosave-status:empty {
+  display: none;
+}
+
+.autosave-status[data-kind="ok"] {
+  background: rgba(52, 199, 89, 0.15);
+  color: #34c759;
+}
+
+.autosave-status[data-kind="pending"] {
+  background: rgba(0, 122, 255, 0.15);
+  color: #007aff;
+}
+
+.autosave-status[data-kind="error"] {
+  background: rgba(255, 59, 48, 0.15);
+  color: #ff3b30;
+}
+
+/* Settings Panel */
+.settings-panel {
+  background: #1c1c1e;
+  border-radius: 12px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.panel-header {
   display: flex;
-  gap: 12px;
-  align-items: flex-end;
-  flex-wrap: wrap;
-  background: #222;
-  border: 1px solid #333;
-  border-radius: 10px;
-  padding: 14px;
-  margin: 12px 0 18px 0;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: #2c2c2e;
+  border-bottom: 1px solid #3a3a3c;
 }
 
-.field {
+.panel-title {
+  font-weight: 600;
+  color: #fff;
+  flex: 1;
+}
+
+.panel-body {
+  padding: 0;
+}
+
+/* Filter input in header */
+.filter-input {
+  width: 140px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid #3a3a3c;
+  background: #1c1c1e;
+  color: #fff;
+  font-size: 0.85em;
+}
+
+.filter-input:focus {
+  outline: none;
+  border-color: #007aff;
+}
+
+.filter-input::placeholder {
+  color: #636366;
+}
+
+/* Setting row (for root level) */
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+}
+
+.setting-row label {
+  color: #8e8e93;
+  font-size: 0.9em;
+}
+
+.setting-row select {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid #3a3a3c;
+  background: #2c2c2e;
+  color: #fff;
+  font-size: 0.9em;
+  min-width: 100px;
+}
+
+/* Override count badge */
+.override-count {
+  background: #007aff;
+  color: #fff;
+  font-size: 0.75em;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  min-width: 20px;
+  text-align: center;
+}
+
+/* Reset button */
+.btn-reset {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid #ff3b30;
+  background: rgba(255, 59, 48, 0.15);
+  color: #ff3b30;
+  font-size: 0.8em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-reset:hover {
+  background: rgba(255, 59, 48, 0.25);
+}
+
+/* Overrides list */
+.overrides-list {
+  padding: 8px 0;
+}
+
+.override-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 0.9em;
+}
+
+.override-item:not(:last-child) {
+  border-bottom: 1px solid #2c2c2e;
+}
+
+.override-name {
+  flex: 1;
+  color: #fff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.85em;
+}
+
+.override-arrow {
+  color: #636366;
+}
+
+.override-level {
+  color: #34c759;
+  font-weight: 600;
+  min-width: 70px;
+  text-align: right;
+}
+
+/* Logger list */
+.logger-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.logger-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid #2c2c2e;
+}
+
+.logger-row:last-child {
+  border-bottom: none;
+}
+
+.logger-row.hidden {
+  display: none;
+}
+
+.logger-name {
+  flex: 1;
+  color: #fff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.85em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-right: 10px;
+}
+
+.logger-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.logger-control select,
+.handler-control select {
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid #3a3a3c;
+  background: #2c2c2e;
+  color: #fff;
+  font-size: 0.85em;
+  min-width: 90px;
+}
+
+/* Override indicator dot */
+.override-dot {
+  color: #ff9f0a;
+  font-size: 0.9em;
+}
+
+.has-override .logger-name,
+.has-override .handler-name {
+  color: #ff9f0a;
+}
+
+/* Handler list */
+.handler-list {
+  padding: 0;
+}
+
+.handler-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid #2c2c2e;
+}
+
+.handler-row:last-child {
+  border-bottom: none;
+}
+
+.handler-info {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  min-width: 220px;
+  gap: 2px;
+  overflow: hidden;
+  margin-right: 10px;
 }
 
-.field.grow {
-  flex: 1 1 320px;
-}
-
-.field span {
-  color: #ddd;
-  font-size: 0.9em;
-}
-
-select,
-input[type="text"] {
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid #444;
-  background: #1e1e1e;
+.handler-name {
   color: #fff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.85em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.actions {
+.handler-class {
+  color: #636366;
+  font-size: 0.75em;
+}
+
+.handler-control {
   display: flex;
-  gap: 10px;
   align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
-.btn {
-  padding: 8px 12px;
-  border-radius: 10px;
-  border: 1px solid #444;
-  background: #2a2a2a;
-  color: #fff;
+/* Accordion (Handlers panel) */
+.accordion {
+  cursor: default;
+}
+
+.accordion > .panel-header {
   cursor: pointer;
+  user-select: none;
 }
 
-.btn.primary {
-  border-color: #2f6fed;
-  background: #1f3d78;
+.accordion > .panel-header:hover {
+  background: #3a3a3c;
 }
 
-.btn.danger {
-  border-color: #a3343d;
-  background: #5a1f24;
+.accordion-trigger {
+  list-style: none;
 }
 
-.table-wrap {
-  overflow: auto;
-  border: 1px solid #333;
-  border-radius: 10px;
-  background: #1b1b1b;
-  margin: 10px 0 24px 0;
+.accordion-trigger::-webkit-details-marker {
+  display: none;
 }
 
-.logging-table {
-  width: 100%;
-  border-collapse: collapse;
-  min-width: 900px;
+.accordion-hint {
+  color: #636366;
+  font-size: 0.8em;
+  font-weight: 400;
 }
 
-.logging-table th,
-.logging-table td {
-  padding: 10px 12px;
-  border-bottom: 1px solid #2a2a2a;
-  vertical-align: top;
+.accordion-arrow {
+  color: #636366;
+  font-size: 0.75em;
+  transition: transform 0.2s ease;
 }
 
-.logging-table thead th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: #2a2a2a;
-  color: #fff;
-  text-align: left;
+.accordion[open] .accordion-arrow {
+  transform: rotate(90deg);
 }
 
-.logging-table tbody tr:hover {
-  background: #212121;
+.accordion[open] > .panel-header {
+  border-bottom: 1px solid #3a3a3c;
 }
 
-.mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+/* Scrollbar styling */
+.logger-list::-webkit-scrollbar {
+  width: 6px;
 }
 
-.small {
-  font-size: 0.9em;
-  color: #ccc;
+.logger-list::-webkit-scrollbar-track {
+  background: #1c1c1e;
+}
+
+.logger-list::-webkit-scrollbar-thumb {
+  background: #3a3a3c;
+  border-radius: 3px;
+}
+
+.logger-list::-webkit-scrollbar-thumb:hover {
+  background: #48484a;
+}
+
+/* Mobile responsive */
+@media (max-width: 480px) {
+  .logging-container {
+    padding: 12px;
+  }
+
+  .filter-input {
+    width: 100px;
+  }
+
+  .logger-name,
+  .handler-name {
+    font-size: 0.8em;
+  }
+
+  .logger-control select,
+  .handler-control select {
+    min-width: 80px;
+    font-size: 0.8em;
+  }
+
+  .btn-reset {
+    padding: 5px 8px;
+    font-size: 0.75em;
+  }
+
+  .setting-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .setting-row select {
+    width: 100%;
+  }
 }
