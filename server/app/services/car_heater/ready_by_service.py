@@ -185,7 +185,7 @@ class ReadyByService:
             self._schedule.status = "canceled"
             self._schedule.cancel_reason = reason
             if turn_off:
-                self._queue_command("turn_off")
+                self._queue_command("turn_off", f"Schedule canceled: {reason}")
             logger.info("ready_by: canceled (%s)", reason)
             self._persist_if_changed(is_test=False)
             return ReadyBySchedule(**asdict(self._schedule))
@@ -307,7 +307,10 @@ class ReadyByService:
             heater_on = bool(getattr(car_status, "is_heater_on", False))
             if now >= planned_start and not heater_on:
                 s.status = "running"
-                self._queue_command("turn_on")
+                self._queue_command(
+                    "turn_on",
+                    f"Ready-by {s.ready_by_ts}, target={s.target_temp_c}°C, cabin={cabin_temp_c:.1f}°C"
+                )
             self._persist_if_changed(is_test=is_test)
 
     def _after_completed(self) -> None:
@@ -315,7 +318,7 @@ class ReadyByService:
         self._keep_at_temp_service.target_temperature_c = self._schedule.target_temp_c
         self._keep_at_temp_service.enabled = True
 
-    def _queue_command(self, action: str) -> None:
+    def _queue_command(self, action: str, reason: str) -> None:
         now = datetime.now(self._tz).replace(microsecond=0)
         if self._schedule is None:
             return
@@ -324,7 +327,15 @@ class ReadyByService:
             if last_dt is not None:
                 if (now - last_dt).total_seconds() < float(self._cfg.command_cooldown_s):
                     return
-        self._car_heater_service.queue_command({"action": action})
+        
+        if action == "turn_on":
+            self._car_heater_service.turn_on(source="ready_by", reason=reason)
+        elif action == "turn_off":
+            self._car_heater_service.turn_off(source="ready_by", reason=reason)
+        else:
+            # Fallback for other commands
+            self._car_heater_service.queue_command({"action": action})
+        
         self._schedule.last_command = action
         self._schedule.last_command_ts = now.isoformat(sep=" ")
 

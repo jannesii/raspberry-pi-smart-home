@@ -111,9 +111,9 @@ class KeepAtTempService:
             band: float = hysteresis / 2.0
 
             if not heater_on and current_temp < target_temp - band:
-                self._turn_heater_on()
+                self._turn_heater_on(current_temp, target_temp)
             elif heater_on and current_temp > target_temp + band:
-                self._turn_heater_off()
+                self._turn_heater_off(current_temp, target_temp)
 
     def tick(self, current_temp: float, heater_on: bool) -> None:
         """
@@ -122,18 +122,22 @@ class KeepAtTempService:
         if self._settings.enabled:
             self.thermostat_logic(current_temp, heater_on)
 
-    def _turn_heater_on(self) -> None:
+    def _turn_heater_on(self, current_temp: float, target_temp: float) -> None:
         """
         Send command to turn the car heater on.
         """
-        command = {"action": "turn_on"}
-        self._car_heater_service.queue_command(command)
-        logger.info("Queued command to turn car heater ON")
+        self._car_heater_service.turn_on(
+            source="keep_at_temp",
+            reason=f"Temp {current_temp:.1f}°C below target {target_temp:.1f}°C"
+        )
+        logger.info("Heater ON via keep-at-temp: %.1f°C < %.1f°C", current_temp, target_temp)
 
-    def _turn_heater_off(self) -> None:
+    def _turn_heater_off(self, current_temp: float, target_temp: float) -> None:
         """
         Send command to turn the car heater off.
         """
-        command = {"action": "turn_off"}
-        self._car_heater_service.queue_command(command)
-        logger.info("Queued command to turn car heater OFF")
+        self._car_heater_service.turn_off(
+            source="keep_at_temp",
+            reason=f"Temp {current_temp:.1f}°C above target {target_temp:.1f}°C"
+        )
+        logger.info("Heater OFF via keep-at-temp: %.1f°C > %.1f°C", current_temp, target_temp)

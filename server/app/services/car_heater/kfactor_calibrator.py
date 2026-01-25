@@ -331,8 +331,7 @@ class KFactorCalibrator:
                         return
                 if not heater_on:
                     self._heater_on_streak = 0
-                    car_heater_svc.queue_command({'action': 'turn_on'})
-                    logger.debug("kfactor: tick skipped (heater off) %s", heater_on)
+                    logger.debug("kfactor: tick skipped (heater off)")
                     return
 
                 self._heater_on_streak += 1

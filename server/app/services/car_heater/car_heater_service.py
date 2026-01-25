@@ -1,13 +1,18 @@
 import logging
 import threading
+from datetime import datetime
 from typing import Any, Dict, List, TYPE_CHECKING
 from dataclasses import dataclass
+from zoneinfo import ZoneInfo
 
 if TYPE_CHECKING:
     from ...core.controller import Controller
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+# Timezone for logging timestamps
+_TZ = ZoneInfo("Europe/Helsinki")
 
 status_levels = [None, "queued", "sent", "success", "failed"]
 
@@ -63,6 +68,52 @@ class CarHeaterService:
         )
         self._thread.start()
         logger.info("CarHeaterService thread started")
+
+    def turn_on(self, source: str, reason: str) -> None:
+        """
+        Turn the car heater ON.
+
+        This is the single entry point for all autonomous heater-on logic.
+
+        Args:
+            source: Identifier of the calling component (e.g., 'ready_by', 'keep_at_temp', 'web_ui')
+            reason: Human-readable explanation of why the heater is being turned on
+        """
+        self._queue_heater_command("turn_on", source, reason)
+
+    def turn_off(self, source: str, reason: str) -> None:
+        """
+        Turn the car heater OFF.
+
+        This is the single entry point for all autonomous heater-off logic.
+
+        Args:
+            source: Identifier of the calling component (e.g., 'ready_by', 'charge_mode', 'web_ui')
+            reason: Human-readable explanation of why the heater is being turned off
+        """
+        self._queue_heater_command("turn_off", source, reason)
+
+    def _queue_heater_command(self, action: str, source: str, reason: str) -> None:
+        """Internal method to queue a heater command and log it."""
+        command = {"action": action}
+        with self._lock:
+            self._commands.append(command)
+            if hasattr(self._command_status, action):
+                setattr(self._command_status, action, "queued")
+
+        # Log to persistent storage
+        self._log_heater_event(action, source, reason)
+        logger.info("Heater %s queued by %s: %s", action.upper(), source, reason)
+
+    def _log_heater_event(self, action: str, source: str, reason: str) -> None:
+        """Log heater on/off event to persistent storage via Controller."""
+        if self._controller is None:
+            return
+        try:
+            message = f"Heater {action.upper()} | source={source} | {reason}"
+            self._controller.log_message(message, log_type="car_heater")
+        except Exception as e:
+            logger.warning("Failed to log heater event to DB: %s", e)
 
     def queue_command(self, command: Dict[str, Any]) -> None:
         """
@@ -166,7 +217,7 @@ class CarHeaterService:
         `turn_off` command once the instant power drops below the
         threshold.
         """
-        command_to_queue: Dict[str, Any] | None = None
+        should_turn_off = False
         state_changed = False
         with self._lock:
             state = self._charge_mode_state
@@ -198,14 +249,17 @@ class CarHeaterService:
             state.power_cut = True
             state.power_cut_at = timestamp_iso
             state_changed = True
-            command_to_queue = {"action": "turn_off"}
+            should_turn_off = True
 
         # Persist state changes to DB outside of lock
         if state_changed:
             self._persist_charge_mode_state()
 
-        if command_to_queue is not None:
-            self.queue_command(command_to_queue)
+        if should_turn_off:
+            self.turn_off(
+                source="charge_mode",
+                reason=f"Power dropped below {state.threshold_w}W threshold (battery charge complete)"
+            )
 
     def get_queued_commands(self) -> List[Dict[str, Any]]:
         """

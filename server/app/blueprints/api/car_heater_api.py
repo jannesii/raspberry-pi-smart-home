@@ -136,10 +136,20 @@ def queue_car_heater_command():
         return jsonify({"error": "Car heater service not initialized"}), 503
 
     try:
-        cmd = {"action": action}
-        service.queue_command(cmd)
-        logger.debug("Queued car heater command via HTTP: %s", cmd)
-        return jsonify({"ok": True, "queued": cmd}), 200
+        # Get username for logging
+        username = current_user.get_id() if current_user.is_authenticated else "unknown"
+        
+        # Use centralized turn_on/turn_off methods
+        if action == "turn_on":
+            service.turn_on(source="http_api", reason=f"Manual control by {username}")
+        elif action == "turn_off":
+            service.turn_off(source="http_api", reason=f"Manual control by {username}")
+        else:
+            # Other commands (get_logs, esp_restart, etc.)
+            service.queue_command({"action": action})
+        
+        logger.debug("Queued car heater command via HTTP: %s", action)
+        return jsonify({"ok": True, "queued": {"action": action}}), 200
     except Exception as e:
         logger.exception("Failed to queue car heater command via HTTP: %s", e)
     return jsonify({"error": "Failed to queue command"}), 500

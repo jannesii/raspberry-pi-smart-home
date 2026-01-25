@@ -532,8 +532,20 @@ class SocketEventHandler:
                 'error', {'message': 'Car heater service not initialized'})
             return
         try:
-            cmd = {'action': action}
-            svc.queue_command(cmd)
+            # Get username for logging
+            username = "unknown"
+            if current_user and current_user.is_authenticated:
+                username = current_user.get_id() or "unknown"
+            
+            # Use centralized turn_on/turn_off methods
+            if action == "turn_on":
+                svc.turn_on(source="web_ui", reason=f"Manual control by {username}")
+            elif action == "turn_off":
+                svc.turn_off(source="web_ui", reason=f"Manual control by {username}")
+            else:
+                # Other commands (get_logs, esp_restart, etc.)
+                svc.queue_command({'action': action})
+            
             self.emit_to_views('car_heater_action_result', {
                 'ok': True,
                 'action': action,
@@ -982,10 +994,11 @@ class SocketEventHandler:
                         # Format: "2026-01-25T17:16:48+0200 raspberrypi gunicorn[123]: actual message"
                         # We want: "17:16:48 actual message"
                         import re
-                        match = re.match(r'^\d{4}-\d{2}-\d{2}T(\d{2}:\d{2}:\d{2})\+\d{4}\s+\S+\s+\S+\[\d+\]:\s*(.*)$', line)
+                        match = re.match(
+                            r'^\d{4}-\d{2}-\d{2}T(\d{2}:\d{2}:\d{2})\+\d{4}\s+\S+\s+\S+\[\d+\]:\s*(.*)$', line)
                         if match:
                             line = f"{match.group(1)} {match.group(2)}"
-                        
+
                         # Emit to all subscribers
                         for sub_sid in list(self._log_stream_sids):
                             try:
