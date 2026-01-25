@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from ...core import Controller
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 
 # Fixed physical constants (defaults from TODO.md / plan)
@@ -844,7 +844,7 @@ class KFactorCalibrator:
                 wind_matches = (sb_w == wind_bucket)
 
             if sb_t == t_bucket and wind_matches:
-                logger.info(
+                logger.debug(
                     "kfactor: skipped calibration (bucket covered: t=%s wind=%s)",
                     t_bucket,
                     wind_bucket,

@@ -45,12 +45,16 @@
       </div>
       <div class="hero-stats">
         <div class="hero-stat">
-          <div id="heroAmbient" class="hero-stat-value">—</div>
-          <div class="hero-stat-label">Ambient</div>
+          <div id="heroOutsideTemp" class="hero-stat-value">—</div>
+          <div class="hero-stat-label">Outside</div>
         </div>
         <div class="hero-stat">
-          <div id="heroDeviceTemp" class="hero-stat-value">—</div>
-          <div class="hero-stat-label">Device</div>
+          <div id="heroWind" class="hero-stat-value">—</div>
+          <div class="hero-stat-label">Wind</div>
+        </div>
+        <div class="hero-stat">
+          <div id="heroAmbient" class="hero-stat-value">—</div>
+          <div class="hero-stat-label">Cabin</div>
         </div>
         <div class="hero-stat">
           <div id="heroEnergy" class="hero-stat-value">—</div>
@@ -315,6 +319,7 @@
   window.CAR_HEATER_KEEP_AT_TEMP = {{ keep_at_temp_settings | tojson }};
   window.CAR_HEATER_READY_BY = {{ ready_by_schedule | tojson }};
   window.CAR_HEATER_KFACTOR = {{ kfactor_status | tojson }};
+  window.CAR_HEATER_WEATHER = {{ weather_data | tojson }};
 </script>
 {% include 'car_heater_chart_modal.html' %}
 {% include 'car_heater_settings_modal.html' %}

@@ -501,6 +501,21 @@ class SocketEventHandler:
                 payload["command_status"] = command_status
             if charge_mode_state is not None:
                 payload["charge_mode"] = charge_mode_state
+
+            # Include weather data
+            try:
+                from flask import current_app
+                weather_svc = getattr(current_app, "weather_service", None)
+                if weather_svc:
+                    wd = weather_svc.get_latest()
+                    if wd:
+                        payload["weather"] = {
+                            "outside_temp_c": wd.t2m.value if wd.t2m else None,
+                            "wind_speed_mps": wd.ws_10min.value if wd.ws_10min else None,
+                        }
+            except Exception:
+                pass  # Weather data is optional
+
             self.emit("car_heater_status", payload)
         except Exception as e:
             self.logger.exception(

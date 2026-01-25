@@ -49,7 +49,6 @@ function updateHeroStatus(status) {
   const stateTitle = document.getElementById('stateTitle');
   const heroPowerValue = document.getElementById('heroPowerValue');
   const heroAmbient = document.getElementById('heroAmbient');
-  const heroDeviceTemp = document.getElementById('heroDeviceTemp');
   const heroEnergy = document.getElementById('heroEnergy');
 
   if (!status) {
@@ -66,7 +65,6 @@ function updateHeroStatus(status) {
   const isOn = !!status.is_heater_on;
   const instantW = status.instant_power_w;
   const ambient = status.ambient_temp;
-  const devTemp = status.device_temp_c;
   const energyToday = status.energy_last_min_wh;
 
   // State indicator
@@ -85,8 +83,21 @@ function updateHeroStatus(status) {
 
   // Stats row
   if (heroAmbient) heroAmbient.textContent = fmtNum(ambient, '°', 1);
-  if (heroDeviceTemp) heroDeviceTemp.textContent = fmtNum(devTemp, '°', 1);
   if (heroEnergy) heroEnergy.textContent = fmtCompact(energyToday, 'Wh');
+}
+
+function updateWeatherDisplay(weather) {
+  const heroOutsideTemp = document.getElementById('heroOutsideTemp');
+  const heroWind = document.getElementById('heroWind');
+  
+  if (!weather) return;
+  
+  if (heroOutsideTemp && weather.outside_temp_c != null) {
+    heroOutsideTemp.textContent = fmtNum(weather.outside_temp_c, '°', 1);
+  }
+  if (heroWind && weather.wind_speed_mps != null) {
+    heroWind.textContent = fmtNum(weather.wind_speed_mps, ' m/s', 1);
+  }
 }
 
 // ============================================
@@ -379,6 +390,11 @@ document.addEventListener('DOMContentLoaded', () => {
     updateKeepAtTempUI(window.CAR_HEATER_KEEP_AT_TEMP);
   }
 
+  // Weather display
+  if (typeof window.CAR_HEATER_WEATHER !== 'undefined') {
+    updateWeatherDisplay(window.CAR_HEATER_WEATHER);
+  }
+
   // Quick action buttons
   const btnOn = document.getElementById('btnTurnOn');
   const btnOff = document.getElementById('btnTurnOff');
@@ -500,7 +516,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (data && (data.charge_mode || data.chargeMode)) {
         updateChargeModeUI(data.charge_mode || data.chargeMode);
       }
-      // setQueueStatus('sent', 'Status updated');
+      // Update weather display if present
+      if (data && data.weather) {
+        updateWeatherDisplay(data.weather);
+      }
     });
 
     window.socket.on('car_heater_action_result', data => {

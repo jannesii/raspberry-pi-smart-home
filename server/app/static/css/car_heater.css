@@ -150,20 +150,24 @@ body {
 
 .hero-stats {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
 }
 
 .hero-stat {
   text-align: center;
-  padding: 12px 8px;
+  padding: 10px 4px;
   background: rgba(0, 0, 0, 0.2);
   border-radius: 12px;
+  min-width: 0;
 }
 
 .hero-stat-value {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--ch-text);
   font-variant-numeric: tabular-nums;
 }
