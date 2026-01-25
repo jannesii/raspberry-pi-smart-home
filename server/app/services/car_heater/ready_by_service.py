@@ -41,6 +41,7 @@ def _dt_local(ts: Any, tz: ZoneInfo) -> datetime | None:
             dt = datetime.fromisoformat(ts.strip())
             return dt.astimezone(tz) if dt.tzinfo else dt.replace(tzinfo=tz)
         except Exception:
+            logger.debug("_dt_local: failed to parse timestamp '%s'", ts)
             return None
     return None
 
@@ -240,6 +241,8 @@ class ReadyByService:
                         if w.t2m is not None:
                             out = _finite(w.t2m.value)
                 except Exception:
+                    logger.debug(
+                        "ready_by: weather lookup failed", exc_info=True)
                     out = None
             if out is None:
                 if self._schedule is not None:

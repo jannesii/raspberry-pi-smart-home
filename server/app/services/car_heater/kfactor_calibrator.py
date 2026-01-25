@@ -67,6 +67,7 @@ def _dt_from_any(ts: Any, tz: ZoneInfo) -> datetime | None:
             dt = datetime.fromisoformat(ts.strip())
             return dt.astimezone(tz) if dt.tzinfo else dt.replace(tzinfo=tz)
         except Exception:
+            logger.debug("_dt_from_any: failed to parse timestamp '%s'", ts)
             return None
     return None
 
@@ -82,6 +83,7 @@ def _parse_hhmm(raw: str) -> tuple[int, int] | None:
             return None
         return hh, mm
     except Exception:
+        logger.debug("_parse_hhmm: failed to parse time '%s'", raw)
         return None
 
 
@@ -909,6 +911,8 @@ class KFactorCalibrator:
         try:
             t_s = -(C_eff / k_loss) * math.log(ratio)
         except Exception:
+            logger.debug(
+                "estimate_heating_time: math.log failed for ratio=%s", ratio)
             return None
         if not math.isfinite(t_s) or t_s < 0:
             return None
@@ -1004,7 +1008,8 @@ class KFactorCalibrator:
                             reason = flags.get(
                                 "rejection_reason") or flags.get("end_reason")
                         except Exception:
-                            pass
+                            logger.debug(
+                                "kfactor: failed to parse flags_json for session %s", s.get("id"))
 
                     recent_sessions.append({
                         "id": s["id"],
@@ -1044,7 +1049,8 @@ class KFactorCalibrator:
                             if updated:
                                 age_days = (now - updated).days
                         except Exception:
-                            pass
+                            logger.debug(
+                                "kfactor: failed to calculate age_days for bucket t=%s", b.t_bucket)
 
                     bucket_coverage.append({
                         "t_bucket": b.t_bucket,
