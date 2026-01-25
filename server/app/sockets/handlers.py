@@ -959,9 +959,11 @@ class SocketEventHandler:
         def stream_reader():
             try:
                 # Start journalctl with follow mode
+                # -o short-iso: cleaner timestamp format
+                # Then we strip the hostname/process prefix in post-processing
                 self._log_stream_process = subprocess.Popen(
                     ['/usr/bin/journalctl', '-u', 'jannenkoti.service',
-                        '-f', '-n', str(initial_lines), '--no-pager'],
+                        '-f', '-n', str(initial_lines), '--no-pager', '-o', 'short-iso'],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
@@ -976,6 +978,14 @@ class SocketEventHandler:
 
                     line = line.rstrip('\n')
                     if line:
+                        # Strip "hostname process[pid]: " prefix
+                        # Format: "2026-01-25T17:16:48+0200 raspberrypi gunicorn[123]: actual message"
+                        # We want: "17:16:48 actual message"
+                        import re
+                        match = re.match(r'^\d{4}-\d{2}-\d{2}T(\d{2}:\d{2}:\d{2})\+\d{4}\s+\S+\s+\S+\[\d+\]:\s*(.*)$', line)
+                        if match:
+                            line = f"{match.group(1)} {match.group(2)}"
+                        
                         # Emit to all subscribers
                         for sub_sid in list(self._log_stream_sids):
                             try:
