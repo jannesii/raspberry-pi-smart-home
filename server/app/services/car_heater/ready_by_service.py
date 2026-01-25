@@ -327,7 +327,7 @@ class ReadyByService:
             if last_dt is not None:
                 if (now - last_dt).total_seconds() < float(self._cfg.command_cooldown_s):
                     return
-        
+
         if action == "turn_on":
             self._car_heater_service.turn_on(source="ready_by", reason=reason)
         elif action == "turn_off":
@@ -335,7 +335,7 @@ class ReadyByService:
         else:
             # Fallback for other commands
             self._car_heater_service.queue_command({"action": action})
-        
+
         self._schedule.last_command = action
         self._schedule.last_command_ts = now.isoformat(sep=" ")
 

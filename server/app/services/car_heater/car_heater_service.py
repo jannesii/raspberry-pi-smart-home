@@ -16,6 +16,7 @@ _TZ = ZoneInfo("Europe/Helsinki")
 
 status_levels = [None, "queued", "sent", "success", "failed"]
 
+
 @dataclass
 class CommandStatus:
     turn_on: str | None = None
@@ -103,7 +104,8 @@ class CarHeaterService:
 
         # Log to persistent storage
         self._log_heater_event(action, source, reason)
-        logger.info("Heater %s queued by %s: %s", action.upper(), source, reason)
+        logger.info("Heater %s queued by %s: %s",
+                    action.upper(), source, reason)
 
     def _log_heater_event(self, action: str, source: str, reason: str) -> None:
         """Log heater on/off event to persistent storage via Controller."""

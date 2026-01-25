@@ -130,7 +130,8 @@ class KeepAtTempService:
             source="keep_at_temp",
             reason=f"Temp {current_temp:.1f}°C below target {target_temp:.1f}°C"
         )
-        logger.info("Heater ON via keep-at-temp: %.1f°C < %.1f°C", current_temp, target_temp)
+        logger.info("Heater ON via keep-at-temp: %.1f°C < %.1f°C",
+                    current_temp, target_temp)
 
     def _turn_heater_off(self, current_temp: float, target_temp: float) -> None:
         """
@@ -140,4 +141,5 @@ class KeepAtTempService:
             source="keep_at_temp",
             reason=f"Temp {current_temp:.1f}°C above target {target_temp:.1f}°C"
         )
-        logger.info("Heater OFF via keep-at-temp: %.1f°C > %.1f°C", current_temp, target_temp)
+        logger.info("Heater OFF via keep-at-temp: %.1f°C > %.1f°C",
+                    current_temp, target_temp)

@@ -536,16 +536,18 @@ class SocketEventHandler:
             username = "unknown"
             if current_user and current_user.is_authenticated:
                 username = current_user.get_id() or "unknown"
-            
+
             # Use centralized turn_on/turn_off methods
             if action == "turn_on":
-                svc.turn_on(source="web_ui", reason=f"Manual control by {username}")
+                svc.turn_on(source="web_ui",
+                            reason=f"Manual control by {username}")
             elif action == "turn_off":
-                svc.turn_off(source="web_ui", reason=f"Manual control by {username}")
+                svc.turn_off(source="web_ui",
+                             reason=f"Manual control by {username}")
             else:
                 # Other commands (get_logs, esp_restart, etc.)
                 svc.queue_command({'action': action})
-            
+
             self.emit_to_views('car_heater_action_result', {
                 'ok': True,
                 'action': action,
