@@ -217,6 +217,7 @@ class KFactorCalibrator:
     def is_enabled(self, enabled: bool) -> None:
         with self._lock:
             self._cfg.enabled = enabled
+            self._save_config_in_db(self._cfg)
             logger.info("KFactorCalibrator enabled set to: %r", enabled)
 
     def tick(
@@ -229,6 +230,7 @@ class KFactorCalibrator:
     ) -> None:
         """Process a new car heater status sample (called on every status POST)."""
         if not self._cfg.enabled:
+            self._reset("disabled")
             return
         now = _dt_from_any(getattr(car_status, "timestamp", None), self._tz)
         if now is None:
@@ -589,7 +591,7 @@ class KFactorCalibrator:
             return defaults
 
         if row is None or not row.config_json:
-            self._seed_config_in_db(defaults)
+            self._save_config_in_db(defaults)
             return defaults
 
         try:
@@ -602,7 +604,7 @@ class KFactorCalibrator:
                 "kfactor: failed to parse config JSON, using defaults: %s", e)
             return defaults
 
-    def _seed_config_in_db(self, cfg: KFactorConfig) -> None:
+    def _save_config_in_db(self, cfg: KFactorConfig) -> None:
         if self._ctrl is None:
             return
         try:
