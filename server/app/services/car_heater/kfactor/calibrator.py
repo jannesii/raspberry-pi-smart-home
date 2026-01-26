@@ -95,7 +95,7 @@ class KFactorCalibrator:
             tz=self._tz,
             get_active_params_fn=self.get_active_params,
         )
-        self._snapshot = SnapshotGenerator(cfg=self._cfg, tz=self._tz)
+        self._snapshot = SnapshotGenerator(cfg=self._cfg, tz=self._tz, ctrl=ctrl)
 
         # Service references (set externally)
         self._weather_service: WeatherService | None = None
@@ -308,7 +308,7 @@ class KFactorCalibrator:
         outside_temp_c: float | None = None,
         wind_m_s: float | None = None,
     ) -> tuple[float, float]:
-        """Return current best (k_loss, eta), optionally bucketed by outside temp/wind."""
+        """Return current best (k_loss, eta), bucketed by outside temp/wind."""
         if outside_temp_c is None or wind_m_s is None:
             outside_temp_c, wind_m_s = self._get_weather()
 
