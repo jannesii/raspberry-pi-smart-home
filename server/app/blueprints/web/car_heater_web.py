@@ -74,14 +74,17 @@ def get_car_heater_page():
             snapshot = kfactor_svc.get_debug_snapshot()
             # Include full config for advanced settings UI
             full_config = snapshot.get("config", {})
+            enabled_value = bool(full_config.get("enabled", False))
             kfactor_status = {
                 "state": snapshot.get("state"),
-                "enabled": full_config.get("enabled", True),
+                "autonomous_enabled": enabled_value,
+                "enabled": enabled_value,
                 "cooldown_until": snapshot.get("cooldown_until"),
                 "active_params": snapshot.get("active_params"),
                 "last_session": snapshot.get("last_session"),
                 "config": full_config,
             }
+            logger.debug("kfactor_status prepared: %s", kfactor_status)
     except Exception as e:
         logger.debug("Failed to get kfactor status: %s", e)
 

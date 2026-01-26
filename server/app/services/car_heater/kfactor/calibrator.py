@@ -76,6 +76,7 @@ class KFactorCalibrator:
         self._tz = tz or ZoneInfo("Europe/Helsinki")
         self._is_test = is_test
 
+        self._config_updated_ts: str | None = None
         # Load or create config
         self._cfg = self._load_config_from_db() or KFactorConfig()
 
@@ -134,9 +135,29 @@ class KFactorCalibrator:
     @enabled.setter
     def enabled(self, value: bool) -> None:
         """Set autonomous calibration enabled state."""
-        self._cfg = replace(self._cfg, enabled=bool(value))
+        logger.debug(
+            "kfactor: enabled setter called value=%s current_enabled=%s state=%s",
+            value,
+            self._cfg.enabled,
+            self._state,
+        )
+        enabled = bool(value)
+        if not enabled and self._state in (STATE_AUTONOMOUS_ARMED, STATE_AUTONOMOUS_RECORDING):
+            logger.info("kfactor: disabling autonomous while state=%s", self._state)
+            if self._state == STATE_AUTONOMOUS_RECORDING:
+                self.finalize_session("autonomous_disabled")
+            else:
+                self._state = STATE_IDLE
+                self._slow_rise_checks = 0
+                self._heater_on_streak = 0
+                logger.debug("kfactor: autonomous state reset to IDLE")
+        self._cfg = replace(self._cfg, enabled=enabled)
         self._save_config_in_db(self._cfg)
-        logger.info("kfactor: enabled=%s", value)
+        # Keep submodules in sync with latest config
+        self._physics = ThermalPhysics(self._cfg)
+        self._session._cfg = self._cfg
+        self._snapshot._cfg = self._cfg
+        logger.info("kfactor: enabled=%s", enabled)
 
     # ==========================================================================
     # SERVICE REFERENCES
@@ -160,6 +181,8 @@ class KFactorCalibrator:
 
     def update_config(self, updates: dict[str, Any]) -> None:
         """Merge user config updates into current config."""
+        logger.debug("kfactor: update_config called updates=%s", updates)
+        self._refresh_config_if_changed()
         self._cfg = self._merge_config(updates)
         self._save_config_in_db(self._cfg)
         # Update submodules with new config
@@ -179,6 +202,11 @@ class KFactorCalibrator:
             logger.debug("kfactor: raw kfactor config row=%s", row)
             if row is None:
                 return None
+            updated_ts = (
+                row.get("updated_ts") if isinstance(row, dict) else getattr(row, "updated_ts", None)
+            )
+            if updated_ts:
+                self._config_updated_ts = updated_ts
             config_json = None
             if isinstance(row, dict):
                 config_json = row.get("config_json")
@@ -213,6 +241,7 @@ class KFactorCalibrator:
 
             payload = json.dumps(asdict(cfg), separators=(",", ":"), sort_keys=True)
             now = iso_no_micros(datetime.now(tz=self._tz))
+            self._config_updated_ts = now
             self._ctrl.save_kfactor_config(
                 CarHeaterKFactorConfig(
                     id=1,
@@ -232,6 +261,36 @@ class KFactorCalibrator:
             if key in current:
                 current[key] = value
         return KFactorConfig(**current)
+
+    def _refresh_config_if_changed(self) -> None:
+        """Reload config from DB if it has changed (multi-worker sync)."""
+        logger.debug(
+            "kfactor: _refresh_config_if_changed called last_updated_ts=%s",
+            self._config_updated_ts,
+        )
+        if self._ctrl is None:
+            logger.debug("kfactor: _refresh_config_if_changed skipped (no ctrl)")
+            return
+        try:
+            row = self._ctrl.get_kfactor_config()
+            logger.debug("kfactor: refresh config row=%s", row)
+            if row is None:
+                return
+            updated_ts = (
+                row.get("updated_ts") if isinstance(row, dict) else getattr(row, "updated_ts", None)
+            )
+            if updated_ts and updated_ts != self._config_updated_ts:
+                cfg = self._load_config_from_db()
+                if cfg is None:
+                    logger.debug("kfactor: refresh config skipped (no config)")
+                    return
+                self._cfg = cfg
+                self._physics = ThermalPhysics(self._cfg)
+                self._session._cfg = self._cfg
+                self._snapshot._cfg = self._cfg
+                logger.info("kfactor: config reloaded from DB updated_ts=%s", updated_ts)
+        except Exception:
+            logger.debug("kfactor: failed to refresh config from DB", exc_info=True)
 
     # ==========================================================================
     # COOLDOWN MANAGEMENT
@@ -575,6 +634,7 @@ class KFactorCalibrator:
             wind_m_s,
             is_test,
         )
+        self._refresh_config_if_changed()
         is_test_flag = self._is_test if is_test is None else bool(is_test)
 
         if car_status is not None:
@@ -1180,6 +1240,7 @@ class KFactorCalibrator:
     def get_debug_snapshot(self, now: datetime | None = None) -> dict[str, Any]:
         """Get debug snapshot."""
         logger.debug("kfactor: get_debug_snapshot called now=%s", now)
+        self._refresh_config_if_changed()
         active_k, active_eta = self.get_active_params()
         return self._snapshot.get_debug_snapshot(
             state=self._state,
@@ -1213,6 +1274,7 @@ class KFactorCalibrator:
             target_temp_c,
             now,
         )
+        self._refresh_config_if_changed()
         active_k, active_eta = self.get_active_params()
         return self._snapshot.get_extended_snapshot(
             state=self._state,

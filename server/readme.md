@@ -98,6 +98,10 @@ Browse to http://127.0.0.1:5555 and log in.
 - KFactor active params selection now honors bucketed parameters with any-wind fallback and bucket coverage gating.
 - KFactor snapshots now include legacy UI fields: live_session, recent_sessions, bucket_coverage, statistics, and expanded constants.
 - KFactor uses separate autonomous/passive cooldowns and records prediction outcomes in the DB.
+- kFactor auto-calibration toggle now reads a consistent `autonomous_enabled` flag in initial and Socket.IO status payloads.
+- kFactor socket control parses boolean values explicitly to avoid `"false"` becoming `True`.
+- kFactor calibrator refreshes config from DB during tick/snapshot to keep multi-worker state in sync.
+- Disabling kFactor autonomous mode now cancels active autonomous state and syncs config updates across submodules.
 - Car heater settings include a kFactor cooldown reset button.
 - Live kFactor session panel updates asynchronously via Socket.IO status events.
 - Logging control now logs handler level updates when applied.

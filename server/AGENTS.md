@@ -484,6 +484,14 @@ function update(data) {
 }
 ```
 
+**kFactor note**: The UI toggle expects `autonomous_enabled` in status payloads. Include this key (and keep it boolean) in both initial page data and Socket.IO status to avoid the toggle snapping back to `true`.
+
+**Boolean parsing note**: Avoid `bool("false")` or `bool("0")` in backend handlers; parse booleans from strings explicitly to prevent unintended `True` values.
+
+**Multi-worker config note**: KFactor config changes are persisted in the DB. If multiple gunicorn workers are running, each worker must refresh config from DB (e.g., during tick/snapshot) to avoid stale `enabled` state.
+
+**KFactor config updates**: Use `KFactorCalibrator.update_config()` (not direct `_cfg` assignment) so submodules (`_physics`, `_session`, `_snapshot`) stay in sync.
+
 ### 6.2 Null Safety
 
 ```javascript
