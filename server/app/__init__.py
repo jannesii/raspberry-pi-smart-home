@@ -82,6 +82,16 @@ def create_app():
     app.ctrl = Controller(db_path)  # type: ignore
     logger.info("Controller init: %s", db_path)
 
+    # ─── SQLAlchemy engine (phase-in for Alembic) ───
+    try:
+        from .core.sqlalchemy_engine import get_engine
+
+        logger.debug("Initializing SQLAlchemy engine for DB_PATH=%s", db_path)
+        app.sa_engine = get_engine(db_path)  # type: ignore[attr-defined]
+        logger.info("SQLAlchemy engine ready")
+    except Exception as e:
+        logger.warning("Failed to initialize SQLAlchemy engine: %s", e)
+
     # ─── Route all ERROR+ logs into DB ───
     try:
         from .logging_handlers import DBLogHandler

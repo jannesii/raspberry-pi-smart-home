@@ -102,6 +102,7 @@ Browse to http://127.0.0.1:5555 and log in.
 - Live kFactor session panel updates asynchronously via Socket.IO status events.
 - Logging control now logs handler level updates when applied.
 - kFactor session rejection logs now include specific rejection reasons and thresholds.
+- SQLAlchemy Core schema + engine are wired in parallel (phase-in for Alembic).
 - `scripts/restart.sh` retries `pre-commit run --all-files` once before aborting.
 
 ---

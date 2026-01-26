@@ -3,7 +3,7 @@
 ## Quick Reference
 
 ```
-STACK: Python 3.11 | Flask | Flask-SocketIO | Eventlet | SQLite | Jinja2
+STACK: Python 3.11 | Flask | Flask-SocketIO | Eventlet | SQLite | SQLAlchemy Core (phase-in) | Jinja2
 FRONTEND: Vanilla JS (ES6+) | CSS3 Grid/Flexbox | No build tools
 REALTIME: Socket.IO (views/clients/esp32 roles)
 AUTH: Flask-Login + session cookies | CSRF protection
@@ -72,6 +72,7 @@ Browser → Flask Route → Controller → Database
 | `app/services/*/` | Background services | `from ...core import <models>` |
 | `app/core/controller.py` | All DB operations | Direct database access |
 | `app/core/models.py` | Dataclass definitions | No imports from app |
+| `app/core/schema.py` | SQLAlchemy Core metadata (phase-in) | Use for Alembic/migrations |
 
 ### 2.2 Controller Pattern
 
