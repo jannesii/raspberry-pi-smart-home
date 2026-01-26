@@ -98,6 +98,7 @@ Browse to http://127.0.0.1:5555 and log in.
 - KFactor active params selection now honors bucketed parameters with any-wind fallback and bucket coverage gating.
 - KFactor snapshots now include legacy UI fields: live_session, recent_sessions, bucket_coverage, statistics, and expanded constants.
 - KFactor uses separate autonomous/passive cooldowns and records prediction outcomes in the DB.
+- Car heater settings include a kFactor cooldown reset button.
 - `scripts/restart.sh` retries `pre-commit run --all-files` once before aborting.
 
 ---

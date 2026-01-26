@@ -1342,6 +1342,17 @@ class KFactorCalibrator:
         self._heater_on_streak = 0
         self._state = STATE_COOLDOWN
 
+    def reset_cooldown(self, reason: str = "manual_reset_cooldown") -> None:
+        """Clear cooldown timers without resetting session state."""
+        logger.debug("kfactor: reset_cooldown called reason=%s state=%s", reason, self._state)
+        self._autonomous_cooldown_until = None
+        self._passive_cooldown_until = None
+        self._save_cooldown_to_db(None)
+        if self._state == STATE_COOLDOWN:
+            self._state = STATE_IDLE
+            logger.debug("kfactor: reset_cooldown set state=IDLE")
+        logger.info("kfactor: cooldown reset (reason=%s)", reason)
+
     def reset(self, reason: str = "manual_reset") -> None:
         """Reset calibrator state."""
         logger.debug("kfactor: reset called reason=%s", reason)

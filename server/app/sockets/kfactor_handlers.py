@@ -54,6 +54,7 @@ def handle_kfactor_control(handler: SocketEventHandler, data: dict[str, Any]) ->
         return
 
     action = (data.get("action") or "").strip()
+    logger.debug("handle_kfactor_control action=%s payload_keys=%s", action, list(data.keys()))
 
     try:
         if action == "set_enabled":
@@ -75,6 +76,9 @@ def handle_kfactor_control(handler: SocketEventHandler, data: dict[str, Any]) ->
 
         elif action == "reset_defaults":
             _handle_reset_defaults(handler, svc)
+
+        elif action == "reset_cooldown":
+            _handle_reset_cooldown(handler, svc)
 
         elif action == "extended_data":
             # Return extended snapshot with live session, history, bucket coverage, stats
@@ -157,3 +161,10 @@ def _handle_reset_defaults(handler: SocketEventHandler, svc: KFactorCalibrator) 
             "reset": True,
         },
     )
+
+
+def _handle_reset_cooldown(handler: SocketEventHandler, svc: KFactorCalibrator) -> None:
+    """Reset kFactor cooldown timers."""
+    logger.debug("_handle_reset_cooldown called")
+    svc.reset_cooldown()
+    emit_kfactor_status(handler, svc)

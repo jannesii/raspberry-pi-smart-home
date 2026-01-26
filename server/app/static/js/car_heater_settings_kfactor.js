@@ -265,6 +265,7 @@ function saveKFactorConfig() {
 }
 
 function resetKFactorConfigToDefaults() {
+  console.log('⚙️ resetKFactorConfigToDefaults clicked');
   if (!confirm('Reset all kFactor calibration settings to defaults?')) {
     return;
   }
@@ -276,7 +277,22 @@ function resetKFactorConfigToDefaults() {
   }
 }
 
+function resetKfactorCooldown() {
+  console.log('⏱️ resetKfactorCooldown clicked');
+  if (!confirm('Reset kFactor cooldown timers?')) {
+    return;
+  }
+
+  if (window.socket) {
+    window.socket.emit('kfactor_control', { action: 'reset_cooldown' });
+    showToast('Resetting kFactor cooldown...');
+  } else {
+    showToast('Socket unavailable');
+  }
+}
+
 function setupKFactorConfigListeners() {
+  console.log('⚙️ setupKFactorConfigListeners init');
   // Add change listeners to all config inputs
   for (const inputId of Object.keys(KFACTOR_CONFIG_FIELDS)) {
     const input = document.getElementById(inputId);
@@ -291,6 +307,11 @@ function setupKFactorConfigListeners() {
   const resetBtn = document.getElementById('kfCfgResetDefaults');
   if (resetBtn) {
     resetBtn.addEventListener('click', resetKFactorConfigToDefaults);
+  }
+
+  const resetCooldownBtn = document.getElementById('btnKfactorResetCooldown');
+  if (resetCooldownBtn) {
+    resetCooldownBtn.addEventListener('click', resetKfactorCooldown);
   }
 
   // Request config when accordion opens
