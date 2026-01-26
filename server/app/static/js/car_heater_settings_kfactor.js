@@ -3,7 +3,8 @@
  * Handles KFactor calibration UI, config, and data panel
  */
 
-console.log('⚙️ car_heater_settings_kfactor.js loaded');
+(() => {
+  console.log('⚙️ car_heater_settings_kfactor.js loaded');
 
 // ============================================
 // KFactor State
@@ -16,12 +17,12 @@ let kfExtendedDataLoading = false;
 // Utility References
 // ============================================
 
-const { fmtTs, fmtTime, fmtNum, showToast } = window.CarHeaterSettings || {
-  fmtTs: (ts) => ts || '—',
-  fmtTime: (ts) => ts || '—',
-  fmtNum: (v, d = 1) => v?.toFixed?.(d) ?? '—',
-  showToast: (msg) => console.log(msg),
-};
+  const { fmtTs, fmtTime, fmtNum, showToast } = window.CarHeaterSettings || {
+    fmtTs: (ts) => ts || '—',
+    fmtTime: (ts) => ts || '—',
+    fmtNum: (v, d = 1) => v?.toFixed?.(d) ?? '—',
+    showToast: (msg) => console.log(msg),
+  };
 
 // ============================================
 // KFactor Config Field Mappings
@@ -658,3 +659,5 @@ Object.assign(window.CarHeaterSettings, {
   populateKFactorConfig,
   requestKFactorExtendedData,
 });
+
+})();

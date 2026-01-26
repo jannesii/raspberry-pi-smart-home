@@ -206,6 +206,13 @@ class CarHeaterKFactorConfig:
 
 
 @dataclass
+class CarHeaterKFactorCooldown:
+    id: int = 1
+    cooldown_until: str | None = None
+    updated_ts: str | None = None
+
+
+@dataclass
 class CarHeaterReadyByState:
     id: int = 1
     state_json: str | None = None

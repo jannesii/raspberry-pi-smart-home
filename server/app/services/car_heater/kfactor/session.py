@@ -43,6 +43,13 @@ class SessionManager:
         tz: ZoneInfo,
         get_active_params_fn,
     ) -> None:
+        logger.debug(
+            "SessionManager.__init__ called cfg=%s ctrl=%s physics=%s tz=%s",
+            cfg,
+            ctrl,
+            physics,
+            tz,
+        )
         self._cfg = cfg
         self._ctrl = ctrl
         self._physics = physics
@@ -64,6 +71,65 @@ class SessionManager:
         # Active params override (for test mode)
         self._active_params_override: tuple[float, float] | None = None
         self._bucket_params_override: dict[tuple[int, int | None], tuple[float, float]] = {}
+
+        self._load_last_session_from_db()
+
+    def _load_last_session_from_db(self) -> None:
+        """Load last known session summary from DB for snapshots."""
+        logger.debug("kfactor: _load_last_session_from_db called")
+        if self._ctrl is None:
+            logger.debug("kfactor: _load_last_session_from_db skipped (no ctrl)")
+            return
+        try:
+            sessions = self._ctrl.get_recent_kfactor_sessions(limit=1)
+            if not sessions:
+                logger.debug("kfactor: no kfactor sessions found in DB")
+                return
+            session = sessions[0]
+            flags: dict[str, Any] = {}
+            if session.flags_json:
+                try:
+                    flags = json.loads(session.flags_json)
+                except Exception:
+                    logger.debug(
+                        "kfactor: failed to parse flags_json for session_id=%s",
+                        session.id,
+                        exc_info=True,
+                    )
+                    flags = {}
+            reason = flags.get("stop_reason", "unknown")
+
+            fit = None
+            if session.id is not None:
+                result = self._ctrl.get_kfactor_result_for_session(session_id=int(session.id))
+            else:
+                result = None
+            if result is not None:
+                rmse = float(result.rmse_C) if result.rmse_C is not None else float("nan")
+                fit = KFactorFit(
+                    k_loss_W_per_K=float(result.k_loss_W_per_K),
+                    eta=float(result.eta),
+                    rmse_C=rmse,
+                    r2=result.r2,
+                )
+
+            self._last_session = KFactorLastSession(
+                started_ts=session.start_ts,
+                ended_ts=session.end_ts,
+                sample_count=int(session.sample_count or 0),
+                accepted=bool(session.accepted),
+                quality_score=float(session.quality_score or 0.0),
+                reason=reason,
+                flags=flags,
+                fit=fit,
+            )
+            logger.debug(
+                "kfactor: loaded last_session from DB session_id=%s accepted=%s",
+                session.id,
+                session.accepted,
+            )
+        except Exception:
+            logger.debug("kfactor: failed to load last session from DB", exc_info=True)
 
     @property
     def samples(self) -> list[KFactorSample]:

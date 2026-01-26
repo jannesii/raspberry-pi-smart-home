@@ -57,7 +57,7 @@ class ACThermostat:
         self.fan_speed: str | None = (
             ac_status.get("fan_speed_enum", "low") if isinstance(ac_status, dict) else None
         )
-        self._enabled: bool = bool(getattr(cfg, "thermo_active", True))
+        self._enabled: bool = bool(getattr(cfg, "thermo_active", True)) if not winter else False
         self._last_change_ts: float = 0.0
 
         # Track persisted start ISO for the current phase
@@ -285,6 +285,11 @@ class ACThermostat:
     def _emit_sleep_status(self) -> None:
         """Emit sleep status notification."""
         self._emitter.emit_sleep_status(self._sleep.get_status_payload())
+
+    @property
+    def is_sleep_window_now(self) -> bool:
+        """Return whether current time is within sleep window."""
+        return self._sleep.is_sleep_window_now()
 
     # =========================================================================
     # Temperature control locations

@@ -75,8 +75,8 @@ class ACMixin:
             sleep_active=bool(row["sleep_active"]),
             sleep_start=row["sleep_start"],
             sleep_stop=row["sleep_stop"],
-            sleep_weekly=(row.get("sleep_weekly", None)),
-            control_locations=(row.get("control_locations", None)),
+            sleep_weekly=(row["sleep_weekly"]),
+            control_locations=(row["control_locations"]),
             target_temp=float(row["target_temp"]),
             pos_hysteresis=float(row["pos_hysteresis"]),
             neg_hysteresis=float(row["neg_hysteresis"]),
@@ -88,8 +88,8 @@ class ACMixin:
             max_stale_s=int(row["max_stale_s"])
             if "max_stale_s" in row and row["max_stale_s"] is not None
             else 120,
-            current_phase=row.get("current_phase", None),
-            phase_started_at=row.get("phase_started_at", None),
+            current_phase=row["current_phase"],
+            phase_started_at=row["phase_started_at"],
         )
 
     def save_thermostat_conf(

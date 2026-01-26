@@ -90,6 +90,10 @@ Browse to http://127.0.0.1:5555 and log in.
 ## Development Notes
 
 - `scripts/restart.sh` activates `.venv` and runs `pre-commit run --all-files`; the service restarts only if checks pass.
+- KFactor cooldown persistence uses a dedicated `car_heater_kfactor_cooldown` table.
+- KFactor calibrator weather parsing reads `WeatherValue.value` for t2m and ws_10min.
+- Car heater settings modules export UI helpers via `window.CarHeaterSettings` inside IIFEs.
+- KFactor snapshots load the last session summary from the database on startup.
 
 ---
 

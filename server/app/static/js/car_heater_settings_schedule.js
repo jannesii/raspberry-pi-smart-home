@@ -3,7 +3,8 @@
  * Handles Ready-by scheduling UI and actions
  */
 
-console.log('⚙️ car_heater_settings_schedule.js loaded');
+(() => {
+  console.log('⚙️ car_heater_settings_schedule.js loaded');
 
 // ============================================
 // Ready-by State
@@ -16,12 +17,12 @@ let progressUpdateInterval = null;
 // Utility References
 // ============================================
 
-const { fmtTs, fmtTime, fmtNum, showToast } = window.CarHeaterSettings || {
-  fmtTs: (ts) => ts || '—',
-  fmtTime: (ts) => ts || '—',
-  fmtNum: (v, d = 1) => v?.toFixed?.(d) ?? '—',
-  showToast: (msg) => console.log(msg),
-};
+  const { fmtTs, fmtTime, fmtNum, showToast } = window.CarHeaterSettings || {
+    fmtTs: (ts) => ts || '—',
+    fmtTime: (ts) => ts || '—',
+    fmtNum: (v, d = 1) => v?.toFixed?.(d) ?? '—',
+    showToast: (msg) => console.log(msg),
+  };
 
 // ============================================
 // Default Time Helper
@@ -497,3 +498,5 @@ Object.assign(window.CarHeaterSettings, {
   cancelReadyBy,
   getDefaultReadyByTime,
 });
+
+})();

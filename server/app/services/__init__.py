@@ -72,7 +72,8 @@ def init_services(app) -> dict[str, Any]:
                 logger.warning("thermo: seeding default thermostat config in DB")
                 cfg = app.ctrl.ensure_thermostat_conf_seeded_from(None)  # type: ignore[attr-defined]
             except Exception:
-                pass
+                logger.exception("thermo: failed to seed default thermostat config")
+                raise
         from .ac import ACThermostat
 
         ac_thermostat = ACThermostat(
@@ -209,5 +210,12 @@ def init_services(app) -> dict[str, Any]:
         logger.info("ReadyBy service initialized")
     except Exception as e:
         logger.exception("Failed to initialize ReadyBy service: %s", e)
+
+    # --- KFactor calibrator dependencies wiring ---
+    if kfactor_calibrator is not None:
+        kfactor_calibrator.set_car_heater_service(car_heater_service)
+        kfactor_calibrator.set_ready_by_service(ready_by_service)
+        kfactor_calibrator.set_keep_at_temp_service(keep_at_temp_service)
+        kfactor_calibrator.set_weather_service(weather_service)
 
     return services

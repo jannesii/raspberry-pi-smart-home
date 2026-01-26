@@ -26,9 +26,14 @@ from .snapshot import SnapshotGenerator
 
 if TYPE_CHECKING:
     from app.core import Controller
-    from app.services.car_heater.car_heater_service import CarHeaterService
-    from app.services.car_heater.keep_at_temp_service import KeepAtTempService
-    from app.services.weather.weather_service import WeatherService
+    from app.services.car_heater import (
+        CarHeaterService,
+        ChargeModeState,
+        KeepAtTempService,
+        ReadyBySchedule,
+        ReadyByService,
+    )
+    from app.services.weather import WeatherData, WeatherService
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +92,7 @@ class KFactorCalibrator:
         # Service references (set externally)
         self._weather_service: WeatherService | None = None
         self._car_heater_service: CarHeaterService | None = None
-        self._ready_by_service: Any = None
+        self._ready_by_service: ReadyByService | None = None
         self._keep_at_temp_service: KeepAtTempService | None = None
 
         # Load cooldown from DB (survives reboots)
@@ -156,25 +161,56 @@ class KFactorCalibrator:
 
     def _load_config_from_db(self) -> KFactorConfig | None:
         """Load config from database."""
+        logger.debug("kfactor: _load_config_from_db called")
         if self._ctrl is None:
+            logger.debug("kfactor: _load_config_from_db skipped (no ctrl)")
             return None
         try:
             row = self._ctrl.get_kfactor_config()
+            logger.debug("kfactor: raw kfactor config row=%s", row)
             if row is None:
                 return None
-            return KFactorConfig(**row)
+            config_json = None
+            if isinstance(row, dict):
+                config_json = row.get("config_json")
+            else:
+                config_json = getattr(row, "config_json", None)
+            if not config_json:
+                logger.debug("kfactor: no config_json found in DB row")
+                return None
+            import json
+            from dataclasses import fields
+
+            raw = json.loads(config_json)
+            allowed = {f.name for f in fields(KFactorConfig)}
+            filtered = {key: value for key, value in raw.items() if key in allowed}
+            logger.debug("kfactor: loaded config keys=%s", sorted(filtered.keys()))
+            return KFactorConfig(**filtered)
         except Exception:
             logger.debug("kfactor: failed to load config from DB", exc_info=True)
             return None
 
     def _save_config_in_db(self, cfg: KFactorConfig) -> None:
         """Save config to database."""
+        logger.debug("kfactor: _save_config_in_db called with cfg=%s", cfg)
         if self._ctrl is None:
+            logger.debug("kfactor: _save_config_in_db skipped (no ctrl)")
             return
         try:
+            import json
             from dataclasses import asdict
 
-            self._ctrl.save_kfactor_config(asdict(cfg))
+            from app.core.models import CarHeaterKFactorConfig
+
+            payload = json.dumps(asdict(cfg), separators=(",", ":"), sort_keys=True)
+            now = iso_no_micros(datetime.now(tz=self._tz))
+            self._ctrl.save_kfactor_config(
+                CarHeaterKFactorConfig(
+                    id=1,
+                    config_json=payload,
+                    updated_ts=now,
+                )
+            )
         except Exception:
             logger.debug("kfactor: failed to save config to DB", exc_info=True)
 
@@ -194,12 +230,23 @@ class KFactorCalibrator:
 
     def _load_cooldown_from_db(self) -> None:
         """Load cooldown timestamp from database (survives reboots)."""
+        logger.debug("kfactor: _load_cooldown_from_db called")
         if self._ctrl is None:
+            logger.debug("kfactor: _load_cooldown_from_db skipped (no ctrl)")
             return
         try:
             row = self._ctrl.get_kfactor_cooldown()
-            if row and row.get("cooldown_until"):
-                ts = dt_from_any(row["cooldown_until"], self._tz)
+            logger.debug("kfactor: cooldown row=%s", row)
+            if row:
+                cooldown_until = None
+                if isinstance(row, dict):
+                    cooldown_until = row.get("cooldown_until")
+                else:
+                    cooldown_until = getattr(row, "cooldown_until", None)
+            else:
+                cooldown_until = None
+            if cooldown_until:
+                ts = dt_from_any(cooldown_until, self._tz)
                 if ts and ts > datetime.now(tz=self._tz):
                     self._cooldown_until = ts
                     logger.info("kfactor: loaded cooldown_until=%s from DB", ts)
@@ -208,11 +255,21 @@ class KFactorCalibrator:
 
     def _save_cooldown_to_db(self, until: datetime | None) -> None:
         """Save cooldown timestamp to database."""
+        logger.debug("kfactor: _save_cooldown_to_db called until=%s", until)
         if self._ctrl is None:
+            logger.debug("kfactor: _save_cooldown_to_db skipped (no ctrl)")
             return
         try:
+            from app.core.models import CarHeaterKFactorCooldown
+
+            payload = iso_no_micros(until) if until else None
+            now = iso_no_micros(datetime.now(tz=self._tz))
             self._ctrl.save_kfactor_cooldown(
-                {"cooldown_until": iso_no_micros(until) if until else None}
+                CarHeaterKFactorCooldown(
+                    id=1,
+                    cooldown_until=payload,
+                    updated_ts=now,
+                )
             )
         except Exception:
             logger.debug("kfactor: failed to save cooldown to DB", exc_info=True)
@@ -653,24 +710,32 @@ class KFactorCalibrator:
 
     def _check_autonomous_conflicts(self) -> str | None:
         """Check for conflicts that prevent autonomous calibration."""
-        # Check ready-by service
+
         if self._ready_by_service is not None:
-            try:
-                status = self._ready_by_service.get_status()
-                if status and getattr(status, "mode", None) not in (None, "off"):
-                    return "ready_by_active"
-            except Exception:
-                logger.debug("kfactor: failed to check ready_by_service", exc_info=True)
+            schedule: ReadyBySchedule | None = self._ready_by_service.get_schedule(as_object=True)
+            if schedule is not None:
+                status = schedule.status
+                if status == "running":
+                    logger.debug("kfactor: autonomous blocked (Ready-by running)")
+                    return False
+                hours_ahead = self._ready_by_service.hours_before_target
+                if status == "scheduled" and hours_ahead is not None and hours_ahead < 2.0:
+                    logger.debug("kfactor: autonomous blocked (Ready-by scheduled soon)")
+                    return False
 
-        # Check keep-at-temp service
-        if self._keep_at_temp_service is not None:
-            try:
-                if self._keep_at_temp_service.is_active:
-                    return "keep_at_temp_active"
-            except Exception:
-                logger.debug("kfactor: failed to check keep_at_temp_service", exc_info=True)
+        if self._keep_at_temp_service is not None and self._keep_at_temp_service.enabled:
+            logger.debug("kfactor: autonomous blocked (Keep-at-temp enabled)")
+            return False
 
-        return None
+        if self._car_heater_service is not None:
+            charge_mode_state: ChargeModeState | None = (
+                self._car_heater_service.get_charge_mode_state()
+            )
+            if charge_mode_state is not None and charge_mode_state.enabled:
+                logger.debug("kfactor: autonomous blocked (Charge mode active)")
+                return False
+
+        return True
 
     def _check_slow_rise_rate(self) -> bool:
         """Check if temperature rise rate is too slow."""
@@ -765,13 +830,21 @@ class KFactorCalibrator:
     def _get_weather(self) -> tuple[float | None, float | None]:
         """Get current outside temperature and wind speed."""
         if self._weather_service is None:
+            logger.debug("kfactor: _get_weather skipped (no weather service)")
             return None, None
         try:
-            current = self._weather_service.get_current_weather()
+            current: WeatherData = self._weather_service.get_latest()
             if current is None:
+                logger.debug("kfactor: no weather data available")
                 return None, None
-            outside_c = finite(getattr(current, "temperature_c", None))
-            wind = finite(getattr(current, "wind_speed_m_s", None))
+            t2m = getattr(current, "t2m", None)
+            ws_10min = getattr(current, "ws_10min", None)
+            t2m_val = getattr(t2m, "value", t2m)
+            ws_val = getattr(ws_10min, "value", ws_10min)
+
+            outside_c = finite(t2m_val)
+            wind = finite(ws_val)
+
             return outside_c, wind
         except Exception:
             logger.debug("kfactor: failed to get weather", exc_info=True)

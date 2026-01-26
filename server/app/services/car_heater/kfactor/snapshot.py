@@ -186,4 +186,5 @@ class SnapshotGenerator:
         else:
             base["recent_samples"] = []
 
+        logger.debug("Extended snapshot:\n\n%s", base)
         return base

@@ -4,6 +4,7 @@ from ..models import (
     CarHeaterKFactorActiveParams,
     CarHeaterKFactorBucketParams,
     CarHeaterKFactorConfig,
+    CarHeaterKFactorCooldown,
     CarHeaterKFactorResult,
     CarHeaterKFactorSession,
 )
@@ -345,6 +346,7 @@ class CarHeaterKFactorMixin:
 
     # --- KFactor config (single-row settings) ---
     def get_kfactor_config(self) -> CarHeaterKFactorConfig | None:
+        logger.debug("CarHeaterKFactorMixin.get_kfactor_config called")
         row = self.db.fetchone(
             """
             SELECT config_json, updated_ts
@@ -353,6 +355,7 @@ class CarHeaterKFactorMixin:
             """
         )
         if row is None:
+            logger.debug("CarHeaterKFactorMixin.get_kfactor_config no row found")
             return None
         return CarHeaterKFactorConfig(
             id=1,
@@ -361,6 +364,7 @@ class CarHeaterKFactorMixin:
         )
 
     def save_kfactor_config(self, config: CarHeaterKFactorConfig) -> None:
+        logger.debug("CarHeaterKFactorMixin.save_kfactor_config called config=%s", config)
         self.db.execute_query(
             """
             INSERT INTO car_heater_kfactor_config (id, config_json, updated_ts)
@@ -372,6 +376,41 @@ class CarHeaterKFactorMixin:
             (
                 config.config_json,
                 config.updated_ts,
+            ),
+        )
+
+    # --- KFactor cooldown (single-row settings) ---
+    def get_kfactor_cooldown(self) -> CarHeaterKFactorCooldown | None:
+        logger.debug("CarHeaterKFactorMixin.get_kfactor_cooldown called")
+        row = self.db.fetchone(
+            """
+            SELECT cooldown_until, updated_ts
+              FROM car_heater_kfactor_cooldown
+             WHERE id = 1
+            """
+        )
+        if row is None:
+            logger.debug("CarHeaterKFactorMixin.get_kfactor_cooldown no row found")
+            return None
+        return CarHeaterKFactorCooldown(
+            id=1,
+            cooldown_until=row["cooldown_until"],
+            updated_ts=row["updated_ts"],
+        )
+
+    def save_kfactor_cooldown(self, cooldown: CarHeaterKFactorCooldown) -> None:
+        logger.debug("CarHeaterKFactorMixin.save_kfactor_cooldown called cooldown=%s", cooldown)
+        self.db.execute_query(
+            """
+            INSERT INTO car_heater_kfactor_cooldown (id, cooldown_until, updated_ts)
+            VALUES (1, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                cooldown_until = excluded.cooldown_until,
+                updated_ts = excluded.updated_ts
+            """,
+            (
+                cooldown.cooldown_until,
+                cooldown.updated_ts,
             ),
         )
 
@@ -479,6 +518,54 @@ class CarHeaterKFactorMixin:
             )
             for row in rows
         ]
+
+    def get_kfactor_result_for_session(
+        self,
+        *,
+        session_id: int,
+    ) -> CarHeaterKFactorResult | None:
+        logger.debug(
+            "CarHeaterKFactorMixin.get_kfactor_result_for_session called session_id=%s",
+            session_id,
+        )
+        row = self.db.fetchone(
+            """
+            SELECT
+                id,
+                session_id,
+                model_version,
+                k_loss_W_per_K,
+                eta,
+                rmse_C,
+                r2,
+                confidence,
+                promoted,
+                created_ts
+            FROM car_heater_kfactor_result
+            WHERE session_id = ?
+            ORDER BY created_ts DESC, id DESC
+            LIMIT 1
+            """,
+            (session_id,),
+        )
+        if row is None:
+            logger.debug(
+                "CarHeaterKFactorMixin.get_kfactor_result_for_session no row found session_id=%s",
+                session_id,
+            )
+            return None
+        return CarHeaterKFactorResult(
+            id=row["id"],
+            session_id=row["session_id"],
+            model_version=row["model_version"],
+            k_loss_W_per_K=row["k_loss_W_per_K"],
+            eta=row["eta"],
+            rmse_C=row["rmse_C"],
+            r2=row["r2"],
+            confidence=row["confidence"],
+            promoted=bool(row["promoted"]),
+            created_ts=row["created_ts"],
+        )
 
     def get_all_bucket_params(self) -> list[CarHeaterKFactorBucketParams]:
         """Get all bucket parameters for coverage display."""

@@ -66,7 +66,7 @@ def get_ac_status():
                 "sleep_enabled": bool(getattr(ac_thermo.cfg, "sleep_active", True)),
                 "sleep_start": getattr(ac_thermo.cfg, "sleep_start", None),
                 "sleep_stop": getattr(ac_thermo.cfg, "sleep_stop", None),
-                "sleep_time_active": bool(ac_thermo._is_sleep_time),
+                "sleep_time_active": bool(ac_thermo.is_sleep_window_now),
                 "sleep_schedule": getattr(ac_thermo.cfg, "sleep_weekly", None),
                 "setpoint_c": float(getattr(ac_thermo.cfg, "target_temp", 0.0)),
                 "pos_hysteresis": float(getattr(ac_thermo.cfg, "pos_hysteresis", 0.0)),
