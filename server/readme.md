@@ -94,6 +94,7 @@ Browse to http://127.0.0.1:5555 and log in.
 - KFactor calibrator weather parsing reads `WeatherValue.value` for t2m and ws_10min.
 - Car heater settings modules export UI helpers via `window.CarHeaterSettings` inside IIFEs.
 - KFactor snapshots load the last session summary from the database on startup.
+- KFactor calibrator restores passive recording alongside autonomous mode, grace-sample debouncing, overnight windows, and power fallback.
 
 ---
 
