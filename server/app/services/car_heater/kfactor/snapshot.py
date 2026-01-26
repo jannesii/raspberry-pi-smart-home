@@ -57,7 +57,8 @@ class SnapshotGenerator:
         session_started_at: datetime | None,
         session_samples: list[KFactorSample],
         is_autonomous_session: bool,
-        cooldown_until: datetime | None,
+        autonomous_cooldown_until: datetime | None,
+        passive_cooldown_until: datetime | None,
         last_session: KFactorLastSession | None,
         slow_rise_checks: int,
         now: datetime | None = None,
@@ -65,14 +66,16 @@ class SnapshotGenerator:
         """Return a debug status snapshot."""
         logger.debug(
             "get_debug_snapshot called state=%s active_k=%s active_eta=%s session_started_at=%s samples=%s "
-            "is_autonomous_session=%s cooldown_until=%s last_session=%s slow_rise_checks=%s now=%s",
+            "is_autonomous_session=%s autonomous_cooldown_until=%s passive_cooldown_until=%s "
+            "last_session=%s slow_rise_checks=%s now=%s",
             state,
             active_k,
             active_eta,
             session_started_at,
             len(session_samples),
             is_autonomous_session,
-            cooldown_until,
+            autonomous_cooldown_until,
+            passive_cooldown_until,
             last_session,
             slow_rise_checks,
             now,
@@ -106,9 +109,15 @@ class SnapshotGenerator:
             else None,
             "session_sample_count": len(session_samples),
             "session": session_info,
-            "autonomous_cooldown_until": iso_no_micros(cooldown_until) if cooldown_until else None,
-            "passive_cooldown_until": iso_no_micros(cooldown_until) if cooldown_until else None,
-            "cooldown_until": iso_no_micros(cooldown_until) if cooldown_until else None,
+            "autonomous_cooldown_until": iso_no_micros(autonomous_cooldown_until)
+            if autonomous_cooldown_until
+            else None,
+            "passive_cooldown_until": iso_no_micros(passive_cooldown_until)
+            if passive_cooldown_until
+            else None,
+            "cooldown_until": iso_no_micros(autonomous_cooldown_until or passive_cooldown_until)
+            if (autonomous_cooldown_until or passive_cooldown_until)
+            else None,
             "last_session": asdict(last_session) if last_session else None,
             "slow_rise_counter": slow_rise_checks,
             "slow_rise_checks": slow_rise_checks,
@@ -134,7 +143,8 @@ class SnapshotGenerator:
         session_started_at: datetime | None,
         session_samples: list[KFactorSample],
         is_autonomous_session: bool,
-        cooldown_until: datetime | None,
+        autonomous_cooldown_until: datetime | None,
+        passive_cooldown_until: datetime | None,
         last_session: KFactorLastSession | None,
         slow_rise_checks: int,
         physics: ThermalPhysics,
@@ -147,15 +157,17 @@ class SnapshotGenerator:
         """Return an extended snapshot for UI (includes live predictions, physics info)."""
         logger.debug(
             "get_extended_snapshot called state=%s active_k=%s active_eta=%s session_started_at=%s samples=%s "
-            "is_autonomous_session=%s cooldown_until=%s last_session=%s slow_rise_checks=%s "
-            "cabin_temp_c=%s outside_temp_c=%s is_heater_on=%s target_temp_c=%s now=%s",
+            "is_autonomous_session=%s autonomous_cooldown_until=%s passive_cooldown_until=%s "
+            "last_session=%s slow_rise_checks=%s cabin_temp_c=%s outside_temp_c=%s "
+            "is_heater_on=%s target_temp_c=%s now=%s",
             state,
             active_k,
             active_eta,
             session_started_at,
             len(session_samples),
             is_autonomous_session,
-            cooldown_until,
+            autonomous_cooldown_until,
+            passive_cooldown_until,
             last_session,
             slow_rise_checks,
             cabin_temp_c,
@@ -174,7 +186,8 @@ class SnapshotGenerator:
             session_started_at=session_started_at,
             session_samples=session_samples,
             is_autonomous_session=is_autonomous_session,
-            cooldown_until=cooldown_until,
+            autonomous_cooldown_until=autonomous_cooldown_until,
+            passive_cooldown_until=passive_cooldown_until,
             last_session=last_session,
             slow_rise_checks=slow_rise_checks,
             now=now,

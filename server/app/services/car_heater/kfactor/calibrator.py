@@ -26,7 +26,7 @@ from .session import SessionManager
 from .snapshot import SnapshotGenerator
 
 if TYPE_CHECKING:
-    from app.core import Controller
+    from app.core import CarHeaterStatus, Controller
     from app.services.car_heater import (
         CarHeaterService,
         ChargeModeState,
@@ -83,7 +83,8 @@ class KFactorCalibrator:
         self._state: str = STATE_IDLE
         self._heater_on_streak: int = 0
         self._slow_rise_checks: int = 0
-        self._cooldown_until: datetime | None = None
+        self._autonomous_cooldown_until: datetime | None = None
+        self._passive_cooldown_until: datetime | None = None
         self._last_heater_state: bool = False
 
         # Submodules
@@ -256,21 +257,41 @@ class KFactorCalibrator:
             if cooldown_until:
                 ts = dt_from_any(cooldown_until, self._tz)
                 if ts and ts > datetime.now(tz=self._tz):
-                    self._cooldown_until = ts
-                    logger.info("kfactor: loaded cooldown_until=%s from DB", ts)
+                    self._autonomous_cooldown_until = ts
+                    logger.info("kfactor: loaded autonomous cooldown_until=%s from DB", ts)
+                    return
+
+            # Fallback to legacy config_json field if table is empty
+            cfg_row = self._ctrl.get_kfactor_config()
+            if cfg_row and getattr(cfg_row, "config_json", None):
+                import json
+
+                raw = json.loads(cfg_row.config_json)
+                legacy = raw.get("_autonomous_cooldown_until")
+                if legacy:
+                    ts = dt_from_any(legacy, self._tz)
+                    if ts and ts > datetime.now(tz=self._tz):
+                        self._autonomous_cooldown_until = ts
+                        logger.info(
+                            "kfactor: loaded legacy autonomous cooldown_until=%s from config_json",
+                            ts,
+                        )
         except Exception:
             logger.debug("kfactor: failed to load cooldown from DB", exc_info=True)
 
-    def _save_cooldown_to_db(self, until: datetime | None) -> None:
-        """Save cooldown timestamp to database."""
-        logger.debug("kfactor: _save_cooldown_to_db called until=%s", until)
+    def _save_cooldown_to_db(self, autonomous_until: datetime | None) -> None:
+        """Save autonomous cooldown timestamp to database."""
+        logger.debug(
+            "kfactor: _save_cooldown_to_db called autonomous_until=%s",
+            autonomous_until,
+        )
         if self._ctrl is None:
             logger.debug("kfactor: _save_cooldown_to_db skipped (no ctrl)")
             return
         try:
             from app.core.models import CarHeaterKFactorCooldown
 
-            payload = iso_no_micros(until) if until else None
+            payload = iso_no_micros(autonomous_until) if autonomous_until else None
             now = iso_no_micros(datetime.now(tz=self._tz))
             self._ctrl.save_kfactor_cooldown(
                 CarHeaterKFactorCooldown(
@@ -284,16 +305,30 @@ class KFactorCalibrator:
 
     def _set_cooldown(self, end_ts: datetime, is_autonomous: bool, reason: str) -> None:
         """Set cooldown period after a session."""
+        logger.debug(
+            "kfactor: _set_cooldown called end_ts=%s is_autonomous=%s reason=%s",
+            end_ts,
+            is_autonomous,
+            reason,
+        )
         if is_autonomous:
             minutes = int(self._cfg.autonomous_cooldown_minutes)
         else:
             minutes = int(self._cfg.cooldown_minutes)
 
-        self._cooldown_until = end_ts + timedelta(minutes=minutes)
-        self._save_cooldown_to_db(self._cooldown_until)
+        if reason == "disturbance_no_heating":
+            minutes = 15
+
+        if is_autonomous:
+            self._autonomous_cooldown_until = end_ts + timedelta(minutes=minutes)
+            self._save_cooldown_to_db(self._autonomous_cooldown_until)
+            cooldown_until = self._autonomous_cooldown_until
+        else:
+            self._passive_cooldown_until = end_ts + timedelta(minutes=minutes)
+            cooldown_until = self._passive_cooldown_until
         logger.debug(
             "kfactor: cooldown set until %s (reason=%s, autonomous=%s)",
-            iso_no_micros(self._cooldown_until),
+            iso_no_micros(cooldown_until) if cooldown_until else None,
             reason,
             is_autonomous,
         )
@@ -517,25 +552,65 @@ class KFactorCalibrator:
 
     def tick(
         self,
+        car_status: CarHeaterStatus | None = None,
         *,
         now: datetime | None = None,
-        is_heater_on: bool,
-        power_w: float,
-        cabin_temp_c: float,
+        is_heater_on: bool | None = None,
+        power_w: float | None = None,
+        cabin_temp_c: float | None = None,
+        outside_temp_c: float | None = None,
+        wind_m_s: float | None = None,
+        is_test: bool | None = None,
     ) -> None:
         """Main tick called periodically with current sensor readings."""
         logger.debug(
-            "kfactor: tick called now=%s is_heater_on=%s power_w=%s cabin_temp_c=%s",
+            "kfactor: tick called car_status=%s now=%s is_heater_on=%s power_w=%s cabin_temp_c=%s "
+            "outside_temp_c=%s wind_m_s=%s is_test=%s",
+            car_status,
             now,
             is_heater_on,
             power_w,
             cabin_temp_c,
+            outside_temp_c,
+            wind_m_s,
+            is_test,
         )
+        is_test_flag = self._is_test if is_test is None else bool(is_test)
+
+        if car_status is not None:
+            if now is None:
+                now = dt_from_any(getattr(car_status, "timestamp", None), self._tz)
+                if now is None:
+                    logger.debug("kfactor: tick skipped (invalid timestamp)")
+                    return
+            if is_heater_on is None:
+                is_heater_on = bool(getattr(car_status, "is_heater_on", False))
+            if cabin_temp_c is None:
+                cabin_temp_c = finite(getattr(car_status, "ambient_temp", None))
+            if power_w is None:
+                power_w = finite(getattr(car_status, "instant_power_w", None)) or 0.0
+
         if now is None:
             now = datetime.now(tz=self._tz)
 
-        # Get weather data
-        outside_temp_c, wind_m_s = self._get_weather()
+        if is_heater_on is None or cabin_temp_c is None or power_w is None:
+            logger.debug(
+                "kfactor: tick skipped (missing readings is_heater_on=%s cabin_temp_c=%s power_w=%s)",
+                is_heater_on,
+                cabin_temp_c,
+                power_w,
+            )
+            return
+
+        outside_temp_c = finite(outside_temp_c)
+        wind_m_s = finite(wind_m_s) if wind_m_s is not None else None
+
+        if outside_temp_c is None:
+            weather_outside_c, weather_wind = self._get_weather()
+            if wind_m_s is None:
+                wind_m_s = weather_wind
+            outside_temp_c = weather_outside_c
+
         if outside_temp_c is None:
             logger.debug("kfactor: tick skipped, no outside_temp")
             return
@@ -554,31 +629,33 @@ class KFactorCalibrator:
         # Detect heater state transitions
         heater_just_turned_on = is_heater_on and not self._last_heater_state
         heater_just_turned_off = not is_heater_on and self._last_heater_state
-        self._last_heater_state = is_heater_on
+        self._last_heater_state = bool(is_heater_on)
 
         # Always run passive observation
         self._tick_passive(
             now=now,
-            is_heater_on=is_heater_on,
+            is_heater_on=bool(is_heater_on),
             power_w=power_w_effective,
-            cabin_temp_c=cabin_temp_c,
-            outside_temp_c=outside_temp_c,
+            cabin_temp_c=float(cabin_temp_c),
+            outside_temp_c=float(outside_temp_c),
             wind_m_s=wind_m_s,
-            heater_just_turned_on=heater_just_turned_on,
-            heater_just_turned_off=heater_just_turned_off,
+            heater_just_turned_on=bool(heater_just_turned_on),
+            heater_just_turned_off=bool(heater_just_turned_off),
+            is_test=is_test_flag,
         )
 
         # Autonomous mode (only if enabled and not in passive recording)
         if self._cfg.enabled and self._state != STATE_PASSIVE_RECORDING:
             self._tick_autonomous(
                 now=now,
-                is_heater_on=is_heater_on,
+                is_heater_on=bool(is_heater_on),
                 power_w=power_w_effective,
-                cabin_temp_c=cabin_temp_c,
-                outside_temp_c=outside_temp_c,
+                cabin_temp_c=float(cabin_temp_c),
+                outside_temp_c=float(outside_temp_c),
                 wind_m_s=wind_m_s,
-                heater_just_turned_on=heater_just_turned_on,
-                heater_just_turned_off=heater_just_turned_off,
+                heater_just_turned_on=bool(heater_just_turned_on),
+                heater_just_turned_off=bool(heater_just_turned_off),
+                is_test=is_test_flag,
             )
 
     def _tick_passive(
@@ -592,29 +669,38 @@ class KFactorCalibrator:
         wind_m_s: float | None,
         heater_just_turned_on: bool,
         heater_just_turned_off: bool,
+        is_test: bool,
     ) -> None:
         """Passive recording tick."""
         logger.debug(
-            "kfactor: _tick_passive called state=%s is_heater_on=%s heater_just_on=%s heater_just_off=%s",
+            "kfactor: _tick_passive called state=%s is_heater_on=%s heater_just_on=%s heater_just_off=%s is_test=%s",
             self._state,
             is_heater_on,
             heater_just_turned_on,
             heater_just_turned_off,
+            is_test,
         )
         if self._state in (STATE_AUTONOMOUS_ARMED, STATE_AUTONOMOUS_RECORDING):
             logger.debug("kfactor: passive skipped (autonomous state=%s)", self._state)
             return
         # Check cooldown
-        if self._cooldown_until and now < self._cooldown_until:
+        if self._passive_cooldown_until and now < self._passive_cooldown_until:
             if self._state != STATE_COOLDOWN:
                 self._state = STATE_COOLDOWN
-                logger.debug("kfactor: entering COOLDOWN (until %s)", self._cooldown_until)
+                logger.debug(
+                    "kfactor: entering COOLDOWN (passive until %s)",
+                    self._passive_cooldown_until,
+                )
             return
 
-        if self._state == STATE_COOLDOWN:
+        if (
+            self._state == STATE_COOLDOWN
+            and self._passive_cooldown_until
+            and now >= self._passive_cooldown_until
+        ):
             self._state = STATE_IDLE
-            self._cooldown_until = None
-            logger.debug("kfactor: cooldown expired, back to IDLE")
+            self._passive_cooldown_until = None
+            logger.debug("kfactor: passive cooldown expired, back to IDLE")
 
         if self._state == STATE_IDLE:
             if not is_heater_on:
@@ -666,7 +752,7 @@ class KFactorCalibrator:
                 self._session.finalize_session(
                     end_ts=now,
                     reason=disturbance,
-                    is_test=self._is_test,
+                    is_test=is_test,
                     set_cooldown_fn=self._set_cooldown,
                 )
                 self._heater_on_streak = 0
@@ -681,7 +767,7 @@ class KFactorCalibrator:
                 self._session.finalize_session(
                     end_ts=now,
                     reason="max_duration",
-                    is_test=self._is_test,
+                    is_test=is_test,
                     set_cooldown_fn=self._set_cooldown,
                 )
                 self._heater_on_streak = 0
@@ -694,7 +780,7 @@ class KFactorCalibrator:
                 self._session.finalize_session(
                     end_ts=now,
                     reason="heater_off",
-                    is_test=self._is_test,
+                    is_test=is_test,
                     set_cooldown_fn=self._set_cooldown,
                 )
                 self._heater_on_streak = 0
@@ -711,28 +797,33 @@ class KFactorCalibrator:
         wind_m_s: float | None,
         heater_just_turned_on: bool,
         heater_just_turned_off: bool,
+        is_test: bool,
     ) -> None:
         """Autonomous calibration tick."""
         logger.debug(
-            "kfactor: _tick_autonomous called state=%s in_window=%s is_heater_on=%s",
+            "kfactor: _tick_autonomous called state=%s in_window=%s is_heater_on=%s is_test=%s",
             self._state,
             self._is_in_window(now),
             is_heater_on,
+            is_test,
         )
         in_window = self._is_in_window(now)
 
         # Check cooldown
-        if self._cooldown_until and now < self._cooldown_until:
+        if self._autonomous_cooldown_until and now < self._autonomous_cooldown_until:
             if self._state not in (STATE_COOLDOWN, STATE_AUTONOMOUS_RECORDING):
                 self._state = STATE_COOLDOWN
-                logger.debug("kfactor: entering COOLDOWN (until %s)", self._cooldown_until)
+                logger.debug(
+                    "kfactor: entering COOLDOWN (autonomous until %s)",
+                    self._autonomous_cooldown_until,
+                )
             if self._state == STATE_COOLDOWN:
                 return
 
-        if self._state == STATE_COOLDOWN:
+        if self._state == STATE_COOLDOWN and self._autonomous_cooldown_until:
             self._state = STATE_IDLE
-            self._cooldown_until = None
-            logger.debug("kfactor: cooldown expired, back to IDLE")
+            self._autonomous_cooldown_until = None
+            logger.debug("kfactor: autonomous cooldown expired, back to IDLE")
 
         if self._state == STATE_IDLE:
             if in_window and not is_heater_on:
@@ -769,6 +860,7 @@ class KFactorCalibrator:
 
             # Check if we should calibrate
             should, reason = self.should_calibrate(
+                now=now,
                 outside_temp_c=outside_temp_c,
                 wind_m_s=wind_m_s,
             )
@@ -818,7 +910,7 @@ class KFactorCalibrator:
                 self._session.finalize_session(
                     end_ts=now,
                     reason=disturbance,
-                    is_test=self._is_test,
+                    is_test=is_test,
                     set_cooldown_fn=self._set_cooldown,
                 )
                 self._heater_on_streak = 0
@@ -835,7 +927,7 @@ class KFactorCalibrator:
                 self._session.finalize_session(
                     end_ts=now,
                     reason="target_reached",
-                    is_test=self._is_test,
+                    is_test=is_test,
                     set_cooldown_fn=self._set_cooldown,
                 )
                 self._heater_on_streak = 0
@@ -850,7 +942,7 @@ class KFactorCalibrator:
                 self._session.finalize_session(
                     end_ts=now,
                     reason="slow_rise",
-                    is_test=self._is_test,
+                    is_test=is_test,
                     set_cooldown_fn=self._set_cooldown,
                 )
                 self._heater_on_streak = 0
@@ -866,7 +958,7 @@ class KFactorCalibrator:
                 self._session.finalize_session(
                     end_ts=now,
                     reason="max_duration",
-                    is_test=self._is_test,
+                    is_test=is_test,
                     set_cooldown_fn=self._set_cooldown,
                 )
                 self._heater_on_streak = 0
@@ -879,7 +971,7 @@ class KFactorCalibrator:
                 self._session.finalize_session(
                     end_ts=now,
                     reason="heater_off_unexpected",
-                    is_test=self._is_test,
+                    is_test=is_test,
                     set_cooldown_fn=self._set_cooldown,
                 )
                 self._heater_on_streak = 0
@@ -896,6 +988,7 @@ class KFactorCalibrator:
                 wind_m_s=wind_m_s,
                 heater_just_turned_on=heater_just_turned_on,
                 heater_just_turned_off=heater_just_turned_off,
+                is_test=is_test,
             )
 
     # ==========================================================================
@@ -1086,6 +1179,7 @@ class KFactorCalibrator:
 
     def get_debug_snapshot(self, now: datetime | None = None) -> dict[str, Any]:
         """Get debug snapshot."""
+        logger.debug("kfactor: get_debug_snapshot called now=%s", now)
         active_k, active_eta = self.get_active_params()
         return self._snapshot.get_debug_snapshot(
             state=self._state,
@@ -1094,7 +1188,8 @@ class KFactorCalibrator:
             session_started_at=self._session.started_at,
             session_samples=self._session.samples,
             is_autonomous_session=self._session.is_autonomous,
-            cooldown_until=self._cooldown_until,
+            autonomous_cooldown_until=self._autonomous_cooldown_until,
+            passive_cooldown_until=self._passive_cooldown_until,
             last_session=self._session.last_session,
             slow_rise_checks=self._slow_rise_checks,
             now=now,
@@ -1110,6 +1205,14 @@ class KFactorCalibrator:
         now: datetime | None = None,
     ) -> dict[str, Any]:
         """Get extended snapshot for UI."""
+        logger.debug(
+            "kfactor: get_extended_snapshot called cabin_temp_c=%s outside_temp_c=%s is_heater_on=%s target_temp_c=%s now=%s",
+            cabin_temp_c,
+            outside_temp_c,
+            is_heater_on,
+            target_temp_c,
+            now,
+        )
         active_k, active_eta = self.get_active_params()
         return self._snapshot.get_extended_snapshot(
             state=self._state,
@@ -1118,7 +1221,8 @@ class KFactorCalibrator:
             session_started_at=self._session.started_at,
             session_samples=self._session.samples,
             is_autonomous_session=self._session.is_autonomous,
-            cooldown_until=self._cooldown_until,
+            autonomous_cooldown_until=self._autonomous_cooldown_until,
+            passive_cooldown_until=self._passive_cooldown_until,
             last_session=self._session.last_session,
             slow_rise_checks=self._slow_rise_checks,
             physics=self._physics,
@@ -1170,6 +1274,16 @@ class KFactorCalibrator:
         outside_c: float,
     ) -> None:
         """Record prediction outcome for analysis."""
+        logger.debug(
+            "kfactor: record_prediction_outcome called predicted_minutes=%s actual_minutes=%s "
+            "cabin_start_c=%s cabin_end_c=%s target_c=%s outside_c=%s",
+            predicted_minutes,
+            actual_minutes,
+            cabin_start_c,
+            cabin_end_c,
+            target_c,
+            outside_c,
+        )
         error_minutes = actual_minutes - predicted_minutes
         error_pct = (error_minutes / predicted_minutes) * 100.0 if predicted_minutes > 0 else 0.0
 
@@ -1188,7 +1302,9 @@ class KFactorCalibrator:
 
         if self._ctrl is not None:
             try:
-                self._ctrl.record_kfactor_prediction_outcome(
+                from app.core.models import CarHeaterKFactorPredictionOutcome
+
+                outcome = CarHeaterKFactorPredictionOutcome(
                     predicted_minutes=predicted_minutes,
                     actual_minutes=actual_minutes,
                     error_minutes=error_minutes,
@@ -1196,13 +1312,35 @@ class KFactorCalibrator:
                     cabin_end_c=cabin_end_c,
                     target_c=target_c,
                     outside_c=outside_c,
+                    created_ts=iso_no_micros(datetime.now(tz=self._tz)),
                 )
+                self._ctrl.record_kfactor_prediction_outcome(outcome)
             except Exception:
                 logger.debug("kfactor: failed to record prediction outcome", exc_info=True)
 
     # ==========================================================================
     # RESET
     # ==========================================================================
+
+    def finalize_session(self, reason: str) -> None:
+        """Force-end a recording session (best-effort)."""
+        logger.debug("kfactor: finalize_session called reason=%s state=%s", reason, self._state)
+        now = datetime.now(self._tz)
+        if self._state not in (STATE_PASSIVE_RECORDING, STATE_AUTONOMOUS_RECORDING):
+            logger.debug("kfactor: finalize_session ignored (no active session)")
+            return
+
+        if self._state == STATE_AUTONOMOUS_RECORDING:
+            self._turn_heater_off()
+
+        self._session.finalize_session(
+            end_ts=now,
+            reason=reason,
+            is_test=self._is_test,
+            set_cooldown_fn=self._set_cooldown,
+        )
+        self._heater_on_streak = 0
+        self._state = STATE_COOLDOWN
 
     def reset(self, reason: str = "manual_reset") -> None:
         """Reset calibrator state."""
@@ -1211,6 +1349,7 @@ class KFactorCalibrator:
         self._state = STATE_IDLE
         self._slow_rise_checks = 0
         self._heater_on_streak = 0
-        self._cooldown_until = None
+        self._autonomous_cooldown_until = None
+        self._passive_cooldown_until = None
         self._save_cooldown_to_db(None)
         logger.info("kfactor: reset (reason=%s)", reason)

@@ -179,6 +179,19 @@ class CarHeaterKFactorResult:
 
 
 @dataclass
+class CarHeaterKFactorPredictionOutcome:
+    id: int | None = None
+    predicted_minutes: float | None = None
+    actual_minutes: float | None = None
+    error_minutes: float | None = None
+    cabin_start_c: float | None = None
+    cabin_end_c: float | None = None
+    target_c: float | None = None
+    outside_c: float | None = None
+    created_ts: str | None = None
+
+
+@dataclass
 class CarHeaterKFactorActiveParams:
     id: int = 1
     k_loss_W_per_K: float | None = None

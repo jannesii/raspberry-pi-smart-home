@@ -97,6 +97,7 @@ Browse to http://127.0.0.1:5555 and log in.
 - KFactor calibrator restores passive recording alongside autonomous mode, grace-sample debouncing, overnight windows, and power fallback.
 - KFactor active params selection now honors bucketed parameters with any-wind fallback and bucket coverage gating.
 - KFactor snapshots now include legacy UI fields: live_session, recent_sessions, bucket_coverage, statistics, and expanded constants.
+- KFactor uses separate autonomous/passive cooldowns and records prediction outcomes in the DB.
 
 ---
 

@@ -180,6 +180,17 @@ class DatabaseManager:
                 "promoted BOOLEAN NOT NULL DEFAULT 0, "
                 "created_ts TEXT"
             ),
+            "car_heater_kfactor_prediction_outcome": (
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "predicted_minutes REAL, "
+                "actual_minutes REAL, "
+                "error_minutes REAL, "
+                "cabin_start_c REAL, "
+                "cabin_end_c REAL, "
+                "target_c REAL, "
+                "outside_c REAL, "
+                "created_ts TEXT"
+            ),
             "car_heater_kfactor_active_params": (
                 "id INTEGER PRIMARY KEY CHECK (id = 1), "
                 "k_loss_W_per_K REAL, "
@@ -213,6 +224,7 @@ class DatabaseManager:
                 "id INTEGER PRIMARY KEY CHECK (id = 1), config_json TEXT, updated_ts TEXT"
             ),
         }
+        logger.debug("DatabaseManager._create_tables ensuring kfactor prediction outcome table")
         for name, schema in tables.items():
             self.cursor.execute(f"CREATE TABLE IF NOT EXISTS {name} ({schema})")
 

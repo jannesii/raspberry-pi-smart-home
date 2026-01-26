@@ -5,6 +5,7 @@ from ..models import (
     CarHeaterKFactorBucketParams,
     CarHeaterKFactorConfig,
     CarHeaterKFactorCooldown,
+    CarHeaterKFactorPredictionOutcome,
     CarHeaterKFactorResult,
     CarHeaterKFactorSession,
 )
@@ -194,6 +195,41 @@ class CarHeaterKFactorMixin:
             confidence=row["confidence"],
             promoted=bool(row["promoted"]),
             created_ts=row["created_ts"],
+        )
+
+    def record_kfactor_prediction_outcome(
+        self,
+        outcome: CarHeaterKFactorPredictionOutcome,
+    ) -> None:
+        """Insert a new kfactor prediction outcome row."""
+        logger.debug(
+            "CarHeaterKFactorMixin.record_kfactor_prediction_outcome called outcome=%s",
+            outcome,
+        )
+        self.db.execute_query(
+            """
+            INSERT INTO car_heater_kfactor_prediction_outcome (
+                predicted_minutes,
+                actual_minutes,
+                error_minutes,
+                cabin_start_c,
+                cabin_end_c,
+                target_c,
+                outside_c,
+                created_ts
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                outcome.predicted_minutes,
+                outcome.actual_minutes,
+                outcome.error_minutes,
+                outcome.cabin_start_c,
+                outcome.cabin_end_c,
+                outcome.target_c,
+                outcome.outside_c,
+                outcome.created_ts,
+            ),
         )
 
     # --- Active params (single-row settings) ---
