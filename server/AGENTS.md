@@ -674,6 +674,8 @@ WEB_USERNAME=admin       # Initial admin user
 WEB_PASSWORD=...         # Initial admin password
 RATE_LIMIT_WHITELIST=["127.0.0.1"]
 ALLOWED_WS_ORIGINS=["http://localhost:5555"]
+DATABASE_URL=postgresql+psycopg://user:pass@localhost/dbname
+USE_SQLA_READS=1         # Enable SQLAlchemy read paths (phase-in)
 ```
 
 ---

@@ -16,11 +16,12 @@ source .venv/bin/activate
 export SECRET_KEY="..."
 export DB_PATH="/opt/jannenkoti/jannenkoti.db"
 export DATABASE_URL="postgresql+psycopg://jannesi:YOUR_PASS@localhost/jannenkoti"
+export USE_SQLA_READS="1"
 export WEB_USERNAME="admin"
 export WEB_PASSWORD="..."
 ```
 
-Note: the app still uses SQLite runtime today, but Alembic migrations are Postgres-targeted.
+Note: the app still uses SQLite writes today. Set USE_SQLA_READS=1 to read logs from Postgres while writes remain in SQLite.
 
 ---
 

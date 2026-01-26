@@ -62,9 +62,10 @@ def create_app():
             return ("", 404)
 
     # ─── Rate limiting ───
-    from .security import configure_rate_limiting
+    from .security import apply_security_headers, configure_rate_limiting
 
     configure_rate_limiting(app)
+    apply_security_headers(app)
 
     # ─── CSRF protection ───
     from .extensions import csrf

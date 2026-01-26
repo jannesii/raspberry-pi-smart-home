@@ -105,6 +105,8 @@ Browse to http://127.0.0.1:5555 and log in.
 - SQLAlchemy Core schema + engine are wired in parallel (phase-in for Alembic).
 - Alembic migrations are staged (baseline + kFactor result FK) and now target Postgres (SQLite-specific logic removed).
 - SQLite connections (sqlite3 + SQLAlchemy/Alembic) enable the foreign_keys PRAGMA.
+- Logs reads can be served via SQLAlchemy when `USE_SQLA_READS=1` (Postgres) while writes remain on SQLite.
+- Security headers (CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy) are applied by default, with CDN allowlist for Chart.js/HLS/Socket.IO.
 - `scripts/restart.sh` retries `pre-commit run --all-files` once before aborting.
 
 ---
@@ -113,6 +115,7 @@ Browse to http://127.0.0.1:5555 and log in.
 
 - [Technical Guide](docs/technical-guide.md) – deployment, configuration, API reference
 - [Guide](docs/guide.md) – operational commands, migrations, backups
+- [DB Next Steps](docs/db_next_steps.md) – remaining work for the Postgres transition
 - [AGENTS.md](AGENTS.md) – AI development guidelines
 
 ---
