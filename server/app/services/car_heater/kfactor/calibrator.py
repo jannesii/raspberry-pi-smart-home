@@ -302,29 +302,102 @@ class KFactorCalibrator:
     # ACTIVE PARAMS
     # ==========================================================================
 
-    def get_active_params(self) -> tuple[float, float]:
-        """Return active (global) parameters (k_loss, eta)."""
-        # Check for test-mode override
+    def get_active_params(
+        self,
+        *,
+        outside_temp_c: float | None = None,
+        wind_m_s: float | None = None,
+    ) -> tuple[float, float]:
+        """Return current best (k_loss, eta), optionally bucketed by outside temp/wind."""
+        if outside_temp_c is None or wind_m_s is None:
+            outside_temp_c, wind_m_s = self._get_weather()
+
+        logger.debug(
+            "kfactor: get_active_params called outside_temp_c=%s wind_m_s=%s",
+            outside_temp_c,
+            wind_m_s,
+        )
+        t_bucket = None
+        wind_bucket = None
+        if outside_temp_c is not None:
+            try:
+                t_bucket, wind_bucket = bucket_key(outside_temp_c, wind_m_s)
+                logger.debug(
+                    "kfactor: computed bucket t=%s wind=%s for outside_temp_c=%s wind_m_s=%s",
+                    t_bucket,
+                    wind_bucket,
+                    outside_temp_c,
+                    wind_m_s,
+                )
+            except Exception:
+                logger.debug(
+                    "kfactor: bucket_key failed for outside_temp_c=%s wind_m_s=%s",
+                    outside_temp_c,
+                    wind_m_s,
+                    exc_info=True,
+                )
+                t_bucket, wind_bucket = None, None
+
+        # In-memory overrides (bucketed, then active)
+        if t_bucket is not None:
+            override = self._session.bucket_params_override.get((t_bucket, wind_bucket))
+            if override is None and wind_bucket is not None:
+                override = self._session.bucket_params_override.get((t_bucket, None))
+            if override is None:
+                for (tb, _wb), vals in self._session.bucket_params_override.items():
+                    if tb == t_bucket:
+                        override = vals
+                        break
+            if override is not None:
+                logger.debug("kfactor: using bucket override params=%s", override)
+                return override
+
         if self._session.active_params_override is not None:
+            logger.debug(
+                "kfactor: using active params override=%s",
+                self._session.active_params_override,
+            )
             return self._session.active_params_override
 
-        # Check database
+        # Bucket params from DB
+        bucket_params = None
+        if t_bucket is not None and self._ctrl is not None:
+            try:
+                bucket_params = self._ctrl.get_kfactor_bucket_params(
+                    t_bucket=int(t_bucket),
+                    wind_bucket=wind_bucket,
+                )
+                if bucket_params is None:
+                    bucket_params = self._ctrl.get_kfactor_bucket_params_any_wind(
+                        t_bucket=int(t_bucket),
+                    )
+            except Exception:
+                logger.debug("kfactor: failed to load bucket params from DB", exc_info=True)
+
+        # Active params from DB
+        active_params = None
         if self._ctrl is not None:
             try:
-                params = self._ctrl.get_kfactor_active_params()
-                if params is not None:
-                    return (
-                        float(params.k_loss_W_per_K),
-                        float(params.eta),
-                    )
+                active_params = self._ctrl.get_kfactor_active_params()
             except Exception:
                 logger.debug("kfactor: failed to load active params from DB", exc_info=True)
 
-        # Defaults
-        return (
-            float(self._cfg.default_k_loss_W_per_K),
-            float(self._cfg.default_eta),
-        )
+        k_loss = finite(getattr(bucket_params, "k_loss_W_per_K", None)) if bucket_params else None
+        eta = finite(getattr(bucket_params, "eta", None)) if bucket_params else None
+        if k_loss is None:
+            k_loss = (
+                finite(getattr(active_params, "k_loss_W_per_K", None)) if active_params else None
+            )
+        if eta is None:
+            eta = finite(getattr(active_params, "eta", None)) if active_params else None
+
+        if k_loss is None:
+            k_loss = float(self._cfg.default_k_loss_W_per_K)
+        if eta is None:
+            eta = float(self._cfg.default_eta)
+
+        logger.debug("kfactor: resolved active params k_loss=%s eta=%s", k_loss, eta)
+        return float(k_loss), float(eta)
 
     def get_bucket_params(
         self,
@@ -333,11 +406,24 @@ class KFactorCalibrator:
         wind_m_s: float | None,
     ) -> tuple[float, float] | None:
         """Get bucket-specific parameters if available."""
+        logger.debug(
+            "kfactor: get_bucket_params called outside_temp_c=%s wind_m_s=%s",
+            outside_temp_c,
+            wind_m_s,
+        )
         t_bucket, wind_bucket = bucket_key(outside_temp_c, wind_m_s)
 
         # Check override
         override = self._session.bucket_params_override.get((t_bucket, wind_bucket))
+        if override is None and wind_bucket is not None:
+            override = self._session.bucket_params_override.get((t_bucket, None))
+        if override is None:
+            for (tb, _wb), vals in self._session.bucket_params_override.items():
+                if tb == t_bucket:
+                    override = vals
+                    break
         if override is not None:
+            logger.debug("kfactor: using bucket override params=%s", override)
             return override
 
         # Check database
@@ -347,7 +433,14 @@ class KFactorCalibrator:
                     t_bucket=t_bucket,
                     wind_bucket=wind_bucket,
                 )
+                if params is None:
+                    params = self._ctrl.get_kfactor_bucket_params_any_wind(t_bucket=t_bucket)
                 if params is not None:
+                    logger.debug(
+                        "kfactor: using bucket params from DB t_bucket=%s wind_bucket=%s",
+                        t_bucket,
+                        wind_bucket,
+                    )
                     return (
                         float(params.k_loss_W_per_K),
                         float(params.eta),
@@ -360,25 +453,61 @@ class KFactorCalibrator:
     def should_calibrate(
         self,
         *,
+        now: datetime | None = None,
         outside_temp_c: float,
         wind_m_s: float | None,
     ) -> tuple[bool, str]:
         """Check if calibration is needed for current conditions."""
+        logger.debug(
+            "kfactor: should_calibrate called now=%s outside_temp_c=%s wind_m_s=%s",
+            now,
+            outside_temp_c,
+            wind_m_s,
+        )
+        if now is None:
+            now = datetime.now(tz=self._tz)
         t_bucket, wind_bucket = bucket_key(outside_temp_c, wind_m_s)
+        lookback = timedelta(days=int(self._cfg.bucket_lookback_days))
 
-        # Check recent bucket data
-        if self._ctrl is not None:
-            try:
-                lookback = int(self._cfg.bucket_lookback_days)
-                recent = self._ctrl.count_kfactor_bucket_samples(
-                    t_bucket=t_bucket,
-                    wind_bucket=wind_bucket,
-                    lookback_days=lookback,
+        try:
+            if self._ctrl is None:
+                return True, "no controller"
+            sessions = self._ctrl.get_recent_kfactor_sessions(
+                limit=200,
+                accepted_only=True,
+            )
+        except Exception:
+            logger.debug("kfactor: failed to query prior sessions", exc_info=True)
+            return True, "failed to query sessions"
+
+        for s in sessions:
+            if not getattr(s, "accepted", False):
+                continue
+            if s.outside_t_mean is None:
+                continue
+            s_dt = dt_from_any(s.start_ts, self._tz)
+            if s_dt is None:
+                continue
+            if (now - s_dt) > lookback:
+                continue
+
+            sb_t, sb_w = bucket_key(
+                float(s.outside_t_mean),
+                float(s.wind_mean) if s.wind_mean is not None else None,
+            )
+
+            if wind_bucket is None or sb_w is None:
+                wind_matches = True
+            else:
+                wind_matches = sb_w == wind_bucket
+
+            if sb_t == t_bucket and wind_matches:
+                logger.debug(
+                    "kfactor: skipped calibration (bucket covered t=%s wind=%s)",
+                    t_bucket,
+                    wind_bucket,
                 )
-                if recent and recent > 0:
-                    return False, f"bucket has {recent} recent samples"
-            except Exception:
-                logger.debug("kfactor: failed to check bucket samples", exc_info=True)
+                return False, "bucket already covered"
 
         return True, "no recent bucket data"
 
@@ -1013,7 +1142,14 @@ class KFactorCalibrator:
         power_w: float | None = None,
     ) -> float | None:
         """Predict time to reach target temperature."""
-        active_k, active_eta = self.get_active_params()
+        logger.debug(
+            "kfactor: predict_time_to_target_minutes called cabin_temp_c=%s target_temp_c=%s outside_temp_c=%s power_w=%s",
+            cabin_temp_c,
+            target_temp_c,
+            outside_temp_c,
+            power_w,
+        )
+        active_k, active_eta = self.get_active_params(outside_temp_c=outside_temp_c)
         return self._physics.predict_time_to_target_minutes(
             cabin_temp_c=cabin_temp_c,
             target_temp_c=target_temp_c,
