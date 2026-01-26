@@ -977,9 +977,13 @@ class KFactorCalibrator:
                 self._state = STATE_COOLDOWN
                 return
 
+            # Check max duration
+            duration_s = self._session.session_duration_s(now)
+            min_s = int(self._cfg.min_session_minutes) * 60
+
             # Check target temperature reached
             target_c = float(self._cfg.autonomous_target_temp_c)
-            if cabin_temp_c >= target_c:
+            if cabin_temp_c >= target_c and duration_s is not None and duration_s > min_s:
                 logger.info(
                     "kfactor: autonomous session ended (target_reached %.1fC)", cabin_temp_c
                 )
@@ -1009,8 +1013,6 @@ class KFactorCalibrator:
                 self._state = STATE_COOLDOWN
                 return
 
-            # Check max duration
-            duration_s = self._session.session_duration_s(now)
             max_s = int(self._cfg.autonomous_max_session_minutes) * 60
             if duration_s is not None and duration_s >= max_s:
                 logger.info("kfactor: autonomous session ended (max_duration)")
