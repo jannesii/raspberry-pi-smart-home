@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 def emit_kfactor_status(handler: SocketEventHandler, svc: KFactorCalibrator) -> None:
     """Helper to emit kFactor status to all views."""
+    logger.debug("emit_kfactor_status called svc=%s", svc)
     snapshot = svc.get_debug_snapshot()
     handler.emit_to_views(
         "kfactor_status",
@@ -33,6 +34,7 @@ def emit_kfactor_status(handler: SocketEventHandler, svc: KFactorCalibrator) -> 
             "active_params": snapshot.get("active_params"),
             "last_session": snapshot.get("last_session"),
             "session_sample_count": snapshot.get("session_sample_count", 0),
+            "live_session": snapshot.get("live_session"),
             "config": snapshot.get("config", {}),
         },
     )

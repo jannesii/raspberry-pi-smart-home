@@ -157,6 +157,7 @@ def apply_logging_control_config(cfg: dict[str, Any]) -> None:
     root_level = _parse_level_name(root_level_name)
     if root_level is not None:
         logging.getLogger().setLevel(root_level)
+        logger.debug("apply_logging_control_config set root level=%s", _level_name(root_level))
 
     # Per-logger levels
     logger_levels = cfg.get("logger_levels") or {}
@@ -168,6 +169,9 @@ def apply_logging_control_config(cfg: dict[str, Any]) -> None:
             if lvl is None:
                 continue
             logging.getLogger(name).setLevel(lvl)
+            logger.debug(
+                "apply_logging_control_config set logger=%s level=%s", name, _level_name(lvl)
+            )
 
     # Per-handler levels (match by computed handler_key)
     handler_levels = cfg.get("handler_levels") or {}
@@ -186,3 +190,4 @@ def apply_logging_control_config(cfg: dict[str, Any]) -> None:
                 continue
             with contextlib.suppress(Exception):
                 h.setLevel(lvl)
+                logger.info("logging handler level set key=%s level=%s", k, _level_name(lvl))

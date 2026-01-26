@@ -304,6 +304,12 @@ class SessionManager:
         """Finalize and process a calibration session."""
         from app.services.alert_webhook import record_alert
 
+        logger.debug(
+            "kfactor: finalize_session called end_ts=%s reason=%s is_test=%s",
+            end_ts,
+            reason,
+            is_test,
+        )
         started = self._session_started_at
         samples = list(self._session_samples)
         is_autonomous = self._is_autonomous_session
@@ -395,6 +401,16 @@ class SessionManager:
 
         promoted = False
         active_after: dict[str, Any] | None = None
+        rejection_reasons: list[str] = []
+        reject_context: dict[str, Any] = {}
+
+        if not accepted:
+            rejection_reasons, reject_context = self._get_rejection_details(
+                duration_s=duration_s,
+                delta_t=delta_t,
+                flags=flags,
+                quality_score=quality,
+            )
 
         if fit is not None and accepted:
             new_k, new_eta, alpha = self._compute_weighted_update(
@@ -428,23 +444,23 @@ class SessionManager:
             flags=flags,
             fit=fit,
         )
-
+        msg: str | None = None
         if fit is not None and accepted:
-            logger.info(
-                "kfactor: session accepted (quality=%.2f rmse=%.3f k_loss=%.1f eta=%.3f)",
-                quality,
-                fit.rmse_C,
-                fit.k_loss_W_per_K,
-                fit.eta,
+            msg = (
+                f"kfactor: session accepted "
+                f"(quality={quality:.2f} rmse={fit.rmse_C:.3f} "
+                f"k_loss={fit.k_loss_W_per_K:.1f} eta={fit.eta:.3f})"
             )
         else:
-            logger.info(
-                "kfactor: session rejected (quality=%.2f duration=%ss deltaT=%.2f reason=%s)",
-                quality,
-                duration_s,
-                delta_t,
-                reason,
+            msg = (
+                f"kfactor: session rejected "
+                f"(quality={quality:.2f} duration={duration_s}s deltaT={delta_t:.2f} stop={reason} "
+                f"reject_reasons={rejection_reasons} context={reject_context})"
             )
+
+        if msg:
+            logger.info(msg)
+            self._ctrl.log_message(message=msg, log_type="kfactor") if self._ctrl else None
 
         if is_test:
             self._append_test_output(
@@ -735,6 +751,58 @@ class SessionManager:
         if "not_informative" in flags:
             return False
         return quality_score >= float(self._cfg.quality_threshold)
+
+    def _get_rejection_details(
+        self,
+        *,
+        duration_s: int,
+        delta_t: float,
+        flags: dict[str, Any],
+        quality_score: float,
+    ) -> tuple[list[str], dict[str, Any]]:
+        """Build rejection reasons and context for logging."""
+        logger.debug(
+            "kfactor: _get_rejection_details called duration_s=%s delta_t=%s quality_score=%s flags_keys=%s",
+            duration_s,
+            delta_t,
+            quality_score,
+            list(flags.keys()),
+        )
+        reasons: list[str] = []
+        context: dict[str, Any] = {}
+
+        min_s = int(self._cfg.min_session_minutes) * 60
+        min_rise = float(self._cfg.min_temp_rise_C)
+        quality_threshold = float(self._cfg.quality_threshold)
+
+        context["min_session_s"] = min_s
+        context["min_temp_rise_C"] = min_rise
+        context["quality_threshold"] = quality_threshold
+
+        if duration_s < min_s:
+            reasons.append("duration_short")
+        if delta_t < min_rise:
+            reasons.append("delta_t_low")
+        if "non_monotonic_early" in flags:
+            reasons.append("non_monotonic_early")
+        if "spike_outlier" in flags:
+            reasons.append("spike_outlier")
+        if "no_heating_detected" in flags:
+            reasons.append("no_heating_detected")
+            context["no_heating_detected"] = flags.get("no_heating_detected")
+        if "not_informative" in flags:
+            details = flags.get("not_informative")
+            detail_reason = None
+            if isinstance(details, dict):
+                detail_reason = details.get("reason")
+                context["not_informative"] = details
+            reasons.append(
+                f"not_informative:{detail_reason}" if detail_reason else "not_informative"
+            )
+        if quality_score < quality_threshold:
+            reasons.append("quality_below_threshold")
+
+        return reasons, context
 
     def _compute_weighted_update(
         self,

@@ -99,6 +99,9 @@ Browse to http://127.0.0.1:5555 and log in.
 - KFactor snapshots now include legacy UI fields: live_session, recent_sessions, bucket_coverage, statistics, and expanded constants.
 - KFactor uses separate autonomous/passive cooldowns and records prediction outcomes in the DB.
 - Car heater settings include a kFactor cooldown reset button.
+- Live kFactor session panel updates asynchronously via Socket.IO status events.
+- Logging control now logs handler level updates when applied.
+- kFactor session rejection logs now include specific rejection reasons and thresholds.
 - `scripts/restart.sh` retries `pre-commit run --all-files` once before aborting.
 
 ---

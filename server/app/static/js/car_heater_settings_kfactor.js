@@ -602,6 +602,7 @@ if (window.socket) {
     console.log('📡 kfactor_status:', data);
     if (data) {
       updateKFactorUI(data);
+      renderKfLiveSession(data.live_session);
       // Also update config if included
       if (data.config) {
         populateKFactorConfig(data.config);

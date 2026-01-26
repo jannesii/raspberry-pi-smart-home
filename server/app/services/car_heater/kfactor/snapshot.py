@@ -48,6 +48,65 @@ class SnapshotGenerator:
         self._tz = tz
         self._ctrl = ctrl
 
+    def _build_live_session(
+        self,
+        *,
+        state: str,
+        session_started_at: datetime | None,
+        session_samples: list[KFactorSample],
+        is_autonomous_session: bool,
+        slow_rise_checks: int,
+        now: datetime | None = None,
+    ) -> dict[str, Any] | None:
+        """Build live session snapshot for UI."""
+        logger.debug(
+            "_build_live_session called state=%s session_started_at=%s samples=%s is_autonomous_session=%s "
+            "slow_rise_checks=%s now=%s",
+            state,
+            session_started_at,
+            len(session_samples),
+            is_autonomous_session,
+            slow_rise_checks,
+            now,
+        )
+        if now is None:
+            now = datetime.now(tz=self._tz)
+
+        if state not in ("PASSIVE_RECORDING", "AUTONOMOUS_RECORDING") or not session_samples:
+            return None
+
+        samples = session_samples
+        duration_s = int((now - session_started_at).total_seconds()) if session_started_at else 0
+        first_sample = samples[0]
+        last_sample = samples[-1]
+
+        rise_rate = None
+        if len(samples) >= 2:
+            recent = samples[-min(5, len(samples)) :]
+            time_span_s = (recent[-1].ts - recent[0].ts).total_seconds()
+            if time_span_s > 0:
+                temp_change = recent[-1].cabin_temp_c - recent[0].cabin_temp_c
+                rise_rate = (temp_change / time_span_s) * 60.0
+
+        return {
+            "active": True,
+            "mode": "autonomous" if is_autonomous_session else "passive",
+            "started_ts": iso_no_micros(session_started_at) if session_started_at else None,
+            "duration_s": int(duration_s),
+            "sample_count": len(samples),
+            "cabin_temp_start": round(first_sample.cabin_temp_c, 1),
+            "cabin_temp_current": round(last_sample.cabin_temp_c, 1),
+            "cabin_temp_rise": round(last_sample.cabin_temp_c - first_sample.cabin_temp_c, 1),
+            "outside_temp_current": round(last_sample.outside_temp_c, 1)
+            if last_sample.outside_temp_c
+            else None,
+            "wind_current": round(last_sample.wind_m_s, 1) if last_sample.wind_m_s else None,
+            "power_current": round(last_sample.power_w, 0) if last_sample.power_w else None,
+            "rise_rate_c_per_min": round(rise_rate, 3) if rise_rate is not None else None,
+            "slow_rise_counter": slow_rise_checks,
+            "slow_rise_threshold": self._cfg.autonomous_slow_rise_samples,
+        }
+
     def get_debug_snapshot(
         self,
         *,
@@ -98,6 +157,15 @@ class SnapshotGenerator:
                 "is_autonomous": is_autonomous_session,
             }
 
+        live_session = self._build_live_session(
+            state=state,
+            session_started_at=session_started_at,
+            session_samples=session_samples,
+            is_autonomous_session=is_autonomous_session,
+            slow_rise_checks=slow_rise_checks,
+            now=now,
+        )
+
         snapshot = {
             "state": state,
             "autonomous_enabled": bool(self._cfg.enabled),
@@ -109,6 +177,7 @@ class SnapshotGenerator:
             else None,
             "session_sample_count": len(session_samples),
             "session": session_info,
+            "live_session": live_session,
             "autonomous_cooldown_until": iso_no_micros(autonomous_cooldown_until)
             if autonomous_cooldown_until
             else None,
@@ -231,44 +300,14 @@ class SnapshotGenerator:
             "eta_minutes": eta_minutes,
         }
 
-        # Live session metrics (legacy UI shape)
-        live_session = None
-        if state in ("PASSIVE_RECORDING", "AUTONOMOUS_RECORDING") and session_samples:
-            samples = session_samples
-            duration_s = (
-                int((now - session_started_at).total_seconds()) if session_started_at else 0
-            )
-            first_sample = samples[0]
-            last_sample = samples[-1]
-
-            rise_rate = None
-            if len(samples) >= 2:
-                recent = samples[-min(5, len(samples)) :]
-                time_span_s = (recent[-1].ts - recent[0].ts).total_seconds()
-                if time_span_s > 0:
-                    temp_change = recent[-1].cabin_temp_c - recent[0].cabin_temp_c
-                    rise_rate = (temp_change / time_span_s) * 60.0
-
-            live_session = {
-                "active": True,
-                "mode": "autonomous" if is_autonomous_session else "passive",
-                "started_ts": iso_no_micros(session_started_at) if session_started_at else None,
-                "duration_s": int(duration_s),
-                "sample_count": len(samples),
-                "cabin_temp_start": round(first_sample.cabin_temp_c, 1),
-                "cabin_temp_current": round(last_sample.cabin_temp_c, 1),
-                "cabin_temp_rise": round(last_sample.cabin_temp_c - first_sample.cabin_temp_c, 1),
-                "outside_temp_current": round(last_sample.outside_temp_c, 1)
-                if last_sample.outside_temp_c
-                else None,
-                "wind_current": round(last_sample.wind_m_s, 1) if last_sample.wind_m_s else None,
-                "power_current": round(last_sample.power_w, 0) if last_sample.power_w else None,
-                "rise_rate_c_per_min": round(rise_rate, 3) if rise_rate is not None else None,
-                "slow_rise_counter": slow_rise_checks,
-                "slow_rise_threshold": self._cfg.autonomous_slow_rise_samples,
-            }
-
-        base["live_session"] = live_session
+        base["live_session"] = self._build_live_session(
+            state=state,
+            session_started_at=session_started_at,
+            session_samples=session_samples,
+            is_autonomous_session=is_autonomous_session,
+            slow_rise_checks=slow_rise_checks,
+            now=now,
+        )
 
         # Sample history (last N samples)
         if session_samples:

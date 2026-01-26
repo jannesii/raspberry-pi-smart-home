@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 class LogsMixin:
     def log_message(self, message: str, log_type: str = "info") -> None:
         """
-        Logs a message with the given type ('info', 'warning', 'error', 'auth', 'ac', 'car_heater').
+        Logs a message with the given type ('info', 'warning', 'error', 'auth', 'ac', 'car_heater', 'kfactor).
         Also emits the log to Socket.IO for real-time updates.
         """
         now = datetime.now(self.finland_tz).isoformat()
