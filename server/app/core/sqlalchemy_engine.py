@@ -4,12 +4,23 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.pool import NullPool
 
 logger = logging.getLogger(__name__)
 
 _ENGINE: Engine | None = None
+
+
+def _enable_sqlite_foreign_keys(dbapi_connection, connection_record) -> None:
+    """Enable SQLite foreign key enforcement."""
+    logger.debug("_enable_sqlite_foreign_keys called")
+    try:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+    except Exception:
+        logger.debug("Failed to enable SQLite foreign keys", exc_info=True)
 
 
 def get_engine(db_path: str) -> Engine:
@@ -28,6 +39,7 @@ def get_engine(db_path: str) -> Engine:
             poolclass=NullPool,
             future=True,
         )
+        event.listen(_ENGINE, "connect", _enable_sqlite_foreign_keys)
     return _ENGINE
 
 

@@ -103,6 +103,8 @@ Browse to http://127.0.0.1:5555 and log in.
 - Logging control now logs handler level updates when applied.
 - kFactor session rejection logs now include specific rejection reasons and thresholds.
 - SQLAlchemy Core schema + engine are wired in parallel (phase-in for Alembic).
+- Alembic migrations are staged (baseline + kFactor result FK) and now target Postgres (SQLite-specific logic removed).
+- SQLite connections (sqlite3 + SQLAlchemy/Alembic) enable the foreign_keys PRAGMA.
 - `scripts/restart.sh` retries `pre-commit run --all-files` once before aborting.
 
 ---
@@ -110,6 +112,7 @@ Browse to http://127.0.0.1:5555 and log in.
 ## Documentation
 
 - [Technical Guide](docs/technical-guide.md) – deployment, configuration, API reference
+- [Guide](docs/guide.md) – operational commands, migrations, backups
 - [AGENTS.md](AGENTS.md) – AI development guidelines
 
 ---

@@ -26,9 +26,15 @@ class DatabaseManager:
         if getattr(self, "_initialized", False):
             return
         self._initialized = True
+        logger.debug("DatabaseManager.__init__ called db_path=%s", db_path)
         self.db_path = db_path
         self.conn: Connection = sqlite3.connect(self.db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
+        try:
+            logger.debug("DatabaseManager enabling SQLite foreign_keys PRAGMA")
+            self.conn.execute("PRAGMA foreign_keys=ON")
+        except Exception:
+            logger.debug("DatabaseManager failed to enable foreign_keys PRAGMA", exc_info=True)
         self.cursor: Cursor = self.conn.cursor()
         self._create_tables()
 

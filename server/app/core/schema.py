@@ -9,6 +9,7 @@ from sqlalchemy import (
     CheckConstraint,
     Column,
     Float,
+    ForeignKey,
     Index,
     Integer,
     MetaData,
@@ -215,7 +216,7 @@ car_heater_kfactor_result = Table(
     "car_heater_kfactor_result",
     metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("session_id", Integer),
+    Column("session_id", Integer, ForeignKey("car_heater_kfactor_session.id")),
     Column("model_version", Text),
     Column("k_loss_W_per_K", Float),
     Column("eta", Float),
@@ -317,7 +318,7 @@ Index(
 )
 Index(
     "idx_esp32_temphum_date_loc",
-    text("date(timestamp)"),
+    esp32_temphum.c.timestamp,
     esp32_temphum.c.location,
 )
 Index("idx_ac_events_ts", ac_events.c.timestamp)

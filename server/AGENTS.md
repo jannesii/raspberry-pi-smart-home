@@ -3,7 +3,7 @@
 ## Quick Reference
 
 ```
-STACK: Python 3.11 | Flask | Flask-SocketIO | Eventlet | SQLite | SQLAlchemy Core (phase-in) | Jinja2
+STACK: Python 3.11 | Flask | Flask-SocketIO | Eventlet | SQLite | SQLAlchemy Core (phase-in) | Alembic (phase-in) | Jinja2
 FRONTEND: Vanilla JS (ES6+) | CSS3 Grid/Flexbox | No build tools
 REALTIME: Socket.IO (views/clients/esp32 roles)
 AUTH: Flask-Login + session cookies | CSRF protection
@@ -73,6 +73,7 @@ Browser → Flask Route → Controller → Database
 | `app/core/controller.py` | All DB operations | Direct database access |
 | `app/core/models.py` | Dataclass definitions | No imports from app |
 | `app/core/schema.py` | SQLAlchemy Core metadata (phase-in) | Use for Alembic/migrations |
+| `migrations/` | Alembic migrations (phase-in) | Target Postgres via `DATABASE_URL` |
 
 ### 2.2 Controller Pattern
 
@@ -583,6 +584,7 @@ bmp_pressure (id, timestamp, pressure_hpa, temperature_c, altitude_m)
 2. Add dataclass in `models.py`
 3. Add CRUD methods in `controller.py`
 4. Export in `core/__init__.py`
+5. If Alembic/SQLAlchemy phase-in is enabled, mirror table in `app/core/schema.py`
 
 ---
 
