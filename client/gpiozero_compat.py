@@ -20,14 +20,15 @@ logger = logging.getLogger(__name__)
 
 if os.name != "nt":
     # Pi or other Unix‑like → fall through to the real library
-    import gpiozero               # type: ignore
-    LED = gpiozero.LED            # noqa: N806  (exported symbols are PascalCase)
-    Button = gpiozero.Button      # noqa: N806
+    import gpiozero  # type: ignore
+
+    LED = gpiozero.LED  # noqa: N806  (exported symbols are PascalCase)
+    Button = gpiozero.Button  # noqa: N806
 else:
     # ----------------------------------------------------------------------
     #  Simulated classes (Windows)
     # ----------------------------------------------------------------------
-    class LED:                     # noqa: N801
+    class LED:  # noqa: N801
         """
         Minimal stand‑in for gpiozero.LED.
 
@@ -64,7 +65,7 @@ else:
         def close(self) -> None:  # parity with real gpiozero objects
             logger.debug("LED(%s) closed", self.pin)
 
-    class Button:                  # noqa: N801
+    class Button:  # noqa: N801
         """
         Simulated gpiozero.Button that fires events when the user presses
         <Enter> in the terminal window.
@@ -89,9 +90,7 @@ else:
             self.bounce_time = bounce_time
             self._pressed = False
             self._stop_event = threading.Event()
-            self._thread = threading.Thread(
-                target=self._key_listener, daemon=True
-            )
+            self._thread = threading.Thread(target=self._key_listener, daemon=True)
             self._thread.start()
             logger.info("Button(%s) simulator ready – press <Enter> to fire", pin)
 

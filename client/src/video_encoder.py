@@ -5,6 +5,7 @@ import subprocess
 
 logger = logging.getLogger(__name__)
 
+
 class VideoEncoder:
     """Wraps ffmpeg for H.264 transcoding."""
 
@@ -20,27 +21,31 @@ class VideoEncoder:
         Returns True on success, False on failure.
         """
         if not os.path.exists(self.ffmpeg_path):
-            logger.error(
-                "ffmpeg not found at %s", self.ffmpeg_path)
+            logger.error("ffmpeg not found at %s", self.ffmpeg_path)
             return False
 
         output = input_file.replace("_timelapse.mp4", "_timelapse_h264.mp4")
         cmd = [
             self.ffmpeg_path,
-            "-i", input_file,
-            "-c:v", "libx264",
-            "-pix_fmt", "yuv420p",
-            "-crf", "23",
-            output
+            "-i",
+            input_file,
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-crf",
+            "23",
+            output,
         ]
         try:
-            subprocess.run(cmd, check=True, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE)
+            subprocess.run(
+                cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
             os.remove(input_file)
             logger.info("created %s", output)
             return True
         except subprocess.CalledProcessError as e:
-            err = e.stderr.decode(errors='ignore')
+            err = e.stderr.decode(errors="ignore")
             logger.error("ffmpeg error: %s", err)
             return False
         except Exception:

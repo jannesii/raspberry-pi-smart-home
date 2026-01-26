@@ -5,15 +5,16 @@ Test script for car heater status endpoint.
 Simple console GUI to send test payloads to the /car_heater/status/test endpoint.
 Includes a simulation mode that mimics real heater behavior.
 """
+
 import json
 import math
+import os
 import random
 import signal
 import sys
 import time
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List
-import os
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import requests
 
@@ -32,7 +33,7 @@ def generate_shelly_data(
     current_a: float | None = None,
     device_temp_c: float = 25.0,
     energy_total_wh: float = 12345.0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Generate realistic Shelly PM1 data."""
     if current_a is None:
         current_a = power_w / voltage_v if voltage_v > 0 else 0.0
@@ -47,7 +48,7 @@ def generate_shelly_data(
         "aenergy": {
             "total": energy_total_wh,
             "by_minute": [round(power_w / 60, 2), 0.0, 0.0],
-            "minute_ts": int(datetime.now(timezone.utc).timestamp()),
+            "minute_ts": int(datetime.now(UTC).timestamp()),
         },
         "temperature": {"tC": device_temp_c, "tF": round(device_temp_c * 9 / 5 + 32, 1)},
     }
@@ -58,11 +59,11 @@ def generate_payload(
     shelly_connected: bool = True,
     heater_on: bool = False,
     power_w: float = 0.0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Generate a complete test payload."""
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
 
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "timestamp": timestamp,
         "shelly_connected": shelly_connected,
     }
@@ -85,7 +86,7 @@ def generate_payload_at_time(
     power_w: float,
     outside_temp_c: float | None = None,
     wind_m_s: float | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Generate a payload with a controlled timestamp (useful for fast simulations)."""
     payload = generate_payload(
         ambient_temp=ambient_temp,
@@ -101,7 +102,7 @@ def generate_payload_at_time(
     return payload
 
 
-def send_request(url: str, payload: Dict[str, Any], verbose: bool = True) -> List[Dict[str, Any]]:
+def send_request(url: str, payload: dict[str, Any], verbose: bool = True) -> list[dict[str, Any]]:
     """Send POST request and print response. Returns list of commands from server."""
     if verbose:
         print("\n" + "=" * 60)
@@ -113,10 +114,9 @@ def send_request(url: str, payload: Dict[str, Any], verbose: bool = True) -> Lis
     if API_KEY:
         headers["X-API-Key"] = API_KEY
 
-    commands: List[Dict[str, Any]] = []
+    commands: list[dict[str, Any]] = []
     try:
-        response = requests.post(
-            url, json=payload, headers=headers, timeout=10)
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
         if verbose:
             print("\n" + "-" * 60)
             print(f"RESPONSE: {response.status_code}")
@@ -185,7 +185,7 @@ def get_bool_input(prompt: str, default: bool = False) -> bool:
     return val in ("y", "yes", "1", "true")
 
 
-def custom_payload_builder() -> Dict[str, Any]:
+def custom_payload_builder() -> dict[str, Any]:
     """Interactive custom payload builder."""
     print("\n--- Custom Payload Builder ---")
 
@@ -207,7 +207,7 @@ def custom_payload_builder() -> Dict[str, Any]:
     )
 
 
-def random_payload() -> Dict[str, Any]:
+def random_payload() -> dict[str, Any]:
     """Generate a random realistic payload."""
     ambient_temp = round(random.uniform(-20.0, 15.0), 1)
     shelly_connected = random.random() > 0.1  # 90% connected
@@ -311,7 +311,7 @@ def run_simulation(url: str) -> None:
             print(
                 f"[{tick:4d}] Temp: {current_temp:6.1f}°C | "
                 f"Heater: {heater_status} ({power_display}) | ",
-                end=""
+                end="",
             )
 
             # Send request (quiet mode)
@@ -323,10 +323,10 @@ def run_simulation(url: str) -> None:
                     action = cmd.get("action", "")
                     if action == "turn_off" and heater_on:
                         heater_on = False
-                        print(f"CMD: turn_off -> Heater OFF")
+                        print("CMD: turn_off -> Heater OFF")
                     elif action == "turn_on" and not heater_on:
                         heater_on = True
-                        print(f"CMD: turn_on -> Heater ON")
+                        print("CMD: turn_on -> Heater ON")
                     else:
                         print(f"CMD: {action}")
             else:
@@ -343,7 +343,7 @@ def run_simulation(url: str) -> None:
     print(f"[*] Total ticks: {tick}")
 
 
-def _get_json(url: str) -> Dict[str, Any] | None:
+def _get_json(url: str) -> dict[str, Any] | None:
     headers = {}
     if API_KEY:
         headers["X-API-Key"] = API_KEY
@@ -363,7 +363,7 @@ def run_kfactor_simulation(status_url: str, debug_url: str) -> None:
     Notes:
     - Sends requests to the /status/test endpoint (no DB persistence of raw status).
     - Uses payload-level weather overrides (outside_temp, wind_m_s) for deterministic fitting.
-    - Advances timestamps without sleeping so a 15–30 min session runs quickly.
+    - Advances timestamps without sleeping so a 15-30 min session runs quickly.
     """
     # Fixed constants (must match server defaults)
     cabin_volume_m3 = 2.8
@@ -419,10 +419,10 @@ def run_kfactor_simulation(status_url: str, debug_url: str) -> None:
         f"Tout={outside_temp}°C wind={wind_m_s}m/s P={power_w}W truth=(k={k_loss_true}, eta={eta_true})"
     )
 
-    ts = datetime.now(timezone.utc).replace(microsecond=0)
+    ts = datetime.now(UTC).replace(microsecond=0)
     T = float(start_temp)
 
-    for i in range(steps):
+    for _i in range(steps):
         # Integrate one step (heater ON)
         Tss = outside_temp + (eta_true * power_w) / k_loss_true
         decay = math.exp(-(k_loss_true / C) * sample_period_s)
@@ -482,7 +482,9 @@ def main() -> None:
     if len(sys.argv) > 1:
         url = sys.argv[1]
         if "/api/car_heater/status" in url:
-            debug_url = url.replace("/status/test", "/kfactor/debug").replace("/status", "/kfactor/debug")
+            debug_url = url.replace("/status/test", "/kfactor/debug").replace(
+                "/status", "/kfactor/debug"
+            )
 
     print(f"\nUsing endpoint: {url}")
 
@@ -508,7 +510,9 @@ def main() -> None:
             if new_url:
                 url = new_url
                 if "/api/car_heater/status" in url:
-                    debug_url = url.replace("/status/test", "/kfactor/debug").replace("/status", "/kfactor/debug")
+                    debug_url = url.replace("/status/test", "/kfactor/debug").replace(
+                        "/status", "/kfactor/debug"
+                    )
             print(f"URL set to: {url}")
         elif choice == "c":
             payload = custom_payload_builder()

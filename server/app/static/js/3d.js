@@ -171,7 +171,7 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('humidity').innerText    = data.humidity + '%';
       console.log('🌡️ Temperature/Humidity updated:', data.temperature, data.humidity);
     });
-    
+
     // ── printer control buttons ─
     document.querySelectorAll('.control-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -181,9 +181,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (action == 'run_gcode') {
           const gcodeInput = document.getElementById('gcodeInput').value.trim();
           body.gcode = gcodeInput;
-        } 
+        }
         console.log(`🔘 "${action}" button clicked`);
-        socket.emit('printerAction', body); 
+        socket.emit('printerAction', body);
       });
     });
     // ─── G‑code autocomplete ──────────────────────────────────────
@@ -277,7 +277,7 @@ document.addEventListener('DOMContentLoaded', () => {
       openModal();
       fetchAndRenderModal(currentField);
     });
-  
+
     // Prev/Next day
     prevBtn.addEventListener('click', () => {
       console.log('⬅️ prevDay clicked, before:', currentDate.toISOString());
@@ -291,6 +291,6 @@ document.addEventListener('DOMContentLoaded', () => {
       console.log('➡️ new currentDate:', currentDate.toISOString());
       fetchAndRender(currentField);
     });
-  
+
 
 });

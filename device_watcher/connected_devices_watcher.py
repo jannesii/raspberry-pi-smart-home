@@ -16,14 +16,15 @@ import subprocess
 import time
 import json
 import logging
-import tempfile
 import re
 from datetime import datetime, timezone
 from typing import Callable, Dict, List, Optional, Set, Tuple, Any
 import socket
 import dotenv
 
-dotenv.load_dotenv("/etc/device_watcher.env")  # take environment variables from .env if available
+dotenv.load_dotenv(
+    "/etc/device_watcher.env"
+)  # take environment variables from .env if available
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,6 +37,7 @@ logger = logging.getLogger(__name__)
 # Optional: try to import PyYAML to read AdGuardHome.yaml for static leases
 try:  # pragma: no cover - best-effort optional dependency
     import yaml  # type: ignore
+
     HAVE_YAML = True
 except Exception:  # pragma: no cover
     HAVE_YAML = False
@@ -49,9 +51,7 @@ def _load_static_from_yaml(cfg_path: str) -> Tuple[Set[str], Set[str]]:
     static_macs: Set[str] = set()
     static_ips: Set[str] = set()
     if not HAVE_YAML:
-        logger.warning(
-            "PyYAML not installed; static leases from YAML will not be read"
-        )
+        logger.warning("PyYAML not installed; static leases from YAML will not be read")
         return static_macs, static_ips
     try:
         with open(cfg_path, "r", encoding="utf-8") as f:
@@ -82,7 +82,11 @@ def _parse_json_leases(leases_path: str) -> Optional[Dict[str, Dict[str, Any]]]:
 
     out: Dict[str, Dict[str, Any]] = {}
     try:
-        if isinstance(data, dict) and "leases" in data and isinstance(data["leases"], list):
+        if (
+            isinstance(data, dict)
+            and "leases" in data
+            and isinstance(data["leases"], list)
+        ):
             for item in data["leases"]:
                 ip = str(item.get("ip", "")).strip()
                 mac = str(item.get("mac", "")).strip().lower()
@@ -110,17 +114,17 @@ def _host_reverse(ip: str, timeout_s: float = 2.0) -> str:
     hostname without a trailing dot, or empty string if not resolvable.
     """
     try:
-        cmd = ['dig', '-x', ip, '@127.0.0.1', '+short']
+        cmd = ["dig", "-x", ip, "@127.0.0.1", "+short"]
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
-        out = (proc.stdout or '').strip()
+        out = (proc.stdout or "").strip()
         if out:
-            host = out.splitlines()[0].strip().rstrip('.')
+            host = out.splitlines()[0].strip().rstrip(".")
             return host
     except Exception:
         pass
     try:
         host, aliases, _ = socket.gethostbyaddr(ip)
-        return (host or '').strip().rstrip('.')
+        return (host or "").strip().rstrip(".")
     except Exception:
         return ""
 
@@ -244,7 +248,6 @@ class ConnectedDevicesWatcher:
         ignore_placeholder_dhcp: bool = True,
         export_static_leases_path: Optional[str] = None,
     ) -> None:
-
         # Default to tmp to avoid permission issues; can be overridden via env
         self.state_file = state_file or "/tmp/device_watcher_state.json"
         self.interval_s = max(1, int(interval_s))
@@ -298,7 +301,9 @@ class ConnectedDevicesWatcher:
                 new_entries.extend(self.scan_once())
                 # Nmap-based discovery of non-DHCP devices (cadenced)
                 now = time.time()
-                if (self._nmap_subnets or self._nmap6_subnets) and (now - self._last_nmap_run >= self._nmap_interval_s):
+                if (self._nmap_subnets or self._nmap6_subnets) and (
+                    now - self._last_nmap_run >= self._nmap_interval_s
+                ):
                     logger.info(
                         "Triggering nmap sweeps: v4_subnets=%d v6_subnets=%d",
                         len(self._nmap_subnets),
@@ -324,7 +329,9 @@ class ConnectedDevicesWatcher:
                             self.notify("presence_new_device", e)
                         except Exception:
                             # Don’t let notify failures break the loop
-                            logger.debug("Presence watcher notify failed", exc_info=True)
+                            logger.debug(
+                                "Presence watcher notify failed", exc_info=True
+                            )
                 if new_entries or self._updates_made:
                     logger.info(
                         "Saving state: total=%d new=%d updated=%d",
@@ -389,13 +396,18 @@ class ConnectedDevicesWatcher:
                         updated = True
                     seen["static"] = True
                 if updated:
-                    logger.info("Presence watcher: updated device info for %s -> hostname=%s rdns=%s", key, seen.get("hostname"), seen.get("rdns"))
+                    logger.info(
+                        "Presence watcher: updated device info for %s -> hostname=%s rdns=%s",
+                        key,
+                        seen.get("hostname"),
+                        seen.get("rdns"),
+                    )
                     self._updates_made = True
                     self._updates_count += 1
                 continue
 
             # Consider it "known static" if MAC is in static list from YAML
-            is_static_yaml = (mac in self._static_macs)
+            is_static_yaml = mac in self._static_macs
             if is_static_yaml:
                 logger.debug("Presence watcher: skipping static device %s (YAML)", key)
                 continue
@@ -434,7 +446,9 @@ class ConnectedDevicesWatcher:
 
         leases = self._load_leases()
         dhcp_ips: Set[str] = set(leases.keys())
-        dhcp_macs: Set[str] = {v.get("mac", "").lower() for v in leases.values() if v.get("mac")}
+        dhcp_macs: Set[str] = {
+            v.get("mac", "").lower() for v in leases.values() if v.get("mac")
+        }
 
         new_entries: List[Dict[str, Any]] = []
         for host in discovered:
@@ -467,8 +481,12 @@ class ConnectedDevicesWatcher:
             }
             self._seen[key] = entry
             new_entries.append(entry)
-        logger.info("nmap v4 sweep: discovered=%d new=%d", len(discovered), len(new_entries))
-        logger.info("nmap v6 sweep: discovered=%d new=%d", len(discovered), len(new_entries))
+        logger.info(
+            "nmap v4 sweep: discovered=%d new=%d", len(discovered), len(new_entries)
+        )
+        logger.info(
+            "nmap v6 sweep: discovered=%d new=%d", len(discovered), len(new_entries)
+        )
         return new_entries
 
     # --- Internals ------------------------------------------------------
@@ -477,7 +495,7 @@ class ConnectedDevicesWatcher:
         # Load static leases if YAML exists
         if self._cfg_path:
             sm, si = _load_static_from_yaml(self._cfg_path)
-            
+
             self._static_macs |= sm
             if self._static_macs or self._static_ips:
                 logger.info(
@@ -485,9 +503,13 @@ class ConnectedDevicesWatcher:
                     len(self._static_macs),
                 )
             else:
-                logger.warning("Presence watcher: no static leases found in %s", self._cfg_path)
+                logger.warning(
+                    "Presence watcher: no static leases found in %s", self._cfg_path
+                )
         else:
-            logger.debug("Presence watcher: AdGuard YAML not found; static MAC/IP matching disabled")
+            logger.debug(
+                "Presence watcher: AdGuard YAML not found; static MAC/IP matching disabled"
+            )
 
         # Load persisted state
         self._seen = _load_state(self.state_file)
@@ -518,12 +540,14 @@ class ConnectedDevicesWatcher:
                 mac = str(info.get("mac", "")).strip().lower()
                 if not mac or _is_placeholder_mac(mac):
                     continue
-                static_list.append({
-                    "ip": ip,
-                    "mac": mac,
-                    "hostname": str(info.get("hostname", "")).strip(),
-                    "static": True,
-                })
+                static_list.append(
+                    {
+                        "ip": ip,
+                        "mac": mac,
+                        "hostname": str(info.get("hostname", "")).strip(),
+                        "static": True,
+                    }
+                )
             except Exception:
                 continue
         # Dedup by MAC
@@ -569,7 +593,9 @@ class ConnectedDevicesWatcher:
             out = proc.stdout or ""
             err = proc.stderr or ""
             if proc.returncode != 0:
-                logger.warning("nmap returned %s for %s: %s", proc.returncode, subnet, err.strip())
+                logger.warning(
+                    "nmap returned %s for %s: %s", proc.returncode, subnet, err.strip()
+                )
             hosts = _parse_nmap_ping_sweep(out)
             all_hosts.extend(hosts)
         return all_hosts
@@ -583,7 +609,9 @@ class ConnectedDevicesWatcher:
             return []
 
         leases = self._load_leases()
-        dhcp_macs: Set[str] = {v.get("mac", "").lower() for v in leases.values() if v.get("mac")}
+        dhcp_macs: Set[str] = {
+            v.get("mac", "").lower() for v in leases.values() if v.get("mac")
+        }
 
         new_entries: List[Dict[str, Any]] = []
         for host in discovered:
@@ -636,7 +664,9 @@ class ConnectedDevicesWatcher:
             out = proc.stdout or ""
             err = proc.stderr or ""
             if proc.returncode != 0:
-                logger.warning("nmap6 returned %s for %s: %s", proc.returncode, subnet, err.strip())
+                logger.warning(
+                    "nmap6 returned %s for %s: %s", proc.returncode, subnet, err.strip()
+                )
             hosts = _parse_nmap_ping_sweep(out)
             all_hosts.extend(hosts)
         return all_hosts
@@ -688,7 +718,9 @@ class ConnectedDevicesWatcher:
             self._seen[key] = entry
             new_entries.append(entry)
         if new_entries:
-            logger.info("IPv6 neighbors: entries=%d new=%d", total_lines, len(new_entries))
+            logger.info(
+                "IPv6 neighbors: entries=%d new=%d", total_lines, len(new_entries)
+            )
         else:
             logger.debug("IPv6 neighbors: entries=%d new=0", total_lines)
         return new_entries
@@ -712,6 +744,7 @@ class ConnectedDevicesWatcher:
             return
         try:  # use stdlib to avoid extra deps
             import requests
+
             data = {
                 "content": f"@everyone {msg}",
                 "username": "Device Watcher",
@@ -729,19 +762,43 @@ def _from_env_defaults() -> ConnectedDevicesWatcher:
     interval = int(os.getenv("INTERVAL_S", "15") or 15)
     state = os.getenv("STATE_FILE")
     webhook = os.getenv("WEBHOOK_URL")
-    nmap_subnets_env = (os.getenv("NMAP_SUBNETS") or os.getenv("NMAP_SUBNET") or "").strip()
-    nmap_subnets = [s.strip() for s in nmap_subnets_env.split(",") if s.strip()] if nmap_subnets_env else []
-    nmap6_subnets_env = (os.getenv("NMAP6_SUBNETS") or os.getenv("NMAP6_SUBNET") or "").strip()
-    nmap6_subnets = [s.strip() for s in nmap6_subnets_env.split(",") if s.strip()] if nmap6_subnets_env else []
+    nmap_subnets_env = (
+        os.getenv("NMAP_SUBNETS") or os.getenv("NMAP_SUBNET") or ""
+    ).strip()
+    nmap_subnets = (
+        [s.strip() for s in nmap_subnets_env.split(",") if s.strip()]
+        if nmap_subnets_env
+        else []
+    )
+    nmap6_subnets_env = (
+        os.getenv("NMAP6_SUBNETS") or os.getenv("NMAP6_SUBNET") or ""
+    ).strip()
+    nmap6_subnets = (
+        [s.strip() for s in nmap6_subnets_env.split(",") if s.strip()]
+        if nmap6_subnets_env
+        else []
+    )
     nmap_interval_s = int(os.getenv("NMAP_INTERVAL_S", "60") or 60)
-    nmap_use_sudo = (os.getenv("NMAP_USE_SUDO", "0").lower() in {"1", "true", "yes", "y"})
+    nmap_use_sudo = os.getenv("NMAP_USE_SUDO", "0").lower() in {"1", "true", "yes", "y"}
     nmap_path = (os.getenv("NMAP_PATH") or "nmap").strip()
-    ipv6_neighbor_watch = (os.getenv("IPV6_NEIGHBOR_WATCH", "1").lower() in {"1", "true", "yes", "y"})
-    rdns_enabled = (os.getenv("RDNS_ENABLED", "1").lower() in {"1", "true", "yes", "y"})
+    ipv6_neighbor_watch = os.getenv("IPV6_NEIGHBOR_WATCH", "1").lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+    }
+    rdns_enabled = os.getenv("RDNS_ENABLED", "1").lower() in {"1", "true", "yes", "y"}
     rdns_ttl_s = int(os.getenv("RDNS_TTL_S", "300") or 300)
-    ignore_placeholder_dhcp = (os.getenv("IGNORE_PLACEHOLDER_DHCP", "1").lower() in {"1", "true", "yes", "y"})
+    ignore_placeholder_dhcp = os.getenv("IGNORE_PLACEHOLDER_DHCP", "1").lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+    }
 
-    export_static_leases_path = (os.getenv("STATIC_LEASES_CACHE") or os.getenv("EXPORT_STATIC_LEASES_JSON") or "").strip() or None
+    export_static_leases_path = (
+        os.getenv("STATIC_LEASES_CACHE") or os.getenv("EXPORT_STATIC_LEASES_JSON") or ""
+    ).strip() or None
 
     return ConnectedDevicesWatcher(
         adguard_config_file=cfg_file,

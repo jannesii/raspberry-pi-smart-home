@@ -37,9 +37,7 @@ def send_alert_webhook(
     try:
         resp = requests.post(url, json=payload, timeout=10)
         if resp.status_code >= 400:
-            logger.warning(
-                "alert webhook error: %s %s", resp.status_code, resp.text
-            )
+            logger.warning("alert webhook error: %s %s", resp.status_code, resp.text)
             return False
         return True
     except Exception:
@@ -94,9 +92,8 @@ def flush_alerts(*, force: bool = False) -> bool:
     with _BATCH_LOCK:
         if not _BATCH:
             return False
-        if not force and last_flush is not None:
-            if (now - last_flush) < interval_s:
-                return False
+        if not force and last_flush is not None and (now - last_flush) < interval_s:
+            return False
         items = list(_BATCH.items())
         _BATCH.clear()
 

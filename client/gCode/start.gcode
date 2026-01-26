@@ -33,7 +33,7 @@ M1006 A0 B10 L100 C44 D10 M80 E39 F10 N80
 M1006 A0 B10 L100 C0 D10 M60 E0 F10 N80
 M1006 A43 B10 L100 C46 D10 M60 E39 F10 N80
 M1006 W
-M18 
+M18
 ;=====start printer sound ===================
 
 ;=====avoid end stop =================
@@ -206,7 +206,7 @@ M622 J1
         M400
         M106 P1 S0
     M623
-    
+
     G1 X-48.2 F3000
     M400
     M984 A0.1 E1 S1 F{outer_wall_volumetric_speed/2.4} H[nozzle_diameter]

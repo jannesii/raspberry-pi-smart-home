@@ -15,4 +15,3 @@ pip install -r requirements.txt
 #python setup.py install --force-pi
 #cd ..
 #sudo rm -rf temp‑dht
-

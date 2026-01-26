@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from picamera2 import Picamera2 # type: ignore[reportMissingImports]
+from picamera2 import Picamera2  # type: ignore[reportMissingImports]
 import cv2
 from time import sleep
 
@@ -21,7 +21,7 @@ while True:
     # Display the frame.
     cv2.imshow("Live Feed", frame_bgr)
     # Exit loop if 'q' is pressed.
-    if cv2.waitKey(1) & 0xFF == ord('q'):
+    if cv2.waitKey(1) & 0xFF == ord("q"):
         break
 
 # Cleanup: release window and stop camera.

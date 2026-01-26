@@ -3,24 +3,23 @@ KFactor Calibrator - Main orchestrator.
 
 The main KFactorCalibrator class that coordinates all calibration activities.
 """
+
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import replace
 from datetime import datetime, timedelta
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 from .constants import (
-    clamp,
+    bucket_key,
     dt_from_any,
     finite,
     iso_no_micros,
     parse_hhmm,
-    bucket_key,
 )
-from .models import KFactorConfig, KFactorFit, KFactorLastSession, KFactorSample
+from .models import KFactorConfig
 from .physics import ThermalPhysics
 from .session import SessionManager
 from .snapshot import SnapshotGenerator
@@ -56,7 +55,7 @@ class KFactorCalibrator:
 
     def __init__(
         self,
-        ctrl: "Controller | None" = None,
+        ctrl: Controller | None = None,
         *,
         tz: ZoneInfo | None = None,
         is_test: bool = False,
@@ -86,17 +85,19 @@ class KFactorCalibrator:
         self._snapshot = SnapshotGenerator(cfg=self._cfg, tz=self._tz)
 
         # Service references (set externally)
-        self._weather_service: "WeatherService | None" = None
-        self._car_heater_service: "CarHeaterService | None" = None
+        self._weather_service: WeatherService | None = None
+        self._car_heater_service: CarHeaterService | None = None
         self._ready_by_service: Any = None
-        self._keep_at_temp_service: "KeepAtTempService | None" = None
+        self._keep_at_temp_service: KeepAtTempService | None = None
 
         # Load cooldown from DB (survives reboots)
         self._load_cooldown_from_db()
 
         logger.info(
             "kfactor: initialized (state=%s, enabled=%s, test=%s)",
-            self._state, self._cfg.enabled, is_test,
+            self._state,
+            self._cfg.enabled,
+            is_test,
         )
 
     # ==========================================================================
@@ -127,16 +128,16 @@ class KFactorCalibrator:
     # SERVICE REFERENCES
     # ==========================================================================
 
-    def set_weather_service(self, svc: "WeatherService | None") -> None:
+    def set_weather_service(self, svc: WeatherService | None) -> None:
         self._weather_service = svc
 
-    def set_car_heater_service(self, svc: "CarHeaterService | None") -> None:
+    def set_car_heater_service(self, svc: CarHeaterService | None) -> None:
         self._car_heater_service = svc
 
     def set_ready_by_service(self, svc: Any) -> None:
         self._ready_by_service = svc
 
-    def set_keep_at_temp_service(self, svc: "KeepAtTempService | None") -> None:
+    def set_keep_at_temp_service(self, svc: KeepAtTempService | None) -> None:
         self._keep_at_temp_service = svc
 
     # ==========================================================================
@@ -163,8 +164,7 @@ class KFactorCalibrator:
                 return None
             return KFactorConfig(**row)
         except Exception:
-            logger.debug(
-                "kfactor: failed to load config from DB", exc_info=True)
+            logger.debug("kfactor: failed to load config from DB", exc_info=True)
             return None
 
     def _save_config_in_db(self, cfg: KFactorConfig) -> None:
@@ -173,6 +173,7 @@ class KFactorCalibrator:
             return
         try:
             from dataclasses import asdict
+
             self._ctrl.save_kfactor_config(asdict(cfg))
         except Exception:
             logger.debug("kfactor: failed to save config to DB", exc_info=True)
@@ -180,8 +181,8 @@ class KFactorCalibrator:
     def _merge_config(self, updates: dict[str, Any]) -> KFactorConfig:
         """Merge updates into current config."""
         from dataclasses import fields
-        current = {f.name: getattr(self._cfg, f.name)
-                   for f in fields(self._cfg)}
+
+        current = {f.name: getattr(self._cfg, f.name) for f in fields(self._cfg)}
         for key, value in updates.items():
             if key in current:
                 current[key] = value
@@ -201,11 +202,9 @@ class KFactorCalibrator:
                 ts = dt_from_any(row["cooldown_until"], self._tz)
                 if ts and ts > datetime.now(tz=self._tz):
                     self._cooldown_until = ts
-                    logger.info(
-                        "kfactor: loaded cooldown_until=%s from DB", ts)
+                    logger.info("kfactor: loaded cooldown_until=%s from DB", ts)
         except Exception:
-            logger.debug(
-                "kfactor: failed to load cooldown from DB", exc_info=True)
+            logger.debug("kfactor: failed to load cooldown from DB", exc_info=True)
 
     def _save_cooldown_to_db(self, until: datetime | None) -> None:
         """Save cooldown timestamp to database."""
@@ -216,8 +215,7 @@ class KFactorCalibrator:
                 {"cooldown_until": iso_no_micros(until) if until else None}
             )
         except Exception:
-            logger.debug(
-                "kfactor: failed to save cooldown to DB", exc_info=True)
+            logger.debug("kfactor: failed to save cooldown to DB", exc_info=True)
 
     def _set_cooldown(self, end_ts: datetime, is_autonomous: bool, reason: str) -> None:
         """Set cooldown period after a session."""
@@ -230,7 +228,9 @@ class KFactorCalibrator:
         self._save_cooldown_to_db(self._cooldown_until)
         logger.debug(
             "kfactor: cooldown set until %s (reason=%s, autonomous=%s)",
-            iso_no_micros(self._cooldown_until), reason, is_autonomous,
+            iso_no_micros(self._cooldown_until),
+            reason,
+            is_autonomous,
         )
 
     # ==========================================================================
@@ -253,8 +253,7 @@ class KFactorCalibrator:
                         float(params.eta),
                     )
             except Exception:
-                logger.debug(
-                    "kfactor: failed to load active params from DB", exc_info=True)
+                logger.debug("kfactor: failed to load active params from DB", exc_info=True)
 
         # Defaults
         return (
@@ -272,8 +271,7 @@ class KFactorCalibrator:
         t_bucket, wind_bucket = bucket_key(outside_temp_c, wind_m_s)
 
         # Check override
-        override = self._session.bucket_params_override.get(
-            (t_bucket, wind_bucket))
+        override = self._session.bucket_params_override.get((t_bucket, wind_bucket))
         if override is not None:
             return override
 
@@ -290,8 +288,7 @@ class KFactorCalibrator:
                         float(params.eta),
                     )
             except Exception:
-                logger.debug(
-                    "kfactor: failed to load bucket params from DB", exc_info=True)
+                logger.debug("kfactor: failed to load bucket params from DB", exc_info=True)
 
         return None
 
@@ -316,8 +313,7 @@ class KFactorCalibrator:
                 if recent and recent > 0:
                     return False, f"bucket has {recent} recent samples"
             except Exception:
-                logger.debug(
-                    "kfactor: failed to check bucket samples", exc_info=True)
+                logger.debug("kfactor: failed to check bucket samples", exc_info=True)
 
         return True, "no recent bucket data"
 
@@ -391,8 +387,7 @@ class KFactorCalibrator:
         if self._cooldown_until and now < self._cooldown_until:
             if self._state != STATE_COOLDOWN:
                 self._state = STATE_COOLDOWN
-                logger.debug("kfactor: entering COOLDOWN (until %s)",
-                             self._cooldown_until)
+                logger.debug("kfactor: entering COOLDOWN (until %s)", self._cooldown_until)
             return
 
         if self._state == STATE_COOLDOWN:
@@ -484,8 +479,7 @@ class KFactorCalibrator:
         if self._cooldown_until and now < self._cooldown_until:
             if self._state not in (STATE_COOLDOWN, STATE_AUTONOMOUS_RECORDING):
                 self._state = STATE_COOLDOWN
-                logger.debug("kfactor: entering COOLDOWN (until %s)",
-                             self._cooldown_until)
+                logger.debug("kfactor: entering COOLDOWN (until %s)", self._cooldown_until)
             if self._state == STATE_COOLDOWN:
                 return
 
@@ -507,8 +501,7 @@ class KFactorCalibrator:
         elif self._state == STATE_AUTONOMOUS_ARMED:
             if not in_window:
                 self._state = STATE_IDLE
-                logger.info(
-                    "kfactor: AUTONOMOUS_ARMED -> IDLE (window closed)")
+                logger.info("kfactor: AUTONOMOUS_ARMED -> IDLE (window closed)")
                 return
 
             if is_heater_on:
@@ -525,8 +518,7 @@ class KFactorCalibrator:
                     is_autonomous=False,
                 )
                 self._state = STATE_PASSIVE_RECORDING
-                logger.info(
-                    "kfactor: AUTONOMOUS_ARMED -> PASSIVE_RECORDING (external heater)")
+                logger.info("kfactor: AUTONOMOUS_ARMED -> PASSIVE_RECORDING (external heater)")
                 return
 
             # Check if we should calibrate
@@ -575,8 +567,7 @@ class KFactorCalibrator:
             # Check disturbance
             disturbance = self._session.detect_disturbance()
             if disturbance:
-                logger.info(
-                    "kfactor: autonomous session aborted: %s", disturbance)
+                logger.info("kfactor: autonomous session aborted: %s", disturbance)
                 self._turn_heater_off()
                 self._session.finalize_session(
                     end_ts=now,
@@ -591,7 +582,8 @@ class KFactorCalibrator:
             target_c = float(self._cfg.autonomous_target_temp_c)
             if cabin_temp_c >= target_c:
                 logger.info(
-                    "kfactor: autonomous session ended (target_reached %.1fC)", cabin_temp_c)
+                    "kfactor: autonomous session ended (target_reached %.1fC)", cabin_temp_c
+                )
                 self._turn_heater_off()
                 self._session.finalize_session(
                     end_ts=now,
@@ -633,8 +625,7 @@ class KFactorCalibrator:
 
             # Check heater unexpectedly off
             if not is_heater_on:
-                logger.info(
-                    "kfactor: autonomous session aborted (heater_off_unexpected)")
+                logger.info("kfactor: autonomous session aborted (heater_off_unexpected)")
                 self._session.finalize_session(
                     end_ts=now,
                     reason="heater_off_unexpected",
@@ -669,8 +660,7 @@ class KFactorCalibrator:
                 if status and getattr(status, "mode", None) not in (None, "off"):
                     return "ready_by_active"
             except Exception:
-                logger.debug(
-                    "kfactor: failed to check ready_by_service", exc_info=True)
+                logger.debug("kfactor: failed to check ready_by_service", exc_info=True)
 
         # Check keep-at-temp service
         if self._keep_at_temp_service is not None:
@@ -678,8 +668,7 @@ class KFactorCalibrator:
                 if self._keep_at_temp_service.is_active:
                     return "keep_at_temp_active"
             except Exception:
-                logger.debug(
-                    "kfactor: failed to check keep_at_temp_service", exc_info=True)
+                logger.debug("kfactor: failed to check keep_at_temp_service", exc_info=True)
 
         return None
 
@@ -708,7 +697,10 @@ class KFactorCalibrator:
             self._slow_rise_checks += 1
             logger.debug(
                 "kfactor: slow rise rate %.3f C/min (min=%.3f, checks=%d/%d)",
-                rate_per_min, min_rate, self._slow_rise_checks, min_checks,
+                rate_per_min,
+                min_rate,
+                self._slow_rise_checks,
+                min_checks,
             )
         else:
             self._slow_rise_checks = 0
@@ -718,8 +710,7 @@ class KFactorCalibrator:
     def _turn_heater_on(self) -> None:
         """Turn heater on for autonomous calibration."""
         if self._car_heater_service is None:
-            logger.warning(
-                "kfactor: cannot turn heater on, no car_heater_service")
+            logger.warning("kfactor: cannot turn heater on, no car_heater_service")
             return
         try:
             self._car_heater_service.turn_on(source="kfactor_calibration")
@@ -730,8 +721,7 @@ class KFactorCalibrator:
     def _turn_heater_off(self) -> None:
         """Turn heater off after autonomous calibration."""
         if self._car_heater_service is None:
-            logger.warning(
-                "kfactor: cannot turn heater off, no car_heater_service")
+            logger.warning("kfactor: cannot turn heater off, no car_heater_service")
             return
         try:
             self._car_heater_service.turn_off(source="kfactor_calibration")
@@ -871,14 +861,19 @@ class KFactorCalibrator:
     ) -> None:
         """Record prediction outcome for analysis."""
         error_minutes = actual_minutes - predicted_minutes
-        error_pct = (error_minutes / predicted_minutes) * \
-            100.0 if predicted_minutes > 0 else 0.0
+        error_pct = (error_minutes / predicted_minutes) * 100.0 if predicted_minutes > 0 else 0.0
 
         logger.info(
             "kfactor: prediction outcome: predicted=%.1fmin actual=%.1fmin error=%.1fmin (%.1f%%) "
             "cabin=%.1f->%.1fC target=%.1fC outside=%.1fC",
-            predicted_minutes, actual_minutes, error_minutes, error_pct,
-            cabin_start_c, cabin_end_c, target_c, outside_c,
+            predicted_minutes,
+            actual_minutes,
+            error_minutes,
+            error_pct,
+            cabin_start_c,
+            cabin_end_c,
+            target_c,
+            outside_c,
         )
 
         if self._ctrl is not None:
@@ -893,8 +888,7 @@ class KFactorCalibrator:
                     outside_c=outside_c,
                 )
             except Exception:
-                logger.debug(
-                    "kfactor: failed to record prediction outcome", exc_info=True)
+                logger.debug("kfactor: failed to record prediction outcome", exc_info=True)
 
     # ==========================================================================
     # RESET

@@ -3,21 +3,24 @@ AC Thermostat - Main orchestrator.
 
 The main ACThermostat class that coordinates all thermostat activities.
 """
+
 from __future__ import annotations
 
 import logging
 import time
 from datetime import datetime
-from typing import Any, Callable, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytz
 
-from .time_utils import parse_iso_to_epoch, compute_phase_duration
+from .notifier import NotificationEmitter
 from .sleep_manager import SleepManager
 from .temp_reader import TemperatureReader
-from .notifier import NotificationEmitter
+from .time_utils import compute_phase_duration, parse_iso_to_epoch
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from app.core import Controller, ThermostatConf
     from app.services.ac import ACController
 
@@ -30,9 +33,9 @@ class ACThermostat:
 
     def __init__(
         self,
-        ac: "ACController",
-        cfg: "ThermostatConf",
-        ctrl: "Controller",
+        ac: ACController,
+        cfg: ThermostatConf,
+        ctrl: Controller,
         location: str,
         notify: Callable[[str, dict[str, Any]], None] | None = None,
         winter: bool = False,
@@ -43,22 +46,22 @@ class ACThermostat:
         self.ctrl = ctrl
         self.location = location
         self.notify = notify
-        self.tz = pytz.timezone('Europe/Helsinki')
+        self.tz = pytz.timezone("Europe/Helsinki")
 
         # Initialize AC state
         ac_status = self.ac.get_status() if not winter else None
-        self._is_on: bool = bool(ac_status.get(
-            "switch", False)) if ac_status else False
-        self.mode: str | None = ac_status.get(
-            "mode", "cold") if isinstance(ac_status, dict) else None
-        self.fan_speed: str | None = ac_status.get(
-            "fan_speed_enum", "low") if isinstance(ac_status, dict) else None
-        self._enabled: bool = bool(getattr(cfg, 'thermo_active', True))
+        self._is_on: bool = bool(ac_status.get("switch", False)) if ac_status else False
+        self.mode: str | None = (
+            ac_status.get("mode", "cold") if isinstance(ac_status, dict) else None
+        )
+        self.fan_speed: str | None = (
+            ac_status.get("fan_speed_enum", "low") if isinstance(ac_status, dict) else None
+        )
+        self._enabled: bool = bool(getattr(cfg, "thermo_active", True))
         self._last_change_ts: float = 0.0
 
         # Track persisted start ISO for the current phase
-        self._phase_started_at_iso: str | None = getattr(
-            cfg, 'phase_started_at', None)
+        self._phase_started_at_iso: str | None = getattr(cfg, "phase_started_at", None)
 
         # Initialize submodules
         self._sleep = SleepManager(cfg, self.tz)
@@ -71,7 +74,10 @@ class ACThermostat:
 
         logger.debug(
             "thermo: init %s is_on=%s mode=%s fan=%s",
-            cfg, self._is_on, self.mode, self.fan_speed,
+            cfg,
+            self._is_on,
+            self.mode,
+            self.fan_speed,
         )
 
     def _init_phase_timing(self) -> None:
@@ -80,19 +86,22 @@ class ACThermostat:
         started_epoch = parse_iso_to_epoch(self._phase_started_at_iso, self.tz)
         logger.debug(
             "thermo: parsed phase_started_at=%s -> %s",
-            self._phase_started_at_iso, started_epoch,
+            self._phase_started_at_iso,
+            started_epoch,
         )
 
         # Validate persisted phase matches actual state
         if self._is_on:
-            if getattr(self.cfg, 'current_phase', None) != 'on' or started_epoch is None:
+            if getattr(self.cfg, "current_phase", None) != "on" or started_epoch is None:
                 self._phase_started_at_iso = datetime.fromtimestamp(
-                    now_epoch, tz=self.tz).isoformat()
+                    now_epoch, tz=self.tz
+                ).isoformat()
                 self._persist_conf()
         else:
-            if getattr(self.cfg, 'current_phase', None) != 'off' or started_epoch is None:
+            if getattr(self.cfg, "current_phase", None) != "off" or started_epoch is None:
                 self._phase_started_at_iso = datetime.fromtimestamp(
-                    now_epoch, tz=self.tz).isoformat()
+                    now_epoch, tz=self.tz
+                ).isoformat()
                 self._persist_conf()
 
         # Set last-change timestamp from phase start
@@ -103,20 +112,22 @@ class ACThermostat:
             self._last_change_ts = now_epoch
 
         # Log phase age
-        phase_lbl = 'ON' if self._is_on else 'OFF'
-        age_min = compute_phase_duration(
-            self._phase_started_at_iso, self.tz) or 0
+        phase_lbl = "ON" if self._is_on else "OFF"
+        age_min = compute_phase_duration(self._phase_started_at_iso, self.tz) or 0
         logger.info(
             "thermo: current phase=%s age=%d min since %s",
-            phase_lbl, age_min, self._phase_started_at_iso,
+            phase_lbl,
+            age_min,
+            self._phase_started_at_iso,
         )
 
     def _now(self) -> float:
         return time.time()
 
     def _can_turn_on(self) -> bool:
-        ok = (self._now(
-        ) - self._last_change_ts) >= self.cfg.min_off_s and not self._sleep.is_sleep_window_now()
+        ok = (
+            self._now() - self._last_change_ts
+        ) >= self.cfg.min_off_s and not self._sleep.is_sleep_window_now()
         logger.debug("thermo: _can_turn_on=%s", ok)
         return ok
 
@@ -132,8 +143,8 @@ class ACThermostat:
                 sleep_active=self.cfg.sleep_active,
                 sleep_start=self.cfg.sleep_start,
                 sleep_stop=self.cfg.sleep_stop,
-                sleep_weekly=getattr(self.cfg, 'sleep_weekly', None),
-                control_locations=getattr(self.cfg, 'control_locations', None),
+                sleep_weekly=getattr(self.cfg, "sleep_weekly", None),
+                control_locations=getattr(self.cfg, "control_locations", None),
                 target_temp=self.cfg.target_temp,
                 pos_hysteresis=self.cfg.pos_hysteresis,
                 neg_hysteresis=self.cfg.neg_hysteresis,
@@ -143,7 +154,7 @@ class ACThermostat:
                 poll_interval_s=int(self.cfg.poll_interval_s),
                 smooth_window=int(self.cfg.smooth_window),
                 max_stale_s=self.cfg.max_stale_s,
-                current_phase=('on' if self._is_on else 'off'),
+                current_phase=("on" if self._is_on else "off"),
                 phase_started_at=self._phase_started_at_iso,
             )
         except Exception as e:
@@ -155,8 +166,7 @@ class ACThermostat:
 
         # Log AC on/off event into DB
         try:
-            self.ctrl.record_ac_event(is_on=bool(
-                self._is_on), source='thermostat')
+            self.ctrl.record_ac_event(is_on=bool(self._is_on), source="thermostat")
         except Exception as e:
             logger.debug("thermo: failed to record ac_event: %s", e)
 
@@ -387,7 +397,7 @@ class ACThermostat:
         """Check sleep window and handle transitions. Returns True to continue control."""
         logger.debug(
             "thermo: step_sleep_check: sleep_active=%s is_sleep_time=%s is_on=%s",
-            getattr(self.cfg, 'sleep_active', True),
+            getattr(self.cfg, "sleep_active", True),
             self._sleep.is_sleep_window_now(),
             self._is_on,
         )
@@ -407,16 +417,14 @@ class ACThermostat:
                     self._last_change_ts = self._now()
                     self._emitter.emit_status(self._is_on)
                 else:
-                    wait = self.cfg.min_on_s - \
-                        (self._now() - self._last_change_ts)
+                    wait = self.cfg.min_on_s - (self._now() - self._last_change_ts)
                     logger.debug(
                         "thermo: sleep active — waiting min-on %.0fs before OFF",
                         max(0, wait),
                     )
             else:
                 logger.debug("thermo: sleep active — staying OFF")
-            logger.debug("thermo: sleeping %ss (sleep mode)",
-                         self.cfg.poll_interval_s)
+            logger.debug("thermo: sleeping %ss (sleep mode)", self.cfg.poll_interval_s)
             time.sleep(self.cfg.poll_interval_s)
             return False
         return True
@@ -425,8 +433,7 @@ class ACThermostat:
         """Main temperature control logic."""
         temp = self._temp_reader.read_temperature()
         if temp is None:
-            logger.warning(
-                "thermo: no valid temp (missing or stale); skipping")
+            logger.warning("thermo: no valid temp (missing or stale); skipping")
             time.sleep(self.cfg.poll_interval_s)
             return
 
@@ -435,7 +442,8 @@ class ACThermostat:
             "thermo: setpoint=%.2f deadband=%.2f on_at=%.2f off_at=%.2f",
             self.cfg.target_temp,
             self.cfg.pos_hysteresis + self.cfg.neg_hysteresis,
-            on_at, off_at,
+            on_at,
+            off_at,
         )
         now = self._now()
 
@@ -445,7 +453,9 @@ class ACThermostat:
                 time_delta = self.turn_on()
                 logger.info(
                     "thermo: ON trigger: temp=%.2f >= %.2f; turned on after %s min",
-                    temp, on_at, time_delta,
+                    temp,
+                    on_at,
+                    time_delta,
                 )
                 if time_delta:
                     self.ctrl.log_message(
@@ -455,8 +465,7 @@ class ACThermostat:
                 try:
                     self.ac.set_temperature(16)
                 except Exception as e:
-                    logger.debug(
-                        "thermo: failed to set device temp to 16: %s", e)
+                    logger.debug("thermo: failed to set device temp to 16: %s", e)
                 self._last_change_ts = now
                 self._emitter.emit_status(self._is_on)
                 logger.debug("thermo: state changed -> ON; temp_set=16")
@@ -475,7 +484,9 @@ class ACThermostat:
                 time_delta = self.turn_off()
                 logger.info(
                     "thermo: OFF trigger: temp=%.2f <= %.2f; turned off after %s min",
-                    temp, off_at, time_delta,
+                    temp,
+                    off_at,
+                    time_delta,
                 )
                 if time_delta:
                     self.ctrl.log_message(
@@ -500,8 +511,8 @@ class ACThermostat:
         # Refresh actual device state and inform listeners if changed
         try:
             status = self.ac.get_status()
-            if isinstance(status, dict) and 'switch' in status:
-                new_is_on = bool(status.get('switch', False))
+            if isinstance(status, dict) and "switch" in status:
+                new_is_on = bool(status.get("switch", False))
                 if new_is_on != self._is_on:
                     logger.info(
                         "thermo: device state changed externally -> %s",
@@ -511,8 +522,8 @@ class ACThermostat:
             # Track mode/fan changes
             if isinstance(status, dict):
                 changed = False
-                m = status.get('mode')
-                f = status.get('fan_speed_enum')
+                m = status.get("mode")
+                f = status.get("fan_speed_enum")
                 if m is not None and m != self.mode:
                     self.mode = m
                     changed = True

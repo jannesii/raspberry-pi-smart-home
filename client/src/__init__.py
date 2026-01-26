@@ -1,20 +1,14 @@
 #!/usr/bin/env python3
-import os
 import time
 import logging
-from typing import Callable, Dict
 
 
-from .bambu_handler import BambuHandler
-from .button_handler import ButtonHandler
-from .camera_manager import CameraManager
 from .dht import DHT22Sensor
 from .status_reporter import StatusReporter
 from .timelapse_session import TimelapseSession
 from .video_encoder import VideoEncoder
 
-import gpiozero_compat
-from gpiozero import LED, Button
+from gpiozero import LED
 
 # GPIO pins
 RED_LED_PIN = 17
@@ -34,19 +28,16 @@ def execute_main_loop() -> None:
     yellow_led = LED(YELLOW_LED_PIN)
     green_led = LED(GREEN_LED_PIN)
 
-    printer = BambuHandler()
-    #camera = CameraManager()
+    # printer = BambuHandler()
+    # camera = CameraManager()
     encoder = VideoEncoder()
-    session = TimelapseSession(
-        encoder,
-        red_led, yellow_led, green_led
-    )
+    session = TimelapseSession(encoder, red_led, yellow_led, green_led)
 
     dht = DHT22Sensor(DHT_PIN)
     reporter = StatusReporter(session, dht)
 
-    button = Button(CAPTURE_BUTTON_PIN, pull_up=True, bounce_time=0.01)
-    handler = ButtonHandler(button,session=session)
+    # button = Button(CAPTURE_BUTTON_PIN, pull_up=True, bounce_time=0.01)
+    # handler = ButtonHandler(button, session=session)
 
     reporter.connect()
 
@@ -58,4 +49,4 @@ def execute_main_loop() -> None:
         logger.info("Shutting down")
     finally:
         session.finalize()
-        #camera.shutdown()
+        # camera.shutdown()

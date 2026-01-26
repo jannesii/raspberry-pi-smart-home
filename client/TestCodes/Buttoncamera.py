@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
 # filepath: /home/jannesi/Code/Buttoncamera.py
 from gpiozero import LED, Button
-from picamera2 import Picamera2 # type: ignore[reportMissingImports]
-from libcamera import controls # type: ignore[reportMissingImports]
+from picamera2 import Picamera2  # type: ignore[reportMissingImports]
+from libcamera import controls  # type: ignore[reportMissingImports]
 import cv2
 import time
-from time import sleep, time
+from time import sleep
 
 # Define GPIO pins
-LED_PIN = 17   # GPIO pin for LED
+LED_PIN = 17  # GPIO pin for LED
 BUTTON_PIN = 22  # GPIO pin for microswitch
 
 # Initialize components
 led = LED(LED_PIN)
-button = Button(BUTTON_PIN, pull_up=True, bounce_time=0.05)  # Uses internal pull-up resistor
+button = Button(
+    BUTTON_PIN, pull_up=True, bounce_time=0.05
+)  # Uses internal pull-up resistor
 
 # Initialize and configure Picamera2 for still images
 picam2 = Picamera2()
@@ -25,26 +27,30 @@ picam2.start()
 # Allow camera settings to settle
 sleep(2)
 
+
 def enable_autofocus():
     """Activate autofocus if the camera supports it."""
     try:
         # Example control for autofocus. Adjust control name/value as needed.
-        #picam2.set_controls({"AfMode": controls.AfModeEnum.Continuous,"AfWindows": (0.4, 0.4, 0.2, 0.2)})
-        #picam2.set_controls({"AfMode": controls.AfModeEnum.Manual, "LensPosition": 0.0})
-        picam2.set_controls({
-            "AfMode": controls.AfModeEnum.Continuous,
-            "AfRange": controls.AfRangeEnum.Normal,
-            "AfWindows": [(16384, 16384, 49152, 49152)],
-            "ExposureValue": 0,
-        })
+        # picam2.set_controls({"AfMode": controls.AfModeEnum.Continuous,"AfWindows": (0.4, 0.4, 0.2, 0.2)})
+        # picam2.set_controls({"AfMode": controls.AfModeEnum.Manual, "LensPosition": 0.0})
+        picam2.set_controls(
+            {
+                "AfMode": controls.AfModeEnum.Continuous,
+                "AfRange": controls.AfRangeEnum.Normal,
+                "AfWindows": [(16384, 16384, 49152, 49152)],
+                "ExposureValue": 0,
+            }
+        )
         print("Autofocus activated.")
     except Exception as e:
         print("Error activating autofocus:", e)
 
+
 # Function to toggle LED and capture an image when the button is pressed
 def toggle_led_and_capture():
     led.toggle()  # Toggle LED state (ON <-> OFF)
-    
+
     try:
         # Capture the image to a NumPy array (assumed to be in RGB)
         image = picam2.capture_array()
@@ -56,6 +62,7 @@ def toggle_led_and_capture():
         print(f"Image captured and saved as {filename}")
     except Exception as e:
         print("Error capturing image:", e)
+
 
 # Attach the event to the button press
 button.when_pressed = toggle_led_and_capture

@@ -15,4 +15,3 @@ function copyCreatedKey() {
     console.error('Copy failed', e);
   }
 }
-

@@ -9,7 +9,7 @@ import cv2
 # so the file can be imported everywhere.
 if os.name != "nt":
     from picamera2 import Picamera2  # type: ignore[reportMissingImports]
-    from libcamera import controls   # type: ignore[reportMissingImports]
+    from libcamera import controls  # type: ignore[reportMissingImports]
 
 logger = logging.getLogger(__name__)
 logger.setLevel((logging.DEBUG))
@@ -52,8 +52,10 @@ class CameraManager:
         else:
             # ----- Raspberry Pi path -----
             self.picam2 = Picamera2()  # type: ignore[reportMissingImports]
-            #self.config = self.picam2.create_still_configuration()
-            self.config = self.picam2.create_video_configuration(main={"size": (2304, 1296)})
+            # self.config = self.picam2.create_still_configuration()
+            self.config = self.picam2.create_video_configuration(
+                main={"size": (2304, 1296)}
+            )
             self.picam2.configure(self.config)
             self.picam2.start_preview()
             self.picam2.start()
@@ -65,11 +67,14 @@ class CameraManager:
     # ------------------------------------------------------------------ #
     #  Raspberry‑Pi‑only helper
     # ------------------------------------------------------------------ #
-    
+
     @staticmethod
-    def af_window_frac(box_width_frac: float, box_height_frac: float,
-                    center_x_frac: float = 0.5,
-                    center_y_frac: float = 0.5) -> tuple[int, int, int, int]:
+    def af_window_frac(
+        box_width_frac: float,
+        box_height_frac: float,
+        center_x_frac: float = 0.5,
+        center_y_frac: float = 0.5,
+    ) -> tuple[int, int, int, int]:
         """
         Return an AfWindows tuple (x0, y0, w, h) in Q16 sensor fractions.
 
@@ -77,18 +82,22 @@ class CameraManager:
         Values are clamped so x0+w <= 65535, y0+h <= 65535.
         """
         Q16 = 1 << 16  # 65536
-        w = int(box_width_frac  * Q16)
+        w = int(box_width_frac * Q16)
         h = int(box_height_frac * Q16)
 
         # top-left from center
-        x0 = int((center_x_frac - box_width_frac  / 2.0) * Q16)
+        x0 = int((center_x_frac - box_width_frac / 2.0) * Q16)
         y0 = int((center_y_frac - box_height_frac / 2.0) * Q16)
 
         # clamp into valid range
-        if x0 < 0: x0 = 0
-        if y0 < 0: y0 = 0
-        if x0 + w > Q16 - 1: x0 = (Q16 - 1) - w
-        if y0 + h > Q16 - 1: y0 = (Q16 - 1) - h
+        if x0 < 0:
+            x0 = 0
+        if y0 < 0:
+            y0 = 0
+        if x0 + w > Q16 - 1:
+            x0 = (Q16 - 1) - w
+        if y0 + h > Q16 - 1:
+            y0 = (Q16 - 1) - h
 
         return (x0, y0, w, h)
 
@@ -99,18 +108,20 @@ class CameraManager:
             # center box covering ~50% of width/height
             self.af_windows = [self.af_window_frac(0.2, 0.2)]  # see helper above
 
-            self.picam2.set_controls({
-                "AfMode":     controls.AfModeEnum.Continuous,
-                "AfSpeed":    controls.AfSpeedEnum.Fast,
-                "AfRange":    controls.AfRangeEnum.Normal,
-                "AfMetering": controls.AfMeteringEnum.Windows,  # required for AfWindows to matter
-                "AfWindows":  self.af_windows,
-                "ExposureValue": -0.5,
-            })
+            self.picam2.set_controls(
+                {
+                    "AfMode": controls.AfModeEnum.Continuous,
+                    "AfSpeed": controls.AfSpeedEnum.Fast,
+                    "AfRange": controls.AfRangeEnum.Normal,
+                    "AfMetering": controls.AfMeteringEnum.Windows,  # required for AfWindows to matter
+                    "AfWindows": self.af_windows,
+                    "ExposureValue": -0.5,
+                }
+            )
             logger.info("autofocus activated (windows metering)")
         except Exception:
             logger.exception("error activating autofocus")
-            
+
     def _draw_af_windows(self, frame_bgr: bytes) -> None:
         """
         Draw autofocus windows on the frame.
@@ -122,8 +133,8 @@ class CameraManager:
         for x0, y0, w, h in self.af_windows:  # use the value you set
             px0 = int(prev_w * (x0 / Q16))
             py0 = int(prev_h * (y0 / Q16))
-            pw  = int(prev_w * (w  / Q16))
-            ph  = int(prev_h * (h  / Q16))
+            pw = int(prev_w * (w / Q16))
+            ph = int(prev_h * (h / Q16))
             cv2.rectangle(frame_bgr, (px0, py0), (px0 + pw, py0 + ph), (0, 255, 0), 2)
         logger.debug("autofocus windows drawn on frame")
         cv2.imwrite("afwindow.jpg", frame_bgr)
@@ -131,7 +142,9 @@ class CameraManager:
     # ------------------------------------------------------------------ #
     #  Public API
     # ------------------------------------------------------------------ #
-    def capture_frame(self, autofocus_cycle: bool = False, verbose: bool = False) -> Optional[bytes]:
+    def capture_frame(
+        self, autofocus_cycle: bool = False, verbose: bool = False
+    ) -> Optional[bytes]:
         """
         Grab one frame and return JPEG‑encoded bytes.
         Returns None on failure.
@@ -148,15 +161,19 @@ class CameraManager:
                     elapsed = time.perf_counter() - start
                     self.times.append(elapsed)
                     if not success:
-                        logger.warning(f"autofocus cycle failed, using last focus, time: {elapsed:.2f} seconds")
+                        logger.warning(
+                            f"autofocus cycle failed, using last focus, time: {elapsed:.2f} seconds"
+                        )
                     else:
-                        logger.debug(f"autofocus cycle completed, time: {elapsed:.2f} seconds")
-                #time.sleep(1.5)
+                        logger.debug(
+                            f"autofocus cycle completed, time: {elapsed:.2f} seconds"
+                        )
+                # time.sleep(1.5)
                 raw_rgb = self.picam2.capture_array()
                 # Convert to BGR for cv2.imencode
                 frame_bgr = cv2.cvtColor(raw_rgb, cv2.COLOR_RGB2BGR)
 
-                #self._draw_af_windows(frame_bgr)
+                # self._draw_af_windows(frame_bgr)
             ok, jpeg = cv2.imencode(".jpg", frame_bgr)
             if not ok:
                 raise RuntimeError("JPEG encode failed")
@@ -187,6 +204,7 @@ class CameraManager:
 
     def __exit__(self, exc_type, exc, tb) -> None:
         self.shutdown()
+
     """
     example usage:
     with CameraManager() as cam:

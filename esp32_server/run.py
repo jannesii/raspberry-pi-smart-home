@@ -18,7 +18,9 @@ from socketio.exceptions import BadNamespaceError
 # ---------------------------
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
-logging.basicConfig(level=LOG_LEVEL, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logging.basicConfig(
+    level=LOG_LEVEL, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+)
 logger = logging.getLogger("esp32_server")
 logging.getLogger("socketio.client").setLevel(logging.WARNING)
 
@@ -30,28 +32,35 @@ _LOGIN_REFRESH_COOLDOWN_S: float = 90.0
 # Datatypes
 # ---------------------------
 
+
 @dataclass
 class BackendConfig:
     server: str
     username: str
     password: str
 
+
 def on_connect() -> None:
     pass
+
 
 def on_disconnect() -> None:
     pass
 
+
 def on_error(data: dict) -> None:
     logger.error("server error: %s", data)
+
 
 def on_server_shutdown() -> None:
     logger.info("server is shutting down")
     sio.disconnect()
 
+
 def connect() -> None:
     """Optional: place background loops or one-time connect logic here."""
     pass
+
 
 sio = socketio.Client(
     logger=True,
@@ -59,10 +68,10 @@ sio = socketio.Client(
     # We'll handle reconnects explicitly to allow session refresh.
     reconnection=False,
 )
-sio.on('connect',    on_connect)
-sio.on('disconnect', on_disconnect)
-sio.on('error',      on_error)
-sio.on('server_shutdown', on_server_shutdown)
+sio.on("connect", on_connect)
+sio.on("disconnect", on_disconnect)
+sio.on("error", on_error)
+sio.on("server_shutdown", on_server_shutdown)
 
 # ---------------------------
 # Backend (CSRF) Session Setup
@@ -70,15 +79,27 @@ sio.on('server_shutdown', on_server_shutdown)
 
 _CSRF_RE = re.compile(r'name="csrf_token"\s+value="([^"]+)"')
 
+
 def _require_env() -> BackendConfig:
     load_dotenv("/etc/esp32_server.env", override=True)
     server = os.getenv("SERVER", "").rstrip("/")
     username = os.getenv("USERNAME", "")
     password = os.getenv("PASSWORD", "")
     if not server or not username or not password:
-        missing = [k for k, v in {"SERVER": server, "USERNAME": username, "PASSWORD": password}.items() if not v]
-        raise RuntimeError(f"Missing required environment variables: {', '.join(missing)}")
+        missing = [
+            k
+            for k, v in {
+                "SERVER": server,
+                "USERNAME": username,
+                "PASSWORD": password,
+            }.items()
+            if not v
+        ]
+        raise RuntimeError(
+            f"Missing required environment variables: {', '.join(missing)}"
+        )
     return BackendConfig(server=server, username=username, password=password)
+
 
 def _extract_csrf_token(html: str) -> str:
     m = _CSRF_RE.search(html or "")
@@ -86,7 +107,10 @@ def _extract_csrf_token(html: str) -> str:
         raise RuntimeError("CSRF token not found on login page")
     return m.group(1)
 
-def _authenticate_session(cfg: BackendConfig, timeout: float = 5.0) -> Tuple[requests.Session, str]:
+
+def _authenticate_session(
+    cfg: BackendConfig, timeout: float = 5.0
+) -> Tuple[requests.Session, str]:
     """Authenticate using simplified JSON endpoint /login_api.
 
     Returns a session with cookies set; CSRF token is not needed for code paths,
@@ -107,9 +131,11 @@ def _authenticate_session(cfg: BackendConfig, timeout: float = 5.0) -> Tuple[req
     logger.info("Authenticated to backend via /login_api")
     return session, ""
 
+
 def _cookies_header(session: requests.Session) -> dict[str, str]:
     cookie_str = "; ".join(f"{k}={v}" for k, v in session.cookies.get_dict().items())
     return {"Cookie": cookie_str} if cookie_str else {}
+
 
 def _connect_with_login_refresh(cfg: BackendConfig, session: requests.Session) -> None:
     """
@@ -121,8 +147,8 @@ def _connect_with_login_refresh(cfg: BackendConfig, session: requests.Session) -
             cfg.server,
             headers=_cookies_header(session),
             transports=["websocket", "polling"],
-            wait=True,   # block until connected or timeout
-            auth={"role": "esp32"}
+            wait=True,  # block until connected or timeout
+            auth={"role": "esp32"},
         )
         return
     except Exception as e:
@@ -152,7 +178,7 @@ def _connect_with_login_refresh(cfg: BackendConfig, session: requests.Session) -
             headers=_cookies_header(session2),
             transports=["websocket", "polling"],
             wait=True,
-            auth={"role": "esp32"}
+            auth={"role": "esp32"},
         )
 
 
@@ -172,9 +198,11 @@ def _ensure_sio_connected(cfg: BackendConfig, session: requests.Session) -> None
     # (Re)connect synchronously and only to the desired namespace
     _connect_with_login_refresh(cfg, session)
 
+
 # ---------------------------
 # Flask App Factory
 # ---------------------------
+
 
 def create_app() -> Flask:
     app = Flask(__name__, template_folder="app/templates")
@@ -195,7 +223,9 @@ def create_app() -> Flask:
         session = current_app.config.get("REST_SESSION")
         if session is None:
             try:
-                session, token = _authenticate_session(current_app.config["BACKEND_CONFIG"])
+                session, token = _authenticate_session(
+                    current_app.config["BACKEND_CONFIG"]
+                )
                 current_app.config["REST_SESSION"] = session
                 current_app.config["CSRF_TOKEN"] = token
             except Exception as e:
@@ -207,7 +237,7 @@ def create_app() -> Flask:
 
         try:
             _ensure_sio_connected(current_app.config["BACKEND_CONFIG"], session)
-            sio.emit('esp32_temphum', data)
+            sio.emit("esp32_temphum", data)
         except BadNamespaceError:
             # One forced reconnect attempt
             logger.warning("Namespace not connected; reconnecting once...")
@@ -217,7 +247,7 @@ def create_app() -> Flask:
                 pass
             try:
                 _ensure_sio_connected(current_app.config["BACKEND_CONFIG"], session)
-                sio.emit('esp32_temphum', data)
+                sio.emit("esp32_temphum", data)
             except Exception as e:
                 logger.error("Emit failed after reconnect: %s", e)
                 return jsonify({"ok": False, "error": "socket_disconnected"}), 503
@@ -228,6 +258,7 @@ def create_app() -> Flask:
         return jsonify({"ok": True}), 200
 
     return app
+
 
 app = create_app()
 

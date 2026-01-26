@@ -3,6 +3,7 @@ Temperature reading for thermostat.
 
 Handles reading from multiple control locations with staleness checking and smoothing.
 """
+
 from __future__ import annotations
 
 import json
@@ -10,7 +11,7 @@ import logging
 import time
 from collections import deque
 from datetime import datetime
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from app.core import Controller
@@ -23,7 +24,7 @@ class TemperatureReader:
 
     def __init__(
         self,
-        ctrl: "Controller",
+        ctrl: Controller,
         cfg: Any,
         location: str,
         tz: Any,
@@ -43,7 +44,7 @@ class TemperatureReader:
             return None
         s = str(ts).strip()
         try:
-            if s.endswith('Z'):
+            if s.endswith("Z"):
                 s = s[:-1]
             dt = datetime.fromisoformat(s)
             if dt.tzinfo is None:
@@ -59,12 +60,11 @@ class TemperatureReader:
         """Get list of control locations from config."""
         locs: list[str] = []
         try:
-            sel = getattr(self._cfg, 'control_locations', None)
+            sel = getattr(self._cfg, "control_locations", None)
             if sel:
                 if isinstance(sel, str):
-                    locs = [str(x)
-                            for x in json.loads(sel) if isinstance(x, str)]
-                elif isinstance(sel, (list, tuple)):
+                    locs = [str(x) for x in json.loads(sel) if isinstance(x, str)]
+                elif isinstance(sel, list | tuple):
                     locs = [str(x) for x in sel if isinstance(x, str)]
         except Exception:
             locs = []
@@ -89,14 +89,15 @@ class TemperatureReader:
             if rec is None or rec.temperature is None:
                 continue
 
-            ts_epoch = self._parse_iso_to_epoch(
-                getattr(rec, 'timestamp', None))
+            ts_epoch = self._parse_iso_to_epoch(getattr(rec, "timestamp", None))
             if max_stale is not None and ts_epoch is not None:
                 age = self._now() - ts_epoch
                 if age > max_stale:
                     logger.debug(
                         "thermo: skipping stale reading for %s age=%.1fs > %ss",
-                        loc, age, max_stale,
+                        loc,
+                        age,
+                        max_stale,
                     )
                     continue
 
@@ -104,20 +105,21 @@ class TemperatureReader:
                 temps.append(float(rec.temperature))
                 used_locs.append(loc)
                 if latest_ts is None:
-                    latest_ts = getattr(rec, 'timestamp', None)
+                    latest_ts = getattr(rec, "timestamp", None)
             except Exception:
                 continue
 
         if not temps:
-            logger.debug(
-                "thermo: no fresh DB readings for control locations=%s", locs
-            )
+            logger.debug("thermo: no fresh DB readings for control locations=%s", locs)
             return None
 
         t = sum(temps) / len(temps)
         logger.debug(
             "thermo: read temps %s -> avg=%.2f from used_locs=%s (sample ts=%s)",
-            temps, t, used_locs, latest_ts,
+            temps,
+            t,
+            used_locs,
+            latest_ts,
         )
 
         self._temps.append(float(t))
@@ -131,7 +133,8 @@ class TemperatureReader:
         smoothed = sum(self._temps) / len(self._temps)
         logger.debug(
             "thermo: smoothed temp=%.2f window=%d",
-            smoothed, len(self._temps),
+            smoothed,
+            len(self._temps),
         )
         return smoothed
 

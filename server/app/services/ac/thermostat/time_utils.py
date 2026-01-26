@@ -3,6 +3,7 @@ Time utilities for thermostat.
 
 ISO timestamp parsing, HHMM time parsing, epoch conversions.
 """
+
 from __future__ import annotations
 
 import logging
@@ -16,14 +17,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def parse_iso_to_epoch(s: str | None, tz: "pytz.timezone") -> float | None:
+def parse_iso_to_epoch(s: str | None, tz: pytz.timezone) -> float | None:
     """Parse ISO timestamp string to epoch seconds."""
     if not s:
         return None
     try:
         x = str(s).strip()
         # Handle 'Z' while avoiding double offsets like '+00:00Z'
-        if x.endswith('Z'):
+        if x.endswith("Z"):
             x = x[:-1]
         # datetime.fromisoformat can't parse 'Z', but can parse '+00:00'.
         # If no explicit offset remains, assume local tz.
@@ -54,7 +55,7 @@ def parse_hhmm_to_minutes(s: str | None) -> int | None:
         return None
 
 
-def epoch_to_hhmm(epoch: float, tz: "pytz.timezone") -> str:
+def epoch_to_hhmm(epoch: float, tz: pytz.timezone) -> str:
     """Convert epoch seconds to 'HH:MM' string in local timezone."""
     try:
         dt = datetime.fromtimestamp(epoch, tz=tz)
@@ -71,7 +72,7 @@ def now_minutes_local() -> int:
 
 def compute_phase_duration(
     start_iso: str | None,
-    tz: "pytz.timezone",
+    tz: pytz.timezone,
     output_format: str = "minutes",
 ) -> int | None:
     """Compute phase duration from ISO timestamp to now.
@@ -88,7 +89,7 @@ def compute_phase_duration(
         return None
     try:
         s = str(start_iso).strip()
-        if s.endswith('Z'):
+        if s.endswith("Z"):
             s = s[:-1]
         dt = datetime.fromisoformat(s)
         if dt.tzinfo is None:
@@ -98,6 +99,5 @@ def compute_phase_duration(
             return int(phase_s) // 60 if phase_s >= 60 else None
         return int(phase_s)
     except Exception as e:
-        logger.debug(
-            "thermo: compute_phase_duration failed for %s: %s", start_iso, e)
+        logger.debug("thermo: compute_phase_duration failed for %s: %s", start_iso, e)
         return None

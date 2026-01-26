@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any
 
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+logger = logging.getLogger(__name__)
 
 LEVEL_NAMES = ["", "NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 ALLOWED_LEVELS = set(LEVEL_NAMES)
@@ -16,7 +21,7 @@ def _level_name(level: int) -> str:
         return str(level)
 
 
-def _parse_level_name(name: str) -> Optional[int]:
+def _parse_level_name(name: str) -> int | None:
     n = (name or "").strip().upper()
     if not n:
         return None
@@ -32,21 +37,18 @@ def _parse_level_name(name: str) -> Optional[int]:
 
 def _handler_target(handler: logging.Handler) -> str:
     # Provide a stable-ish description so overrides can be persisted.
-    try:
+    logger.debug("_handler_target called handler=%s", handler)
+    with contextlib.suppress(Exception):
         base = getattr(handler, "baseFilename", None)
         if base:
             return str(base)
-    except Exception:
-        pass
-    try:
+    with contextlib.suppress(Exception):
         stream = getattr(handler, "stream", None)
         if stream is not None:
             name = getattr(stream, "name", None)
             if name:
                 return str(name)
             return str(stream)
-    except Exception:
-        pass
     return ""
 
 
@@ -70,10 +72,10 @@ class HandlerRow:
     key: str
     level: str
     class_name: str
-    attached_to: List[str]
+    attached_to: list[str]
 
 
-def _iter_loggers() -> Iterable[Tuple[str, logging.Logger]]:
+def _iter_loggers() -> Iterable[tuple[str, logging.Logger]]:
     root = logging.getLogger()
     yield ("root", root)
     mgr = logging.Logger.manager  # type: ignore[attr-defined]
@@ -82,9 +84,9 @@ def _iter_loggers() -> Iterable[Tuple[str, logging.Logger]]:
             yield (name, obj)
 
 
-def snapshot_logging_state() -> Dict[str, Any]:
-    rows: List[LoggerRow] = []
-    handler_map: Dict[int, HandlerRow] = {}
+def snapshot_logging_state() -> dict[str, Any]:
+    rows: list[LoggerRow] = []
+    handler_map: dict[int, HandlerRow] = {}
 
     for name, lg in _iter_loggers():
         try:
@@ -140,7 +142,7 @@ def snapshot_logging_state() -> Dict[str, Any]:
     }
 
 
-def apply_logging_control_config(cfg: Dict[str, Any]) -> None:
+def apply_logging_control_config(cfg: dict[str, Any]) -> None:
     """Apply logging overrides to the current process.
 
     Note: for Gunicorn, each worker is a separate process; overrides must be
@@ -148,6 +150,7 @@ def apply_logging_control_config(cfg: Dict[str, Any]) -> None:
     """
     if not isinstance(cfg, dict):
         return
+    logger.debug("apply_logging_control_config called keys=%s", list(cfg.keys()))
 
     # Root logger level
     root_level_name = str(cfg.get("root_level") or "").strip()
@@ -170,12 +173,10 @@ def apply_logging_control_config(cfg: Dict[str, Any]) -> None:
     handler_levels = cfg.get("handler_levels") or {}
     if isinstance(handler_levels, dict) and handler_levels:
         # Build runtime handler list once
-        runtime_handlers: List[logging.Handler] = []
+        runtime_handlers: list[logging.Handler] = []
         for _, lg in _iter_loggers():
-            try:
+            with contextlib.suppress(Exception):
                 runtime_handlers.extend(list(getattr(lg, "handlers", []) or []))
-            except Exception:
-                pass
         for h in runtime_handlers:
             k = handler_key(h)
             if k not in handler_levels:
@@ -183,7 +184,5 @@ def apply_logging_control_config(cfg: Dict[str, Any]) -> None:
             lvl = _parse_level_name(str(handler_levels.get(k)))
             if lvl is None:
                 continue
-            try:
+            with contextlib.suppress(Exception):
                 h.setLevel(lvl)
-            except Exception:
-                pass

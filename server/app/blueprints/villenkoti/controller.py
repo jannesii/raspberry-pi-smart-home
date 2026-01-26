@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import datetime
 import hashlib
-import json
 import os
 import sqlite3
-from typing import Any, Iterable
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 
 class VillenkotiController:

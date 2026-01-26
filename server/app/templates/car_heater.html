@@ -95,8 +95,8 @@
             <div class="temp-input-group">
               <label class="temp-input-label" for="targetTempInput">Target</label>
               <div class="temp-input-wrapper">
-                <input type="number" id="targetTempInput" name="targetTempInput" 
-                       inputmode="decimal" step="0.5" min="-40" max="40" 
+                <input type="number" id="targetTempInput" name="targetTempInput"
+                       inputmode="decimal" step="0.5" min="-40" max="40"
                        placeholder="-5" autocomplete="off">
                 <span class="temp-input-unit">°C</span>
               </div>
@@ -104,8 +104,8 @@
             <div class="temp-input-group">
               <label class="temp-input-label" for="hysteresisInput">Hysteresis</label>
               <div class="temp-input-wrapper">
-                <input type="number" id="hysteresisInput" name="hysteresisInput" 
-                       inputmode="decimal" step="0.1" min="0.1" max="10" 
+                <input type="number" id="hysteresisInput" name="hysteresisInput"
+                       inputmode="decimal" step="0.1" min="0.1" max="10"
                        placeholder="1" autocomplete="off">
                 <span class="temp-input-unit">°C</span>
           </div>
@@ -127,7 +127,7 @@
           ⚙️
         </button>
       </div>
-      
+
       <!-- Progress bar (shown when scheduled/running) -->
       <div id="readyByProgress" class="ready-by-progress" style="display: none;">
         <div class="progress-bar">
@@ -138,18 +138,18 @@
           <span id="readyByProgressEnd">Target time</span>
         </div>
       </div>
-      
+
       <div class="ready-by-inputs">
         <div class="ready-by-input-group">
           <label class="ready-by-input-label" for="readyByTimeInput">Ready by</label>
-          <input type="datetime-local" id="readyByTimeInput" name="readyByTimeInput" 
+          <input type="datetime-local" id="readyByTimeInput" name="readyByTimeInput"
                  autocomplete="off">
         </div>
         <div class="ready-by-input-group">
           <label class="ready-by-input-label" for="readyByTargetInput">Target</label>
           <div class="temp-input-wrapper">
-            <input type="number" id="readyByTargetInput" name="readyByTargetInput" 
-                   inputmode="decimal" step="0.5" min="-40" max="40" 
+            <input type="number" id="readyByTargetInput" name="readyByTargetInput"
+                   inputmode="decimal" step="0.5" min="-40" max="40"
                    placeholder="-5" value="-5" autocomplete="off">
             <span class="temp-input-unit">°C</span>
           </div>

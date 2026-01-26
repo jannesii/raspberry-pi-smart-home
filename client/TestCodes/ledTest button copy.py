@@ -2,16 +2,19 @@ from gpiozero import LED, Button
 import time
 
 # Define GPIO pins
-LED_PIN = 17   # GPIO pin for LED
+LED_PIN = 17  # GPIO pin for LED
 BUTTON_PIN = 22  # GPIO pin for microswitch
 
 # Initialize components
 led = LED(LED_PIN)
-button = Button(BUTTON_PIN, pull_up=True, bounce_time=0.05)  # Uses internal pull-up resistor
+button = Button(
+    BUTTON_PIN, pull_up=True, bounce_time=0.05
+)  # Uses internal pull-up resistor
 
 # Store the time of the last button press
 last_press_time = None
 amount = 0
+
 
 # Function to toggle LED when button is pressed
 def toggle_led():
@@ -22,9 +25,9 @@ def toggle_led():
     else:
         elapsed = now - last_press_time
     led.toggle()  # Toggles LED state (ON <-> OFF)
-    print("Time since last press: {:.2f} seconds".format(
-        elapsed))
+    print("Time since last press: {:.2f} seconds".format(elapsed))
     last_press_time = now
+
 
 # Attach event to button press
 button.when_pressed = toggle_led

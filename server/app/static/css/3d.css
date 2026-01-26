@@ -26,7 +26,7 @@ transform: scale(1.05);
 margin-bottom: 20px;
 }
 
-.image-tile img, 
+.image-tile img,
 .image-tile video {
 width: 100%;
 height: auto;

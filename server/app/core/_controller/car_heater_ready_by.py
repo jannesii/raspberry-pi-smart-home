@@ -1,6 +1,6 @@
 import logging
 
-from .. import CarHeaterReadyByConfig, CarHeaterReadyByState
+from ..models import CarHeaterReadyByConfig, CarHeaterReadyByState
 
 logger = logging.getLogger(__name__)
 

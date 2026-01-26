@@ -4,17 +4,17 @@ Fetch today's meals ("Tänään") from Sodexo Frami and send them to a Discord w
 Also includes a scheduler that posts every weekday at a set local time in a background thread.
 """
 
-from collections import defaultdict
-from dataclasses import dataclass
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
-from zoneinfo import ZoneInfo
-import unicodedata
-import threading
-import requests
 import logging
 import os
 import sys
+import threading
+import unicodedata
+from collections import defaultdict
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+import requests
 from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ def _nfc_lower(s: str) -> str:
     return unicodedata.normalize("NFC", s).strip().lower()
 
 
-def _find_today_tab_id(soup: BeautifulSoup) -> Optional[str]:
+def _find_today_tab_id(soup: BeautifulSoup) -> str | None:
     # The tab bar has class "meal-date-tabs …"
     ul = soup.select_one("ul.meal-date-tabs")
     if not ul:
@@ -42,7 +42,7 @@ def _find_today_tab_id(soup: BeautifulSoup) -> Optional[str]:
     # Look for an <a> whose text is "Tänään"
     for a in ul.select("li > a"):
         label = _nfc_lower(a.get_text(strip=True))
-        if "tänään" == label or label.startswith("tänään"):
+        if label == "tänään" or label.startswith("tänään"):
             href = a.get("href", "").strip()
             if href.startswith("#"):
                 return href.lstrip("#")
@@ -54,20 +54,21 @@ class Meal:
     type: str
     name: str
 
+
 # ----- Discord formatting & sending -----
 
 
 def _send_today_meals_to_discord(
-    meals: List[Meal],
+    meals: list[Meal],
     webhook_url: str,
     restaurant_name: str = "Ravintola Frami",
-    username: Optional[str] = "Lounasbotti",
-    avatar_url: Optional[str] = None,
+    username: str | None = "Lounasbotti",
+    avatar_url: str | None = None,
 ) -> None:
     """
     Renames & orders meals, formats a 'Tänään' message, and posts it to a Discord webhook.
     """
-    mapping: Dict[str, str] = {
+    mapping: dict[str, str] = {
         "FROM OUR FAVORITES": "Perussetti",
         "FROM THE SOUP BOWL": "Keittolounas",
         "FROM THE SWEET": "Jälkiruoka",
@@ -76,7 +77,7 @@ def _send_today_meals_to_discord(
         "FROM THE GRILL": "Prikka?",
     }
     # Accept both original and renamed labels for ordering
-    order_index: Dict[str, int] = {}
+    order_index: dict[str, int] = {}
     for idx, (src, dst) in enumerate(mapping.items()):
         order_index[src] = idx
         order_index[dst] = idx
@@ -92,15 +93,15 @@ def _send_today_meals_to_discord(
     wd = ["Ma", "Ti", "Ke", "To", "Pe", "La", "Su"][now.weekday()]
     date_str = f"{wd} {now.day:02d}.{now.month:02d}."
 
-    grouped: Dict[str, List[str]] = defaultdict(list)
-    seen_order: List[str] = []
+    grouped: dict[str, list[str]] = defaultdict(list)
+    seen_order: list[str] = []
     for m in meals:
         if m.type not in grouped:
             seen_order.append(m.type)
         if m.name:
             grouped[m.type].append(m.name.strip())
 
-    lines: List[str] = [f"**{restaurant_name} — Tänään {date_str}**"]
+    lines: list[str] = [f"**{restaurant_name} — Tänään {date_str}**"]
     for t in seen_order:
         items = grouped[t]
         if not items:
@@ -115,8 +116,11 @@ def _send_today_meals_to_discord(
         for n in items:
             lines.append(f"• {n}")
 
-    content = "\n".join(lines).strip(
-    ) if lines else f"**{restaurant_name} — Tänään {date_str}**\n(Ei ruokia)"
+    content = (
+        "\n".join(lines).strip()
+        if lines
+        else f"**{restaurant_name} — Tänään {date_str}**\n(Ei ruokia)"
+    )
 
     # Send (chunk if >2000 chars)
     def _chunks(s: str, limit: int = 2000):
@@ -139,14 +143,13 @@ def _send_today_meals_to_discord(
 
         r = requests.post(webhook_url, json=payload, timeout=15)
         if r.status_code not in (200, 204):
-            raise RuntimeError(
-                f"Discord webhook error (part {idx+1}): {r.status_code} {r.text}"
-            )
+            raise RuntimeError(f"Discord webhook error (part {idx + 1}): {r.status_code} {r.text}")
+
 
 # ----- One-shot fetch & post -----
 
 
-def _fetch_today_meals() -> List[Meal]:
+def _fetch_today_meals() -> list[Meal]:
     resp = requests.get(URL, headers=HEADERS, timeout=20)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "lxml")
@@ -163,7 +166,7 @@ def _fetch_today_meals() -> List[Meal]:
     if not rows:
         return []
 
-    meals: List[Meal] = []
+    meals: list[Meal] = []
     for row in rows:
         mtype = row.select_one(".meal-type")
         mname = row.select_one(".meal-name")
@@ -178,11 +181,13 @@ def _post_today_menu(webhook_url: str, restaurant_name: str = "Sodexo Frami") ->
     try:
         meals = _fetch_today_meals()
         _send_today_meals_to_discord(
-            meals, webhook_url=webhook_url, restaurant_name=restaurant_name)
+            meals, webhook_url=webhook_url, restaurant_name=restaurant_name
+        )
         return True
     except Exception as e:
         logger.exception(f"[ERROR] post_today_menu failed: {e}")
         return False
+
 
 # ----- Scheduler thread -----
 
@@ -191,12 +196,12 @@ def _is_weekday(dt: datetime) -> bool:
     return dt.weekday() < 5  # Mon=0 .. Fri=4
 
 
-def _next_run_time(now: datetime, hour: int, minute: int, tz: ZoneInfo, skip_weekends: bool) -> datetime:
+def _next_run_time(
+    now: datetime, hour: int, minute: int, tz: ZoneInfo, skip_weekends: bool
+) -> datetime:
     """Compute the next local run time in tz (aware)."""
-    today_target = datetime(now.year, now.month,
-                            now.day, hour, minute, tzinfo=tz)
-    candidate = today_target if now < today_target else (
-        today_target + timedelta(days=1))
+    today_target = datetime(now.year, now.month, now.day, hour, minute, tzinfo=tz)
+    candidate = today_target if now < today_target else (today_target + timedelta(days=1))
 
     # If skipping weekends, advance to next Mon-Fri
     if skip_weekends:
@@ -240,14 +245,12 @@ def _scheduler_loop(
         if skip_weekends and not _is_weekday(datetime.now(tz)):
             continue
 
-        ok = _post_today_menu(webhook_url=webhook_url,
-                              restaurant_name=restaurant_name)
+        ok = _post_today_menu(webhook_url=webhook_url, restaurant_name=restaurant_name)
         if not ok:
             # Optional: retry once after a brief delay
             if stop_event.wait(timeout=30):
                 break
-            _post_today_menu(webhook_url=webhook_url,
-                             restaurant_name=restaurant_name)
+            _post_today_menu(webhook_url=webhook_url, restaurant_name=restaurant_name)
 
         # Compute next target (typically tomorrow; Monday if Fri and skipping weekends)
         # Loop repeats and calculates again.
@@ -261,7 +264,7 @@ def start_sodexo_webhook_thread(
     minute: int = 30,
     tz_name: str = "Europe/Helsinki",
     skip_weekends: bool = True,
-) -> Tuple[threading.Event, threading.Thread]:
+) -> tuple[threading.Event, threading.Thread]:
     """
     Start a daemon thread that posts the menu every weekday at <hour>:<minute> local time.
     Returns (stop_event, thread). Call stop_event.set() to stop, then thread.join().
@@ -269,13 +272,13 @@ def start_sodexo_webhook_thread(
     stop_event = threading.Event()
     th = threading.Thread(
         target=_scheduler_loop,
-        args=(webhook_url, restaurant_name, hour, minute,
-              tz_name, skip_weekends, stop_event),
+        args=(webhook_url, restaurant_name, hour, minute, tz_name, skip_weekends, stop_event),
         name="lounasbotti-scheduler",
         daemon=True,
     )
     th.start()
     return stop_event, th
+
 
 # ----- CLI entry point -----
 
@@ -284,7 +287,7 @@ def main() -> int:
     # Prefer WEBHOOK_URL env so you don't commit secrets
     _post_today_menu(
         webhook_url="https://canary.discord.com/api/webhooks/1434958256668938431/8ZMosz0dbxKcNJGw7NNbEaejzTnayiuCoeJH_ZUwuvSAaz8yXBYCbXY85u9zhhR5r_Ql",
-        restaurant_name="Testi Ravintola"
+        restaurant_name="Testi Ravintola",
     )
     return 0
     webhook_url = os.getenv("SODEXO_WEBHOOK_URL")
@@ -302,8 +305,7 @@ def main() -> int:
         skip_weekends=True,
     )
 
-    logger.info(
-        "Scheduler started (weekdays 10:30 Europe/Helsinki). Press Ctrl+C to stop.")
+    logger.info("Scheduler started (weekdays 10:30 Europe/Helsinki). Press Ctrl+C to stop.")
     try:
         while th.is_alive():
             th.join(timeout=1.0)

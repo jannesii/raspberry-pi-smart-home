@@ -41,7 +41,7 @@
   {% set logger_overrides = saved_cfg.get('logger_levels', {}) or {} %}
   {% set handler_overrides = saved_cfg.get('handler_levels', {}) or {} %}
   {% set total_overrides = (logger_overrides|length) + (handler_overrides|length) + (1 if saved_cfg.get('root_level') else 0) %}
-  
+
   <div class="settings-panel" id="overridesPanel" {% if total_overrides == 0 %}style="display: none;"{% endif %}>
     <div class="panel-header">
       <span class="panel-title">Active Overrides</span>

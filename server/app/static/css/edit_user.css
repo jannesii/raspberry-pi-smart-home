@@ -50,4 +50,3 @@ label.checkbox { display: inline-flex; align-items: center; gap: 8px; margin: 0;
 @media (max-width: 560px) {
   .form-row.grid { grid-template-columns: 1fr; }
 }
-

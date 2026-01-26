@@ -6,11 +6,11 @@ and prevent scattered env parsing across the codebase.
 
 from __future__ import annotations
 
-import os
 import json
+import os
 import tempfile
 from datetime import timedelta
-from typing import Any, Dict
+from typing import Any
 
 
 def _json_list(env_var: str, default: list[str]) -> list[str]:
@@ -26,18 +26,18 @@ def _json_list(env_var: str, default: list[str]) -> list[str]:
             return [vals]
     except json.JSONDecodeError:
         pass
-    raise RuntimeError(f"{env_var} isn’t valid JSON list")
+    raise RuntimeError(f"{env_var} isn't valid JSON list")
 
 
-def load_settings() -> Dict[str, Any]:
+def load_settings() -> dict[str, Any]:
     secret = os.getenv("SECRET_KEY")
     if not secret:
-        raise RuntimeError("SECRET_KEY is missing – add to environment.")
+        raise RuntimeError("SECRET_KEY is missing - add to environment.")
 
     whitelist = _json_list("RATE_LIMIT_WHITELIST", [])
     allowed_ws = _json_list("ALLOWED_WS_ORIGINS", ["http://127.0.0.1:5555"])
 
-    settings: Dict[str, Any] = {
+    settings: dict[str, Any] = {
         # Flask
         "SECRET_KEY": secret,
         "PERMANENT_SESSION_LIFETIME": timedelta(days=7),

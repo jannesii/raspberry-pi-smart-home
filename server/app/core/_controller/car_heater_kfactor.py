@@ -1,6 +1,6 @@
 import logging
 
-from .. import (
+from ..models import (
     CarHeaterKFactorActiveParams,
     CarHeaterKFactorBucketParams,
     CarHeaterKFactorConfig,
@@ -512,9 +512,7 @@ class CarHeaterKFactorMixin:
     def get_calibration_stats(self, lookback_days: int = 7) -> dict:
         """Get calibration statistics for dashboard display."""
         # Total sessions
-        total_row = self.db.fetchone(
-            "SELECT COUNT(*) as cnt FROM car_heater_kfactor_session"
-        )
+        total_row = self.db.fetchone("SELECT COUNT(*) as cnt FROM car_heater_kfactor_session")
         total_sessions = total_row["cnt"] if total_row else 0
 
         # Accepted sessions
@@ -551,7 +549,9 @@ class CarHeaterKFactorMixin:
             """
         )
         avg_k_loss = avg_params_row["avg_k"] if avg_params_row and avg_params_row["avg_k"] else None
-        avg_eta = avg_params_row["avg_eta"] if avg_params_row and avg_params_row["avg_eta"] else None
+        avg_eta = (
+            avg_params_row["avg_eta"] if avg_params_row and avg_params_row["avg_eta"] else None
+        )
 
         # Buckets covered (unique t_bucket, wind_bucket combinations)
         buckets_row = self.db.fetchone(
@@ -571,16 +571,15 @@ class CarHeaterKFactorMixin:
         days_since_last = None
         if last_row and last_row["start_ts"]:
             from datetime import datetime
+
             try:
-                last_ts = datetime.fromisoformat(
-                    last_row["start_ts"].replace(" ", "T"))
-                now = datetime.now(
-                    last_ts.tzinfo) if last_ts.tzinfo else datetime.now()
+                last_ts = datetime.fromisoformat(last_row["start_ts"].replace(" ", "T"))
+                now = datetime.now(last_ts.tzinfo) if last_ts.tzinfo else datetime.now()
                 days_since_last = (now - last_ts).days
             except Exception:
                 pass
 
-        # Total possible buckets: temps from -30 to +10 (9 buckets) × wind 4 buckets = 36
+        # Total possible buckets: temps from -30 to +10 (9 buckets) x wind 4 buckets = 36
         # But we use 5°C buckets: -30, -25, -20, -15, -10, -5, 0, 5, 10 = 9 temp buckets
         # Wind: 0-2, 2-5, 5-10, 10+ = 4 wind buckets + 1 for unknown
         buckets_total = 9 * 5  # 45 possible combinations
@@ -594,7 +593,9 @@ class CarHeaterKFactorMixin:
             "avg_eta": round(avg_eta, 3) if avg_eta else None,
             "buckets_covered": buckets_covered,
             "buckets_total": buckets_total,
-            "coverage_pct": round(100 * buckets_covered / buckets_total, 1) if buckets_total > 0 else 0,
+            "coverage_pct": round(100 * buckets_covered / buckets_total, 1)
+            if buckets_total > 0
+            else 0,
             "days_since_last_session": days_since_last,
         }
 
@@ -647,7 +648,9 @@ class CarHeaterKFactorMixin:
                     "eta": row["eta"],
                     "rmse_C": row["rmse_C"],
                     "r2": row["r2"],
-                } if row["k_loss_W_per_K"] is not None else None,
+                }
+                if row["k_loss_W_per_K"] is not None
+                else None,
             }
             for row in rows
         ]

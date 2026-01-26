@@ -67,7 +67,7 @@ class DHT22Sensor:
         Parameters
         ----------
         pin : int | board pin
-            • On Raspberry Pi:  BCM pin number **or** a `board.<PIN>` object.  
+            • On Raspberry Pi:  BCM pin number **or** a `board.<PIN>` object.
             • On Windows:      ignored (kept for API compatibility).
 
         retries : int
@@ -126,9 +126,7 @@ class DHT22Sensor:
                 if temp is None or hum is None:
                     raise RuntimeError("no data")
                 self.temperature, self.humidity = temp, hum
-                logger.debug(
-                    "read OK %.1f °C, %.1f %%", temp, hum
-                )
+                logger.debug("read OK %.1f °C, %.1f %%", temp, hum)
                 return {"temperature": temp, "humidity": hum}
 
             except RuntimeError as exc:
@@ -175,7 +173,5 @@ class DHT22Sensor:
         self.temperature = round(self._sim_temp, 1)
         self.humidity = round(self._sim_hum, 1)
 
-        logger.debug(
-            "%.1f °C, %.1f %%", self.temperature, self.humidity
-        )
+        logger.debug("%.1f °C, %.1f %%", self.temperature, self.humidity)
         return {"temperature": self.temperature, "humidity": self.humidity}

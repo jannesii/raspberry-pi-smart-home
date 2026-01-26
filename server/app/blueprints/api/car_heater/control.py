@@ -7,18 +7,18 @@ Handles:
 - Historical data queries
 """
 
-from datetime import datetime
-from dataclasses import asdict
-from typing import Any, Dict, List, Tuple
+from __future__ import annotations
+
 import logging
 import os
+from dataclasses import asdict
+from datetime import datetime
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
-from flask import request, jsonify, current_app
-from flask_login import login_required, current_user
+from flask import current_app, jsonify, request
+from flask_login import current_user, login_required
 
-from ....core import Controller
-from ....core.models import CarHeaterStatus
 from ....extensions import csrf
 from ....security import require_api_key
 from ._blueprint import car_bp
@@ -26,31 +26,41 @@ from ._blueprint import car_bp
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+if TYPE_CHECKING:
+    from ....core import Controller
+    from ....core.models import CarHeaterStatus
+    from ....services.car_heater import CarHeaterService
+
 
 # ==============================================================================
 # Command Processing
 # ==============================================================================
 
+
 def process_commands(
-    data: Dict[str, Any],
+    data: dict[str, Any],
     car: CarHeaterStatus | None,
-) -> Tuple[List[Dict[str, Any]], Dict[str, Any] | None, Dict[str, Any] | None]:
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None, dict[str, Any] | None]:
     """
     Process car heater commands: update charge mode, handle results, fetch queued commands.
 
     Returns:
         Tuple of (commands, command_status, charge_mode_state)
     """
-    commands: List[Dict[str, Any]] = []
-    command_status: Dict[str, Any] | None = None
-    charge_mode_state: Dict[str, Any] | None = None
+    commands: list[dict[str, Any]] = []
+    command_status: dict[str, Any] | None = None
+    charge_mode_state: dict[str, Any] | None = None
+    logger.debug(
+        "process_commands called data_keys=%s has_car=%s",
+        list(data.keys()) if isinstance(data, dict) else None,
+        car is not None,
+    )
 
     try:
-        from ....services.car_heater import CarHeaterService
         from ....services.alert_webhook import record_alert
 
-        service: CarHeaterService | None = getattr(
-            current_app, "car_heater_service", None)
+        service: CarHeaterService | None = getattr(current_app, "car_heater_service", None)
+        logger.debug("process_commands resolved car_heater_service=%s", service)
         if not service:
             return commands, command_status, charge_mode_state
 
@@ -68,42 +78,50 @@ def process_commands(
                     timestamp_iso=ts_iso,
                 )
             except Exception as e:
-                logger.exception(
-                    "Failed to update car heater charge mode: %s", e)
+                logger.exception("Failed to update car heater charge mode: %s", e)
 
         # Handle action results from ESP
         action_results = data.get("action_results", {})
-        normalized_results: List[Dict[str, Any]] = []
+        normalized_results: list[dict[str, Any]] = []
         if action_results:
             if isinstance(action_results, list):
                 for item in action_results:
                     if isinstance(item, dict):
                         if "action" in item:
-                            normalized_results.append({
-                                "action": item.get("action"),
-                                "success": item.get("success", item.get("ok", False)),
-                            })
+                            normalized_results.append(
+                                {
+                                    "action": item.get("action"),
+                                    "success": item.get("success", item.get("ok", False)),
+                                }
+                            )
                         else:
                             for key, val in item.items():
-                                normalized_results.append({
-                                    "action": key,
-                                    "success": bool(val),
-                                })
+                                normalized_results.append(
+                                    {
+                                        "action": key,
+                                        "success": bool(val),
+                                    }
+                                )
                     elif isinstance(item, str):
-                        normalized_results.append(
-                            {"action": item, "success": True})
+                        normalized_results.append({"action": item, "success": True})
             elif isinstance(action_results, dict):
                 if "action" in action_results:
-                    normalized_results.append({
-                        "action": action_results.get("action"),
-                        "success": action_results.get("success", action_results.get("ok", False)),
-                    })
+                    normalized_results.append(
+                        {
+                            "action": action_results.get("action"),
+                            "success": action_results.get(
+                                "success", action_results.get("ok", False)
+                            ),
+                        }
+                    )
                 else:
                     for key, val in action_results.items():
-                        normalized_results.append({
-                            "action": key,
-                            "success": bool(val),
-                        })
+                        normalized_results.append(
+                            {
+                                "action": key,
+                                "success": bool(val),
+                            }
+                        )
             if normalized_results:
                 service.mark_command_success(normalized_results)
 
@@ -130,8 +148,7 @@ def process_commands(
         except Exception:
             charge_mode_state = None
 
-        logger.debug("cmd status: %s charge_mode: %s",
-                     command_status, charge_mode_state)
+        logger.debug("cmd status: %s charge_mode: %s", command_status, charge_mode_state)
 
     except Exception as e:
         logger.exception("Failed to fetch queued car heater commands: %s", e)
@@ -146,39 +163,38 @@ def process_commands(
 # Routes
 # ==============================================================================
 
-@car_bp.route('/commands', methods=['GET'])
+
+@car_bp.route("/commands", methods=["GET"])
 @csrf.exempt
 @require_api_key
 def get_car_heater_commands():
     """Return currently queued car heater commands without consuming them."""
-    commands: List[Dict[str, Any]] = []
+    logger.debug("get_car_heater_commands called")
+    commands: list[dict[str, Any]] = []
     try:
-        from ....services.car_heater import CarHeaterService
-        service: CarHeaterService | None = getattr(
-            current_app, "car_heater_service", None)
+        service: CarHeaterService | None = getattr(current_app, "car_heater_service", None)
         if service:
             commands = service.peek_queued_commands()
+            logger.debug("get_car_heater_commands returning %d commands", len(commands))
     except Exception as e:
-        logger.exception(
-            "Failed to fetch queued car heater commands via GET: %s", e)
+        logger.exception("Failed to fetch queued car heater commands via GET: %s", e)
 
     return jsonify(commands), 200
 
 
-@car_bp.route('/queue', methods=['POST'])
+@car_bp.route("/queue", methods=["POST"])
 @csrf.exempt
 @login_required
 def queue_car_heater_command():
     """HTTP fallback for queuing car heater commands from the web UI."""
-    data: Dict[str, Any] = request.get_json() or {}
+    data: dict[str, Any] = request.get_json() or {}
     action = (data.get("action") or "").strip()
+    logger.debug("queue_car_heater_command called action=%s", action)
     if not action:
         return jsonify({"error": "Missing action"}), 400
 
     try:
-        from ....services.car_heater import CarHeaterService
-        service: CarHeaterService | None = getattr(
-            current_app, "car_heater_service", None)
+        service: CarHeaterService | None = getattr(current_app, "car_heater_service", None)
     except Exception:
         service = None
 
@@ -191,11 +207,9 @@ def queue_car_heater_command():
 
         # Use centralized turn_on/turn_off methods
         if action == "turn_on":
-            service.turn_on(source="http_api",
-                            reason=f"Manual control by {username}")
+            service.turn_on(source="http_api", reason=f"Manual control by {username}")
         elif action == "turn_off":
-            service.turn_off(source="http_api",
-                             reason=f"Manual control by {username}")
+            service.turn_off(source="http_api", reason=f"Manual control by {username}")
         else:
             # Other commands (get_logs, esp_restart, etc.)
             service.queue_command({"action": action})
@@ -207,7 +221,7 @@ def queue_car_heater_command():
     return jsonify({"error": "Failed to queue command"}), 500
 
 
-@car_bp.route('/history', methods=['GET'])
+@car_bp.route("/history", methods=["GET"])
 @login_required
 def get_car_heater_history():
     """Return recorded car heater metrics for the requested day."""
@@ -226,8 +240,7 @@ def get_car_heater_history():
     except ValueError:
         return jsonify({"error": "Invalid date"}), 400
 
-    logger.info("Serving car heater history for %s by %s",
-                date_str, current_user.get_id())
+    logger.info("Serving car heater history for %s by %s", date_str, current_user.get_id())
     rows = ctrl.get_car_heater_status_for_date(date_str)
     payload = [
         {
@@ -241,8 +254,7 @@ def get_car_heater_history():
         }
         for row in rows
     ]
-    energies = [
-        row.energy_total_wh for row in rows if row.energy_total_wh is not None]
+    energies = [row.energy_total_wh for row in rows if row.energy_total_wh is not None]
     energy_today_wh = None
     if len(energies) >= 2:
         energy_today_wh = energies[-1] - energies[0]

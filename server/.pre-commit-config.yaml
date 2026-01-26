@@ -1,0 +1,36 @@
+# Pre-commit hooks - run before each commit
+# Install: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  # Ruff - fast Python linting and formatting
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      # Linter
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+      # Formatter (replaces black)
+      - id: ruff-format
+
+  # General file fixes
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # Trim trailing whitespace
+      - id: trailing-whitespace
+        exclude: '\.md$'
+      # Ensure files end with newline
+      - id: end-of-file-fixer
+      # Check YAML syntax
+      - id: check-yaml
+      # Check JSON syntax
+      - id: check-json
+      # Check for merge conflict markers
+      - id: check-merge-conflict
+      # Detect private keys
+      - id: detect-private-key
+      # Check Python syntax
+      - id: check-ast
+      # Ensure no debug statements
+      - id: debug-statements

@@ -33,14 +33,14 @@ function getDefaultReadyByTime() {
   const tomorrow = new Date(now);
   tomorrow.setDate(tomorrow.getDate() + 1);
   tomorrow.setHours(7, 0, 0, 0);
-  
+
   // Format for datetime-local input (YYYY-MM-DDTHH:MM)
   const year = tomorrow.getFullYear();
   const month = String(tomorrow.getMonth() + 1).padStart(2, '0');
   const day = String(tomorrow.getDate()).padStart(2, '0');
   const hours = String(tomorrow.getHours()).padStart(2, '0');
   const minutes = String(tomorrow.getMinutes()).padStart(2, '0');
-  
+
   return `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
@@ -69,19 +69,19 @@ function stopProgressUpdateTimer() {
 function updateProgressBar(schedule) {
   const progressFill = document.getElementById('readyByProgressFill');
   if (!progressFill || !schedule) return;
-  
+
   const now = new Date();
   const readyByTime = new Date(schedule.ready_by_ts);
   const plannedStartTime = schedule.planned_start_ts ? new Date(schedule.planned_start_ts) : now;
-  
+
   const totalDuration = readyByTime - plannedStartTime;
   const elapsed = now - plannedStartTime;
   let progress = 0;
-  
+
   if (totalDuration > 0) {
     progress = Math.min(100, Math.max(0, (elapsed / totalDuration) * 100));
   }
-  
+
   progressFill.style.width = `${progress}%`;
 }
 
@@ -101,7 +101,7 @@ function updateReadyByConfig(config) {
   const readyByEnabledToggle = document.getElementById('readyByEnabled');
   const readyByToleranceInput = document.getElementById('readyByTolerance');
   const readyByCooldownInput = document.getElementById('readyByCooldown');
-  
+
   if (readyByEnabledToggle) readyByEnabledToggle.checked = config.enabled;
   if (readyByToleranceInput) readyByToleranceInput.value = config.reach_tolerance_minutes;
   if (readyByCooldownInput) readyByCooldownInput.value = config.command_cooldown_s;
@@ -125,12 +125,12 @@ function updateReadyBySchedule(schedule) {
   const progressFill = document.getElementById('readyByProgressFill');
   const progressStart = document.getElementById('readyByProgressStart');
   const progressEnd = document.getElementById('readyByProgressEnd');
-  
+
   if (!statusText) return;
-  
+
   // Remove all status classes
   statusText.classList.remove('status-scheduled', 'status-running', 'status-completed', 'status-canceled', 'status-expired');
-  
+
   if (!schedule || !schedule.status || schedule.status === 'canceled' || schedule.status === 'expired' || schedule.status === 'completed') {
     // No active schedule
     if (schedule && schedule.status === 'completed') {
@@ -157,11 +157,11 @@ function updateReadyBySchedule(schedule) {
     }
     return;
   }
-  
+
   // Active schedule
   const status = schedule.status;
   statusText.classList.add(`status-${status}`);
-  
+
   if (status === 'scheduled') {
     statusText.textContent = `⏰ Scheduled for ${fmtTime(schedule.ready_by_ts)}`;
   } else if (status === 'running') {
@@ -169,38 +169,38 @@ function updateReadyBySchedule(schedule) {
   } else {
     statusText.textContent = status.charAt(0).toUpperCase() + status.slice(1);
   }
-  
+
   // Show info panel
   if (infoPanel) {
     infoPanel.style.display = 'block';
   }
-  
+
   // Update progress bar
   if (progressEl && progressFill) {
     if (status === 'scheduled' || status === 'running') {
       progressEl.style.display = 'block';
-      
+
       // Calculate progress
       const now = new Date();
       const readyByTime = new Date(schedule.ready_by_ts);
       const plannedStartTime = schedule.planned_start_ts ? new Date(schedule.planned_start_ts) : now;
-      
+
       const totalDuration = readyByTime - plannedStartTime;
       const elapsed = now - plannedStartTime;
       let progress = 0;
-      
+
       if (totalDuration > 0) {
         progress = Math.min(100, Math.max(0, (elapsed / totalDuration) * 100));
       }
-      
+
       progressFill.style.width = `${progress}%`;
-      
+
       if (status === 'running') {
         progressFill.classList.add('heating');
       } else {
         progressFill.classList.remove('heating');
       }
-      
+
       if (progressStart) {
         progressStart.textContent = status === 'running' ? 'Started' : `Starts ${fmtTime(schedule.planned_start_ts)}`;
       }
@@ -211,7 +211,7 @@ function updateReadyBySchedule(schedule) {
       progressEl.style.display = 'none';
     }
   }
-  
+
   // Update info values
   if (etaText) {
     if (schedule.unreachable) {
@@ -232,13 +232,13 @@ function updateReadyBySchedule(schedule) {
       etaText.classList.remove('unreachable');
     }
   }
-  
+
   if (plannedStart && schedule.planned_start_ts) {
     plannedStart.textContent = fmtTime(schedule.planned_start_ts);
   } else if (plannedStart) {
     plannedStart.textContent = '—';
   }
-  
+
   if (cabinTemp) {
     if (schedule.cabin_temp_c != null) {
       cabinTemp.textContent = `${fmtNum(schedule.cabin_temp_c)}°C → ${fmtNum(schedule.target_temp_c)}°C`;
@@ -246,7 +246,7 @@ function updateReadyBySchedule(schedule) {
       cabinTemp.textContent = `— → ${fmtNum(schedule.target_temp_c)}°C`;
     }
   }
-  
+
   if (outsideTemp) {
     if (schedule.outside_temp_c != null) {
       outsideTemp.textContent = `${fmtNum(schedule.outside_temp_c)}°C`;
@@ -254,7 +254,7 @@ function updateReadyBySchedule(schedule) {
       outsideTemp.textContent = '—';
     }
   }
-  
+
   if (modelParams) {
     if (schedule.used_k_loss_W_per_K != null && schedule.used_eta != null) {
       modelParams.textContent = `k=${fmtNum(schedule.used_k_loss_W_per_K, 1)} W/K, η=${fmtNum(schedule.used_eta, 2)}`;
@@ -262,13 +262,13 @@ function updateReadyBySchedule(schedule) {
       modelParams.textContent = '—';
     }
   }
-  
+
   // Update buttons
   if (scheduleBtn) scheduleBtn.disabled = true;
   if (cancelBtn) cancelBtn.disabled = false;
   if (timeInput) timeInput.disabled = true;
   if (targetInput) targetInput.disabled = true;
-  
+
   // Populate inputs with current schedule values
   if (timeInput && schedule.ready_by_ts) {
     try {
@@ -289,34 +289,34 @@ function updateReadyBySchedule(schedule) {
 function scheduleReadyBy() {
   const timeInput = document.getElementById('readyByTimeInput');
   const targetInput = document.getElementById('readyByTargetInput');
-  
+
   if (!timeInput || !timeInput.value) {
     alert('Please select a time');
     return;
   }
-  
+
   const readyByTs = new Date(timeInput.value).toISOString();
   const targetTempC = targetInput ? parseFloat(targetInput.value) : -5;
-  
+
   if (isNaN(targetTempC)) {
     alert('Please enter a valid target temperature');
     return;
   }
-  
+
   // Check if time is in the future
   if (new Date(readyByTs) <= new Date()) {
     alert('Please select a future time');
     return;
   }
-  
+
   const payload = {
     action: 'schedule',
     ready_by_ts: readyByTs,
     target_temp_c: targetTempC,
   };
-  
+
   console.log('Scheduling ready-by:', payload);
-  
+
   if (window.socket) {
     window.socket.emit('ready_by_schedule', payload);
   } else {
@@ -349,15 +349,15 @@ function cancelReadyBy() {
   if (!confirm('Cancel the scheduled heating?')) {
     return;
   }
-  
+
   const payload = {
     action: 'cancel',
     reason: 'user',
     turn_off: false,
   };
-  
+
   console.log('Canceling ready-by:', payload);
-  
+
   if (window.socket) {
     window.socket.emit('ready_by_schedule', payload);
   } else {
@@ -384,11 +384,11 @@ function emitReadyByConfigChange() {
   const readyByEnabledToggle = document.getElementById('readyByEnabled');
   const readyByCooldownInput = document.getElementById('readyByCooldown');
   const readyByToleranceInput = document.getElementById('readyByTolerance');
-  
+
   const enabled = readyByEnabledToggle ? readyByEnabledToggle.checked : true;
   const commandCooldownS = readyByCooldownInput ? parseInt(readyByCooldownInput.value) : null;
   const reachToleranceMinutes = readyByToleranceInput ? parseInt(readyByToleranceInput.value) : null;
-  
+
   const config = {
     enabled: enabled,
     command_cooldown_s: commandCooldownS,
@@ -410,7 +410,7 @@ if (window.socket) {
     if (data && data.schedule !== undefined) {
       const prevStatus = readyBySchedule ? readyBySchedule.status : null;
       const newStatus = data.schedule ? data.schedule.status : null;
-      
+
       // Show toast on status changes
       if (newStatus && newStatus !== prevStatus) {
         if (newStatus === 'scheduled') {
@@ -438,7 +438,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize from server-rendered data
   if (typeof window.CAR_HEATER_READY_BY !== 'undefined') {
     updateReadyByUI(window.CAR_HEATER_READY_BY);
-    if (window.CAR_HEATER_READY_BY && 
+    if (window.CAR_HEATER_READY_BY &&
         (window.CAR_HEATER_READY_BY.status === 'scheduled' || window.CAR_HEATER_READY_BY.status === 'running')) {
       startProgressUpdateTimer();
     }
@@ -449,18 +449,18 @@ document.addEventListener('DOMContentLoaded', () => {
       timeInput.value = getDefaultReadyByTime();
     }
   }
-  
+
   // Ready-by action buttons
   const scheduleBtn = document.getElementById('btnReadyBySchedule');
   const cancelBtn = document.getElementById('btnReadyByCancel');
   const readyByEnabledToggle = document.getElementById('readyByEnabled');
   const readyByToleranceInput = document.getElementById('readyByTolerance');
   const readyByCooldownInput = document.getElementById('readyByCooldown');
-  
+
   if (scheduleBtn) {
     scheduleBtn.addEventListener('click', scheduleReadyBy);
   }
-  
+
   if (cancelBtn) {
     cancelBtn.addEventListener('click', cancelReadyBy);
   }

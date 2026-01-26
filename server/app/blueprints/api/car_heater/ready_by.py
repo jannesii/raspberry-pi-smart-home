@@ -6,13 +6,15 @@ Handles:
 - Cancel schedule
 """
 
-from datetime import datetime
-from dataclasses import asdict
-from typing import Any, Dict
-import logging
+from __future__ import annotations
 
-from flask import request, jsonify, current_app
-from flask_login import login_required, current_user
+import logging
+from dataclasses import asdict
+from datetime import datetime
+from typing import TYPE_CHECKING, Any
+
+from flask import current_app, jsonify, request
+from flask_login import current_user, login_required
 
 from ....extensions import csrf
 from ._blueprint import car_bp
@@ -20,20 +22,23 @@ from ._blueprint import car_bp
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+if TYPE_CHECKING:
+    from ....services.car_heater import ReadyByService
+
 
 # ==============================================================================
 # Routes
 # ==============================================================================
 
-@car_bp.route('/ready_by/schedule', methods=['GET'])
+
+@car_bp.route("/ready_by/schedule", methods=["GET"])
 @login_required
 def get_ready_by_schedule():
     """Return the current Ready-by schedule (if any)."""
+    logger.debug("get_ready_by_schedule called")
     try:
-        from ....services.car_heater import ReadyByService
-
-        svc: ReadyByService | None = getattr(
-            current_app, "ready_by_service", None)
+        svc: ReadyByService | None = getattr(current_app, "ready_by_service", None)
+        logger.debug("get_ready_by_schedule resolved ready_by_service=%s", svc)
         if svc is None:
             return jsonify({"error": "ReadyByService not initialized"}), 503
 
@@ -44,20 +49,19 @@ def get_ready_by_schedule():
     return jsonify({"error": "Failed to get schedule"}), 500
 
 
-@car_bp.route('/ready_by/schedule', methods=['POST'])
+@car_bp.route("/ready_by/schedule", methods=["POST"])
 @csrf.exempt
 @login_required
 def create_ready_by_schedule():
     """Create a new Ready-by schedule."""
+    logger.debug("create_ready_by_schedule called")
     try:
-        from ....services.car_heater import ReadyByService
-
-        svc: ReadyByService | None = getattr(
-            current_app, "ready_by_service", None)
+        svc: ReadyByService | None = getattr(current_app, "ready_by_service", None)
+        logger.debug("create_ready_by_schedule resolved ready_by_service=%s", svc)
         if svc is None:
             return jsonify({"error": "ReadyByService not initialized"}), 503
 
-        data: Dict[str, Any] = request.get_json() or {}
+        data: dict[str, Any] = request.get_json() or {}
 
         # Parse ready_by_ts (ISO format or datetime-local format)
         ready_by_raw = (data.get("ready_by_ts") or "").strip()
@@ -65,8 +69,7 @@ def create_ready_by_schedule():
             return jsonify({"error": "Missing ready_by_ts"}), 400
         try:
             # Support both ISO format and datetime-local (YYYY-MM-DDTHH:MM)
-            ready_by_ts = datetime.fromisoformat(
-                ready_by_raw.replace("Z", "+00:00"))
+            ready_by_ts = datetime.fromisoformat(ready_by_raw.replace("Z", "+00:00"))
         except ValueError:
             return jsonify({"error": "Invalid ready_by_ts format"}), 400
 
@@ -97,20 +100,19 @@ def create_ready_by_schedule():
     return jsonify({"error": "Failed to create schedule"}), 500
 
 
-@car_bp.route('/ready_by/schedule', methods=['DELETE'])
+@car_bp.route("/ready_by/schedule", methods=["DELETE"])
 @csrf.exempt
 @login_required
 def cancel_ready_by_schedule():
     """Cancel the current Ready-by schedule."""
+    logger.debug("cancel_ready_by_schedule called")
     try:
-        from ....services.car_heater import ReadyByService
-
-        svc: ReadyByService | None = getattr(
-            current_app, "ready_by_service", None)
+        svc: ReadyByService | None = getattr(current_app, "ready_by_service", None)
+        logger.debug("cancel_ready_by_schedule resolved ready_by_service=%s", svc)
         if svc is None:
             return jsonify({"error": "ReadyByService not initialized"}), 503
 
-        data: Dict[str, Any] = request.get_json() or {}
+        data: dict[str, Any] = request.get_json() or {}
         reason = (data.get("reason") or "user").strip()
         turn_off = bool(data.get("turn_off", False))
 

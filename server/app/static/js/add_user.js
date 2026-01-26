@@ -12,4 +12,3 @@ document.addEventListener('DOMContentLoaded', function() {
   tempCheckbox.addEventListener('change', toggle);
   toggle();
 });
-

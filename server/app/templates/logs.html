@@ -31,10 +31,10 @@
   <div class="search-container">
     <div class="search-wrapper">
       <span class="search-icon">🔍</span>
-      <input type="text" 
-             id="searchInput" 
-             class="search-input" 
-             placeholder="Search logs..." 
+      <input type="text"
+             id="searchInput"
+             class="search-input"
+             placeholder="Search logs..."
              autocomplete="off"
              autocapitalize="off"
              spellcheck="false">
@@ -58,7 +58,7 @@
     <div id="logsList" class="logs-list">
       <!-- Logs will be rendered here by JavaScript -->
     </div>
-    
+
     <!-- Load More -->
     <div id="loadMoreContainer" class="load-more-container" {% if not has_more %}style="display:none"{% endif %}>
       <button id="loadMoreBtn" class="load-more-btn">Load more</button>

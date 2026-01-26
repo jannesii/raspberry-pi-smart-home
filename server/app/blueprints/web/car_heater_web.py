@@ -1,30 +1,38 @@
 """Car heater control and status page."""
+
 from __future__ import annotations
 
 import logging
 from dataclasses import asdict
+from typing import TYPE_CHECKING
 
-from flask import render_template, current_app
-from flask_login import login_required, current_user
+from flask import current_app, render_template
+from flask_login import current_user, login_required
 
 from ...utils import get_ctrl
-from ...core import Controller, CarHeaterStatus
-from ...services.car_heater import CarHeaterService
-from ...services.car_heater import KeepAtTempSettings
 from ..api.car_heater.status import fallback_status
-
 from . import web_bp
-
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+if TYPE_CHECKING:
+    from ...core import CarHeaterStatus, Controller
+    from ...services.car_heater import (
+        CarHeaterService,
+        KeepAtTempSettings,
+        KFactorCalibrator,
+        ReadyByService,
+    )
+    from ...services.weather import WeatherService
 
-@web_bp.route('/car_heater', methods=['GET'])
+
+@web_bp.route("/car_heater", methods=["GET"])
 @login_required
 def get_car_heater_page():
     """Render the car heater dashboard page."""
     ctrl: Controller = get_ctrl()
+    logger.debug("get_car_heater_page called user=%s", current_user.get_id())
     logger.info("Rendering car heater page for %s", current_user.get_id())
 
     if fallback_status.shelly_connected:
@@ -37,8 +45,7 @@ def get_car_heater_page():
     command_status = None
     charge_mode_state = None
     try:
-        svc: CarHeaterService | None = getattr(
-            current_app, "car_heater_service", None)
+        svc: CarHeaterService | None = getattr(current_app, "car_heater_service", None)
         if svc is not None:
             command_status = asdict(svc.get_command_status())
             try:
@@ -53,9 +60,7 @@ def get_car_heater_page():
     # Ready-by schedule (if available)
     ready_by_data = None
     try:
-        from ...services.car_heater import ReadyByService
-        ready_by_svc: ReadyByService | None = getattr(
-            current_app, "ready_by_service", None)
+        ready_by_svc: ReadyByService | None = getattr(current_app, "ready_by_service", None)
         ready_by_data = ready_by_svc.ready_by_payload
         logger.debug("Ready-by schedule data: %s", ready_by_data)
     except Exception as e:
@@ -64,9 +69,7 @@ def get_car_heater_page():
     # kFactor calibration status (if available)
     kfactor_status = None
     try:
-        from ...services.car_heater import KFactorCalibrator
-        kfactor_svc: KFactorCalibrator | None = getattr(
-            current_app, "kfactor_calibrator", None)
+        kfactor_svc: KFactorCalibrator | None = getattr(current_app, "kfactor_calibrator", None)
         if kfactor_svc is not None:
             snapshot = kfactor_svc.get_debug_snapshot()
             # Include full config for advanced settings UI
@@ -85,9 +88,7 @@ def get_car_heater_page():
     # Weather data
     weather_data = None
     try:
-        from ...services.weather import WeatherService
-        weather_svc: WeatherService | None = getattr(
-            current_app, "weather_service", None)
+        weather_svc: WeatherService | None = getattr(current_app, "weather_service", None)
         if weather_svc is not None:
             wd = weather_svc.get_latest()
             if wd:
@@ -101,7 +102,7 @@ def get_car_heater_page():
         logger.debug("Failed to get weather data: %s", e)
 
     return render_template(
-        'car_heater.html',
+        "car_heater.html",
         last_status=last_status,
         command_status=command_status,
         charge_mode_state=charge_mode_state,

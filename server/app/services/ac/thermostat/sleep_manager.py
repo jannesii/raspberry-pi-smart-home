@@ -3,6 +3,7 @@ Sleep window management for thermostat.
 
 Handles sleep time window checking with weekly schedule support.
 """
+
 from __future__ import annotations
 
 import json
@@ -11,7 +12,7 @@ import time
 from datetime import datetime, timedelta
 from typing import Any
 
-from .time_utils import parse_hhmm_to_minutes, now_minutes_local, epoch_to_hhmm
+from .time_utils import epoch_to_hhmm, now_minutes_local, parse_hhmm_to_minutes
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ class SleepManager:
 
         Supports optional weekly schedule; falls back to single start/stop.
         """
-        if not getattr(self._cfg, 'sleep_active', True):
+        if not getattr(self._cfg, "sleep_active", True):
             return False
 
         # Honor temporary override: when active, pretend not in sleep window
@@ -55,19 +56,18 @@ class SleepManager:
 
         # Try weekly schedule first
         try:
-            weekly = getattr(self._cfg, 'sleep_weekly', None)
+            weekly = getattr(self._cfg, "sleep_weekly", None)
             if weekly:
-                schedule = json.loads(weekly) if isinstance(
-                    weekly, str) else weekly
+                schedule = json.loads(weekly) if isinstance(weekly, str) else weekly
                 # Map weekday 0=Mon..6=Sun
                 wday = time.localtime().tm_wday
-                keys = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+                keys = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
                 key = keys[wday] if 0 <= wday < len(keys) else None
 
                 if key and isinstance(schedule, dict) and key in schedule:
                     day = schedule.get(key) or {}
-                    start = (day.get('start') or '').strip() or None
-                    stop = (day.get('stop') or '').strip() or None
+                    start = (day.get("start") or "").strip() or None
+                    stop = (day.get("stop") or "").strip() or None
 
                     start_m = parse_hhmm_to_minutes(start)
                     stop_m = parse_hhmm_to_minutes(stop)
@@ -105,8 +105,10 @@ class SleepManager:
 
         logger.debug(
             "thermo: sleep_check now=%02d:%02d start=%s stop=%s -> %s",
-            now_m // 60, now_m % 60,
-            self._cfg.sleep_start, self._cfg.sleep_stop,
+            now_m // 60,
+            now_m % 60,
+            self._cfg.sleep_start,
+            self._cfg.sleep_stop,
             in_sleep,
         )
         return in_sleep
@@ -123,16 +125,16 @@ class SleepManager:
     def set_schedule(self, schedule: dict[str, dict[str, str | None]]) -> None:
         """Set weekly sleep schedule from dict mapping days to {start, stop}."""
         try:
-            keys = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+            keys = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
             norm: dict[str, dict[str, str | None]] = {}
             for k in keys:
                 d = schedule.get(k) if isinstance(schedule, dict) else None
                 if isinstance(d, dict):
-                    s = d.get('start')
-                    e = d.get('stop')
+                    s = d.get("start")
+                    e = d.get("stop")
                     norm[k] = {
-                        'start': s if isinstance(s, str) and ':' in s else None,
-                        'stop': e if isinstance(e, str) and ':' in e else None,
+                        "start": s if isinstance(s, str) and ":" in s else None,
+                        "stop": e if isinstance(e, str) and ":" in e else None,
                     }
             self._cfg.sleep_weekly = json.dumps(norm)
         except Exception as e:
@@ -149,24 +151,26 @@ class SleepManager:
         self._sleep_override_until = time.time() + (m * 60)
         logger.info(
             "thermo: sleep override enabled for %d minutes (until %s)",
-            m, (datetime.now() + timedelta(minutes=m)).strftime("%H:%M"),
+            m,
+            (datetime.now() + timedelta(minutes=m)).strftime("%H:%M"),
         )
 
     def get_status_payload(self) -> dict[str, Any]:
         """Build sleep status payload for notification."""
         payload: dict[str, Any] = {
-            "sleep_enabled": bool(getattr(self._cfg, 'sleep_active', True)),
-            "sleep_start": getattr(self._cfg, 'sleep_start', None),
-            "sleep_stop": getattr(self._cfg, 'sleep_stop', None),
+            "sleep_enabled": bool(getattr(self._cfg, "sleep_active", True)),
+            "sleep_start": getattr(self._cfg, "sleep_start", None),
+            "sleep_stop": getattr(self._cfg, "sleep_stop", None),
             "sleep_time_active": bool(self.is_sleep_window_now()),
         }
 
         # Attach weekly schedule (as dict) if present
-        weekly = getattr(self._cfg, 'sleep_weekly', None)
+        weekly = getattr(self._cfg, "sleep_weekly", None)
         if weekly:
             try:
-                payload["sleep_schedule"] = json.loads(
-                    weekly) if isinstance(weekly, str) else weekly
+                payload["sleep_schedule"] = (
+                    json.loads(weekly) if isinstance(weekly, str) else weekly
+                )
             except Exception:
                 payload["sleep_schedule"] = None
 

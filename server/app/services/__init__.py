@@ -1,7 +1,7 @@
+import logging
 import os
 import threading
-import logging
-from typing import Any, Dict
+from typing import Any
 
 from ..extensions import socketio
 
@@ -18,30 +18,29 @@ Moves heavy wiring out of the app factory to keep it lean and testable.
 def _make_notify(handler) -> Any:
     """Create a notifier that emits events to browser views via SocketEventHandler."""
 
-    def _notify(event: str, payload: Dict[str, Any]):
+    def _notify(event: str, payload: dict[str, Any]):
         try:
             handler.emit_to_views(event, payload)
         except Exception:
-            try:
+            import contextlib
+
+            with contextlib.suppress(Exception):
                 socketio.emit(event, payload)
-            except Exception:
-                pass
 
     return _notify
 
 
-def init_services(app) -> Dict[str, Any]:
+def init_services(app) -> dict[str, Any]:
     """Initialize AC thermostat, Hue controller, car heater, and Socket events.
 
     Returns a dictionary of created service instances.
     """
-    services: Dict[str, Any] = {}
+    services: dict[str, Any] = {}
 
     # Ensure Socket event handlers are registered (singleton takes care of idempotency)
     from ..sockets import SocketEventHandler
 
-    app.sio_handler = SocketEventHandler(
-        socketio, app.ctrl)  # type: ignore[attr-defined]
+    app.sio_handler = SocketEventHandler(socketio, app.ctrl)  # type: ignore[attr-defined]
 
     # --- AC / Thermostat ---
     AC_DEVICE_ID = os.getenv("AC_DEV_ID")
@@ -54,16 +53,14 @@ def init_services(app) -> Dict[str, Any]:
                 "Missing one of AC_DEV_ID, AC_IP, or AC_LOCAL_KEY environment variables"
             )
 
-        from .ac import ACController
         from tinytuya import Device
 
+        from .ac import ACController
+
         winter = True
-        tinytuya_device = Device(
-            AC_DEVICE_ID, AC_IP, AC_LOCAL_KEY) if not winter else None
-        ac_controller = ACController(
-            tinytuya_device=tinytuya_device, winter=winter)
-        THERMOSTAT_LOCATION = os.getenv(
-            "THERMOSTAT_LOCATION", "Tietokonepöytä")
+        tinytuya_device = Device(AC_DEVICE_ID, AC_IP, AC_LOCAL_KEY) if not winter else None
+        ac_controller = ACController(tinytuya_device=tinytuya_device, winter=winter)
+        THERMOSTAT_LOCATION = os.getenv("THERMOSTAT_LOCATION", "Tietokonepöytä")
         # Load thermostat configuration from DB (seed default if missing)
         try:
             cfg = app.ctrl.get_thermostat_conf()  # type: ignore[attr-defined]
@@ -72,10 +69,8 @@ def init_services(app) -> Dict[str, Any]:
             cfg = None
         if cfg is None:
             try:
-                logger.warning(
-                    "thermo: seeding default thermostat config in DB")
-                cfg = app.ctrl.ensure_thermostat_conf_seeded_from(
-                    None)  # type: ignore[attr-defined]
+                logger.warning("thermo: seeding default thermostat config in DB")
+                cfg = app.ctrl.ensure_thermostat_conf_seeded_from(None)  # type: ignore[attr-defined]
             except Exception:
                 pass
         from .ac import ACThermostat
@@ -93,8 +88,7 @@ def init_services(app) -> Dict[str, Any]:
             t = threading.Thread(target=ac_thermostat.run_forever, daemon=True)
             t.start()
             services["ac_thermostat"] = ac_thermostat
-            logger.info(
-                "Tuya AC controller started for device %s", AC_DEVICE_ID)
+            logger.info("Tuya AC controller started for device %s", AC_DEVICE_ID)
     except Exception as e:
         logger.exception("Failed to initialize AC thermostat: %s", e)
 
@@ -135,8 +129,7 @@ def init_services(app) -> Dict[str, Any]:
         services["keep_at_temp_service"] = keep_at_temp_service
         logger.info("Keep-at-temperature service initialized")
     except Exception as e:
-        logger.exception(
-            "Failed to initialize keep-at-temperature service: %s", e)
+        logger.exception("Failed to initialize keep-at-temperature service: %s", e)
 
     # --- Sodexo scheduler ---
     try:
@@ -150,7 +143,7 @@ def init_services(app) -> Dict[str, Any]:
                 "Set SODEXO_WEBHOOK_URL, SODEXO_POST_HOUR, and SODEXO_POST_MINUTE env vars."
             )
         skip_weekends = True
-        stop_event, th = start_sodexo_webhook_thread(
+        _ = start_sodexo_webhook_thread(
             webhook_url,
             restaurant_name="Sodexo Frami",
             hour=hour,
@@ -159,20 +152,19 @@ def init_services(app) -> Dict[str, Any]:
             skip_weekends=skip_weekends,
         )
         s = "weekdays" if skip_weekends else "everyday"
-        logger.info(
-            f"Sodexo-Scheduler started ({s} {hour}:{minute} Europe/Helsinki)."
-        )
+        logger.info(f"Sodexo-Scheduler started ({s} {hour}:{minute} Europe/Helsinki).")
     except Exception as e:
         logger.exception("Failed to initialize Sodexo scheduler: %s", e)
 
     # --- Alert webhook batcher ---
     try:
         from .alert_webhook import start_alert_batcher
+
         start_alert_batcher()
         logger.info("Alert webhook batcher started.")
     except Exception as e:
         logger.exception("Failed to start alert webhook batcher: %s", e)
-        
+
     # --- Weather service ---
     weather_service = None
     try:

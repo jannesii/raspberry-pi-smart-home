@@ -2,6 +2,7 @@ import logging
 import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+
 from .car_heater_service import CarHeaterService
 
 if TYPE_CHECKING:
@@ -84,8 +85,7 @@ class KeepAtTempService:
             if self._settings:
                 self._settings.target_temperature_c = temp_c
                 self._ctrl.save_keep_at_temp_settings(self._settings)
-                logger.debug(
-                    "Set KeepAtTemp target_temperature_c to: %r", temp_c)
+                logger.debug("Set KeepAtTemp target_temperature_c to: %r", temp_c)
 
     def thermostat_logic(
         self,
@@ -128,10 +128,9 @@ class KeepAtTempService:
         """
         self._car_heater_service.turn_on(
             source="keep_at_temp",
-            reason=f"Temp {current_temp:.1f}°C below target {target_temp:.1f}°C"
+            reason=f"Temp {current_temp:.1f}°C below target {target_temp:.1f}°C",
         )
-        logger.info("Heater ON via keep-at-temp: %.1f°C < %.1f°C",
-                    current_temp, target_temp)
+        logger.info("Heater ON via keep-at-temp: %.1f°C < %.1f°C", current_temp, target_temp)
 
     def _turn_heater_off(self, current_temp: float, target_temp: float) -> None:
         """
@@ -139,7 +138,6 @@ class KeepAtTempService:
         """
         self._car_heater_service.turn_off(
             source="keep_at_temp",
-            reason=f"Temp {current_temp:.1f}°C above target {target_temp:.1f}°C"
+            reason=f"Temp {current_temp:.1f}°C above target {target_temp:.1f}°C",
         )
-        logger.info("Heater OFF via keep-at-temp: %.1f°C > %.1f°C",
-                    current_temp, target_temp)
+        logger.info("Heater OFF via keep-at-temp: %.1f°C > %.1f°C", current_temp, target_temp)

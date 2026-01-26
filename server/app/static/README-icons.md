@@ -25,4 +25,3 @@ Routing note
 ------------
 The Flask app serves `/favicon.ico` directly from the static folder for user agents
 that request it implicitly.
-

@@ -210,7 +210,7 @@ M622 J1
   G92 E0
   G1 E-[new_retract_length_toolchange] F1800
   M400
-  
+
   M106 P1 S178
   M400 S4
   G1 X-38.2 F18000
@@ -220,7 +220,7 @@ M622 J1
   G1 X-38.2 F12000 ;wipe and shake
   G1 X-47 F3000
   M400
-  M106 P1 S0 
+  M106 P1 S0
 M623
 
 M621 S[next_extruder]A

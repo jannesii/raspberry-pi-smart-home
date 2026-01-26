@@ -8,23 +8,21 @@ from __future__ import annotations
 
 import logging
 
-from flask import render_template, request, redirect, url_for, jsonify
-from flask_login import login_required, current_user
+from flask import jsonify, redirect, render_template, request, url_for
+from flask_login import current_user, login_required
 
-from ...utils import (
-    get_ctrl,
-    require_admin_or_redirect,
-    flash_error,
-    flash_success,
-)
 from ...logging_control import (
     ALLOWED_LEVELS,
     apply_logging_control_config,
     snapshot_logging_state,
 )
-
+from ...utils import (
+    flash_error,
+    flash_success,
+    get_ctrl,
+    require_admin_or_redirect,
+)
 from . import web_bp
-
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

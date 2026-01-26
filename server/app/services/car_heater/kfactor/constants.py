@@ -3,13 +3,16 @@ KFactor calibration constants and utility functions.
 
 Physical constants for thermal modeling and common helper functions.
 """
+
 from __future__ import annotations
 
 import logging
 import math
 from datetime import datetime
-from typing import Any
-from zoneinfo import ZoneInfo
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
@@ -21,13 +24,13 @@ CABIN_VOLUME_M3 = 2.8
 HEATER_POWER_W = 1000.0
 AIR_DENSITY_KG_M3 = 1.2
 SPECIFIC_HEAT_J_KG_K = 1000.0
-HEAT_CAPACITY_J_PER_K = AIR_DENSITY_KG_M3 * \
-    CABIN_VOLUME_M3 * SPECIFIC_HEAT_J_KG_K
+HEAT_CAPACITY_J_PER_K = AIR_DENSITY_KG_M3 * CABIN_VOLUME_M3 * SPECIFIC_HEAT_J_KG_K
 
 
 # ==========================================================================
 # UTILITY FUNCTIONS
 # ==========================================================================
+
 
 def clamp(x: float, lo: float, hi: float) -> float:
     """Clamp x to [lo, hi]."""
@@ -87,8 +90,7 @@ def iso_no_micros(dt: datetime) -> str:
 def bucket_key(outside_temp_c: float, wind_m_s: float | None) -> tuple[int, int | None]:
     """Compute temperature and wind bucket keys."""
     t_bucket = int(round(outside_temp_c / 2.0) * 2)
-    wind_bucket = int(round(wind_m_s / 2.0) *
-                      2) if wind_m_s is not None else None
+    wind_bucket = int(round(wind_m_s / 2.0) * 2) if wind_m_s is not None else None
     return t_bucket, wind_bucket
 
 

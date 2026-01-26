@@ -16,23 +16,23 @@ form.login-form {
     border-radius: 10px;
     width: 320px;
   }
-  
+
   form.login-form h2 {
     margin-bottom: 1.5rem;
     text-align: center;
     font-size: 1.4rem;
   }
-  
+
   form.login-form .form-group {
     margin-bottom: 1rem;
   }
-  
+
   form.login-form label {
     display: block;
     margin-bottom: 0.5rem;
     font-size: 0.9rem;
   }
-  
+
   form.login-form input[type="text"],
   form.login-form input[type="password"] {
     width: 100%;
@@ -43,18 +43,18 @@ form.login-form {
     color: #fff;
     font-size: 1rem;
   }
-  
+
   form.login-form .checkbox-group {
     display: flex;
     align-items: center;
     margin-bottom: 1rem;
     font-size: 0.9rem;
   }
-  
+
   form.login-form .checkbox-group input {
     margin-right: 0.5rem;
   }
-  
+
   form.login-form button {
     width: 100%;
     padding: 0.6rem;
@@ -66,11 +66,11 @@ form.login-form {
     cursor: pointer;
     transition: background-color 0.3s;
   }
-  
+
   form.login-form button:hover {
     background-color: #505050;
   }
-  
+
   .flash-messages {
     margin-bottom: 1rem;
     color: #f66;
@@ -80,4 +80,3 @@ form.login-form {
   .flash-messages li {
     margin-bottom: 0.5rem;
   }
-  

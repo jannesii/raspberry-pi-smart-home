@@ -3,10 +3,15 @@ Notification emitters for thermostat.
 
 Handles emitting status updates to listeners via callback.
 """
+
 from __future__ import annotations
 
+import contextlib
 import logging
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +31,7 @@ class NotificationEmitter:
         """Notify listeners about current AC on/off state."""
         try:
             if self._notify:
-                self._notify('ac_status', {"is_on": bool(is_on)})
+                self._notify("ac_status", {"is_on": bool(is_on)})
         except Exception as e:
             logger.debug("thermo: notify failed: %s", e)
 
@@ -34,10 +39,13 @@ class NotificationEmitter:
         """Notify listeners about thermostat enabled state."""
         try:
             if self._notify:
-                self._notify('thermostat_status', {
-                    "enabled": bool(enabled),
-                    "thermo_active": bool(enabled),
-                })
+                self._notify(
+                    "thermostat_status",
+                    {
+                        "enabled": bool(enabled),
+                        "thermo_active": bool(enabled),
+                    },
+                )
         except Exception as e:
             logger.debug("thermo: notify thermo failed: %s", e)
 
@@ -45,12 +53,13 @@ class NotificationEmitter:
         """Notify listeners about sleep status."""
         try:
             if self._notify:
-                self._notify('sleep_status', payload)
+                self._notify("sleep_status", payload)
         except Exception as e:
             logger.debug("thermo: notify sleep failed: %s", e)
 
     def emit_config(self) -> None:
         """Notify listeners about thermostat config."""
+        logger.debug("emit_config called")
         try:
             if self._notify:
                 payload: dict[str, Any] = {
@@ -61,14 +70,13 @@ class NotificationEmitter:
                     "min_off_s": int(self._cfg.min_off_s),
                     "poll_interval_s": int(self._cfg.poll_interval_s),
                     "smooth_window": int(self._cfg.smooth_window),
-                    "max_stale_s": None if self._cfg.max_stale_s is None else int(self._cfg.max_stale_s),
+                    "max_stale_s": None
+                    if self._cfg.max_stale_s is None
+                    else int(self._cfg.max_stale_s),
                 }
-                try:
-                    payload["control_locations"] = getattr(
-                        self._cfg, 'control_locations', None)
-                except Exception:
-                    pass
-                self._notify('thermo_config', payload)
+                with contextlib.suppress(Exception):
+                    payload["control_locations"] = getattr(self._cfg, "control_locations", None)
+                self._notify("thermo_config", payload)
         except Exception as e:
             logger.debug("thermo: notify config failed: %s", e)
 
@@ -76,7 +84,6 @@ class NotificationEmitter:
         """Notify listeners about AC mode and fan speed."""
         try:
             if self._notify:
-                self._notify(
-                    'ac_state', {"mode": mode, "fan_speed": fan_speed})
+                self._notify("ac_state", {"mode": mode, "fan_speed": fan_speed})
         except Exception as e:
             logger.debug("thermo: notify ac_state failed: %s", e)

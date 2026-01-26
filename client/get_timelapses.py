@@ -1,5 +1,4 @@
 import json
-import os
 import time
 import paramiko
 from pathlib import Path
@@ -8,16 +7,17 @@ from pathlib import Path
 with open("client/config.json", "r") as f:
     cfg = json.load(f)
 
-HOST          = cfg["raspi_host"]
-PORT          = cfg.get("raspi_port", 22)
-USERNAME      = cfg["username"]
+HOST = cfg["raspi_host"]
+PORT = cfg.get("raspi_port", 22)
+USERNAME = cfg["username"]
 
 # Path to your private key (absolute or ~ expanded)
-KEY_PATH      = Path(cfg.get("private_key_path", "~/.ssh/pi_key")).expanduser()
-KEY_PASSPHRASE= cfg.get("private_key_passphrase")  # None if key is un‑encrypted
+KEY_PATH = Path(cfg.get("private_key_path", "~/.ssh/pi_key")).expanduser()
+KEY_PASSPHRASE = cfg.get("private_key_passphrase")  # None if key is un‑encrypted
 
-REMOTE_FOLDERS= cfg["remote_folders"]
-POLL_INTERVAL = cfg.get("poll_interval", 10)       # seconds
+REMOTE_FOLDERS = cfg["remote_folders"]
+POLL_INTERVAL = cfg.get("poll_interval", 10)  # seconds
+
 
 # ─── Helper ────────────────────────────────────────────────────────────
 def ensure_local_dir(remote_folder: str) -> Path:
@@ -29,6 +29,7 @@ def ensure_local_dir(remote_folder: str) -> Path:
     local_dir = Path.cwd() / Path(remote_folder).parent.name
     local_dir.mkdir(exist_ok=True)
     return local_dir
+
 
 # ─── Main transfer routine ─────────────────────────────────────────────
 def transfer_files():
@@ -65,6 +66,7 @@ def transfer_files():
         print("❗ Error:", exc)
     finally:
         ssh.close()
+
 
 # ─── Poll loop ─────────────────────────────────────────────────────────
 if __name__ == "__main__":

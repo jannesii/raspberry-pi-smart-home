@@ -1,24 +1,23 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from dataclasses import fields
-from datetime import datetime, timedelta
+import json
 import logging
 import math
-import json
+from dataclasses import asdict, dataclass, fields
+from datetime import datetime, timedelta
 from threading import RLock
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
-from app.services.car_heater.keep_at_temp_service import KeepAtTempService
-
-from ...core import CarHeaterReadyByConfig, CarHeaterReadyByState, CarHeaterStatus
-from ..weather.weather_service import WeatherService
-from .car_heater_service import CarHeaterService
-from .kfactor import KFactorCalibrator
+from ...core.models import CarHeaterReadyByConfig, CarHeaterReadyByState, CarHeaterStatus
 
 if TYPE_CHECKING:
+    from app.services.car_heater.keep_at_temp_service import KeepAtTempService
+
     from ...core import Controller
+    from ..weather.weather_service import WeatherService
+    from .car_heater_service import CarHeaterService
+    from .kfactor import KFactorCalibrator
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +91,7 @@ class ReadyByService:
         car_heater_service: CarHeaterService,
         kfactor_calibrator: KFactorCalibrator,
         keep_at_temp_service: KeepAtTempService,
-        ctrl: "Controller" | None = None,
+        ctrl: Controller | None = None,
         weather_service: WeatherService | None = None,
         config: ReadyByConfig | None = None,
         tz_name: str = "Europe/Helsinki",
@@ -165,16 +164,20 @@ class ReadyByService:
     ) -> ReadyBySchedule:
         """Schedule a Ready-by run (timestamps interpreted in local timezone if naive)."""
         with self._lock:
-            dt = ready_by_ts.astimezone(
-                self._tz) if ready_by_ts.tzinfo else ready_by_ts.replace(tzinfo=self._tz)
+            dt = (
+                ready_by_ts.astimezone(self._tz)
+                if ready_by_ts.tzinfo
+                else ready_by_ts.replace(tzinfo=self._tz)
+            )
             now = datetime.now(self._tz).replace(microsecond=0)
             self._schedule = ReadyBySchedule(
                 created_ts=now.isoformat(sep=" "),
                 ready_by_ts=dt.replace(microsecond=0).isoformat(sep=" "),
                 target_temp_c=float(target_temp_c),
             )
-            logger.info("ready_by: scheduled for %s target=%.1fC",
-                        self._schedule.ready_by_ts, target_temp_c)
+            logger.info(
+                "ready_by: scheduled for %s target=%.1fC", self._schedule.ready_by_ts, target_temp_c
+            )
             self._persist_if_changed(is_test=False)
             return ReadyBySchedule(**asdict(self._schedule))
 
@@ -241,21 +244,20 @@ class ReadyByService:
                         if w.t2m is not None:
                             out = _finite(w.t2m.value)
                 except Exception:
-                    logger.debug(
-                        "ready_by: weather lookup failed", exc_info=True)
+                    logger.debug("ready_by: weather lookup failed", exc_info=True)
                     out = None
             if out is None:
                 if self._schedule is not None:
                     if self._missing_outside_since is None:
                         self._missing_outside_since = now
-                    missing_s = (
-                        now - self._missing_outside_since).total_seconds()
+                    missing_s = (now - self._missing_outside_since).total_seconds()
                     if missing_s >= 15 * 60 and not is_test:
                         from ..alert_webhook import record_alert
+
                         record_alert(
                             key="ready_by_missing_outside",
                             title="Ready-by missing outside temperature",
-                            message=f"missing_min={missing_s/60:.1f}",
+                            message=f"missing_min={missing_s / 60:.1f}",
                         )
                 return
             self._missing_outside_since = None
@@ -265,8 +267,7 @@ class ReadyByService:
             s.outside_temp_c = out
 
             # Predict ETA; if unreachable, start ASAP to best-effort warm.
-            used_k, used_eta = self._kfactor.get_active_params(
-                outside_temp_c=out)
+            used_k, used_eta = self._kfactor.get_active_params(outside_temp_c=out)
             s.used_k_loss_W_per_K = float(used_k)
             s.used_eta = float(used_eta)
             eta_min = self._kfactor.predict_time_to_target_minutes(
@@ -275,8 +276,7 @@ class ReadyByService:
                 outside_temp_c=out,
                 power_w=_finite(getattr(car_status, "instant_power_w", None)),
             )
-            s.predicted_eta_minutes = float(
-                eta_min) if eta_min is not None else None
+            s.predicted_eta_minutes = float(eta_min) if eta_min is not None else None
             s.unreachable = eta_min is None
 
             if eta_min is None:
@@ -286,8 +286,7 @@ class ReadyByService:
                 if planned_start < now:
                     planned_start = now
 
-            s.planned_start_ts = planned_start.replace(
-                microsecond=0).isoformat(sep=" ")
+            s.planned_start_ts = planned_start.replace(microsecond=0).isoformat(sep=" ")
 
             # Outcome: first time we reach target (can happen before ready_by).
             if s.reached_ts is None and cabin_temp_c >= float(s.target_temp_c):
@@ -312,7 +311,7 @@ class ReadyByService:
                 s.status = "running"
                 self._queue_command(
                     "turn_on",
-                    f"Ready-by {s.ready_by_ts}, target={s.target_temp_c}°C, cabin={cabin_temp_c:.1f}°C"
+                    f"Ready-by {s.ready_by_ts}, target={s.target_temp_c}°C, cabin={cabin_temp_c:.1f}°C",
                 )
             self._persist_if_changed(is_test=is_test)
 
@@ -322,14 +321,18 @@ class ReadyByService:
         self._keep_at_temp_service.enabled = True
 
     def _queue_command(self, action: str, reason: str) -> None:
+        logger.debug("ready_by: _queue_command action=%s reason=%s", action, reason)
         now = datetime.now(self._tz).replace(microsecond=0)
         if self._schedule is None:
+            logger.debug("ready_by: _queue_command skipped (no schedule)")
             return
         if self._schedule.last_command_ts is not None:
             last_dt = _dt_local(self._schedule.last_command_ts, self._tz)
-            if last_dt is not None:
-                if (now - last_dt).total_seconds() < float(self._cfg.command_cooldown_s):
-                    return
+            if last_dt is not None and (
+                (now - last_dt).total_seconds() < float(self._cfg.command_cooldown_s)
+            ):
+                logger.debug("ready_by: _queue_command skipped (cooldown active)")
+                return
 
         if action == "turn_on":
             self._car_heater_service.turn_on(source="ready_by", reason=reason)
@@ -363,8 +366,7 @@ class ReadyByService:
                 raise ValueError("config_json is not an object")
             return self._merge_config(defaults, raw)
         except Exception as e:
-            logger.warning(
-                "ready_by: failed to parse config JSON, using defaults: %s", e)
+            logger.warning("ready_by: failed to parse config JSON, using defaults: %s", e)
             return defaults
 
     def _save_config_in_db(self, cfg: ReadyByConfig) -> None:
@@ -372,10 +374,8 @@ class ReadyByService:
             return
         try:
             logger.info("ready_by: saving config to DB: %r", cfg)
-            payload = json.dumps(
-                asdict(cfg), separators=(",", ":"), sort_keys=True)
-            now = datetime.now(self._tz).replace(
-                microsecond=0).isoformat(sep=" ")
+            payload = json.dumps(asdict(cfg), separators=(",", ":"), sort_keys=True)
+            now = datetime.now(self._tz).replace(microsecond=0).isoformat(sep=" ")
             self._ctrl.save_ready_by_config(
                 CarHeaterReadyByConfig(
                     id=1,
@@ -400,8 +400,7 @@ class ReadyByService:
         try:
             row = self._ctrl.get_ready_by_state()
         except Exception:
-            logger.debug(
-                "ready_by: failed to read persisted state", exc_info=True)
+            logger.debug("ready_by: failed to read persisted state", exc_info=True)
             return
         if row is None or not row.state_json:
             return
@@ -411,11 +410,11 @@ class ReadyByService:
             if isinstance(sched, dict):
                 self._schedule = self._schedule_from_dict(sched)
                 logger.info(
-                    "ready_by: restored schedule from DB (status=%s)", self._schedule.status)
+                    "ready_by: restored schedule from DB (status=%s)", self._schedule.status
+                )
             self._last_persisted_json = row.state_json
         except Exception:
-            logger.debug(
-                "ready_by: failed to parse persisted state_json", exc_info=True)
+            logger.debug("ready_by: failed to parse persisted state_json", exc_info=True)
 
     @staticmethod
     def _schedule_from_dict(data: dict[str, Any]) -> ReadyBySchedule:
@@ -441,8 +440,7 @@ class ReadyByService:
                 CarHeaterReadyByState(
                     id=1,
                     state_json=state_json,
-                    updated_ts=datetime.now(self._tz).replace(
-                        microsecond=0).isoformat(sep=" "),
+                    updated_ts=datetime.now(self._tz).replace(microsecond=0).isoformat(sep=" "),
                 )
             )
         except Exception:

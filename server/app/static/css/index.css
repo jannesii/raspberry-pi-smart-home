@@ -35,9 +35,8 @@
   box-sizing: border-box; /* include padding/border inside width */
 }
 
-  
+
   .tile:hover {
     background-color: #272727;
     transform: scale(1.05);
   }
-  

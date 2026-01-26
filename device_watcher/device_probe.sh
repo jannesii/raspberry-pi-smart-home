@@ -302,4 +302,3 @@ case "$1" in
   *)
     usage; exit 1 ;;
 esac
-

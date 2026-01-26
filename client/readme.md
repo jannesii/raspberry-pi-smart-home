@@ -156,4 +156,3 @@ The script SFTP‑pulls any new MP4s from the Pi and deletes the originals once 
 ---
 
 © 2025 Janne Siirtola.  Licensed under the MIT License.
-

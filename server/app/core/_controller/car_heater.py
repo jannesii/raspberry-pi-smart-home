@@ -1,11 +1,10 @@
 import logging
 
-from .. import (
-    CarHeaterStatus,
-)
 from ...services.car_heater import ChargeModeState, KeepAtTempSettings
+from ..models import CarHeaterStatus
 
 logger = logging.getLogger(__name__)
+
 
 class CarHeaterMixin:
     def record_car_heater_status(self, status: CarHeaterStatus) -> CarHeaterStatus:
@@ -70,8 +69,7 @@ class CarHeaterMixin:
             """
         )
         if row is None:
-            raise RuntimeError(
-                "Failed to retrieve inserted car_heater_status record")
+            raise RuntimeError("Failed to retrieve inserted car_heater_status record")
 
         return CarHeaterStatus(
             id=row["id"],
@@ -193,7 +191,7 @@ class CarHeaterMixin:
         Handy for graphs.
         """
         rows = self.db.fetchall(
-            f"""
+            """
             SELECT
                 id,
                 timestamp,
@@ -261,7 +259,7 @@ class CarHeaterMixin:
             WHERE date(timestamp) = ?
             ORDER BY timestamp ASC, id ASC
             """,
-            (date_str,)
+            (date_str,),
         )
         return [
             CarHeaterStatus(
@@ -296,13 +294,14 @@ class CarHeaterMixin:
         if row is None:
             return ChargeModeState()
         return ChargeModeState(
-            enabled=bool(row['enabled']),
-            threshold_w=float(row['threshold_w']),
-            power_cut=bool(row['power_cut']),
-            power_cut_at=row['power_cut_at'],
-            last_instant_power_w=float(
-                row['last_instant_power_w']) if row['last_instant_power_w'] is not None else None,
-            seen_above_threshold=bool(row['seen_above_threshold']),
+            enabled=bool(row["enabled"]),
+            threshold_w=float(row["threshold_w"]),
+            power_cut=bool(row["power_cut"]),
+            power_cut_at=row["power_cut_at"],
+            last_instant_power_w=float(row["last_instant_power_w"])
+            if row["last_instant_power_w"] is not None
+            else None,
+            seen_above_threshold=bool(row["seen_above_threshold"]),
         )
 
     def save_charge_mode_state(self, state: ChargeModeState) -> None:
@@ -345,12 +344,11 @@ class CarHeaterMixin:
         if row is None:
             return KeepAtTempSettings()
         return KeepAtTempSettings(
-            target_temperature_c=float(
-                row['target_temperature_c']) if row['target_temperature_c'] is not None else None,
-            hysteresis_c=float(
-                row['hysteresis_c']) if row['hysteresis_c'] is not None else None,
-            enabled=bool(
-                row['enabled']) if row['enabled'] is not None else None,
+            target_temperature_c=float(row["target_temperature_c"])
+            if row["target_temperature_c"] is not None
+            else None,
+            hysteresis_c=float(row["hysteresis_c"]) if row["hysteresis_c"] is not None else None,
+            enabled=bool(row["enabled"]) if row["enabled"] is not None else None,
         )
 
     def save_keep_at_temp_settings(self, settings: KeepAtTempSettings) -> None:

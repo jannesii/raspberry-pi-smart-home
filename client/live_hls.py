@@ -1,4 +1,5 @@
-import subprocess, shlex, textwrap
+import subprocess
+import shlex
 
 cmd = """
 rpicam-vid

@@ -136,7 +136,7 @@
   function handleNewLog(log) {
     // Check if log matches current filters
     const matchesFilter = currentFilter === 'all' || log.type === currentFilter;
-    const matchesSearch = !currentSearch || 
+    const matchesSearch = !currentSearch ||
       log.message.toLowerCase().includes(currentSearch.toLowerCase());
 
     if (!matchesFilter || !matchesSearch) {
@@ -155,7 +155,7 @@
       if (lastSeenId === null || log.id > lastSeenId) {
         lastSeenId = log.id;
       }
-      
+
       // Prepend to DOM with animation
       const logEl = createLogElement(log, true);
       if (logsList && logsList.firstChild) {
@@ -185,7 +185,7 @@
   function toggleLive() {
     isLive = !isLive;
     updateLiveIndicator();
-    
+
     if (isLive) {
       // Refresh to get any missed logs
       if (newLogsWhilePaused > 0) {
@@ -198,7 +198,7 @@
 
   function updateLiveIndicator() {
     if (!liveIndicator || !liveText) return;
-    
+
     if (isLive) {
       liveIndicator.classList.remove('paused');
       liveText.textContent = 'Live';
@@ -290,7 +290,7 @@
 
   function appendLogs(logs) {
     if (!logsList) return;
-    
+
     // Remove empty state if present
     const emptyState = logsList.querySelector('.logs-empty');
     if (emptyState) {
@@ -318,7 +318,7 @@
     const relativeTime = formatRelativeTime(log.timestamp);
     const absoluteTime = formatAbsoluteTime(log.timestamp);
     const typeIcon = getTypeIcon(log.type);
-    
+
     return `
       <div class="log-entry-header">
         <div class="log-entry-left">
@@ -371,7 +371,7 @@
       if (diffMin < 60) return `${diffMin} min ago`;
       if (diffHour < 24) return `${diffHour} hr ago`;
       if (diffDay < 7) return `${diffDay} day${diffDay > 1 ? 's' : ''} ago`;
-      
+
       return date.toLocaleDateString('fi-FI');
     } catch {
       return isoString;

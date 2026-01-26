@@ -28,14 +28,12 @@ def create_video_from_images(image_folder, output_folder, fps=25):
 
     # Prepare output file name.
     video_filename = os.path.join(
-        output_folder,
-        f"timelapse_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+        output_folder, f"timelapse_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
     )
 
     # Define video codec and create VideoWriter object. The H264 codec in an MP4 container is good for iPhone.
     fourcc = cv2.VideoWriter_fourcc(*"avc3")
-    video_writer = cv2.VideoWriter(
-        video_filename, fourcc, fps, (width, height))
+    video_writer = cv2.VideoWriter(video_filename, fourcc, fps, (width, height))
 
     for fname in image_files:
         frame = cv2.imread(fname)

@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 import os
-import shutil
-import tempfile
 import time
 import logging
 import threading
@@ -17,6 +15,7 @@ from .video_encoder import VideoEncoder
 from .bambu_handler import BambuHandler
 
 logger = logging.getLogger(__name__)
+
 
 class TimelapseSession:
     """
@@ -49,9 +48,9 @@ class TimelapseSession:
         self.active = False
         self.should_create = True
         self.image_callback: Optional[Callable[[bytes], None]] = None
-        
+
         self.service = "live-hls.service"
-        self.systemctl =  ["/usr/bin/sudo", "/bin/systemctl", "--quiet"]
+        self.systemctl = ["/usr/bin/sudo", "/bin/systemctl", "--quiet"]
 
         # ensure directories exist
         for subdir in ("Photos", "Timelapses"):
@@ -59,7 +58,7 @@ class TimelapseSession:
             if not os.path.exists(path):
                 os.makedirs(path)
                 logger.info("created %s", path)
-        
+
         # Purge old photos
         self.clear_photos()
 
@@ -89,15 +88,18 @@ class TimelapseSession:
         self.red_led.off()
         self.yellow_led.off()
         self.green_led.off()
-        
+
     def _systemctl(self, *args):
         subprocess.run(self.systemctl + list(args), check=True)
 
     def _wait_state(self, state, timeout=5):
         t0 = time.monotonic()
         while time.monotonic() - t0 < timeout:
-            res = subprocess.run(self.systemctl + ["is-active", self.service],
-                                capture_output=True, text=True)
+            res = subprocess.run(
+                self.systemctl + ["is-active", self.service],
+                capture_output=True,
+                text=True,
+            )
             logger.info("systemctl status: %s", res.stdout.strip())
             if res.stdout.strip() == state:
                 return
@@ -129,15 +131,14 @@ class TimelapseSession:
         try:
             self.active = False
             self.should_create = create_video
-            logger.info(
-                "stopped, create_video=%s", create_video)
+            logger.info("stopped, create_video=%s", create_video)
             self._set_stopped_leds()
             success = self.finalize()
             if self.camera:
                 self.camera.shutdown()
                 logger.info("camera shutdown completed")
             self._systemctl("start", self.service)
-            #self._wait_state("active")
+            # self._wait_state("active")
             return success
         except Exception:
             logger.exception("error stopping session")
@@ -158,11 +159,9 @@ class TimelapseSession:
 
         # save frames for timelapse video
         if self.active and self.printer.running_and_printing:
-            threading.Thread(target=self._blink_red_led,
-                             args=(False, 0.2)).start()
+            threading.Thread(target=self._blink_red_led, args=(False, 0.2)).start()
             timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            filename = os.path.join(
-                self.root, "Photos", f"capture_{timestamp}.jpg")
+            filename = os.path.join(self.root, "Photos", f"capture_{timestamp}.jpg")
             try:
                 with open(filename, "wb") as f:
                     f.write(data)
@@ -171,7 +170,9 @@ class TimelapseSession:
             except Exception:
                 logger.exception("error saving image")
         else:
-            logger.info("Not saving image, timelapse not active or printer not printing")
+            logger.info(
+                "Not saving image, timelapse not active or printer not printing"
+            )
 
     def _blink_red_led(self, reverse, delay) -> None:
         """Briefly blink the red LED to indicate a capture."""
@@ -183,7 +184,7 @@ class TimelapseSession:
             self.red_led.on()
             time.sleep(delay)
             self.red_led.off()
-            
+
     def clear_photos(self) -> None:
         """
         Clear all captured photos.
@@ -193,7 +194,7 @@ class TimelapseSession:
         if not photos:
             logger.info("no photos to clear")
             return
-        
+
         for img in photos:
             try:
                 os.remove(os.path.join("Photos", img))
@@ -215,16 +216,16 @@ class TimelapseSession:
             video_name = os.path.join(
                 self.root,
                 "Timelapses",
-                f"{datetime.now():%Y-%m-%d_%H-%M-%S}_timelapse.mp4"
+                f"{datetime.now():%Y-%m-%d_%H-%M-%S}_timelapse.mp4",
             )
             try:
                 first = cv2.imread(self.images[0])
                 h, w, _ = first.shape
                 writer = cv2.VideoWriter(
                     video_name,
-                    cv2.VideoWriter_fourcc(*"mp4v"), # type: ignore
+                    cv2.VideoWriter_fourcc(*"mp4v"),  # type: ignore
                     fps,
-                    (w, h)
+                    (w, h),
                 )
                 if not writer.isOpened():
                     raise RuntimeError("VideoWriter failed")
@@ -233,22 +234,21 @@ class TimelapseSession:
                     if frame is not None:
                         writer.write(frame)
                 writer.release()
-                logger.info(
-                    "video created %s", video_name)
+                logger.info("video created %s", video_name)
                 if not self.encoder.encode(video_name):
-                    logger.warning(
-                        "encoder fallback, video kept as-is")
+                    logger.warning("encoder fallback, video kept as-is")
             except Exception:
                 ret = False
                 logger.exception("error creating video")
         else:
-            logger.info(
-                "video creation skipped by user")
+            logger.info("video creation skipped by user")
         times = self.camera.times if self.camera else []
         if times:
             avg_time = sum(times) / len(times)
-            logger.info(f"autofocus cycle time: \navg: {avg_time:.2f} seconds\n max: {max(times):.2f} seconds\n min: {min(times):.2f} seconds\ncount: {len(times)}")
+            logger.info(
+                f"autofocus cycle time: \navg: {avg_time:.2f} seconds\n max: {max(times):.2f} seconds\n min: {min(times):.2f} seconds\ncount: {len(times)}"
+            )
         self.clear_photos()
         self._set_streaming_leds()
-        
+
         return ret

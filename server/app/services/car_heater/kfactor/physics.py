@@ -3,13 +3,16 @@ KFactor thermal physics simulation and parameter fitting.
 
 Contains the mathematical core for thermal model simulation and parameter estimation.
 """
+
 from __future__ import annotations
 
 import logging
 import math
-from datetime import datetime
 from statistics import mean
 from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 from .constants import (
     HEAT_CAPACITY_J_PER_K,
@@ -18,9 +21,6 @@ from .constants import (
     linspace,
 )
 from .models import KFactorConfig, KFactorFit, KFactorSample
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -64,8 +64,7 @@ class ThermalPhysics:
                 continue
 
             P = powers[i - 1] if i - 1 < len(powers) else powers[-1]
-            P = float(P) if (P is not None and math.isfinite(P)
-                             ) else HEATER_POWER_W
+            P = float(P) if (P is not None and math.isfinite(P)) else HEATER_POWER_W
             P = P if P > 1.0 else HEATER_POWER_W
 
             Tout_i = float(tout[i - 1])
@@ -86,13 +85,13 @@ class ThermalPhysics:
         eta: float,
     ) -> float:
         """Compute RMSE between simulated and observed temperatures."""
-        pred = self.simulate(
-            times, obs[0], powers, tout=tout, k_loss=k_loss, eta=eta)
+        logger.debug("rmse_for called samples=%d", len(obs))
+        pred = self.simulate(times, obs[0], powers, tout=tout, k_loss=k_loss, eta=eta)
         if pred is None:
             return float("inf")
         err2 = 0.0
         n = 0
-        for y_hat, y in zip(pred, obs):
+        for y_hat, y in zip(pred, obs, strict=False):
             if not (math.isfinite(y_hat) and math.isfinite(y)):
                 continue
             d = y_hat - y
@@ -111,14 +110,14 @@ class ThermalPhysics:
         eta: float,
     ) -> float | None:
         """Compute R² coefficient of determination."""
-        pred = self.simulate(
-            times, obs[0], powers, tout=tout, k_loss=k_loss, eta=eta)
+        logger.debug("r2_for called samples=%d", len(obs))
+        pred = self.simulate(times, obs[0], powers, tout=tout, k_loss=k_loss, eta=eta)
         if pred is None:
             return None
         y_bar = mean(obs)
         sse = 0.0
         sst = 0.0
-        for y_hat, y in zip(pred, obs):
+        for y_hat, y in zip(pred, obs, strict=False):
             if not (math.isfinite(y_hat) and math.isfinite(y)):
                 continue
             d = y - y_hat
@@ -144,10 +143,7 @@ class ThermalPhysics:
         for s in samples:
             if not s.heater_on:
                 continue
-            series.append(
-                (s.ts, float(s.cabin_temp_c), float(
-                    s.power_w), float(s.outside_temp_c))
-            )
+            series.append((s.ts, float(s.cabin_temp_c), float(s.power_w), float(s.outside_temp_c)))
 
         if len(series) < 3:
             return None
@@ -156,33 +152,44 @@ class ThermalPhysics:
         obs = [v for (_, v, _, _) in series]
         powers = [p for (_, _, p, _) in series]
         tout = [x for (_, _, _, x) in series]
-        tout = self._smooth_series(tout, window=max(
-            1, int(self._cfg.tout_smooth_window)))
+        tout = self._smooth_series(tout, window=max(1, int(self._cfg.tout_smooth_window)))
 
-        k0 = clamp(float(current_k), self._cfg.k_loss_min,
-                   self._cfg.k_loss_max)
+        k0 = clamp(float(current_k), self._cfg.k_loss_min, self._cfg.k_loss_max)
         eta0 = clamp(float(current_eta), self._cfg.eta_min, self._cfg.eta_max)
 
         # Two-step fitting to reduce k_loss/eta tradeoff:
         # 1) Fit k_loss with eta fixed
         # 2) Fit eta with k_loss fixed
         best_k, _best_rmse_k = self._fit_k_loss_only(
-            times=times, obs=obs, powers=powers, tout=tout,
-            k0=k0, eta_fixed=eta0,
+            times=times,
+            obs=obs,
+            powers=powers,
+            tout=tout,
+            k0=k0,
+            eta_fixed=eta0,
         )
         best_eta, _best_rmse = self._fit_eta_only(
-            times=times, obs=obs, powers=powers, tout=tout,
-            eta0=eta0, k_fixed=best_k,
+            times=times,
+            obs=obs,
+            powers=powers,
+            tout=tout,
+            eta0=eta0,
+            k_fixed=best_k,
         )
 
         # Optional: small refinement pass around the two-step solution
         best_k, best_eta, best_rmse = self._refine_joint(
-            times=times, obs=obs, powers=powers, tout=tout,
-            k0=k0, eta0=eta0, k_start=best_k, eta_start=best_eta,
+            times=times,
+            obs=obs,
+            powers=powers,
+            tout=tout,
+            k0=k0,
+            eta0=eta0,
+            k_start=best_k,
+            eta_start=best_eta,
         )
 
-        r2 = self.r2_for(times, obs, powers, tout=tout,
-                         k_loss=best_k, eta=best_eta)
+        r2 = self.r2_for(times, obs, powers, tout=tout, k_loss=best_k, eta=best_eta)
         return KFactorFit(
             k_loss_W_per_K=float(best_k),
             eta=float(best_eta),
@@ -202,8 +209,7 @@ class ThermalPhysics:
     ) -> tuple[float, float]:
         """Fit k_loss with eta held fixed."""
         best_k = clamp(float(k0), self._cfg.k_loss_min, self._cfg.k_loss_max)
-        best_rmse = self.rmse_for(
-            times, obs, powers, tout=tout, k_loss=best_k, eta=eta_fixed)
+        best_rmse = self.rmse_for(times, obs, powers, tout=tout, k_loss=best_k, eta=eta_fixed)
         best_loss = best_rmse
 
         stages = [
@@ -214,13 +220,10 @@ class ThermalPhysics:
         lam_k = float(self._cfg.prior_lambda_k)
 
         for lo_fac, hi_fac, n in stages:
-            k_min = clamp(best_k * lo_fac, self._cfg.k_loss_min,
-                          self._cfg.k_loss_max)
-            k_max = clamp(best_k * hi_fac, self._cfg.k_loss_min,
-                          self._cfg.k_loss_max)
+            k_min = clamp(best_k * lo_fac, self._cfg.k_loss_min, self._cfg.k_loss_max)
+            k_max = clamp(best_k * hi_fac, self._cfg.k_loss_min, self._cfg.k_loss_max)
             for k in linspace(k_min, k_max, n):
-                rmse = self.rmse_for(times, obs, powers,
-                                     tout=tout, k_loss=k, eta=eta_fixed)
+                rmse = self.rmse_for(times, obs, powers, tout=tout, k_loss=k, eta=eta_fixed)
                 if not math.isfinite(rmse):
                     continue
                 loss = rmse + (lam_k * abs(k - k0) / max(1e-9, abs(k0)))
@@ -243,8 +246,7 @@ class ThermalPhysics:
     ) -> tuple[float, float]:
         """Fit eta with k_loss held fixed."""
         best_eta = clamp(float(eta0), self._cfg.eta_min, self._cfg.eta_max)
-        best_rmse = self.rmse_for(
-            times, obs, powers, tout=tout, k_loss=k_fixed, eta=best_eta)
+        best_rmse = self.rmse_for(times, obs, powers, tout=tout, k_loss=k_fixed, eta=best_eta)
         best_loss = best_rmse
 
         stages = [
@@ -255,13 +257,10 @@ class ThermalPhysics:
         lam_e = float(self._cfg.prior_lambda_eta)
 
         for span, n in stages:
-            eta_min = clamp(best_eta - span, self._cfg.eta_min,
-                            self._cfg.eta_max)
-            eta_max = clamp(best_eta + span, self._cfg.eta_min,
-                            self._cfg.eta_max)
+            eta_min = clamp(best_eta - span, self._cfg.eta_min, self._cfg.eta_max)
+            eta_max = clamp(best_eta + span, self._cfg.eta_min, self._cfg.eta_max)
             for eta in linspace(eta_min, eta_max, n):
-                rmse = self.rmse_for(times, obs, powers,
-                                     tout=tout, k_loss=k_fixed, eta=eta)
+                rmse = self.rmse_for(times, obs, powers, tout=tout, k_loss=k_fixed, eta=eta)
                 if not math.isfinite(rmse):
                     continue
                 loss = rmse + (lam_e * abs(eta - eta0))
@@ -285,33 +284,27 @@ class ThermalPhysics:
         eta_start: float,
     ) -> tuple[float, float, float]:
         """Small joint refinement pass around the two-step solution."""
-        best_k = clamp(float(k_start), self._cfg.k_loss_min,
-                       self._cfg.k_loss_max)
-        best_eta = clamp(float(eta_start), self._cfg.eta_min,
-                         self._cfg.eta_max)
-        best_rmse = self.rmse_for(
-            times, obs, powers, tout=tout, k_loss=best_k, eta=best_eta)
+        best_k = clamp(float(k_start), self._cfg.k_loss_min, self._cfg.k_loss_max)
+        best_eta = clamp(float(eta_start), self._cfg.eta_min, self._cfg.eta_max)
+        best_rmse = self.rmse_for(times, obs, powers, tout=tout, k_loss=best_k, eta=best_eta)
         best_loss = best_rmse
 
         lam_k = float(self._cfg.prior_lambda_k)
         lam_e = float(self._cfg.prior_lambda_eta)
 
-        k_min = clamp(best_k * 0.85, self._cfg.k_loss_min,
-                      self._cfg.k_loss_max)
-        k_max = clamp(best_k * 1.15, self._cfg.k_loss_min,
-                      self._cfg.k_loss_max)
+        k_min = clamp(best_k * 0.85, self._cfg.k_loss_min, self._cfg.k_loss_max)
+        k_max = clamp(best_k * 1.15, self._cfg.k_loss_min, self._cfg.k_loss_max)
         eta_min = clamp(best_eta - 0.15, self._cfg.eta_min, self._cfg.eta_max)
         eta_max = clamp(best_eta + 0.15, self._cfg.eta_min, self._cfg.eta_max)
 
         for k in linspace(k_min, k_max, 13):
             for eta in linspace(eta_min, eta_max, 13):
-                rmse = self.rmse_for(times, obs, powers,
-                                     tout=tout, k_loss=k, eta=eta)
+                rmse = self.rmse_for(times, obs, powers, tout=tout, k_loss=k, eta=eta)
                 if not math.isfinite(rmse):
                     continue
                 loss = rmse
-                loss += (lam_k * abs(k - k0) / max(1e-9, abs(k0)))
-                loss += (lam_e * abs(eta - eta0))
+                loss += lam_k * abs(k - k0) / max(1e-9, abs(k0))
+                loss += lam_e * abs(eta - eta0)
                 if loss < best_loss:
                     best_loss = loss
                     best_rmse = rmse
@@ -346,8 +339,7 @@ class ThermalPhysics:
         margin_c: float = 0.5,
     ) -> float | None:
         """Compute ETA (minutes) for reaching target temperature."""
-        P = power_w if power_w is not None and math.isfinite(
-            power_w) else HEATER_POWER_W
+        P = power_w if power_w is not None and math.isfinite(power_w) else HEATER_POWER_W
         C_eff = HEAT_CAPACITY_J_PER_K * clamp(
             float(self._cfg.mass_factor),
             float(self._cfg.mass_factor_min),
@@ -363,7 +355,7 @@ class ThermalPhysics:
         if target_temp_c >= (Tss - margin_c):
             return None
 
-        denom = (cabin_temp_c - Tss)
+        denom = cabin_temp_c - Tss
         if denom == 0:
             return None
 
@@ -374,8 +366,7 @@ class ThermalPhysics:
         try:
             t_s = -(C_eff / k_loss) * math.log(ratio)
         except Exception:
-            logger.debug(
-                "predict_time_to_target: math.log failed for ratio=%s", ratio)
+            logger.debug("predict_time_to_target: math.log failed for ratio=%s", ratio)
             return None
 
         if not math.isfinite(t_s) or t_s < 0:

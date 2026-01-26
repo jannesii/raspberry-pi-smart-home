@@ -722,24 +722,24 @@ body {
   .car-heater-page {
     padding: 0 12px 24px;
   }
-  
+
   .hero-stats {
     grid-template-columns: repeat(3, 1fr);
     gap: 8px;
   }
-  
+
   .hero-stat {
     padding: 10px 4px;
   }
-  
+
   .hero-stat-value {
     font-size: 16px;
   }
-  
+
   .hero-stat-label {
     font-size: 10px;
   }
-  
+
   .power-value {
     font-size: 28px;
   }
@@ -750,7 +750,7 @@ body {
   .car-heater-page {
     padding-top: 8px;
   }
-  
+
   .page-header {
     position: relative;
     background: transparent;
@@ -759,11 +759,11 @@ body {
     border-bottom: none;
     margin-bottom: 20px;
   }
-  
+
   .hero-status {
     padding: 24px;
   }
-  
+
   .hero-stat {
     padding: 14px 12px;
   }
@@ -775,15 +775,15 @@ body {
     max-width: 1400px;
     padding: 16px 24px 32px;
   }
-  
+
   .page-header {
     margin-bottom: 24px;
   }
-  
+
   .page-header h2 {
     font-size: 32px;
   }
-  
+
   /* Desktop grid layout */
   .desktop-grid {
     display: grid;
@@ -791,75 +791,75 @@ body {
     gap: 20px;
     align-items: start;
   }
-  
+
   /* Columns for grouping cards */
   .desktop-column {
     display: flex;
     flex-direction: column;
     gap: 16px;
   }
-  
+
   /* Hero spans full width on desktop */
   .hero-status {
     grid-column: 1 / -1;
   }
-  
+
   .hero-status-main {
     margin-bottom: 20px;
   }
-  
+
   .hero-stats {
     grid-template-columns: repeat(3, 1fr);
     gap: 12px;
   }
-  
+
   .state-indicator {
     width: 64px;
     height: 64px;
     font-size: 32px;
   }
-  
+
   .state-text h3 {
     font-size: 26px;
   }
-  
+
   .power-value {
     font-size: 42px;
   }
-  
+
   /* Cards within columns */
   .desktop-column .ios-card {
     margin-bottom: 0;
   }
-  
+
   .quick-actions {
     grid-template-columns: 1fr 1fr;
   }
-  
+
   .quick-action-btn {
     padding: 24px 16px;
   }
-  
+
   .quick-action-btn .icon {
     font-size: 32px;
   }
-  
+
   .quick-action-btn .label {
     font-size: 15px;
   }
-  
+
   /* Charts button within right column */
   .desktop-column .charts-button {
     margin-bottom: 0;
   }
-  
+
   /* Details list as two columns */
   .details-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0;
   }
-  
+
   .details-grid .ios-list-item {
     border-bottom: 1px solid var(--ch-separator);
   }
@@ -870,23 +870,23 @@ body {
   .car-heater-page {
     padding: 24px 48px 48px;
   }
-  
+
   .desktop-grid {
     gap: 24px;
   }
-  
+
   .hero-stats {
     gap: 16px;
   }
-  
+
   .hero-stat {
     padding: 16px;
   }
-  
+
   .hero-stat-value {
     font-size: 22px;
   }
-  
+
   .desktop-column {
     gap: 20px;
   }
@@ -907,7 +907,7 @@ body {
   .state-indicator {
     transition: none;
   }
-  
+
   .queue-banner {
     animation: none;
   }

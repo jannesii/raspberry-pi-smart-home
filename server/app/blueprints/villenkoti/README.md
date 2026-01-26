@@ -57,4 +57,3 @@ Villenkoti keeps all data in a standalone SQLite file (`villenkoti.db` by defaul
 ## Triggers
 
 - `cleanup_sensor_readings_after_insert` — runs after each insert on `sensor_readings` and deletes rows older than 30 days so the table stays bounded.
-

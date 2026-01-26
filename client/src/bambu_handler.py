@@ -5,6 +5,7 @@ import bambulabs_api as bl
 
 if os.name == "nt":
     import json
+
     with open("client/config.json", "r") as f:
         config = json.load(f)
     IP = config.get("BAMBU_IP")
@@ -19,7 +20,6 @@ logger = logging.getLogger(__name__)
 
 
 class BambuHandler:
-
     _instance: "BambuHandler | None" = None
 
     def __new__(cls, *args, **kwargs):
@@ -37,7 +37,8 @@ class BambuHandler:
         ACCESS_CODE = os.getenv("BAMBU_ACCESS_CODE", "default_access_code")
         SERIAL = os.getenv("BAMBU_SERIAL", "default_serial")
         logger.info(
-            f"Connecting to Bambu printer at {IP} with serial {SERIAL} and access code {ACCESS_CODE}")
+            f"Connecting to Bambu printer at {IP} with serial {SERIAL} and access code {ACCESS_CODE}"
+        )
 
         self.printer = bl.Printer(IP, ACCESS_CODE, SERIAL)
 
@@ -49,10 +50,7 @@ class BambuHandler:
         logger.info("Printer connected!")
 
     def pause_print(self) -> bool:
-        pause_gcode = [
-            "M1002 gcode_claim_action : 5",
-            "M400 U1"
-        ]
+        pause_gcode = ["M1002 gcode_claim_action : 5", "M400 U1"]
         if self.run_gcode(pause_gcode):
             logger.info("Print paused successfully.")
             return True
@@ -69,7 +67,9 @@ class BambuHandler:
             return False
 
     def stop_print(self):
-        if self.printer.stop_print() and self.run_gcode("M1002 gcode_claim_action : 255"):
+        if self.printer.stop_print() and self.run_gcode(
+            "M1002 gcode_claim_action : 255"
+        ):
             logger.info("Print stopped successfully.")
             return True
         else:
@@ -125,7 +125,7 @@ class BambuHandler:
             "G1 X-28 F18000",
             "G1 X-47 F18000",
             "G1 X-28 F18000",
-            "G1 X128 F42000"  # Move print head back to the middle
+            "G1 X128 F42000",  # Move print head back to the middle
         ]
 
         try:
@@ -160,13 +160,13 @@ class BambuHandler:
             return False
 
     @property
-    def bed_temperature(self) -> (float | None):
+    def bed_temperature(self) -> float | None:
         """Current bed temperature (°C)."""
         temp = self.printer.get_bed_temperature()
         return round(temp if temp else 0.00, 2)
 
     @property
-    def nozzle_temperature(self) -> (float | None):
+    def nozzle_temperature(self) -> float | None:
         """Current nozzle temperature (°C)."""
         temp = self.printer.get_nozzle_temperature()
         return round(temp if temp else 0.00, 2)
@@ -177,12 +177,12 @@ class BambuHandler:
         return self.printer.get_file_name()
 
     @property
-    def percentage(self) -> (int | str | None):
+    def percentage(self) -> int | str | None:
         """Print completion percentage (0–100)."""
         return self.printer.get_percentage()
 
     @property
-    def remaining_time(self) -> (int | str | None):
+    def remaining_time(self) -> int | str | None:
         """Elapsed print time (in seconds)."""
         return self.printer.get_time()
 

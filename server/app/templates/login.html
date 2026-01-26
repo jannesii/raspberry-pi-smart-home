@@ -13,9 +13,9 @@
 {% block content %}
 <div class="login-wrapper">
   <form class="login-form" method="POST" action="{{ url_for('auth.login') }}">
-    
+
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    
+
     <h2>Kirjaudu sisään</h2>
 
     {% with messages = get_flashed_messages(with_categories=true) %}

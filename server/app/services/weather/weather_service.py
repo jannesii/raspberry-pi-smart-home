@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
 import logging
 import math
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
 
 import requests
@@ -16,10 +16,10 @@ FMI_WFS_URL = "https://opendata.fmi.fi/wfs"
 STOREDQUERY_ID = "fmi::observations::weather::timevaluepair"
 
 PARAMETERS = [
-    "t2m",       # 2m temperature
+    "t2m",  # 2m temperature
     "ws_10min",  # 10min wind speed
-    "rh",        # relative humidity
-    "n_man",     # manual cloudiness
+    "rh",  # relative humidity
+    "n_man",  # manual cloudiness
 ]
 
 NS = {
@@ -116,7 +116,7 @@ class WeatherService:
         )
 
     def _ensure_cache(self) -> None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if self._cache_time is None:
             self._refresh_cache()
             return
@@ -131,7 +131,7 @@ class WeatherService:
         station: StationInfo | None = None
 
         for member in root.findall("wfs:member", NS):
-            obs = list(member)[0] if len(member) else None
+            obs = next(iter(member)) if len(member) else None
             if obs is None:
                 continue
 
@@ -163,10 +163,10 @@ class WeatherService:
 
         self._station = station
         self._values = results
-        self._cache_time = datetime.now(timezone.utc)
+        self._cache_time = datetime.now(UTC)
 
     def _fetch_fmi(self) -> bytes:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         start = now - timedelta(hours=self._lookback_hours)
 
         params = {
@@ -188,7 +188,7 @@ class WeatherService:
 
     @staticmethod
     def _iso_z(dt: datetime) -> str:
-        dt_utc = dt.astimezone(timezone.utc)
+        dt_utc = dt.astimezone(UTC)
         return dt_utc.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
     @staticmethod

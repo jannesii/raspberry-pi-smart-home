@@ -8,8 +8,12 @@ from __future__ import annotations
 
 import logging
 from logging import LogRecord
+from typing import TYPE_CHECKING
 
-from .core import Controller
+if TYPE_CHECKING:
+    from .core import Controller
+
+logger = logging.getLogger(__name__)
 
 
 class DBLogHandler(logging.Handler):
@@ -28,15 +32,15 @@ class DBLogHandler(logging.Handler):
         try:
             # Use the configured formatter so exception tracebacks are included
             message = self.format(record)
-            log_type = 'error' if record.levelno >= logging.ERROR else (
-                'warning' if record.levelno >= logging.WARNING else 'info'
+            log_type = (
+                "error"
+                if record.levelno >= logging.ERROR
+                else ("warning" if record.levelno >= logging.WARNING else "info")
             )
             self.controller.log_message(message, log_type)
         except Exception as e:  # pragma: no cover - avoid recursion on logging failures
             try:
                 # Best-effort: don't re-emit ERROR to avoid loops
-                logging.getLogger(__name__).warning(
-                    "DBLogHandler emit failed: %s", e
-                )
+                logger.warning("DBLogHandler emit failed: %s", e)
             except Exception:
-                pass
+                logger.exception("Failed to log exception in DBLogHandler emit", exc_info=True)

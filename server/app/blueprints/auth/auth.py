@@ -1,16 +1,32 @@
 import logging
+from typing import TYPE_CHECKING
+
 from flask import (
-    render_template, request, flash,
-    redirect, url_for, session, current_app, make_response, jsonify
-)
-from flask_login import (
-    login_user, logout_user, login_required,
-    current_user, UserMixin, AnonymousUserMixin
+    current_app,
+    flash,
+    jsonify,
+    make_response,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
 )
 from flask_limiter.errors import RateLimitExceeded
+from flask_login import (
+    AnonymousUserMixin,
+    UserMixin,
+    current_user,
+    login_required,
+    login_user,
+    logout_user,
+)
+
+from ...extensions import csrf, limiter
 from . import auth_bp
-from ...extensions import limiter, csrf
-from ...core import Controller
+
+if TYPE_CHECKING:
+    from ...core import Controller
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +41,7 @@ class AuthUser(UserMixin):
 
 class AuthAnonymous(AnonymousUserMixin):
     """Anonymous user with is_admin=False."""
+
     @property
     def is_admin(self):
         return False
@@ -53,89 +70,80 @@ def load_user(user_id: str):
 
 @auth_bp.errorhandler(RateLimitExceeded)
 def handle_rate_limit(e):
-    logger.warning(
-        "Rate limit reached for %s on %s",
-        request.remote_addr,
-        request.endpoint
-    )
-    return make_response(
-        render_template("429.html", retry_after=e.description),
-        429
-    )
+    logger.warning("Rate limit reached for %s on %s", request.remote_addr, request.endpoint)
+    return make_response(render_template("429.html", retry_after=e.description), 429)
 
 
-@auth_bp.route('/login', methods=['GET', 'POST'])
+@auth_bp.route("/login", methods=["GET", "POST"])
 @limiter.limit(
     "5/minute;20/hour",
     exempt_when=lambda: (
         current_user.is_admin
-        or (request.remote_addr or "").startswith('192.168.10.')
-        or request.remote_addr in ['192.168.10.50', '192.168.0.3']
-    )
+        or (request.remote_addr or "").startswith("192.168.10.")
+        or request.remote_addr in ["192.168.10.50", "192.168.0.3"]
+    ),
 )
 def login():
     logger.info("Accessed /login via %s", request.method)
     ctrl: Controller = current_app.ctrl  # type: ignore
 
-    if request.method == 'POST':
-        username = request.form.get('username', '').strip()
-        password = request.form.get('password', '')
-        remember = request.form.get('remember') == 'on'
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        remember = request.form.get("remember") == "on"
         logger.debug("Login attempt for %s (remember=%s)", username, remember)
 
         user_obj = ctrl.get_user_by_username(username)
         if user_obj and user_obj.is_temporary and user_obj.expires_at:
             from datetime import datetime
+
             now = datetime.now(ctrl.finland_tz)
             expires_at = datetime.fromisoformat(user_obj.expires_at)
             if expires_at < now:
-                flash('Tämä väliaikainen käyttäjätili on vanhentunut.', 'error')
-                logger.warning(
-                    "Expired temporary account login attempt for %s", username)
+                flash("Tämä väliaikainen käyttäjätili on vanhentunut.", "error")
+                logger.warning("Expired temporary account login attempt for %s", username)
                 ctrl.log_message(
-                    log_type='auth', message=f"Expired temporary login attempt for {username}")
-                return render_template('login.html')
+                    log_type="auth", message=f"Expired temporary login attempt for {username}"
+                )
+                return render_template("login.html")
 
         if ctrl.authenticate_user(username, password):
             session.permanent = remember
             login_user(
                 # load_user will restore is_admin from DB on reload
-                AuthUser(username, is_admin=getattr(
-                    user_obj, "is_admin", False)),
-                remember=remember
+                AuthUser(username, is_admin=getattr(user_obj, "is_admin", False)),
+                remember=remember,
             )
-            logger.info("User %s authenticated, is admin: %s",
-                        username, user_obj.is_admin)
+            logger.info("User %s authenticated, is admin: %s", username, user_obj.is_admin)
 
-            next_page = request.args.get(
-                'next') or url_for('web.get_home_page')
+            next_page = request.args.get("next") or url_for("web.get_home_page")
             response = redirect(next_page)
             logger.debug(
                 "Rate-limit headers — remaining: %s, reset: %s",
                 response.headers.get("X-RateLimit-Remaining"),
-                response.headers.get("X-RateLimit-Reset")
+                response.headers.get("X-RateLimit-Reset"),
             )
             return response
         # Authentication failed
-        flash('Virheellinen käyttäjätunnus tai salasana', 'error')
+        flash("Virheellinen käyttäjätunnus tai salasana", "error")
         logger.warning("Auth failed for %s", username)
         ctrl.log_message(
-            log_type='auth',
+            log_type="auth",
             message=f"Failed login attempt for {username}",
         )
 
-    return render_template('login.html')
+    return render_template("login.html")
 
 
-@auth_bp.route('/login_api', methods=['POST'])
+@auth_bp.route("/login_api", methods=["POST"])
 @csrf.exempt
 @limiter.limit(
     "10/minute;60/hour",
     exempt_when=lambda: (
         current_user.is_admin
-        or (request.remote_addr or "").startswith('192.168.10.')
-        or request.remote_addr in ['192.168.10.50', '192.168.0.3']
-    )
+        or (request.remote_addr or "").startswith("192.168.10.")
+        or request.remote_addr in ["192.168.10.50", "192.168.0.3"]
+    ),
 )
 def login_api():
     """
@@ -150,15 +158,20 @@ def login_api():
 
     # Parse credentials from JSON or form
     data = request.get_json(silent=True) or {}
-    username = (data.get('username') if isinstance(data, dict)
-                else None) or request.form.get('username') or ''
-    password = (data.get('password') if isinstance(data, dict)
-                else None) or request.form.get('password') or ''
-    remember_raw = (data.get('remember') if isinstance(data, dict) else None)
+    username = (
+        (data.get("username") if isinstance(data, dict) else None)
+        or request.form.get("username")
+        or ""
+    )
+    password = (
+        (data.get("password") if isinstance(data, dict) else None)
+        or request.form.get("password")
+        or ""
+    )
+    remember_raw = data.get("remember") if isinstance(data, dict) else None
     if remember_raw is None:
-        remember_raw = request.form.get('remember')
-    remember = bool(remember_raw) and str(
-        remember_raw).lower() not in {"0", "false", "no"}
+        remember_raw = request.form.get("remember")
+    remember = bool(remember_raw) and str(remember_raw).lower() not in {"0", "false", "no"}
 
     username = username.strip()
     logger.debug("API login attempt for %s (remember=%s)", username, remember)
@@ -167,6 +180,7 @@ def login_api():
     user_obj = ctrl.get_user_by_username(username)
     if user_obj and user_obj.is_temporary and user_obj.expires_at:
         from datetime import datetime
+
         now = datetime.now(ctrl.finland_tz)
         try:
             expires_at = datetime.fromisoformat(user_obj.expires_at)
@@ -174,38 +188,42 @@ def login_api():
             expires_at = None
         if expires_at and expires_at < now:
             ctrl.log_message(
-                log_type='auth', message=f"Expired temporary login attempt for {username}")
-            return jsonify({
-                'ok': False,
-                'error': 'expired',
-                'message': 'Temporary user account expired.'
-            }), 401
+                log_type="auth", message=f"Expired temporary login attempt for {username}"
+            )
+            return jsonify(
+                {"ok": False, "error": "expired", "message": "Temporary user account expired."}
+            ), 401
 
     if ctrl.authenticate_user(username, password):
         session.permanent = remember
         login_user(
-            AuthUser(username, is_admin=getattr(user_obj, "is_admin", False)),
-            remember=remember
+            AuthUser(username, is_admin=getattr(user_obj, "is_admin", False)), remember=remember
         )
-        logger.info("User %s authenticated via /login_api (admin=%s)",
-                    username, getattr(user_obj, 'is_admin', False))
-        return jsonify({
-            'ok': True,
-            'user': username,
-            'is_admin': bool(getattr(user_obj, 'is_admin', False)),
-        })
+        logger.info(
+            "User %s authenticated via /login_api (admin=%s)",
+            username,
+            getattr(user_obj, "is_admin", False),
+        )
+        return jsonify(
+            {
+                "ok": True,
+                "user": username,
+                "is_admin": bool(getattr(user_obj, "is_admin", False)),
+            }
+        )
 
     logger.warning("API auth failed for %s", username)
-    ctrl.log_message(
-        log_type='auth', message=f"Failed API login attempt for {username}")
-    return jsonify({'ok': False, 'error': 'invalid_credentials', 'message': 'Invalid username or password'}), 401
+    ctrl.log_message(log_type="auth", message=f"Failed API login attempt for {username}")
+    return jsonify(
+        {"ok": False, "error": "invalid_credentials", "message": "Invalid username or password"}
+    ), 401
 
 
-@auth_bp.route('/logout')
+@auth_bp.route("/logout")
 @login_required
 def logout():
     username = current_user.get_id()
     logout_user()
-    session.pop('_flashes', None)
+    session.pop("_flashes", None)
     logger.info("User %s logged out", username)
-    return redirect(url_for('auth.login'))
+    return redirect(url_for("auth.login"))

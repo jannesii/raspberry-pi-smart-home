@@ -943,11 +943,11 @@
     max-height: 100dvh;
     border-radius: 0;
   }
-  
+
   .ready-by-inputs {
     grid-template-columns: 1fr;
   }
-  
+
   .ready-by-inputs input[type="datetime-local"] {
     min-width: unset;
     width: 100%;

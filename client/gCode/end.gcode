@@ -142,4 +142,3 @@ M1006 W
 ;M17 X0.8 Y0.8 Z0.5 ; lower motor current to 45% power
 M400
 M18 X Y Z
-

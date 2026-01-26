@@ -1,62 +1,61 @@
-from typing import List, Optional, Tuple
-from datetime import datetime
 import logging
-
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 
 class LogsMixin:
-    def log_message(self, message: str, log_type: str = 'info') -> None:
+    def log_message(self, message: str, log_type: str = "info") -> None:
         """
         Logs a message with the given type ('info', 'warning', 'error', 'auth', 'ac', 'car_heater').
         Also emits the log to Socket.IO for real-time updates.
         """
         now = datetime.now(self.finland_tz).isoformat()
         self.db.execute_query(
-            "INSERT INTO logs (timestamp, type, message) VALUES (?, ?, ?)",
-            (now, log_type, message)
+            "INSERT INTO logs (timestamp, type, message) VALUES (?, ?, ?)", (now, log_type, message)
         )
         # Get the inserted log ID for real-time emit
         row = self.db.fetchone("SELECT last_insert_rowid() as id")
-        log_id = row['id'] if row else None
+        log_id = row["id"] if row else None
 
         # Emit to Socket.IO for real-time log viewers
-        self._emit_db_log({
-            'id': log_id,
-            'timestamp': now,
-            'type': log_type,
-            'message': message,
-        })
+        self._emit_db_log(
+            {
+                "id": log_id,
+                "timestamp": now,
+                "type": log_type,
+                "message": message,
+            }
+        )
 
     def _emit_db_log(self, log_entry: dict) -> None:
         """Emit a new log entry to Socket.IO subscribers."""
         try:
             from flask import current_app
-            socketio = current_app.extensions.get('socketio')
+
+            socketio = current_app.extensions.get("socketio")
             if socketio:
-                socketio.emit('db_log', log_entry)
+                socketio.emit("db_log", log_entry)
         except Exception:
             # Don't fail logging if Socket.IO emit fails
             pass
 
-    def get_logs(self, limit: int = 100) -> List[dict]:
+    def get_logs(self, limit: int = 100) -> list[dict]:
         """
         Retrieves the most recent log messages.
         """
         rows = self.db.fetchall(
-            "SELECT id, timestamp, type, message FROM logs ORDER BY id DESC LIMIT ?",
-            (limit,)
+            "SELECT id, timestamp, type, message FROM logs ORDER BY id DESC LIMIT ?", (limit,)
         )
         return [dict(row) for row in rows]
 
     def get_logs_filtered(
         self,
-        log_type: Optional[str] = None,
-        search: Optional[str] = None,
-        before_id: Optional[int] = None,
+        log_type: str | None = None,
+        search: str | None = None,
+        before_id: int | None = None,
         limit: int = 50,
-    ) -> Tuple[List[dict], bool]:
+    ) -> tuple[list[dict], bool]:
         """
         Retrieve filtered log messages with pagination.
 
@@ -70,7 +69,7 @@ class LogsMixin:
             Tuple of (logs list, has_more boolean)
         """
         query = "SELECT id, timestamp, type, message FROM logs WHERE 1=1"
-        params: List = []
+        params: list = []
 
         if log_type:
             query += " AND type = ?"
@@ -96,20 +95,15 @@ class LogsMixin:
 
         return logs, has_more
 
-    def get_log_types(self) -> List[str]:
+    def get_log_types(self) -> list[str]:
         """Get all distinct log types in the database."""
-        rows = self.db.fetchall(
-            "SELECT DISTINCT type FROM logs ORDER BY type"
-        )
-        return [row['type'] for row in rows]
+        rows = self.db.fetchall("SELECT DISTINCT type FROM logs ORDER BY type")
+        return [row["type"] for row in rows]
 
-    def get_logs_count(self, log_type: Optional[str] = None) -> int:
+    def get_logs_count(self, log_type: str | None = None) -> int:
         """Get total count of logs, optionally filtered by type."""
         if log_type:
-            row = self.db.fetchone(
-                "SELECT COUNT(*) as cnt FROM logs WHERE type = ?",
-                (log_type,)
-            )
+            row = self.db.fetchone("SELECT COUNT(*) as cnt FROM logs WHERE type = ?", (log_type,))
         else:
             row = self.db.fetchone("SELECT COUNT(*) as cnt FROM logs")
-        return row['cnt'] if row else 0
+        return row["cnt"] if row else 0

@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime
+
 import pytz
 
 # --- Data classes for domain models ---
@@ -21,9 +22,9 @@ class User:
     def is_expired(self) -> bool:
         """
         Return True if this is a temporary user and the
-        expiry timestamp is in the past (UTC‑aware).
+        expiry timestamp is in the past (UTC-aware).
         """
-        finland_tz = pytz.timezone('Europe/Helsinki')
+        finland_tz = pytz.timezone("Europe/Helsinki")
         if not self.is_temporary or self.expires_at is None:
             return False
         expires_at_dt = self.expires_at

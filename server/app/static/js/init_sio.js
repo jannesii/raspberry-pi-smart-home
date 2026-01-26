@@ -8,7 +8,7 @@ window.socket = io('/', {
 
 window.addEventListener('beforeunload', () => {
     window.socket && window.socket.disconnect();
-});    
+});
 
 window.socket.on('connect_error', err => {
     console.error('Connection error:', err);

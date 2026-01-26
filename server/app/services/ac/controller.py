@@ -1,5 +1,6 @@
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, ClassVar
+
 import tinytuya
 
 logger = logging.getLogger(__name__)
@@ -29,8 +30,8 @@ class ACController:
     """
 
     # Enumerations and ranges from your provided specs
-    FAN_SPEEDS = {"low", "high"}
-    MODES = {"cold", "wet", "wind"}
+    FAN_SPEEDS: ClassVar[set[str]] = {"low", "high"}
+    MODES: ClassVar[set[str]] = {"cold", "wet", "wind"}
     TEMP_MIN = 16
     TEMP_MAX = 31
 
@@ -42,12 +43,12 @@ class ACController:
 
     def __init__(
         self,
-        tinytuya_device: Optional[tinytuya.Device] = None,
+        tinytuya_device: tinytuya.Device | None = None,
         # tinytuya device credentials (if not passing an existing Device instance)
         DEV_ID: str = "",
         IP: str = "",
         LOCALKEY: str = "",
-        winter: bool = False
+        winter: bool = False,
     ) -> None:
         """
         Initialize the controller.
@@ -66,27 +67,27 @@ class ACController:
     # Public control operations
     # -------------------------
 
-    def turn_on(self) -> Dict[str, Any]:
+    def turn_on(self) -> dict[str, Any]:
         return self._send_commands(self.POWER, True)
 
-    def turn_off(self) -> Dict[str, Any]:
+    def turn_off(self) -> dict[str, Any]:
         return self._send_commands(self.POWER, False)
 
-    def set_mode(self, mode: str) -> Dict[str, Any]:
+    def set_mode(self, mode: str) -> dict[str, Any]:
         mode_l = mode.strip().lower()
         self._validate_mode(mode_l)
         return self._send_commands(self.MODE, mode_l)
 
-    def set_fan_speed(self, speed: str) -> Dict[str, Any]:
+    def set_fan_speed(self, speed: str) -> dict[str, Any]:
         speed_l = speed.strip().lower()
         self._validate_fan_speed(speed_l)
         return self._send_commands(self.FAN, speed_l)
 
-    def set_temperature(self, celsius: int) -> Dict[str, Any]:
+    def set_temperature(self, celsius: int) -> dict[str, Any]:
         self._validate_temperature(celsius)
         return self._send_commands(self.TEMP_SET, celsius)
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """
         Returns a dict keyed by DP code:
           {
@@ -100,7 +101,7 @@ class ACController:
         """
         resp = self.ac.status()
         result = resp.get("dps", [])
-        status_map: Dict[str, Any] = {}
+        status_map: dict[str, Any] = {}
 
         try:
             if result:
@@ -120,19 +121,17 @@ class ACController:
     # Internals / validation
     # -------------------------
 
-    def _send_commands(self, index: int, value: Any) -> Dict[str, Any]:
+    def _send_commands(self, index: int, value: Any) -> dict[str, Any]:
         resp = self.ac.set_value(index, value)
         return resp
 
     def _validate_mode(self, mode: str) -> None:
         if mode not in self.MODES:
-            raise ValueError(
-                f"Invalid mode '{mode}'. Allowed: {sorted(self.MODES)}")
+            raise ValueError(f"Invalid mode '{mode}'. Allowed: {sorted(self.MODES)}")
 
     def _validate_fan_speed(self, speed: str) -> None:
         if speed not in self.FAN_SPEEDS:
-            raise ValueError(
-                f"Invalid fan speed '{speed}'. Allowed: {sorted(self.FAN_SPEEDS)}")
+            raise ValueError(f"Invalid fan speed '{speed}'. Allowed: {sorted(self.FAN_SPEEDS)}")
 
     def _validate_temperature(self, celsius: int) -> None:
         if not (self.TEMP_MIN <= celsius <= self.TEMP_MAX):

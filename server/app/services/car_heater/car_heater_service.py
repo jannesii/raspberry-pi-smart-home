@@ -1,8 +1,7 @@
 import logging
 import threading
-from datetime import datetime
-from typing import Any, Dict, List, TYPE_CHECKING
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 if TYPE_CHECKING:
@@ -51,22 +50,19 @@ class CarHeaterService:
 
     def __init__(self, controller: "Controller | None" = None) -> None:
         self._lock = threading.Lock()
-        self._commands: List[Dict[str, Any]] = []
+        self._commands: list[dict[str, Any]] = []
         self._command_status = CommandStatus()
         self._controller = controller
 
         # Load persisted state from DB if controller is available
         if self._controller is not None:
             self._charge_mode_state = self._controller.get_charge_mode_state()
-            logger.info("Loaded ChargeModeState from DB: %r",
-                        self._charge_mode_state)
+            logger.info("Loaded ChargeModeState from DB: %r", self._charge_mode_state)
         else:
             self._charge_mode_state = ChargeModeState()
 
         self._stop_event = threading.Event()
-        self._thread = threading.Thread(
-            target=self._run, name="CarHeaterService", daemon=True
-        )
+        self._thread = threading.Thread(target=self._run, name="CarHeaterService", daemon=True)
         self._thread.start()
         logger.info("CarHeaterService thread started")
 
@@ -104,8 +100,7 @@ class CarHeaterService:
 
         # Log to persistent storage
         self._log_heater_event(action, source, reason)
-        logger.info("Heater %s queued by %s: %s",
-                    action.upper(), source, reason)
+        logger.info("Heater %s queued by %s: %s", action.upper(), source, reason)
 
     def _log_heater_event(self, action: str, source: str, reason: str) -> None:
         """Log heater on/off event to persistent storage via Controller."""
@@ -117,7 +112,7 @@ class CarHeaterService:
         except Exception as e:
             logger.warning("Failed to log heater event to DB: %s", e)
 
-    def queue_command(self, command: Dict[str, Any]) -> None:
+    def queue_command(self, command: dict[str, Any]) -> None:
         """
         Queue a command to be sent to the ESP on the next status update.
 
@@ -131,7 +126,7 @@ class CarHeaterService:
             setattr(self._command_status, action, "queued")
         logger.debug("Queued car heater command: %r", command)
 
-    def mark_commands_sent(self, commands: List[Dict[str, Any]]) -> None:
+    def mark_commands_sent(self, commands: list[dict[str, Any]]) -> None:
         """
         Mark the given commands as sent.
 
@@ -145,7 +140,7 @@ class CarHeaterService:
                     setattr(self._command_status, action, "sent")
         logger.debug("Marked %d car heater commands as sent", len(commands))
 
-    def mark_command_success(self, commands: List[Dict[str, Any]]) -> None:
+    def mark_command_success(self, commands: list[dict[str, Any]]) -> None:
         """
         Mark the given commands as successfully executed.
 
@@ -159,8 +154,7 @@ class CarHeaterService:
                 string = "success" if success else "failed"
                 if hasattr(self._command_status, action):
                     setattr(self._command_status, action, string)
-        logger.debug(
-            "Marked %d car heater commands as successful", len(commands))
+        logger.debug("Marked %d car heater commands as successful", len(commands))
 
     def get_command_status(self) -> CommandStatus:
         """Return the current status of queued commands."""
@@ -224,8 +218,9 @@ class CarHeaterService:
         with self._lock:
             state = self._charge_mode_state
             try:
-                state.last_instant_power_w = float(
-                    instant_power_w) if instant_power_w is not None else None
+                state.last_instant_power_w = (
+                    float(instant_power_w) if instant_power_w is not None else None
+                )
             except (TypeError, ValueError):
                 state.last_instant_power_w = None
 
@@ -260,10 +255,10 @@ class CarHeaterService:
         if should_turn_off:
             self.turn_off(
                 source="charge_mode",
-                reason=f"Power dropped below {state.threshold_w}W threshold (battery charge complete)"
+                reason=f"Power dropped below {state.threshold_w}W threshold (battery charge complete)",
             )
 
-    def get_queued_commands(self) -> List[Dict[str, Any]]:
+    def get_queued_commands(self) -> list[dict[str, Any]]:
         """
         Atomically return and clear all queued commands.
 
@@ -277,7 +272,7 @@ class CarHeaterService:
         logger.debug("Returning %d queued car heater commands", len(commands))
         return commands
 
-    def peek_queued_commands(self) -> List[Dict[str, Any]]:
+    def peek_queued_commands(self) -> list[dict[str, Any]]:
         """
         Return a snapshot of queued commands without clearing them.
 

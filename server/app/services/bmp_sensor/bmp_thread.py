@@ -1,6 +1,7 @@
 import logging
 import threading
 import time
+
 import requests
 
 from ...core import Controller
@@ -18,7 +19,7 @@ def _read_bmp_sensor(ctrl: Controller):
         ctrl.record_bmp_sensor_data(
             temperature=data.get("temp"),
             pressure=data.get("pressure"),
-            altitude=data.get("altitude")
+            altitude=data.get("altitude"),
         )
         logger.debug(f"BMP Sensor data: {data}")
         return data
@@ -35,6 +36,5 @@ def _bmp_sensor_thread(ctrl: Controller, interval: int):
 
 
 def start_bmp_sensor_service(ctrl: Controller, interval: int):
-    thread = threading.Thread(target=_bmp_sensor_thread,
-                              args=(ctrl, interval), daemon=True)
+    thread = threading.Thread(target=_bmp_sensor_thread, args=(ctrl, interval), daemon=True)
     thread.start()

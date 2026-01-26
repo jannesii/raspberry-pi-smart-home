@@ -62,15 +62,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // Rebuild the overrides list
     if (overridesList) {
       overridesList.innerHTML = '';
-      
+
       if (overrides.root) {
         overridesList.appendChild(createOverrideItem('root', 'root', overrides.root));
       }
-      
+
       Object.entries(overrides.loggers).forEach(([name, level]) => {
         overridesList.appendChild(createOverrideItem('logger', name, level));
       });
-      
+
       Object.entries(overrides.handlers).forEach(([name, level]) => {
         overridesList.appendChild(createOverrideItem('handler', name, level));
       });
@@ -292,7 +292,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function appendLogLine(line) {
     if (!logConsole) return;
-    
+
     // Remove placeholder if present
     const placeholder = logConsole.querySelector('.console-placeholder');
     if (placeholder) placeholder.remove();
@@ -349,7 +349,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       isStreaming = true;
       updateToggleButton();
-      
+
       // Remove placeholder
       const placeholder = logConsole?.querySelector('.console-placeholder');
       if (placeholder) {
@@ -370,7 +370,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (e) {
       console.error('Error stopping log stream:', e);
     }
-    
+
     socket = null;
     isStreaming = false;
     updateToggleButton();

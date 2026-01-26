@@ -22,7 +22,7 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     }
   });
-  
+
   document.querySelectorAll('.expiry-date').forEach(function(dateElem) {
     dateElem.addEventListener('click', function() {
       const userId = dateElem.getAttribute('data-user-id');

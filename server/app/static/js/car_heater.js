@@ -89,9 +89,9 @@ function updateHeroStatus(status) {
 function updateWeatherDisplay(weather) {
   const heroOutsideTemp = document.getElementById('heroOutsideTemp');
   const heroWind = document.getElementById('heroWind');
-  
+
   if (!weather) return;
-  
+
   if (heroOutsideTemp && weather.outside_temp_c != null) {
     heroOutsideTemp.textContent = fmtNum(weather.outside_temp_c, '°', 1);
   }
@@ -305,7 +305,7 @@ function setQueueStatus(mode, text) {
   }
 
   banner.classList.remove('visible', 'pending', 'sent', 'idle');
-  
+
   if (mode) {
     banner.classList.add('visible', mode);
     bannerText.textContent = text;
@@ -427,7 +427,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (chargeModeToggle) {
     chargeModeToggle.addEventListener('change', () => {
       const newEnabled = chargeModeToggle.checked;
-      
+
       try {
         if (window.socket) {
           window.socket.emit('car_heater_charge_mode', { enabled: newEnabled });
@@ -460,13 +460,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const enabled = keepAtTempToggle ? keepAtTempToggle.checked : false;
       const targetTemp = keepAtTempTarget ? Number(keepAtTempTarget.value) : null;
       const hysteresis = keepAtTempHysteresis ? Number(keepAtTempHysteresis.value) : null;
-      
+
       const settings = {
         enabled: enabled,
         target_temperature_c: targetTemp,
         hysteresis_c: hysteresis,
       };
-      
+
       if (window.socket) {
         window.socket.emit('keep_at_temp_settings', settings);
       }

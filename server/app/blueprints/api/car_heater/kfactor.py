@@ -6,34 +6,41 @@ Handles:
 - Ready-by ETA prediction
 """
 
+from __future__ import annotations
+
 import logging
-from flask import request, jsonify, current_app
+from typing import TYPE_CHECKING
+
+from flask import current_app, jsonify, request
 from flask_login import login_required
 
-from ....core import Controller
 from ....extensions import csrf
 from ....security import require_api_key
-from .status import fallback_status
 from ._blueprint import car_bp
+from .status import fallback_status
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+if TYPE_CHECKING:
+    from ....core import Controller
+    from ....services.car_heater import KFactorCalibrator
 
 
 # ==============================================================================
 # Routes
 # ==============================================================================
 
-@car_bp.route('/kfactor/debug', methods=['GET'])
+
+@car_bp.route("/kfactor/debug", methods=["GET"])
 @csrf.exempt
 @require_api_key
 def get_kfactor_debug():
     """Return KFactor calibration debug snapshot."""
+    logger.debug("get_kfactor_debug called")
     try:
-        from ....services.car_heater import KFactorCalibrator
-
-        svc: KFactorCalibrator | None = getattr(
-            current_app, "kfactor_calibrator", None)
+        svc: KFactorCalibrator | None = getattr(current_app, "kfactor_calibrator", None)
+        logger.debug("get_kfactor_debug resolved kfactor_calibrator=%s", svc)
         if svc is None:
             return jsonify({"error": "KFactorCalibrator not initialized"}), 503
         return jsonify(svc.get_debug_snapshot()), 200
@@ -42,43 +49,43 @@ def get_kfactor_debug():
     return jsonify({"error": "Failed to get kfactor debug snapshot"}), 500
 
 
-@car_bp.route('/kfactor/status', methods=['GET'])
+@car_bp.route("/kfactor/status", methods=["GET"])
 @login_required
 def get_kfactor_status():
     """Return kFactor calibration status for the frontend."""
+    logger.debug("get_kfactor_status called")
     try:
-        from ....services.car_heater import KFactorCalibrator
-
-        svc: KFactorCalibrator | None = getattr(
-            current_app, "kfactor_calibrator", None)
+        svc: KFactorCalibrator | None = getattr(current_app, "kfactor_calibrator", None)
+        logger.debug("get_kfactor_status resolved kfactor_calibrator=%s", svc)
         if svc is None:
             return jsonify({"error": "KFactorCalibrator not initialized"}), 503
 
         snapshot = svc.get_debug_snapshot()
 
         # Return a simplified view for the frontend
-        return jsonify({
-            "state": snapshot.get("state"),
-            "enabled": snapshot.get("config", {}).get("enabled", True),
-            "cooldown_until": snapshot.get("cooldown_until"),
-            "active_params": snapshot.get("active_params"),
-            "last_session": snapshot.get("last_session"),
-            "session_sample_count": snapshot.get("session_sample_count", 0),
-        }), 200
+        return jsonify(
+            {
+                "state": snapshot.get("state"),
+                "enabled": snapshot.get("config", {}).get("enabled", True),
+                "cooldown_until": snapshot.get("cooldown_until"),
+                "active_params": snapshot.get("active_params"),
+                "last_session": snapshot.get("last_session"),
+                "session_sample_count": snapshot.get("session_sample_count", 0),
+            }
+        ), 200
     except Exception as e:
         logger.exception("Failed to get kFactor status: %s", e)
     return jsonify({"error": "Failed to get kFactor status"}), 500
 
 
-@car_bp.route('/ready_by', methods=['GET'])
+@car_bp.route("/ready_by", methods=["GET"])
 @login_required
 def get_ready_by_prediction():
     """Return a Ready-by ETA prediction (minutes) using the calibrated model."""
+    logger.debug("get_ready_by_prediction called args=%s", dict(request.args))
     try:
-        from ....services.car_heater import KFactorCalibrator
-
-        svc: KFactorCalibrator | None = getattr(
-            current_app, "kfactor_calibrator", None)
+        svc: KFactorCalibrator | None = getattr(current_app, "kfactor_calibrator", None)
+        logger.debug("get_ready_by_prediction resolved kfactor_calibrator=%s", svc)
         if svc is None:
             return jsonify({"error": "KFactorCalibrator not initialized"}), 503
 
@@ -161,17 +168,19 @@ def get_ready_by_prediction():
         )
 
         k_loss, eta = svc.get_active_params(outside_temp_c=outside_temp_c)
-        return jsonify({
-            "time_to_target_min": eta_min,
-            "reachable": eta_min is not None,
-            "active_params": {"k_loss_W_per_K": k_loss, "eta": eta},
-            "inputs": {
-                "cabin_temp_c": cabin_temp_c,
-                "target_temp_c": target_temp_c,
-                "outside_temp_c": outside_temp_c,
-                "power_w": power_w,
-            },
-        }), 200
+        return jsonify(
+            {
+                "time_to_target_min": eta_min,
+                "reachable": eta_min is not None,
+                "active_params": {"k_loss_W_per_K": k_loss, "eta": eta},
+                "inputs": {
+                    "cabin_temp_c": cabin_temp_c,
+                    "target_temp_c": target_temp_c,
+                    "outside_temp_c": outside_temp_c,
+                    "power_w": power_w,
+                },
+            }
+        ), 200
     except Exception as e:
         logger.exception("Failed to compute Ready-by prediction: %s", e)
     return jsonify({"error": "Failed to compute prediction"}), 500

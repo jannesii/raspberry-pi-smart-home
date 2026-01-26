@@ -3,13 +3,14 @@ KFactor snapshot generation.
 
 Generates debug and extended status snapshots for UI and diagnostics.
 """
+
 from __future__ import annotations
 
 import logging
 import math
 from dataclasses import asdict
 from datetime import datetime
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .constants import (
     CABIN_VOLUME_M3,
@@ -17,10 +18,11 @@ from .constants import (
     HEATER_POWER_W,
     iso_no_micros,
 )
-from .models import KFactorConfig, KFactorLastSession, KFactorSample
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
+
+    from .models import KFactorConfig, KFactorLastSession, KFactorSample
     from .physics import ThermalPhysics
 
 logger = logging.getLogger(__name__)
@@ -32,7 +34,7 @@ class SnapshotGenerator:
     def __init__(
         self,
         cfg: KFactorConfig,
-        tz: "ZoneInfo",
+        tz: ZoneInfo,
     ) -> None:
         self._cfg = cfg
         self._tz = tz
@@ -93,7 +95,7 @@ class SnapshotGenerator:
         cooldown_until: datetime | None,
         last_session: KFactorLastSession | None,
         slow_rise_checks: int,
-        physics: "ThermalPhysics",
+        physics: ThermalPhysics,
         cabin_temp_c: float | None,
         outside_temp_c: float | None,
         is_heater_on: bool,

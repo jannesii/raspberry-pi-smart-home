@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-import os
+import contextlib
 import logging
-from datetime import datetime, time as dtime
+import os
 import threading
+from datetime import datetime, time as dtime
+
 import pytz
 import requests
 from dotenv import load_dotenv
@@ -14,7 +16,7 @@ logger.setLevel(logging.INFO)
 class HueController:
     def __init__(self, bridge_ip, username):
         self.base_url = f"http://{bridge_ip}/api/{username}"
-        self.tz = pytz.timezone('Europe/Helsinki')
+        self.tz = pytz.timezone("Europe/Helsinki")
         self._routine_thread = None
         self._routine_stop = None
 
@@ -25,7 +27,7 @@ class HueController:
 
     def get_active_lights(self):
         lights = self.get_lights()
-        return {k: v for k, v in lights.items() if v['state']['on']}
+        return {k: v for k, v in lights.items() if v["state"]["on"]}
 
     def get_groups(self):
         resp = requests.get(f"{self.base_url}/groups")
@@ -33,50 +35,34 @@ class HueController:
         return resp.json()  # { "0": {...}, "1": {...}, ... }
 
     def set_light_state(self, light_id, state):
-        resp = requests.put(
-            f"{self.base_url}/lights/{light_id}/state", json=state)
+        resp = requests.put(f"{self.base_url}/lights/{light_id}/state", json=state)
         resp.raise_for_status()
         return resp.json()
 
     def morning_light(self, lights: dict):
-        """ 7:00 - 10:00 """
-        for light_id in lights.keys():
-            self.set_light_state(light_id, {
-                "bri": 254,
-                "ct": 156
-            })
+        """7:00 - 10:00"""
+        for light_id in lights:
+            self.set_light_state(light_id, {"bri": 254, "ct": 156})
 
     def day_light(self, lights: dict):
-        """ 10:00 - 17:00 """
-        for light_id in lights.keys():
-            self.set_light_state(light_id, {
-                "bri": 254,
-                "ct": 233
-            })
+        """10:00 - 17:00"""
+        for light_id in lights:
+            self.set_light_state(light_id, {"bri": 254, "ct": 233})
 
     def evening_light(self, lights: dict):
-        """ 17:00 - 20:00 """
-        for light_id in lights.keys():
-            self.set_light_state(light_id, {
-                "bri": 254,
-                "ct": 346
-            })
+        """17:00 - 20:00"""
+        for light_id in lights:
+            self.set_light_state(light_id, {"bri": 254, "ct": 346})
 
     def late_evening_light(self, lights: dict):
-        """ 20:00 - 23:00 """
-        for light_id in lights.keys():
-            self.set_light_state(light_id, {
-                "bri": 143,
-                "ct": 447
-            })
+        """20:00 - 23:00"""
+        for light_id in lights:
+            self.set_light_state(light_id, {"bri": 143, "ct": 447})
 
     def night_light(self, lights: dict):
-        """ 23:00 - 7:00 """
-        for light_id in lights.keys():
-            self.set_light_state(light_id, {
-                "bri": 1,
-                "xy": [0.561, 0.4042]
-            })
+        """23:00 - 7:00"""
+        for light_id in lights:
+            self.set_light_state(light_id, {"bri": 1, "xy": [0.561, 0.4042]})
 
     def start_time_based_routine(self, poll_seconds: int = 15, apply_immediately: bool = True):
         """
@@ -100,14 +86,12 @@ class HueController:
         def which_slot(dt: datetime):
             t = dt.time()
             slots = [
-                ("morning",      dtime(7, 0),  dtime(10, 0), self.morning_light),
-                ("day",          dtime(10, 0), dtime(17, 0), self.day_light),
-                ("evening",      dtime(17, 0), dtime(20, 0), self.evening_light),
-                ("late_evening", dtime(20, 0), dtime(
-                    23, 0), self.late_evening_light),
-                ("night",        dtime(23, 0), dtime(
-                    23, 59, 59, 999999), self.night_light),
-                ("night",        dtime(0, 0),  dtime(7, 0),  self.night_light),
+                ("morning", dtime(7, 0), dtime(10, 0), self.morning_light),
+                ("day", dtime(10, 0), dtime(17, 0), self.day_light),
+                ("evening", dtime(17, 0), dtime(20, 0), self.evening_light),
+                ("late_evening", dtime(20, 0), dtime(23, 0), self.late_evening_light),
+                ("night", dtime(23, 0), dtime(23, 59, 59, 999999), self.night_light),
+                ("night", dtime(0, 0), dtime(7, 0), self.night_light),
             ]
             for name, start, end, func in slots:
                 if start <= end:
@@ -129,12 +113,9 @@ class HueController:
             last_slot = name
             # Initial apply
             if apply_immediately:
-                logger.debug(
-                    "Applying initial light setting based on current time")
-                try:
+                logger.debug("Applying initial light setting based on current time")
+                with contextlib.suppress(Exception):
                     apply_slot(func)
-                except Exception:
-                    pass
 
             # Poll for boundary crossings
             while not self._routine_stop.is_set():
@@ -142,15 +123,15 @@ class HueController:
                 if name != last_slot:
                     try:
                         logger.info(
-                            "Time boundary crossed, applying light setting for slot '%s'", name)
+                            "Time boundary crossed, applying light setting for slot '%s'", name
+                        )
                         apply_slot(func)
                     except Exception:
                         pass
                     last_slot = name
                 self._routine_stop.wait(poll_seconds)
 
-        self._routine_thread = threading.Thread(
-            target=runner, name="HueTimeRoutine", daemon=True)
+        self._routine_thread = threading.Thread(target=runner, name="HueTimeRoutine", daemon=True)
         self._routine_thread.start()
 
     def stop_time_based_routine(self, wait: bool = False):
@@ -177,6 +158,7 @@ def main():
     hue.start_time_based_routine()
     while True:
         import time
+
         time.sleep(1)
 
 

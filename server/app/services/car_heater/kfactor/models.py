@@ -3,11 +3,14 @@ KFactor configuration and data models.
 
 Dataclasses for configuration and session data.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 
 @dataclass
@@ -17,7 +20,7 @@ class KFactorConfig:
     # --- General Settings ---
     enabled: bool = False  # Autonomous mode (actively turns heater on/off)
     auto_calib_start_hhmm: str = "00:00"  # Autonomous window start
-    auto_calib_stop_hhmm: str = "23:59"   # Autonomous window stop
+    auto_calib_stop_hhmm: str = "23:59"  # Autonomous window stop
     grace_samples: int = 3
     min_session_minutes: int = 15
     max_session_minutes: int = 120  # For passive recording
@@ -56,7 +59,9 @@ class KFactorConfig:
     alpha_max: float = 0.5
 
     # Test-mode output path
-    test_output_path: str = "/home/jannesi/Code/server/app/services/car_heater/car_heater_kfactor_test_results.jsonl"
+    test_output_path: str = (
+        "/home/jannesi/Code/server/app/services/car_heater/car_heater_kfactor_test_results.jsonl"
+    )
     model_version: str = "v1"
 
     # --- Autonomous Mode Settings ---
@@ -67,7 +72,7 @@ class KFactorConfig:
     autonomous_rise_rate_window_samples: int = 5  # Samples to average for rise rate
     # Min consecutive slow readings before stopping
     autonomous_rise_rate_min_checks: int = 3
-    autonomous_target_temp_c: float = 10.0    # Stop when cabin reaches this
+    autonomous_target_temp_c: float = 10.0  # Stop when cabin reaches this
     # Alias for autonomous_rise_rate_min_checks
     autonomous_slow_rise_samples: int = 3
 
@@ -75,6 +80,7 @@ class KFactorConfig:
 @dataclass(frozen=True)
 class KFactorSample:
     """A single calibration sample."""
+
     ts: datetime
     cabin_temp_c: float
     heater_on: bool
@@ -86,6 +92,7 @@ class KFactorSample:
 @dataclass(frozen=True)
 class KFactorFit:
     """Result of parameter fitting."""
+
     k_loss_W_per_K: float
     eta: float
     rmse_C: float
@@ -95,6 +102,7 @@ class KFactorFit:
 @dataclass(frozen=True)
 class KFactorLastSession:
     """Summary of the last calibration session."""
+
     started_ts: str
     ended_ts: str
     sample_count: int

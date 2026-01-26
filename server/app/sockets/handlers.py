@@ -17,6 +17,14 @@ from typing import TYPE_CHECKING, Any
 from flask import current_app, request
 from flask_login import current_user
 
+if TYPE_CHECKING:
+    from flask_socketio import SocketIO
+
+    from ..core import Controller
+    from ..services.ac import ACThermostat
+    from ..services.car_heater import KFactorCalibrator
+
+
 # Import feature handlers
 from .ac_handlers import handle_ac_control
 from .car_heater_handlers import (
@@ -40,10 +48,6 @@ from .ready_by_handlers import (
 )
 
 if TYPE_CHECKING:
-    from flask_socketio import SocketIO
-
-    from ..core import Controller
-    from ..services.ac import ACThermostat
     from ..services.car_heater import KFactorCalibrator
 
 
@@ -71,6 +75,7 @@ class SocketEventHandler:
         self.logger = logging.getLogger(__name__)
 
         # Track currently connected sids by role
+
         self.view_sids: set[str] = set()
         self.client_sids: set[str] = set()
         self.esp32_sids: set[str] = set()

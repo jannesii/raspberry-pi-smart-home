@@ -16,4 +16,3 @@ async function pop_flashes() {
     console.log('Removing flash messages');
     document.querySelectorAll('.flash').forEach(el => el.remove());
   }
-  

@@ -1,22 +1,27 @@
 """BMP sensor API routes."""
-from datetime import datetime, date
-from typing import Any, Dict
+
 import logging
-from flask import Blueprint, request, jsonify, current_app
-from ...core import Controller
+from datetime import date, datetime
+from typing import TYPE_CHECKING, Any
+
+from flask import Blueprint, current_app, jsonify, request
+
 from ...extensions import csrf
 
-bmp_bp = Blueprint('bmp_bp', __name__, url_prefix='/bmp')
+if TYPE_CHECKING:
+    from ...core import Controller
+
+bmp_bp = Blueprint("bmp_bp", __name__, url_prefix="/bmp")
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-def _serialize_entry(entry) -> Dict[str, Any]:
+def _serialize_entry(entry) -> dict[str, Any]:
     """Serialize a BMP data entry to JSON-safe dict."""
     # Adjust these attribute names if your ORM uses different ones
     ts = entry.timestamp
-    if isinstance(ts, (datetime, date)):
+    if isinstance(ts, datetime | date):
         ts = ts.isoformat()
     return {
         "id": getattr(entry, "id", None),
@@ -27,7 +32,7 @@ def _serialize_entry(entry) -> Dict[str, Any]:
     }
 
 
-@bmp_bp.route('/latest', methods=['GET'])
+@bmp_bp.route("/latest", methods=["GET"])
 def get_latest_bmp_data():
     """Get the latest BMP sensor data (optionally N latest with ?limit=1..100)."""
     ctrl: Controller = getattr(current_app, "ctrl", None)
@@ -65,8 +70,7 @@ def get_bmp_data_by_date():
         logger.debug("No BMP data found for date: %s", date_str)
         return jsonify([]), 200
 
-    logger.debug("Returning %d BMP data entries for date: %s",
-                 len(data), date_str)
+    logger.debug("Returning %d BMP data entries for date: %s", len(data), date_str)
     return jsonify([_serialize_entry(e) for e in data]), 200
 
 

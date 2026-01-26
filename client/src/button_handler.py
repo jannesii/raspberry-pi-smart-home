@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 import time
 import logging
-import threading
-from typing import Callable, Dict, Optional
 
 from gpiozero import Button
 from .timelapse_session import TimelapseSession
+
 logger = logging.getLogger(__name__)
+
 
 class ButtonHandler:
     """Counts GPIO button presses within a timeout and dispatches callbacks."""
@@ -38,4 +38,3 @@ class ButtonHandler:
         self.last_time = now
         logger.info("Δ%.2fs", delta)
         self.session.capture()
-

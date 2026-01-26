@@ -1,24 +1,24 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import sys
 import math
-from datetime import datetime, timezone
+import sys
 import xml.etree.ElementTree as ET
+from datetime import UTC, datetime
 
 import requests
 
-now = datetime.now(timezone.utc)
+now = datetime.now(UTC)
 
 FMI_WFS_URL = "https://opendata.fmi.fi/wfs"
 STOREDQUERY_ID = "fmi::observations::weather::timevaluepair"
 
 PARAMETERS = [
-        "t2m",          # 2m temperature
-        "ws_10min",     # 10min wind speed
-        "rh",           # relative humidity
-        "n_man"         # manual cloudiness
-    ]  # add more later once you verify they work
+    "t2m",  # 2m temperature
+    "ws_10min",  # 10min wind speed
+    "rh",  # relative humidity
+    "n_man",  # manual cloudiness
+]  # add more later once you verify they work
 
 
 NS = {
@@ -91,13 +91,14 @@ def parse_latest_valid_tvp(obs_elem: ET.Element) -> tuple[datetime, float] | Non
 
 
 def fetch_fmi(place: str) -> bytes:
-    from datetime import timedelta, timezone
+    from datetime import timedelta
     from urllib.parse import urlencode
-    now = datetime.now(timezone.utc)
+
+    now = datetime.now(UTC)
     start = now - timedelta(hours=2)
 
     def iso_z(dt: datetime) -> str:
-        dt_utc = dt.astimezone(timezone.utc)
+        dt_utc = dt.astimezone(UTC)
         return dt_utc.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
     params = {
@@ -128,7 +129,7 @@ def main() -> int:
 
     # Each wfs:member contains one omso:PointTimeSeriesObservation for one parameter
     for member in root.findall("wfs:member", NS):
-        obs = list(member)[0] if len(member) else None
+        obs = next(iter(member)) if len(member) else None
         if obs is None:
             continue
 

@@ -51,7 +51,7 @@ function showToast(message, type = 'success') {
     window.showFlash(message, type);
     return;
   }
-  
+
   // Simple fallback toast
   const toast = document.createElement('div');
   toast.className = `ready-by-toast toast-${type}`;
@@ -72,7 +72,7 @@ function showToast(message, type = 'success') {
     animation: toastIn 0.3s ease-out;
   `;
   document.body.appendChild(toast);
-  
+
   setTimeout(() => {
     toast.style.animation = 'toastOut 0.3s ease-in forwards';
     setTimeout(() => toast.remove(), 300);
@@ -98,7 +98,7 @@ function openSettingsModal() {
   if (modal) {
     modal.classList.add('is-open');
     document.body.style.overflow = 'hidden';
-    
+
     // Request latest status via socket
     if (window.socket) {
       window.socket.emit('kfactor_control', { action: 'status' });
@@ -123,15 +123,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const openSettingsBtn = document.getElementById('btnOpenReadyBySettings');
   const closeSettingsBtn = document.getElementById('carHeaterSettingsClose');
   const settingsModal = document.getElementById('carHeaterSettingsModal');
-  
+
   if (openSettingsBtn) {
     openSettingsBtn.addEventListener('click', openSettingsModal);
   }
-  
+
   if (closeSettingsBtn) {
     closeSettingsBtn.addEventListener('click', closeSettingsModal);
   }
-  
+
   // Close modal on backdrop click
   if (settingsModal) {
     settingsModal.addEventListener('click', (e) => {
@@ -140,7 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
-  
+
   // Close modal on Escape key
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {

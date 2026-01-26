@@ -8,12 +8,13 @@ Organizes car heater functionality by feature:
 """
 
 # Import blueprint first (no dependencies)
+# Import route modules to register routes on car_bp
+from . import (
+    control,
+    kfactor,
+    ready_by,
+    status,
+)
 from ._blueprint import car_bp
 
-# Import route modules to register routes on car_bp
-from . import status  # noqa: E402, F401
-from . import control  # noqa: E402, F401
-from . import kfactor  # noqa: E402, F401
-from . import ready_by  # noqa: E402, F401
-
-__all__ = ['car_bp']
+__all__ = ["car_bp"]
