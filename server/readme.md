@@ -87,6 +87,12 @@ Browse to http://127.0.0.1:5555 and log in.
 
 ---
 
+## Development Notes
+
+- `scripts/restart.sh` activates `.venv` and runs `pre-commit run --all-files`; the service restarts only if checks pass.
+
+---
+
 ## Documentation
 
 - [Technical Guide](docs/technical-guide.md) – deployment, configuration, API reference
