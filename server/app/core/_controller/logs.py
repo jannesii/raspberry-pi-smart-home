@@ -16,31 +16,28 @@ class LogsMixin:
         """
         logger.debug("log_message called log_type=%s message_len=%s", log_type, len(message or ""))
         now = timestamp or datetime.now(self.finland_tz).isoformat()
-        use_sa: bool = self._use_sa
         sa_engine: Engine | None = self._sa_engine
+        sa_id = None
 
         logger.debug(
-            "log_message write_mode use_sqlalchemy=%s sa_engine=%s use_sa_writes=%s",
-            use_sa,
+            "log_message write_mode sa_engine=%s",
             "set" if sa_engine else "none",
-            use_sa,
         )
+        if sa_engine is None:
+            raise RuntimeError("SQLAlchemy engine not initialized")
         try:
             try:
                 url = sa_engine.url.render_as_string(hide_password=True)
             except Exception:
                 url = "unknown"
             logger.debug(
-                "log_message sqlA insert sa_engine_url=%s dialect=%s",
+                "log_message sqlA insert sa_engine_url=%s",
                 url,
-                sa_engine.dialect.name,
             )
             stmt = logs_table.insert().values(timestamp=now, type=log_type, message=message)
-            if sa_engine.dialect.name == "postgresql":
-                stmt = stmt.returning(logs_table.c.id)
+            stmt = stmt.returning(logs_table.c.id)
             with sa_engine.begin() as conn:
                 result = conn.execute(stmt)
-                sa_id = None
                 if result.returns_rows:
                     row = result.fetchone()
                     sa_id = row[0] if row else None
@@ -83,19 +80,19 @@ class LogsMixin:
         Retrieves the most recent log messages.
         """
         logger.debug("get_logs called limit=%s", limit)
-        use_sa: bool = False  # self._use_sa
         sa_engine: Engine | None = self._sa_engine
         logger.debug(
-            "get_logs read_mode use_sqlalchemy=%s sa_engine=%s",
-            use_sa,
+            "get_logs read_mode sa_engine=%s",
             "set" if sa_engine else "none",
         )
+        if sa_engine is None:
+            raise RuntimeError("SQLAlchemy engine not initialized")
 
         try:
             url = sa_engine.url.render_as_string(hide_password=True)
         except Exception:
             url = "unknown"
-        logger.debug("get_logs sa_engine_url=%s dialect=%s", url, sa_engine.dialect.name)
+        logger.debug("get_logs sa_engine_url=%s", url)
         stmt = (
             select(
                 logs_table.c.id,
@@ -146,21 +143,20 @@ class LogsMixin:
             before_id,
             limit,
         )
-        use_sa: bool = self._use_sa
         sa_engine: Engine | None = self._sa_engine
         logger.debug(
-            "get_logs_filtered read_mode use_sqlalchemy=%s sa_engine=%s",
-            use_sa,
+            "get_logs_filtered read_mode sa_engine=%s",
             "set" if sa_engine else "none",
         )
+        if sa_engine is None:
+            raise RuntimeError("SQLAlchemy engine not initialized")
         try:
             url = sa_engine.url.render_as_string(hide_password=True)
         except Exception:
             url = "unknown"
         logger.debug(
-            "get_logs_filtered sa_engine_url=%s dialect=%s",
+            "get_logs_filtered sa_engine_url=%s",
             url,
-            sa_engine.dialect.name,
         )
         stmt = select(
             logs_table.c.id,
@@ -171,12 +167,7 @@ class LogsMixin:
         if log_type:
             stmt = stmt.where(logs_table.c.type == log_type)
         if search:
-            dialect = getattr(sa_engine.dialect, "name", "unknown")
-            logger.debug("get_logs_filtered using dialect=%s for search", dialect)
-            if dialect == "sqlite":
-                stmt = stmt.where(logs_table.c.message.like(f"%{search}%"))
-            else:
-                stmt = stmt.where(logs_table.c.message.ilike(f"%{search}%"))
+            stmt = stmt.where(logs_table.c.message.ilike(f"%{search}%"))
         if before_id is not None:
             stmt = stmt.where(logs_table.c.id < before_id)
         stmt = stmt.order_by(desc(logs_table.c.timestamp)).limit(limit + 1)
@@ -201,13 +192,13 @@ class LogsMixin:
     def get_log_types(self) -> list[str]:
         """Get all distinct log types in the database."""
         logger.debug("get_log_types called")
-        use_sa: bool = self._use_sa
         sa_engine: Engine | None = self._sa_engine
         logger.debug(
-            "get_log_types read_mode use_sqlalchemy=%s sa_engine=%s",
-            use_sa,
+            "get_log_types read_mode sa_engine=%s",
             "set" if sa_engine else "none",
         )
+        if sa_engine is None:
+            raise RuntimeError("SQLAlchemy engine not initialized")
         stmt = select(logs_table.c.type).distinct().order_by(logs_table.c.type)
         with sa_engine.connect() as conn:
             rows = conn.execute(stmt).all()
@@ -217,13 +208,13 @@ class LogsMixin:
     def get_logs_count(self, log_type: str | None = None) -> int:
         """Get total count of logs, optionally filtered by type."""
         logger.debug("get_logs_count called log_type=%s", log_type)
-        use_sa: bool = self._use_sa
         sa_engine: Engine | None = self._sa_engine
         logger.debug(
-            "get_logs_count read_mode use_sqlalchemy=%s sa_engine=%s",
-            use_sa,
+            "get_logs_count read_mode sa_engine=%s",
             "set" if sa_engine else "none",
         )
+        if sa_engine is None:
+            raise RuntimeError("SQLAlchemy engine not initialized")
         stmt = select(func.count()).select_from(logs_table)
         if log_type:
             stmt = stmt.where(logs_table.c.type == log_type)
@@ -235,21 +226,13 @@ class LogsMixin:
     def delete_duplicate_logs_postgres(self) -> int:
         """Delete duplicate log rows in Postgres (keeps the smallest id per timestamp/type/message)."""
         logger.debug("delete_duplicate_logs_postgres called")
-        use_sa: bool = self._use_sa
         sa_engine: Engine | None = self._sa_engine
         logger.debug(
-            "delete_duplicate_logs_postgres read_mode use_sqlalchemy=%s sa_engine=%s",
-            use_sa,
+            "delete_duplicate_logs_postgres read_mode sa_engine=%s",
             "set" if sa_engine else "none",
         )
-        if not use_sa or sa_engine is None:
-            logger.debug("delete_duplicate_logs_postgres skipped (no SQLAlchemy engine)")
-            return 0
-        if sa_engine.dialect.name != "postgresql":
-            logger.debug(
-                "delete_duplicate_logs_postgres skipped (dialect=%s)", sa_engine.dialect.name
-            )
-            return 0
+        if sa_engine is None:
+            raise RuntimeError("SQLAlchemy engine not initialized")
 
         try:
             with sa_engine.begin() as conn:
