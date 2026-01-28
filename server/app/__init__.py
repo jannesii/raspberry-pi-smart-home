@@ -80,7 +80,8 @@ def create_app():
         raise RuntimeError("DB_PATH is missing - add to environment.")
     from .core import Controller
 
-    app.ctrl = Controller(db_path)  # type: ignore
+    ctrl = Controller(db_path)
+    app.ctrl = ctrl  # type: ignore
     logger.info("Controller init: %s", db_path)
 
     # ─── SQLAlchemy engine (phase-in for Alembic) ───
@@ -97,7 +98,7 @@ def create_app():
     try:
         from .logging_handlers import DBLogHandler
 
-        db_handler = DBLogHandler(app.ctrl)
+        db_handler = DBLogHandler(ctrl)
         db_handler.setLevel(logging.ERROR)
         # Include exception tracebacks in the stored message
         db_handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
@@ -109,7 +110,7 @@ def create_app():
     try:
         from .logging_control import apply_logging_control_config
 
-        cfg = app.ctrl.get_logging_control_config()  # type: ignore[attr-defined]
+        cfg = ctrl.get_logging_control_config()  # type: ignore[attr-defined]
         if cfg:
             apply_logging_control_config(cfg)
             logger.info("Applied persisted logging control config")
@@ -118,7 +119,7 @@ def create_app():
 
     # ─── Seed admin user (Root-Admin) ───
     try:
-        app.ctrl.register_user(  # type: ignore
+        ctrl.register_user(  # type: ignore
             app.config["WEB_USERNAME"],
             password=app.config["WEB_PASSWORD"],
             is_admin=True,
@@ -128,7 +129,7 @@ def create_app():
             "Seeded admin user %s (is_admin=True, is_root_admin=True)", app.config["WEB_USERNAME"]
         )
     except ValueError:
-        app.ctrl.set_user_as_admin(app.config["WEB_USERNAME"], True)  # type: ignore
+        ctrl.set_user_as_admin(app.config["WEB_USERNAME"], True)  # type: ignore
         logger.info("Ensured %s has is_admin=True (existing)", app.config["WEB_USERNAME"])
 
     # ─── Flask-Login ───
@@ -165,7 +166,7 @@ def create_app():
         Avoid doing blocking work directly in the eventlet hub signal context.
         """
         try:
-            app.ctrl.log_message("Server shutting down", "system")  # type: ignore
+            ctrl.log_message("Server shutting down", "system")  # type: ignore
         except Exception as e:
             logging.getLogger(__name__).warning("Shutdown log_message failed: %s", e)
         try:

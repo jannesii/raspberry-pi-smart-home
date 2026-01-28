@@ -17,14 +17,14 @@ class ControllerBase:
 
         self.db = DatabaseManager(db_path)
         self.finland_tz = pytz.timezone("Europe/Helsinki")
-        self._use_sqlalchemy_reads = os.getenv("USE_SQLA_READS", "").strip().lower() in (
+        self._use_sa = os.getenv("USE_SQLA_READS", "").strip().lower() in (
             "1",
             "true",
             "yes",
             "on",
         )
         self._sa_engine = None
-        if self._use_sqlalchemy_reads:
+        if self._use_sa:
             try:
                 from ..sqlalchemy_engine import get_engine, get_engine_for_url
 
@@ -38,4 +38,4 @@ class ControllerBase:
             except Exception:
                 logger.debug("ControllerBase failed to init SQLAlchemy engine", exc_info=True)
                 self._sa_engine = None
-                self._use_sqlalchemy_reads = False
+                self._use_sa = False
