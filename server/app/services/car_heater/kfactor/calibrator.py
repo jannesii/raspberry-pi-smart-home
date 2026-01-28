@@ -979,7 +979,12 @@ class KFactorCalibrator:
 
             # Check max duration
             duration_s = self._session.session_duration_s(now)
-            min_s = int(self._cfg.min_session_minutes) * 60
+            min_s = int(self._cfg.autonomous_min_session_minutes) * 60
+            logger.debug(
+                "kfactor: autonomous duration check duration_s=%s min_s=%s",
+                duration_s,
+                min_s,
+            )
 
             # Check target temperature reached
             target_c = float(self._cfg.autonomous_target_temp_c)
