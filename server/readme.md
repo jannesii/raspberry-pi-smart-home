@@ -118,6 +118,7 @@ Browse to http://127.0.0.1:5555 and log in.
 - Logs reads can be served via SQLAlchemy when `USE_SQLA_READS=1` (Postgres) while writes remain on SQLite.
 - Security headers (CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy) are applied by default, with CDN allowlist for Chart.js/HLS/Socket.IO.
 - `scripts/restart.sh` retries `pre-commit run --all-files` once before aborting.
+- AC controller methods migrated to SQLAlchemy Core (AC event logging, thermostat configuration).
 
 ---
 

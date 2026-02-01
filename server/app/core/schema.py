@@ -117,6 +117,8 @@ thermostat_conf = Table(
     Column("max_stale_s", Integer),
     Column("sleep_weekly", Text),
     Column("control_locations", Text),
+    Column("current_phase", Text),
+    Column("phase_started_at", Text),
     CheckConstraint("id = 1", name="ck_thermostat_conf_singleton"),
 )
 
