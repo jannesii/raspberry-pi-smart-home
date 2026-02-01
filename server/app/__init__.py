@@ -94,6 +94,12 @@ def create_app():
     except Exception as e:
         logger.warning("Failed to initialize SQLAlchemy engine: %s", e)
 
+    from time import sleep
+
+    """ ctrl.migrate_auth_to_pg()
+    while True:
+        sleep(1)
+        logger.info("sleeping...") """
     # ─── Route all ERROR+ logs into DB ───
     try:
         from .logging_handlers import DBLogHandler
