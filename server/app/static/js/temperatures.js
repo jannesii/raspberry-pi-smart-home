@@ -2,7 +2,9 @@ console.log('🧊 temperatures.js loaded');
 
 const STALE_MINUTES = 10; // mark readings stale when older than this
 const STALE_MS = STALE_MINUTES * 60 * 1000;
-const OUTSIDE_LOCATION_NAME = 'Outside'; // treated as outside sensor (FMI weather data)
+const OUTSIDE_LOCATION_NAMES = Array.isArray(window?.OUTSIDE_LOCATION_NAMES)
+  ? window.OUTSIDE_LOCATION_NAMES
+  : ['Rengonharju', 'Pelmaa']; // treated as outside sensors
 
 const state = {
   items: [],  // { name, temp, hum, ts }
@@ -37,6 +39,20 @@ function fmtTime(ts){
   } catch {
     return '—';
   }
+}
+
+function normalizeLocationName(name){
+  const normalized = String(name || '').trim().toLowerCase();
+  console.log('🧊 normalizeLocationName:', { name, normalized });
+  return normalized;
+}
+
+function isOutsideLocation(name){
+  const normalized = normalizeLocationName(name);
+  const aliases = OUTSIDE_LOCATION_NAMES.map(loc => normalizeLocationName(loc)).filter(Boolean);
+  const isOutside = Boolean(normalized) && aliases.some(alias => normalized === alias);
+  console.log('🧊 isOutsideLocation:', { name, normalized, aliases, isOutside });
+  return isOutside;
 }
 
 function createTile(id, name, temp=null, hum=null, ts=null){
@@ -104,6 +120,7 @@ function extractNameTempHum(entry){
 
 
 function renderItems(locations){
+  console.log('🧊 renderItems:', locations);
   const grid = document.getElementById('locationsGrid');
   const outGrid = document.getElementById('outsideGrid');
   if(!grid) return;
@@ -138,9 +155,13 @@ function renderItems(locations){
     return (an - bn) * dir;
   });
 
-  // Split into inside vs outside (Parveke)
-  const outsideList = list.filter(x => (x.name || '').trim() === OUTSIDE_LOCATION_NAME);
-  const insideList  = list.filter(x => (x.name || '').trim() !== OUTSIDE_LOCATION_NAME);
+  // Split into inside vs outside
+  const outsideList = list.filter(x => isOutsideLocation(x.name));
+  const insideList  = list.filter(x => !isOutsideLocation(x.name));
+  console.log('🧊 renderItems split:', {
+    outside: outsideList.map(x => x.name),
+    inside: insideList.map(x => x.name),
+  });
 
   // Render inside tiles to main grid
   for (const loc of insideList){
@@ -178,6 +199,7 @@ function ensureTile(name){
 }
 
 function updateTile(data){
+  console.log('🧊 updateTile:', data);
   const { name, temp, hum, ts } = extractNameTempHum(data);
   if (!name) return;
   // Update state item
@@ -198,7 +220,7 @@ function updateTile(data){
   renderItems(state.items);
   updateSummary(state.items);
   // If outside updated, refresh outside stats as well
-  if ((name || '').trim() === OUTSIDE_LOCATION_NAME){
+  if (isOutsideLocation(name)){
     refreshOutsideStatsSoon();
   }
 }
@@ -636,6 +658,7 @@ function setAvgPills(data){
 
 // --- Summary (Avg/Min/Max across tiles) ---
 function updateSummary(items){
+  console.log('🧊 updateSummary:', items);
   const avgEl = document.getElementById('avgTempPill');
   const minEl = document.getElementById('minTempPill');
   const maxEl = document.getElementById('maxTempPill');
@@ -644,7 +667,7 @@ function updateSummary(items){
   // Exclude outside sensor from summary
   const inItems = (Array.isArray(items) ? items : []).filter(it => {
     const n = String(it.name || it.location || '').trim();
-    return n !== OUTSIDE_LOCATION_NAME;
+    return !isOutsideLocation(n);
   });
 
   const vals = inItems.map(x => Number(x.temp)).filter(Number.isFinite);
@@ -695,21 +718,36 @@ function applyTempColor(el, temp){
 // --- Outside (Parveke) daily stats ---
 let _outsideTimer = null;
 function refreshOutsideStatsSoon(){
+  console.log('🧊 refreshOutsideStatsSoon called');
   if (_outsideTimer) return;
   _outsideTimer = setTimeout(() => { _outsideTimer = null; fetchOutsideToday(); }, 2000);
 }
 
 async function fetchOutsideToday(){
+  console.log('🧊 fetchOutsideToday:', OUTSIDE_LOCATION_NAMES);
   try{
-    const url = `/api/esp32_temphum?location=${encodeURIComponent(OUTSIDE_LOCATION_NAME)}`;
-    const resp = await fetch(url);
-    if(!resp.ok){
-      console.warn('outside stats fetch failed:', resp.status);
+    const names = OUTSIDE_LOCATION_NAMES.map(name => String(name || '').trim()).filter(Boolean);
+    if (!names.length) {
+      console.warn('outside stats fetch skipped: no outside locations configured');
       setOutsideStats(null);
       return;
     }
-    const data = await resp.json();
-    setOutsideStats(data);
+    const responses = await Promise.all(
+      names.map(name => fetch(`/api/esp32_temphum?location=${encodeURIComponent(name)}`))
+    );
+    const rows = [];
+    for (let i = 0; i < responses.length; i += 1) {
+      const resp = responses[i];
+      if (!resp.ok){
+        console.warn('outside stats fetch failed:', resp.status, names[i]);
+        continue;
+      }
+      const data = await resp.json();
+      if (Array.isArray(data)) {
+        rows.push(...data);
+      }
+    }
+    setOutsideStats(rows);
   }catch(err){
     console.error('outside stats error:', err);
     setOutsideStats(null);
@@ -717,6 +755,7 @@ async function fetchOutsideToday(){
 }
 
 function setOutsideStats(rows){
+  console.log('🧊 setOutsideStats:', rows);
   const tEl = document.getElementById('outsideTempRange');
   const hEl = document.getElementById('outsideHumRange');
   if (!tEl || !hEl) return;

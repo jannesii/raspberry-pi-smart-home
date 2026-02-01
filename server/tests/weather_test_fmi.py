@@ -106,7 +106,7 @@ def fetch_fmi(place: str) -> bytes:
         "version": "2.0.0",
         "request": "getFeature",
         "storedquery_id": STOREDQUERY_ID,
-        "fmisid": 137188,
+        "fmisid": 101486,
         "starttime": iso_z(start),
         "endtime": iso_z(now),
         "timestep": "10",

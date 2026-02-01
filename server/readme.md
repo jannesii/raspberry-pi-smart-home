@@ -110,6 +110,8 @@ Browse to http://127.0.0.1:5555 and log in.
 - Logs can be mirrored to Postgres by setting `USE_SQLA_LOG_WRITES=1` (requires `DATABASE_URL`).
 - Added a controller helper to delete duplicate log rows in Postgres (`delete_duplicate_logs_postgres`).
 - Added a controller helper to delete duplicate log rows in SQLite (`delete_duplicate_logs_sqlite`).
+- Chart modal outdoor temperature range selection now supports multiple location aliases (case-insensitive, substring match).
+- Temperature tiles now support multiple outside locations for grouping and outside-range stats.
 - SQLAlchemy Core schema + engine are wired in parallel (phase-in for Alembic).
 - Alembic migrations are staged (baseline + kFactor result FK) and now target Postgres (SQLite-specific logic removed).
 - SQLite connections (sqlite3 + SQLAlchemy/Alembic) enable the foreign_keys PRAGMA.

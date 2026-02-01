@@ -18,6 +18,7 @@ from flask_login import current_user, login_required
 
 from ...extensions import csrf
 from ...security import require_api_key
+from ...services.weather import RENKO_ID, WeatherService
 
 esp32_bp = Blueprint("api_esp32", __name__, url_prefix="")
 
@@ -27,7 +28,6 @@ logger.setLevel(logging.INFO)
 if TYPE_CHECKING:
     from ...core import Controller
     from ...services.ac import ACThermostat
-    from ...services.weather import WeatherService
 
 
 # In-memory state for ESP32 test telemetry (no DB persistence)
@@ -103,7 +103,8 @@ def post_esp32_temphum():
         "Tietokonepöytä",
         "WC",
         "Parveke",
-        "Outside",
+        "Rengonharju",
+        "Pelmaa",
         "test",
     ]
     if location not in valid_locations:
@@ -155,45 +156,81 @@ def post_esp32_temphum():
         """Fetch FMI weather data and log as 'Outside' sensor reading."""
         logger.debug("fetch_and_log_outside_weather called")
         try:
-            weather_svc: WeatherService | None = getattr(current_app, "weather_service", None)
-            if weather_svc is None:
+            weather_svc_pelmaa: WeatherService | None = getattr(
+                current_app, "weather_service", None
+            )
+            weather_svc_renko: WeatherService = WeatherService(fmisid=RENKO_ID)
+            if weather_svc_pelmaa is None or weather_svc_renko is None:
                 logger.debug("No weather_service available for Outside reading")
                 return
 
-            weather_data = weather_svc.get_latest()
-            logger.debug("FMI weather data: t2m=%s, rh=%s", weather_data.t2m, weather_data.rh)
+            weather_data_pelmaa = weather_svc_pelmaa.get_latest()
+            weather_data_renko = weather_svc_renko.get_latest()
+            logger.debug(
+                "FMI weather data Pelmaa: t2m=%s, rh=%s",
+                weather_data_pelmaa.t2m,
+                weather_data_pelmaa.rh,
+            )
+            logger.debug(
+                "FMI weather data Rengonharju: t2m=%s, rh=%s",
+                weather_data_renko.t2m,
+                weather_data_renko.rh,
+            )
 
-            if weather_data.t2m is None or weather_data.t2m.value is None:
+            if (
+                weather_data_pelmaa.t2m is None
+                or weather_data_pelmaa.t2m.value is None
+                or weather_data_renko.t2m is None
+                or weather_data_renko.t2m.value is None
+            ):
                 logger.debug("No t2m value from FMI, skipping Outside reading")
                 return
 
-            outside_temp = weather_data.t2m.value
-            outside_hum = weather_data.rh.value if weather_data.rh else None
+            outside_temp_pelmaa = weather_data_pelmaa.t2m.value
+            outside_hum_pelmaa = weather_data_pelmaa.rh.value if weather_data_pelmaa.rh else None
+
+            outside_temp_renko = weather_data_renko.t2m.value
+            outside_hum_renko = weather_data_renko.rh.value if weather_data_renko.rh else None
 
             # Use 0.0 humidity if not available (FMI sometimes doesn't report rh)
-            if outside_hum is None:
-                outside_hum = 0.0
+            if outside_hum_pelmaa is None:
+                outside_hum_pelmaa = 0.0
+
+            if outside_hum_renko is None:
+                outside_hum_renko = 0.0
 
             # Record to DB as "Outside" location
-            outside_saved = ctrl.record_esp32_temphum(
-                "Outside", outside_temp, outside_hum, ac_on=None
+            outside_saved_pelmaaa = ctrl.record_esp32_temphum(
+                "Pelmaa", outside_temp_pelmaa, outside_hum_pelmaa, ac_on=None
+            )
+            outside_saved_renko = ctrl.record_esp32_temphum(
+                "Rengonharju", outside_temp_renko, outside_hum_renko, ac_on=None
             )
 
             # Broadcast to views
             current_app.sio_handler.emit_to_views(
                 "esp32_temphum",
                 {
-                    "location": outside_saved.location,
-                    "temperature": outside_saved.temperature,
-                    "humidity": outside_saved.humidity,
+                    "location": outside_saved_pelmaaa.location,
+                    "temperature": outside_saved_pelmaaa.temperature,
+                    "humidity": outside_saved_pelmaaa.humidity,
+                    "ac_on": None,
+                },
+            )
+            current_app.sio_handler.emit_to_views(
+                "esp32_temphum",
+                {
+                    "location": outside_saved_renko.location,
+                    "temperature": outside_saved_renko.temperature,
+                    "humidity": outside_saved_renko.humidity,
                     "ac_on": None,
                 },
             )
 
             logger.debug(
                 "Recorded Outside weather: temp=%.1f°C hum=%.0f%%",
-                outside_saved.temperature,
-                outside_saved.humidity,
+                outside_saved_pelmaaa.temperature,
+                outside_saved_pelmaaa.humidity,
             )
         except Exception as e:
             logger.exception("Failed to fetch/log Outside weather: %s", e)

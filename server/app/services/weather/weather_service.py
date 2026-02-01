@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 FMI_WFS_URL = "https://opendata.fmi.fi/wfs"
 STOREDQUERY_ID = "fmi::observations::weather::timevaluepair"
+PELMAA_ID = 101486
+RENKO_ID = 137188
 
 PARAMETERS = [
     "t2m",  # 2m temperature
@@ -59,13 +61,22 @@ class WeatherData:
 class WeatherService:
     def __init__(
         self,
-        fmisid: str | int = "137188",
+        fmisid: str | int = PELMAA_ID,
         *,
         cache_ttl_s: int = 120,
         lookback_hours: int = 2,
         timestep_minutes: int = 10,
         timeout_s: int = 30,
     ) -> None:
+        logger.debug(
+            "WeatherService.__init__ fmisid=%s cache_ttl_s=%s lookback_hours=%s "
+            "timestep_minutes=%s timeout_s=%s",
+            fmisid,
+            cache_ttl_s,
+            lookback_hours,
+            timestep_minutes,
+            timeout_s,
+        )
         self._fmisid = str(fmisid)
         self._cache_ttl_s = int(cache_ttl_s)
         self._lookback_hours = int(lookback_hours)
@@ -97,6 +108,8 @@ class WeatherService:
         return self._values.get("n_man")
 
     def get_latest(self) -> WeatherData:
+        """Return the latest cached weather data."""
+        logger.debug("get_latest called")
         self._ensure_cache()
         station = self._station or StationInfo(
             station_name=None,
@@ -104,7 +117,7 @@ class WeatherService:
             lat=None,
             lon=None,
         )
-        return WeatherData(
+        data = WeatherData(
             station_name=station.station_name,
             fmisid=station.fmisid or self._fmisid,
             lat=station.lat,
@@ -114,44 +127,86 @@ class WeatherService:
             rh=self.rh,
             n_man=self.n_man,
         )
+        logger.debug(
+            "get_latest station=%s fmisid=%s fields=%s",
+            station.station_name,
+            station.fmisid,
+            sorted(self._values.keys()),
+        )
+        return data
 
     def _ensure_cache(self) -> None:
         now = datetime.now(UTC)
+        logger.debug(
+            "_ensure_cache now=%s cache_time=%s ttl_s=%s",
+            now.isoformat(),
+            self._cache_time.isoformat() if self._cache_time else None,
+            self._cache_ttl_s,
+        )
         if self._cache_time is None:
+            logger.debug("Cache empty; refreshing")
             self._refresh_cache()
             return
-        if (now - self._cache_time).total_seconds() >= self._cache_ttl_s:
+        age_s = (now - self._cache_time).total_seconds()
+        if age_s >= self._cache_ttl_s:
+            logger.debug("Cache expired (age_s=%s); refreshing", age_s)
             self._refresh_cache()
+            return
 
     def _refresh_cache(self) -> None:
-        xml_bytes = self._fetch_fmi()
-        root = ET.fromstring(xml_bytes)
+        logger.debug(
+            "_refresh_cache starting fmisid=%s lookback_hours=%s timestep_minutes=%s",
+            self._fmisid,
+            self._lookback_hours,
+            self._timestep_minutes,
+        )
+        try:
+            xml_bytes = self._fetch_fmi()
+        except requests.RequestException as exc:
+            logger.exception("FMI fetch failed; keeping existing cache: %s", exc)
+            return
+
+        if not xml_bytes:
+            logger.debug("FMI response empty; keeping existing cache")
+            return
+
+        try:
+            root = ET.fromstring(xml_bytes)
+        except ET.ParseError as exc:
+            logger.exception("Failed to parse FMI XML; keeping existing cache: %s", exc)
+            return
 
         results: dict[str, WeatherValue] = {}
         station: StationInfo | None = None
+        member_count = 0
 
         for member in root.findall("wfs:member", NS):
-            obs = next(iter(member)) if len(member) else None
-            if obs is None:
-                continue
+            member_count += 1
+            try:
+                obs = next(iter(member)) if len(member) else None
+                if obs is None:
+                    continue
 
-            observed = obs.find("om:observedProperty", NS)
-            if observed is None:
-                continue
+                observed = obs.find("om:observedProperty", NS)
+                if observed is None:
+                    continue
 
-            href = observed.attrib.get("{http://www.w3.org/1999/xlink}href", "")
-            param = self._parse_param_from_observed_property(href)
-            if not param or param not in PARAMETERS:
-                continue
+                href = observed.attrib.get("{http://www.w3.org/1999/xlink}href", "")
+                param = self._parse_param_from_observed_property(href)
+                if not param or param not in PARAMETERS:
+                    continue
 
-            if station is None:
-                station = self._parse_station_info(obs)
+                if station is None:
+                    station = self._parse_station_info(obs)
 
-            latest = self._parse_latest_valid_tvp(obs)
-            if latest is None:
+                latest = self._parse_latest_valid_tvp(obs)
+                if latest is None:
+                    continue
+                time_iso, value = latest
+                results[param] = WeatherValue(value=value, time=time_iso)
+            except Exception as exc:
+                logger.exception("Failed parsing FMI member: %s", exc)
                 continue
-            time_iso, value = latest
-            results[param] = WeatherValue(value=value, time=time_iso)
 
         if station is None:
             station = StationInfo(
@@ -164,6 +219,13 @@ class WeatherService:
         self._station = station
         self._values = results
         self._cache_time = datetime.now(UTC)
+        logger.debug(
+            "_refresh_cache completed members=%s values=%s station=%s cache_time=%s",
+            member_count,
+            sorted(results.keys()),
+            station,
+            self._cache_time.isoformat(),
+        )
 
     def _fetch_fmi(self) -> bytes:
         now = datetime.now(UTC)
@@ -182,8 +244,17 @@ class WeatherService:
         }
         url = f"{FMI_WFS_URL}?{urlencode(params)}"
         logger.debug("Fetching FMI data: %s", url)
-        resp = requests.get(url, timeout=self._timeout_s)
-        resp.raise_for_status()
+        try:
+            resp = requests.get(url, timeout=self._timeout_s)
+            resp.raise_for_status()
+        except requests.RequestException as exc:
+            logger.exception("FMI request failed: %s", exc)
+            raise
+        logger.debug(
+            "FMI response received status=%s bytes=%s",
+            resp.status_code,
+            len(resp.content) if resp.content else 0,
+        )
         return resp.content
 
     @staticmethod
