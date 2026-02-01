@@ -43,7 +43,6 @@ function fmtTime(ts){
 
 function normalizeLocationName(name){
   const normalized = String(name || '').trim().toLowerCase();
-  console.log('🧊 normalizeLocationName:', { name, normalized });
   return normalized;
 }
 
@@ -51,7 +50,6 @@ function isOutsideLocation(name){
   const normalized = normalizeLocationName(name);
   const aliases = OUTSIDE_LOCATION_NAMES.map(loc => normalizeLocationName(loc)).filter(Boolean);
   const isOutside = Boolean(normalized) && aliases.some(alias => normalized === alias);
-  console.log('🧊 isOutsideLocation:', { name, normalized, aliases, isOutside });
   return isOutside;
 }
 
@@ -120,7 +118,6 @@ function extractNameTempHum(entry){
 
 
 function renderItems(locations){
-  console.log('🧊 renderItems:', locations);
   const grid = document.getElementById('locationsGrid');
   const outGrid = document.getElementById('outsideGrid');
   if(!grid) return;
@@ -158,10 +155,6 @@ function renderItems(locations){
   // Split into inside vs outside
   const outsideList = list.filter(x => isOutsideLocation(x.name));
   const insideList  = list.filter(x => !isOutsideLocation(x.name));
-  console.log('🧊 renderItems split:', {
-    outside: outsideList.map(x => x.name),
-    inside: insideList.map(x => x.name),
-  });
 
   // Render inside tiles to main grid
   for (const loc of insideList){
@@ -199,7 +192,6 @@ function ensureTile(name){
 }
 
 function updateTile(data){
-  console.log('🧊 updateTile:', data);
   const { name, temp, hum, ts } = extractNameTempHum(data);
   if (!name) return;
   // Update state item
@@ -658,7 +650,6 @@ function setAvgPills(data){
 
 // --- Summary (Avg/Min/Max across tiles) ---
 function updateSummary(items){
-  console.log('🧊 updateSummary:', items);
   const avgEl = document.getElementById('avgTempPill');
   const minEl = document.getElementById('minTempPill');
   const maxEl = document.getElementById('maxTempPill');
@@ -718,13 +709,11 @@ function applyTempColor(el, temp){
 // --- Outside (Parveke) daily stats ---
 let _outsideTimer = null;
 function refreshOutsideStatsSoon(){
-  console.log('🧊 refreshOutsideStatsSoon called');
   if (_outsideTimer) return;
   _outsideTimer = setTimeout(() => { _outsideTimer = null; fetchOutsideToday(); }, 2000);
 }
 
 async function fetchOutsideToday(){
-  console.log('🧊 fetchOutsideToday:', OUTSIDE_LOCATION_NAMES);
   try{
     const names = OUTSIDE_LOCATION_NAMES.map(name => String(name || '').trim()).filter(Boolean);
     if (!names.length) {
@@ -755,7 +744,6 @@ async function fetchOutsideToday(){
 }
 
 function setOutsideStats(rows){
-  console.log('🧊 setOutsideStats:', rows);
   const tEl = document.getElementById('outsideTempRange');
   const hEl = document.getElementById('outsideHumRange');
   if (!tEl || !hEl) return;

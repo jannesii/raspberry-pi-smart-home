@@ -18,7 +18,7 @@ PATTERNS: Singleton services | Dataclass DTOs | Blueprint organization
 
 1. **Update AGENTS.md** when you discover new critical patterns, pitfalls, or when existing instructions become outdated.
 2. **Update readme.md** after every feature change. Keep it concise—don't clutter with implementation details.
-3. **Add verbose debug logging** to every function/method you touch. Use `logger.debug()` liberally.
+3. **Add debug logging where it makes sense** to functions/methods you touch. Use `logger.debug()` for key control flow, inputs/outputs, and failure paths, but **avoid spammy logging** (tight loops, per-item processing, high-frequency or hot paths). Prefer concise, actionable debug statements.
 
 ---
 
@@ -124,7 +124,7 @@ if svc:
 
 ### 2.5 Logging
 
-**RULE: Add verbose debug logging to EVERY function you modify.**
+**RULE: Add debug logging to each function you modify where it is useful and non-spammy.**
 
 ```python
 import logging

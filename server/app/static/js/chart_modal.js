@@ -108,7 +108,6 @@
       OUTSIDE_LOCATION_ALIASES.includes(normalized) ||
       OUTSIDE_LOCATION_ALIASES.some(alias => normalized.includes(alias))
     );
-    console.log('🌡️ isOutsideLocation:', { location, normalized, isOutside, aliases: OUTSIDE_LOCATION_ALIASES });
     return isOutside;
   }
 
@@ -116,7 +115,6 @@
     const axis = { beginAtZero: false };
     if (TEMP_RANGE_LIMIT_ENABLED) {
       const isOutside = isOutsideLocation(location);
-      console.log('🌡️ getTempYAxisConfig:', { location, isOutside });
       if (isOutside) {
         axis.min = OUTSIDE_TEMP_RANGE_MIN;
         axis.max = OUTSIDE_TEMP_RANGE_MAX;
