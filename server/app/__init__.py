@@ -96,7 +96,7 @@ def create_app():
 
     from time import sleep
 
-    """ ctrl.migrate_3d_to_pg()
+    """ ctrl.migrate_ready_by_to_pg()
     logger.info("sleeping...")
     while True:
         sleep(1) """
