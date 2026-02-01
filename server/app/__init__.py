@@ -96,10 +96,10 @@ def create_app():
 
     from time import sleep
 
-    """ ctrl.migrate_ac_to_pg()
+    ctrl.migrate_car_heater_to_pg()
     logger.info("sleeping...")
     while True:
-        sleep(1) """
+        sleep(1)
     # ─── Route all ERROR+ logs into DB ───
     try:
         from .logging_handlers import DBLogHandler
