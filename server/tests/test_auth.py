@@ -359,7 +359,7 @@ class TestAPIKeys:
 
     def test_verify_api_key_token_wrong_secret(self, controller):
         """Test verification with wrong secret."""
-        api_key, token = controller.create_api_key("Test Key")
+        _, token = controller.create_api_key("Test Key")
         # Modify the secret part
         parts = token.split("_")
         wrong_token = f"{parts[0]}_{parts[1]}_wrongsecret"
