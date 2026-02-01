@@ -94,12 +94,6 @@ def create_app():
     except Exception as e:
         logger.warning("Failed to initialize SQLAlchemy engine: %s", e)
 
-    from time import sleep
-
-    ctrl.migrate_car_heater_to_pg()
-    logger.info("sleeping...")
-    while True:
-        sleep(1)
     # ─── Route all ERROR+ logs into DB ───
     try:
         from .logging_handlers import DBLogHandler
