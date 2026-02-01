@@ -48,6 +48,7 @@ class KFactorConfig:
 
     # Informativeness gating (curvature)
     informative_min_minutes: int = 20
+    autonomous_informative_min_minutes: int = 10
     curvature_ratio_max: float = 0.6
     curvature_max_sample_distance_s: int = 120
 
@@ -66,6 +67,7 @@ class KFactorConfig:
 
     # --- Autonomous Mode Settings ---
     autonomous_max_session_minutes: int = 45  # Shorter sessions for autonomous
+    autonomous_min_session_minutes: int = 8
     # Shorter cooldown (survives reboots)
     autonomous_cooldown_minutes: int = 60
     autonomous_min_temp_rise_rate_C_per_min: float = 0.08  # Stop if heating too slow

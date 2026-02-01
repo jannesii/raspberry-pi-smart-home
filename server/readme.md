@@ -98,17 +98,34 @@ Browse to http://127.0.0.1:5555 and log in.
 - KFactor active params selection now honors bucketed parameters with any-wind fallback and bucket coverage gating.
 - KFactor snapshots now include legacy UI fields: live_session, recent_sessions, bucket_coverage, statistics, and expanded constants.
 - KFactor uses separate autonomous/passive cooldowns and records prediction outcomes in the DB.
+- kFactor auto-calibration toggle now reads a consistent `autonomous_enabled` flag in initial and Socket.IO status payloads.
+- kFactor socket control parses boolean values explicitly to avoid `"false"` becoming `True`.
+- kFactor calibrator refreshes config from DB during tick/snapshot to keep multi-worker state in sync.
+- Disabling kFactor autonomous mode now cancels active autonomous state and syncs config updates across submodules.
 - Car heater settings include a kFactor cooldown reset button.
 - Live kFactor session panel updates asynchronously via Socket.IO status events.
 - Logging control now logs handler level updates when applied.
 - kFactor session rejection logs now include specific rejection reasons and thresholds.
+- kFactor autonomous sessions use separate minimum duration and informativeness thresholds.
+- Logs can be mirrored to Postgres by setting `USE_SQLA_LOG_WRITES=1` (requires `DATABASE_URL`).
+- Added a controller helper to delete duplicate log rows in Postgres (`delete_duplicate_logs_postgres`).
+- Chart modal outdoor temperature range selection now supports multiple location aliases (case-insensitive, substring match).
+- Temperature tiles now support multiple outside locations for grouping and outside-range stats.
+- SQLAlchemy Core schema + engine are wired in parallel (phase-in for Alembic).
+- Alembic migrations are staged (baseline + kFactor result FK) and now target Postgres (SQLite-specific logic removed).
+- SQLite connections (sqlite3 + SQLAlchemy/Alembic) enable the foreign_keys PRAGMA.
+- Logs reads can be served via SQLAlchemy when `USE_SQLA_READS=1` (Postgres) while writes remain on SQLite.
+- Security headers (CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy) are applied by default, with CDN allowlist for Chart.js/HLS/Socket.IO.
 - `scripts/restart.sh` retries `pre-commit run --all-files` once before aborting.
+- AC controller methods migrated to SQLAlchemy Core (AC event logging, thermostat configuration).
 
 ---
 
 ## Documentation
 
 - [Technical Guide](docs/technical-guide.md) – deployment, configuration, API reference
+- [Guide](docs/guide.md) – operational commands, migrations, backups
+- [DB Next Steps](docs/db_next_steps.md) – remaining work for the Postgres transition
 - [AGENTS.md](AGENTS.md) – AI development guidelines
 
 ---

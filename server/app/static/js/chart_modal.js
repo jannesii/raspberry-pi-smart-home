@@ -35,8 +35,11 @@
   const TEMP_RANGE_MIN          = 18;     // ºC lower bound when range limit is applied (indoor)
   const TEMP_RANGE_MAX          = 26;     // ºC upper bound when range limit is applied (indoor)
   const OUTSIDE_TEMP_RANGE_MIN  = -30;    // ºC lower bound for outside location
-  const OUTSIDE_TEMP_RANGE_MAX  = 35;     // ºC upper bound for outside location
-  const OUTSIDE_LOCATION_NAME   = 'Outside'; // location name that uses outdoor temp range
+  const OUTSIDE_TEMP_RANGE_MAX  = 10;     // ºC upper bound for outside location
+  const OUTSIDE_LOCATION_NAMES  = ['Rengonharju', 'Pelmaa']; // location names that use outdoor temp range
+  const OUTSIDE_LOCATION_ALIASES = OUTSIDE_LOCATION_NAMES
+    .map(name => String(name || '').trim().toLowerCase())
+    .filter(Boolean);
 
   const DEFAULT_AVG_MINUTES = AGGREGATION_ENABLED ? AGGREGATION_MINUTES : 0;
   let averagingMinutes = Number(window?.CHART_AVG_MINUTES ?? DEFAULT_AVG_MINUTES) || 0;
@@ -99,10 +102,19 @@
     return { labels, temps, hums };
   }
 
+  function isOutsideLocation(location) {
+    const normalized = String(location || '').trim().toLowerCase();
+    const isOutside = Boolean(normalized) && (
+      OUTSIDE_LOCATION_ALIASES.includes(normalized) ||
+      OUTSIDE_LOCATION_ALIASES.some(alias => normalized.includes(alias))
+    );
+    return isOutside;
+  }
+
   function getTempYAxisConfig(location) {
     const axis = { beginAtZero: false };
     if (TEMP_RANGE_LIMIT_ENABLED) {
-      const isOutside = (location || '').trim() === OUTSIDE_LOCATION_NAME;
+      const isOutside = isOutsideLocation(location);
       if (isOutside) {
         axis.min = OUTSIDE_TEMP_RANGE_MIN;
         axis.max = OUTSIDE_TEMP_RANGE_MAX;

@@ -3,7 +3,7 @@
 ## Quick Reference
 
 ```
-STACK: Python 3.11 | Flask | Flask-SocketIO | Eventlet | SQLite | Jinja2
+STACK: Python 3.11 | Flask | Flask-SocketIO | Eventlet | SQLAlchemy Core | PostgreSQL (prod) / SQLite (tests) | Alembic | Jinja2
 FRONTEND: Vanilla JS (ES6+) | CSS3 Grid/Flexbox | No build tools
 REALTIME: Socket.IO (views/clients/esp32 roles)
 AUTH: Flask-Login + session cookies | CSRF protection
@@ -18,7 +18,7 @@ PATTERNS: Singleton services | Dataclass DTOs | Blueprint organization
 
 1. **Update AGENTS.md** when you discover new critical patterns, pitfalls, or when existing instructions become outdated.
 2. **Update readme.md** after every feature change. Keep it concise—don't clutter with implementation details.
-3. **Add verbose debug logging** to every function/method you touch. Use `logger.debug()` liberally.
+3. **Add debug logging where it makes sense** to functions/methods you touch. Use `logger.debug()` for key control flow, inputs/outputs, and failure paths, but **avoid spammy logging** (tight loops, per-item processing, high-frequency or hot paths). Prefer concise, actionable debug statements.
 
 ---
 
@@ -44,7 +44,8 @@ PATTERNS: Singleton services | Dataclass DTOs | Blueprint organization
 ├─────────────────────────────────────────────────────────────┤
 │  CORE                       app/core/                       │
 │    ├── controller.py  → Business logic facade               │
-│    ├── database.py    → Thread-safe SQLite                  │
+│    ├── schema.py      → SQLAlchemy Core table definitions   │
+│    ├── database.py    → Legacy SQLite (migration only)      │
 │    └── models.py      → Dataclass DTOs                      │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -70,8 +71,11 @@ Browser → Flask Route → Controller → Database
 | `app/blueprints/web/` | HTML page routes | `from ...core import Controller` |
 | `app/blueprints/api/` | JSON API endpoints | `from ...utils import get_ctrl` |
 | `app/services/*/` | Background services | `from ...core import <models>` |
-| `app/core/controller.py` | All DB operations | Direct database access |
+| `app/core/controller.py` | All DB operations | SQLAlchemy Core via `self.sa_engine` |
 | `app/core/models.py` | Dataclass definitions | No imports from app |
+| `app/core/schema.py` | SQLAlchemy Core table definitions | Primary schema source |
+| `app/core/database.py` | Legacy SQLite DatabaseManager | Migration methods only |
+| `migrations/` | Alembic migrations | Target Postgres via `DATABASE_URL` |
 
 ### 2.2 Controller Pattern
 
@@ -122,7 +126,7 @@ if svc:
 
 ### 2.5 Logging
 
-**RULE: Add verbose debug logging to EVERY function you modify.**
+**RULE: Add debug logging to each function you modify where it is useful and non-spammy.**
 
 ```python
 import logging
@@ -482,6 +486,14 @@ function update(data) {
 }
 ```
 
+**kFactor note**: The UI toggle expects `autonomous_enabled` in status payloads. Include this key (and keep it boolean) in both initial page data and Socket.IO status to avoid the toggle snapping back to `true`.
+
+**Boolean parsing note**: Avoid `bool("false")` or `bool("0")` in backend handlers; parse booleans from strings explicitly to prevent unintended `True` values.
+
+**Multi-worker config note**: KFactor config changes are persisted in the DB. If multiple gunicorn workers are running, each worker must refresh config from DB (e.g., during tick/snapshot) to avoid stale `enabled` state.
+
+**KFactor config updates**: Use `KFactorCalibrator.update_config()` (not direct `_cfg` assignment) so submodules (`_physics`, `_session`, `_snapshot`) stay in sync.
+
 ### 6.2 Null Safety
 
 ```javascript
@@ -559,7 +571,13 @@ window.socket.onAny((event, ...args) => {
 
 ## 8. Database Schema
 
-### 8.1 Core Tables
+### 8.1 Database Architecture
+
+**Production**: PostgreSQL via `DATABASE_URL` environment variable  
+**Testing**: SQLite in-memory via `sqlite:///:memory:`  
+**All operations**: SQLAlchemy Core (no ORM)
+
+### 8.2 Core Tables
 
 ```sql
 -- Users & Auth
@@ -569,19 +587,63 @@ api_keys (id, key_id, name, secret_hash, created_at, created_by, revoked)
 -- Car Heater
 car_heater_status (id, timestamp, is_heater_on, instant_power_w, ambient_temp, ...)
 car_heater_events (id, event_type, timestamp, details)
-car_heater_kfactor_* (calibration tables)
+car_heater_kfactor_* (7 calibration tables)
 
 -- Sensors
-esp32_temperature_humidity (id, location, timestamp, temperature, humidity, ac_on)
-bmp_pressure (id, timestamp, pressure_hpa, temperature_c, altitude_m)
+esp32_temphum (id, location, timestamp, temperature, humidity, ac_on)
+bmp_sensor_data (id, timestamp, temperature, pressure, altitude)
 ```
 
-### 8.2 Adding Tables
+### 8.3 Adding Tables
 
-1. Add schema in `database.py` `_create_tables()`
+1. Add table in `app/core/schema.py` using SQLAlchemy Core `Table()`
 2. Add dataclass in `models.py`
-3. Add CRUD methods in `controller.py`
-4. Export in `core/__init__.py`
+3. Add CRUD methods in `app/core/_controller/<feature>.py` using SQLAlchemy
+4. Create Alembic migration: `alembic revision --autogenerate -m "add_feature_table"`
+5. Export in `core/__init__.py`
+
+### 8.4 SQLAlchemy Patterns
+
+```python
+# Import schema tables
+from ..schema import my_table
+
+# Basic select
+with self.sa_engine.connect() as conn:
+    stmt = select(my_table).where(my_table.c.id == some_id)
+    row = conn.execute(stmt).first()
+
+# Insert with RETURNING (PostgreSQL)
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+stmt = pg_insert(my_table).values(**data).returning(my_table.c.id)
+result = conn.execute(stmt)
+conn.commit()
+new_id = result.scalar()
+
+# Upsert (PostgreSQL ON CONFLICT)
+stmt = pg_insert(my_table).values(**data)
+stmt = stmt.on_conflict_do_update(
+    index_elements=[my_table.c.unique_col],
+    set_={"field": stmt.excluded.field}
+)
+conn.execute(stmt)
+conn.commit()
+```
+
+### 8.5 Timestamp Columns
+
+**IMPORTANT**: Timestamp columns are stored as TEXT (ISO format strings) for SQLite compatibility in tests.
+
+When comparing timestamps in queries, convert Python `datetime` to ISO string:
+
+```python
+# ✓ CORRECT - Compare as strings
+cutoff = datetime.now() - timedelta(days=7)
+stmt = select(...).where(table.c.timestamp >= cutoff.isoformat())
+
+# ✗ WRONG - datetime vs TEXT comparison fails in PostgreSQL
+stmt = select(...).where(table.c.timestamp >= cutoff)
+```
 
 ---
 
@@ -664,7 +726,10 @@ class BackgroundService:
 ```bash
 # Required
 SECRET_KEY=...           # Flask secret
-DB_PATH=/path/to/db.sqlite
+DATABASE_URL=postgresql+psycopg://user:pass@localhost/dbname  # PostgreSQL connection
+
+# Legacy (migration only)
+DB_PATH=/path/to/db.sqlite  # SQLite source for data migration
 
 # Optional
 WEB_USERNAME=admin       # Initial admin user
@@ -710,4 +775,4 @@ ALLOWED_WS_ORIGINS=["http://localhost:5555"]
 
 ---
 
-*Last updated: 2026-01-25*
+*Last updated: 2026-02-01*

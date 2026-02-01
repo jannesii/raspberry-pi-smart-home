@@ -66,6 +66,42 @@ def configure_rate_limiting(app) -> None:
     )
 
 
+def apply_security_headers(app) -> None:
+    """Attach security headers to all responses."""
+    logger.debug("apply_security_headers called")
+
+    @app.after_request
+    def _add_security_headers(response):
+        logger.debug(
+            "apply_security_headers adding headers path=%s status=%s",
+            request.path,
+            response.status,
+        )
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            (
+                "default-src 'self'; "
+                "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com "
+                "https://cdn.socket.io; "
+                "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+                "img-src 'self' data:; "
+                "connect-src 'self' ws: wss:; "
+                "font-src 'self' data: https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+                "object-src 'none'; "
+                "base-uri 'self'; "
+                "frame-ancestors 'self'"
+            ),
+        )
+        response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault(
+            "Permissions-Policy",
+            "camera=(), microphone=(), geolocation=(), payment=(), usb=(), fullscreen=(self)",
+        )
+        return response
+
+
 def require_api_key(view_func):
     """Decorator to protect endpoints with an API key.
 

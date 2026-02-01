@@ -19,6 +19,22 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _parse_bool(value: Any) -> bool | None:
+    """Parse a bool from common wire formats."""
+    logger.debug("_parse_bool called value=%s type=%s", value, type(value))
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in ("true", "1", "yes", "on"):
+            return True
+        if normalized in ("false", "0", "no", "off"):
+            return False
+    return None
+
+
 def emit_kfactor_status(handler: SocketEventHandler, svc: KFactorCalibrator) -> None:
     """Helper to emit kFactor status to all views."""
     logger.debug("emit_kfactor_status called svc=%s", svc)
@@ -42,6 +58,7 @@ def emit_kfactor_status(handler: SocketEventHandler, svc: KFactorCalibrator) -> 
 
 def handle_kfactor_control(handler: SocketEventHandler, data: dict[str, Any]) -> None:
     """Handle kFactor calibration control from the web UI."""
+    logger.debug("handle_kfactor_control called data=%s", data)
     if data is None or not isinstance(data, dict):
         handler.socketio.emit("error", {"message": "Invalid kfactor payload"})
         logger.warning("Bad kfactor_control payload: %s", data)
@@ -60,7 +77,18 @@ def handle_kfactor_control(handler: SocketEventHandler, data: dict[str, Any]) ->
 
     try:
         if action == "set_enabled":
-            enabled = bool(data.get("enabled", True))
+            enabled_raw = data.get("enabled", True)
+            enabled = _parse_bool(enabled_raw)
+            logger.debug(
+                "handle_kfactor_control set_enabled raw=%s parsed=%s",
+                enabled_raw,
+                enabled,
+            )
+            if enabled is None:
+                logger.warning("Invalid enabled value for kfactor_control: %s", enabled_raw)
+                handler.socketio.emit("error", {"message": "Invalid kfactor enabled value"})
+                emit_kfactor_status(handler, svc)
+                return
             svc.enabled = enabled
             logger.info("KFactor enabled set to %s via socket", enabled)
             emit_kfactor_status(handler, svc)
@@ -99,7 +127,7 @@ def _handle_update_config(
     handler: SocketEventHandler, svc: KFactorCalibrator, data: dict[str, Any]
 ) -> None:
     """Update config fields from the UI."""
-    logger.debug("_handle_update_config called keys=%s", list(data.keys()))
+    logger.debug("_handle_update_config called keys=%s data=%s", list(data.keys()), data)
     updates = data.get("config", {})
     if not isinstance(updates, dict):
         handler.socketio.emit("error", {"message": "Invalid config payload"})
@@ -107,39 +135,48 @@ def _handle_update_config(
 
     # Get current config and merge updates
     current_config = asdict(svc.config)
+    sanitized_updates: dict[str, Any] = {}
     for key, value in updates.items():
         if key in current_config:
             # Type coercion based on current type
             current_type = type(current_config[key])
             try:
                 if current_type is bool:
-                    current_config[key] = bool(value)
+                    parsed = _parse_bool(value)
+                    logger.debug(
+                        "_handle_update_config bool key=%s raw=%s parsed=%s",
+                        key,
+                        value,
+                        parsed,
+                    )
+                    if parsed is None:
+                        logger.warning(
+                            "kfactor config: invalid bool value for %s: %s",
+                            key,
+                            value,
+                        )
+                        continue
+                    sanitized_updates[key] = parsed
                 elif current_type is int:
-                    current_config[key] = int(value)
+                    sanitized_updates[key] = int(value)
                 elif current_type is float:
-                    current_config[key] = float(value)
+                    sanitized_updates[key] = float(value)
                 elif current_type is str:
-                    current_config[key] = str(value)
+                    sanitized_updates[key] = str(value)
                 else:
-                    current_config[key] = value
+                    sanitized_updates[key] = value
             except (TypeError, ValueError) as e:
                 logger.warning("kfactor config: invalid value for %s: %s", key, e)
                 continue
 
-    # Create new config and save
-    from ..services.car_heater import KFactorConfig
-
-    new_config = KFactorConfig(**current_config)
-    svc._cfg = new_config
-    svc._save_config_in_db(new_config)
-
-    logger.info("KFactor config updated via socket: %s", list(updates.keys()))
+    svc.update_config(sanitized_updates)
+    logger.info("KFactor config updated via socket: %s", list(sanitized_updates.keys()))
 
     # Emit updated config back to all views
     handler.emit_to_views(
         "kfactor_config",
         {
-            "config": asdict(new_config),
+            "config": asdict(svc.config),
             "saved": True,
         },
     )

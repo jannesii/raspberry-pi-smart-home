@@ -25,6 +25,22 @@ let kfExtendedDataLoading = false;
   };
 
 // ============================================
+// Value Parsing
+// ============================================
+
+function parseBool(value) {
+  console.log('⚙️ parseBool called value=', value);
+  if (value === true || value === false) return value;
+  if (value === 1 || value === 0) return Boolean(value);
+  if (typeof value === 'string') {
+    const v = value.trim().toLowerCase();
+    if (['true', '1', 'yes', 'on'].includes(v)) return true;
+    if (['false', '0', 'no', 'off'].includes(v)) return false;
+  }
+  return null;
+}
+
+// ============================================
 // KFactor Config Field Mappings
 // ============================================
 
@@ -78,6 +94,7 @@ const CONFIG_SAVE_DEBOUNCE_MS = 500;
 // ============================================
 
 function updateKFactorUI(status) {
+  console.log('⚙️ updateKFactorUI called status=', status);
   kfactorStatus = status || null;
 
   const stateIndicator = document.getElementById('kfactorStateIndicator');
@@ -115,7 +132,21 @@ function updateKFactorUI(status) {
 
   // Update enabled toggle (now controls autonomous mode)
   if (enabledToggle) {
-    enabledToggle.checked = status.autonomous_enabled !== false;
+    const enabledFromStatus = parseBool(status.autonomous_enabled);
+    const enabledFromLegacy = parseBool(status.enabled);
+    const enabledFromConfig = parseBool(status.config && status.config.enabled);
+    const resolvedEnabled = enabledFromStatus ?? enabledFromLegacy ?? enabledFromConfig;
+    console.log(
+      '⚙️ updateKFactorUI resolvedEnabled=',
+      resolvedEnabled,
+      'status_enabled=',
+      status.autonomous_enabled,
+      status.enabled,
+      status.config && status.config.enabled,
+    );
+    if (resolvedEnabled !== null) {
+      enabledToggle.checked = resolvedEnabled;
+    }
   }
 
   // Update active params

@@ -376,6 +376,7 @@ class SessionManager:
             samples=samples,
             started=started,
             ended=end_ts,
+            is_autonomous=is_autonomous,
         )
         if not informative:
             flags["not_informative"] = info_details
@@ -391,10 +392,18 @@ class SessionManager:
 
         # Score and accept
         quality = self._quality_score(
-            duration_s=duration_s, delta_t=delta_t, flags=flags, rmse_C=rmse
+            duration_s=duration_s,
+            delta_t=delta_t,
+            flags=flags,
+            rmse_C=rmse,
+            is_autonomous=is_autonomous,
         )
         accepted = self._accept_session(
-            duration_s=duration_s, delta_t=delta_t, flags=flags, quality_score=quality
+            duration_s=duration_s,
+            delta_t=delta_t,
+            flags=flags,
+            quality_score=quality,
+            is_autonomous=is_autonomous,
         )
 
         flags_json = json.dumps(flags, separators=(",", ":"), sort_keys=True)
@@ -410,6 +419,7 @@ class SessionManager:
                 delta_t=delta_t,
                 flags=flags,
                 quality_score=quality,
+                is_autonomous=is_autonomous,
             )
 
         if fit is not None and accepted:
@@ -598,14 +608,28 @@ class SessionManager:
         samples: list[KFactorSample],
         started: datetime,
         ended: datetime,
+        is_autonomous: bool,
     ) -> tuple[bool, dict[str, Any]]:
         """Check if session has enough curvature to be informative."""
+        logger.debug(
+            "kfactor: _is_informative_session called sample_count=%s started=%s ended=%s is_autonomous=%s",
+            len(samples),
+            started,
+            ended,
+            is_autonomous,
+        )
         details: dict[str, Any] = {}
 
         duration_s = float((ended - started).total_seconds())
         details["duration_s"] = duration_s
 
-        min_inf_s = float(int(self._cfg.informative_min_minutes) * 60)
+        min_inf_minutes = (
+            int(self._cfg.autonomous_informative_min_minutes)
+            if is_autonomous
+            else int(self._cfg.informative_min_minutes)
+        )
+        min_inf_s = float(min_inf_minutes * 60)
+        details["min_informative_minutes"] = min_inf_minutes
         if duration_s < min_inf_s:
             details["reason"] = "duration_too_short_for_informativeness"
             details["min_informative_s"] = min_inf_s
@@ -692,9 +716,22 @@ class SessionManager:
         delta_t: float,
         flags: dict[str, Any],
         rmse_C: float,
+        is_autonomous: bool,
     ) -> float:
         """Compute session quality score."""
-        min_s = int(self._cfg.min_session_minutes) * 60
+        logger.debug(
+            "kfactor: _quality_score called duration_s=%s delta_t=%s rmse_C=%s is_autonomous=%s",
+            duration_s,
+            delta_t,
+            rmse_C,
+            is_autonomous,
+        )
+        min_minutes = (
+            int(self._cfg.autonomous_min_session_minutes)
+            if is_autonomous
+            else int(self._cfg.min_session_minutes)
+        )
+        min_s = min_minutes * 60
         ideal_s = max(min_s + 10 * 60, min_s * 2)
         if duration_s < min_s:
             duration_score = 0.0
@@ -737,9 +774,22 @@ class SessionManager:
         delta_t: float,
         flags: dict[str, Any],
         quality_score: float,
+        is_autonomous: bool,
     ) -> bool:
         """Determine if session should be accepted."""
-        min_s = int(self._cfg.min_session_minutes) * 60
+        logger.debug(
+            "kfactor: _accept_session called duration_s=%s delta_t=%s quality_score=%s is_autonomous=%s",
+            duration_s,
+            delta_t,
+            quality_score,
+            is_autonomous,
+        )
+        min_minutes = (
+            int(self._cfg.autonomous_min_session_minutes)
+            if is_autonomous
+            else int(self._cfg.min_session_minutes)
+        )
+        min_s = min_minutes * 60
         if duration_s < min_s:
             return False
         if delta_t < float(self._cfg.min_temp_rise_C):
@@ -759,6 +809,7 @@ class SessionManager:
         delta_t: float,
         flags: dict[str, Any],
         quality_score: float,
+        is_autonomous: bool,
     ) -> tuple[list[str], dict[str, Any]]:
         """Build rejection reasons and context for logging."""
         logger.debug(
@@ -771,11 +822,17 @@ class SessionManager:
         reasons: list[str] = []
         context: dict[str, Any] = {}
 
-        min_s = int(self._cfg.min_session_minutes) * 60
+        min_minutes = (
+            int(self._cfg.autonomous_min_session_minutes)
+            if is_autonomous
+            else int(self._cfg.min_session_minutes)
+        )
+        min_s = min_minutes * 60
         min_rise = float(self._cfg.min_temp_rise_C)
         quality_threshold = float(self._cfg.quality_threshold)
 
         context["min_session_s"] = min_s
+        context["min_session_minutes"] = min_minutes
         context["min_temp_rise_C"] = min_rise
         context["quality_threshold"] = quality_threshold
 

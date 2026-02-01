@@ -1,9 +1,17 @@
+from __future__ import annotations
+
 import logging
 from datetime import datetime
+from typing import Any
+
+from sqlalchemy import Engine, insert, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from ..models import ThermostatConf
+from ..schema import ac_events, thermostat_conf
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 class ACMixin:
@@ -22,75 +30,119 @@ class ACMixin:
         :param note: optional message
         :param when_iso: ISO timestamp; if None, uses local now
         """
-        ts = when_iso or datetime.now(self.finland_tz).isoformat()
-        self.db.execute_query(
-            "INSERT INTO ac_events (timestamp, is_on, source, note) VALUES (?, ?, ?, ?)",
-            (ts, 1 if is_on else 0, source, note),
-        )
+        sa_engine: Engine | None = self._sa_engine
+        if sa_engine is None:
+            raise RuntimeError("SQLAlchemy engine not initialized")
+
+        ts = when_iso or datetime.now(self.finland_tz).isoformat()  # type: ignore[attr-defined]
+        logger.debug("record_ac_event: is_on=%s, source=%s", is_on, source)
+
+        try:
+            stmt = insert(ac_events).values(timestamp=ts, is_on=is_on, source=source, note=note)
+            with sa_engine.begin() as conn:
+                conn.execute(stmt)
+        except Exception as e:
+            logger.exception("Error recording AC event: %s", e)
+            raise
 
     def get_ac_events_between(self, start_iso: str, end_iso: str) -> list[dict]:
-        rows = self.db.fetchall(
-            "SELECT id, timestamp, is_on, source, note FROM ac_events WHERE timestamp >= ? AND timestamp <= ? ORDER BY timestamp",
-            (start_iso, end_iso),
-        )
-        return [
-            {
-                "id": row["id"],
-                "timestamp": row["timestamp"],
-                "is_on": bool(row["is_on"]),
-                "source": row["source"],
-                "note": row["note"],
-            }
-            for row in rows
-        ]
+        """Get AC events between two timestamps."""
+        sa_engine: Engine | None = self._sa_engine
+        if sa_engine is None:
+            raise RuntimeError("SQLAlchemy engine not initialized")
+
+        logger.debug("get_ac_events_between: %s to %s", start_iso, end_iso)
+
+        try:
+            stmt = (
+                select(ac_events)
+                .where(ac_events.c.timestamp >= start_iso)
+                .where(ac_events.c.timestamp <= end_iso)
+                .order_by(ac_events.c.timestamp)
+            )
+            with sa_engine.connect() as conn:
+                rows = conn.execute(stmt).mappings().all()
+
+            return [
+                {
+                    "id": row["id"],
+                    "timestamp": row["timestamp"],
+                    "is_on": bool(row["is_on"]),
+                    "source": row["source"],
+                    "note": row["note"],
+                }
+                for row in rows
+            ]
+        except Exception as e:
+            logger.exception("Error getting AC events: %s", e)
+            raise
 
     def get_last_ac_state_before(self, ts_iso: str) -> bool | None:
-        row = self.db.fetchone(
-            "SELECT is_on FROM ac_events WHERE timestamp <= ? ORDER BY timestamp DESC, id DESC LIMIT 1",
-            (ts_iso,),
-        )
-        if row is None:
-            return None
-        return bool(row["is_on"])
+        """Get the last AC state (on/off) before a given timestamp."""
+        sa_engine: Engine | None = self._sa_engine
+        if sa_engine is None:
+            raise RuntimeError("SQLAlchemy engine not initialized")
+
+        logger.debug("get_last_ac_state_before: %s", ts_iso)
+
+        try:
+            stmt = (
+                select(ac_events.c.is_on)
+                .where(ac_events.c.timestamp <= ts_iso)
+                .order_by(ac_events.c.timestamp.desc(), ac_events.c.id.desc())
+                .limit(1)
+            )
+            with sa_engine.connect() as conn:
+                row = conn.execute(stmt).mappings().first()
+
+            if row is None:
+                return None
+            return bool(row["is_on"])
+        except Exception as e:
+            logger.exception("Error getting last AC state: %s", e)
+            raise
 
     # --- Thermostat configuration operations ---
     def get_thermostat_conf(self) -> ThermostatConf | None:
+        """Get thermostat configuration (singleton record)."""
+        sa_engine: Engine | None = self._sa_engine
+        if sa_engine is None:
+            raise RuntimeError("SQLAlchemy engine not initialized")
+
         logger.debug("get_thermostat_conf called")
-        row = self.db.fetchone(
-            """
-            SELECT id, sleep_active, sleep_start, sleep_stop, sleep_weekly, control_locations, target_temp, pos_hysteresis, neg_hysteresis, thermo_active,
-                   total_on_s, total_off_s,
-                   min_on_s, min_off_s, poll_interval_s, smooth_window, max_stale_s,
-                   current_phase, phase_started_at
-              FROM thermostat_conf
-             WHERE id = 1
-            """
-        )
-        if row is None:
-            logger.debug("get_thermostat_conf no row found")
-            return None
-        logger.debug("get_thermostat_conf row keys: %s", list(row.keys()))
-        return ThermostatConf(
-            id=row["id"],
-            sleep_active=bool(row["sleep_active"]),
-            sleep_start=row["sleep_start"],
-            sleep_stop=row["sleep_stop"],
-            sleep_weekly=(row["sleep_weekly"]),
-            control_locations=(row["control_locations"]),
-            target_temp=float(row["target_temp"]),
-            pos_hysteresis=float(row["pos_hysteresis"]),
-            neg_hysteresis=float(row["neg_hysteresis"]),
-            thermo_active=bool(row["thermo_active"]) if "thermo_active" in row else True,
-            min_on_s=int(row["min_on_s"]) if "min_on_s" in row else 240,
-            min_off_s=int(row["min_off_s"]) if "min_off_s" in row else 240,
-            poll_interval_s=int(row["poll_interval_s"]) if "poll_interval_s" in row else 15,
-            smooth_window=int(row["smooth_window"]) if "smooth_window" in row else 5,
-            max_stale_s=int(row["max_stale_s"])
-            if "max_stale_s" in row and row["max_stale_s"] is not None
-            else 120,
-            current_phase=row["current_phase"],
-            phase_started_at=row["phase_started_at"],
-        )
+
+        try:
+            stmt = select(thermostat_conf).where(thermostat_conf.c.id == 1)
+            with sa_engine.connect() as conn:
+                row = conn.execute(stmt).mappings().first()
+
+            if row is None:
+                logger.debug("get_thermostat_conf no row found")
+                return None
+
+            logger.debug("get_thermostat_conf row keys: %s", list(row.keys()))
+            return ThermostatConf(
+                id=row["id"],
+                sleep_active=bool(row["sleep_active"]),
+                sleep_start=row["sleep_start"],
+                sleep_stop=row["sleep_stop"],
+                sleep_weekly=row["sleep_weekly"],
+                control_locations=row["control_locations"],
+                target_temp=float(row["target_temp"]),
+                pos_hysteresis=float(row["pos_hysteresis"]),
+                neg_hysteresis=float(row["neg_hysteresis"]),
+                thermo_active=bool(row.get("thermo_active", True)),
+                min_on_s=int(row.get("min_on_s", 240)),
+                min_off_s=int(row.get("min_off_s", 240)),
+                poll_interval_s=int(row.get("poll_interval_s", 15)),
+                smooth_window=int(row.get("smooth_window", 5)),
+                max_stale_s=int(row["max_stale_s"]) if row.get("max_stale_s") is not None else 120,
+                current_phase=row.get("current_phase"),
+                phase_started_at=row.get("phase_started_at"),
+            )
+        except Exception as e:
+            logger.exception("Error getting thermostat config: %s", e)
+            raise
 
     def save_thermostat_conf(
         self,
@@ -115,58 +167,68 @@ class ACMixin:
         current_phase: str | None = None,
         phase_started_at: str | None = None,
     ) -> ThermostatConf:
-        self.db.execute_query(
-            """
-            INSERT INTO thermostat_conf (id, sleep_active, sleep_start, sleep_stop, sleep_weekly, control_locations, target_temp, pos_hysteresis, neg_hysteresis, thermo_active,
-                                         total_on_s, total_off_s, min_on_s, min_off_s, poll_interval_s, smooth_window, max_stale_s,
-                                         current_phase, phase_started_at)
-            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                sleep_active = excluded.sleep_active,
-                sleep_start = excluded.sleep_start,
-                sleep_stop = excluded.sleep_stop,
-                sleep_weekly = excluded.sleep_weekly,
-                control_locations = excluded.control_locations,
-                target_temp = excluded.target_temp,
-                pos_hysteresis = excluded.pos_hysteresis,
-                neg_hysteresis = excluded.neg_hysteresis,
-                thermo_active = excluded.thermo_active,
-                total_on_s = excluded.total_on_s,
-                total_off_s = excluded.total_off_s,
-                min_on_s = excluded.min_on_s,
-                min_off_s = excluded.min_off_s,
-                poll_interval_s = excluded.poll_interval_s,
-                smooth_window = excluded.smooth_window,
-                max_stale_s = excluded.max_stale_s,
-                current_phase = excluded.current_phase,
-                phase_started_at = excluded.phase_started_at
-            """,
-            (
-                1 if sleep_active else 0,
-                sleep_start,
-                sleep_stop,
-                sleep_weekly,
-                control_locations,
-                float(target_temp),
-                float(pos_hysteresis),
-                float(neg_hysteresis),
-                1 if thermo_active else 0,
-                int(total_on_s),
-                int(total_off_s),
-                int(min_on_s),
-                int(min_off_s),
-                int(poll_interval_s),
-                int(smooth_window),
-                None if max_stale_s is None else int(max_stale_s),
-                current_phase,
-                phase_started_at,
-            ),
-        )
-        conf = self.get_thermostat_conf()
-        if conf is None:
-            # This should never happen after UPSERT
-            raise RuntimeError("Failed to save thermostat configuration")
-        return conf
+        """Save or update thermostat configuration (singleton record)."""
+        sa_engine: Engine | None = self._sa_engine
+        if sa_engine is None:
+            raise RuntimeError("SQLAlchemy engine not initialized")
+
+        try:
+            stmt = pg_insert(thermostat_conf).values(
+                id=1,
+                sleep_active=sleep_active,
+                sleep_start=sleep_start,
+                sleep_stop=sleep_stop,
+                sleep_weekly=sleep_weekly,
+                control_locations=control_locations,
+                target_temp=float(target_temp),
+                pos_hysteresis=float(pos_hysteresis),
+                neg_hysteresis=float(neg_hysteresis),
+                thermo_active=thermo_active,
+                total_on_s=int(total_on_s),
+                total_off_s=int(total_off_s),
+                min_on_s=int(min_on_s),
+                min_off_s=int(min_off_s),
+                poll_interval_s=int(poll_interval_s),
+                smooth_window=int(smooth_window),
+                max_stale_s=None if max_stale_s is None else int(max_stale_s),
+                current_phase=current_phase,
+                phase_started_at=phase_started_at,
+            )
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["id"],
+                set_={
+                    "sleep_active": stmt.excluded.sleep_active,
+                    "sleep_start": stmt.excluded.sleep_start,
+                    "sleep_stop": stmt.excluded.sleep_stop,
+                    "sleep_weekly": stmt.excluded.sleep_weekly,
+                    "control_locations": stmt.excluded.control_locations,
+                    "target_temp": stmt.excluded.target_temp,
+                    "pos_hysteresis": stmt.excluded.pos_hysteresis,
+                    "neg_hysteresis": stmt.excluded.neg_hysteresis,
+                    "thermo_active": stmt.excluded.thermo_active,
+                    "total_on_s": stmt.excluded.total_on_s,
+                    "total_off_s": stmt.excluded.total_off_s,
+                    "min_on_s": stmt.excluded.min_on_s,
+                    "min_off_s": stmt.excluded.min_off_s,
+                    "poll_interval_s": stmt.excluded.poll_interval_s,
+                    "smooth_window": stmt.excluded.smooth_window,
+                    "max_stale_s": stmt.excluded.max_stale_s,
+                    "current_phase": stmt.excluded.current_phase,
+                    "phase_started_at": stmt.excluded.phase_started_at,
+                },
+            )
+
+            with sa_engine.begin() as conn:
+                conn.execute(stmt)
+
+            conf = self.get_thermostat_conf()
+            if conf is None:
+                # This should never happen after UPSERT
+                raise RuntimeError("Failed to save thermostat configuration")
+            return conf
+        except Exception as e:
+            logger.exception("Error saving thermostat config: %s", e)
+            raise
 
     def ensure_thermostat_conf_seeded_from(self, cfg: object | None = None) -> ThermostatConf:
         """
@@ -220,3 +282,156 @@ class ACMixin:
             current_phase=_getattr("current_phase", "off"),
             phase_started_at=_getattr("phase_started_at", None),
         )
+
+    # --- Migration helper ---
+    def migrate_ac_to_pg(self, batch_size: int = 1000) -> dict[str, Any]:
+        """
+        Migrate AC data from SQLite to PostgreSQL using bulk inserts.
+        Returns dict with migration statistics.
+
+        Args:
+            batch_size: Number of rows to insert per batch (default 1000)
+        """
+        import time
+
+        sa_engine: Engine | None = self._sa_engine
+        if sa_engine is None:
+            raise RuntimeError("SQLAlchemy engine not initialized")
+
+        stats = {
+            "ac_events": {"migrated": 0, "errors": 0},
+            "thermostat_conf": {"migrated": 0, "errors": 0},
+        }
+
+        logger.info("=" * 60)
+        logger.info("Starting AC data migration from SQLite to PostgreSQL")
+        logger.info("Batch size: %d rows per transaction", batch_size)
+        logger.info("=" * 60)
+
+        # Migrate ac_events in batches
+        try:
+            rows = self.db.fetchall(
+                "SELECT id, timestamp, is_on, source, note FROM ac_events ORDER BY id"
+            )
+            total = len(rows)
+            logger.info("📊 ac_events: Found %d records to migrate", total)
+
+            if total == 0:
+                logger.info("✓ ac_events: No records to migrate")
+            else:
+                start_time = time.time()
+                batch = []
+                for i, row in enumerate(rows, 1):
+                    batch.append(
+                        {
+                            "id": row["id"],
+                            "timestamp": row["timestamp"],
+                            "is_on": row["is_on"],
+                            "source": row["source"],
+                            "note": row["note"],
+                        }
+                    )
+
+                    # Insert when batch is full or at the end
+                    if len(batch) >= batch_size or i == total:
+                        try:
+                            stmt = pg_insert(ac_events).values(batch)
+                            stmt = stmt.on_conflict_do_nothing(index_elements=["id"])
+                            with sa_engine.begin() as conn:
+                                conn.execute(stmt)
+                            stats["ac_events"]["migrated"] += len(batch)
+
+                            # Calculate progress
+                            elapsed = time.time() - start_time
+                            progress_pct = (stats["ac_events"]["migrated"] / total) * 100
+                            rate = stats["ac_events"]["migrated"] / elapsed if elapsed > 0 else 0
+                            remaining = (
+                                (total - stats["ac_events"]["migrated"]) / rate if rate > 0 else 0
+                            )
+
+                            logger.info(
+                                "📈 ac_events: %d/%d (%.1f%%) | %.0f rows/sec | ETA: %.0fs",
+                                stats["ac_events"]["migrated"],
+                                total,
+                                progress_pct,
+                                rate,
+                                remaining,
+                            )
+                            batch = []
+                        except Exception as e:
+                            logger.error("❌ Error migrating ac_events batch: %s", e)
+                            stats["ac_events"]["errors"] += len(batch)
+                            batch = []
+
+                elapsed = time.time() - start_time
+                logger.info(
+                    "✓ ac_events: Completed in %.1fs (%.0f rows/sec)",
+                    elapsed,
+                    total / elapsed if elapsed > 0 else 0,
+                )
+
+        except Exception as e:
+            logger.exception("Error reading ac_events from SQLite: %s", e)
+
+        # Migrate thermostat_conf (singleton upsert)
+        try:
+            rows = self.db.fetchall(
+                """
+                SELECT id, sleep_active, sleep_start, sleep_stop, sleep_weekly,
+                       control_locations, target_temp, pos_hysteresis, neg_hysteresis,
+                       thermo_active, total_on_s, total_off_s, min_on_s, min_off_s,
+                       poll_interval_s, smooth_window, max_stale_s,
+                       current_phase, phase_started_at
+                FROM thermostat_conf
+                """
+            )
+            total = len(rows)
+            logger.info("📊 thermostat_conf: Found %d records to migrate", total)
+
+            if total == 0:
+                logger.info("✓ thermostat_conf: No records to migrate")
+            else:
+                for row in rows:
+                    try:
+                        stmt = pg_insert(thermostat_conf).values(
+                            id=row["id"],
+                            sleep_active=row["sleep_active"],
+                            sleep_start=row["sleep_start"],
+                            sleep_stop=row["sleep_stop"],
+                            sleep_weekly=row["sleep_weekly"],
+                            control_locations=row["control_locations"],
+                            target_temp=row["target_temp"],
+                            pos_hysteresis=row["pos_hysteresis"],
+                            neg_hysteresis=row["neg_hysteresis"],
+                            thermo_active=row["thermo_active"],
+                            total_on_s=row["total_on_s"],
+                            total_off_s=row["total_off_s"],
+                            min_on_s=row["min_on_s"],
+                            min_off_s=row["min_off_s"],
+                            poll_interval_s=row["poll_interval_s"],
+                            smooth_window=row["smooth_window"],
+                            max_stale_s=row["max_stale_s"],
+                            current_phase=row["current_phase"],
+                            phase_started_at=row["phase_started_at"],
+                        )
+                        stmt = stmt.on_conflict_do_nothing(index_elements=["id"])
+
+                        with sa_engine.begin() as conn:
+                            conn.execute(stmt)
+
+                        stats["thermostat_conf"]["migrated"] += 1
+                        logger.info("✓ thermostat_conf: %d migrated, 0 errors", total)
+                    except Exception as e:
+                        logger.error("❌ Error migrating thermostat_conf row: %s", e)
+                        stats["thermostat_conf"]["errors"] += 1
+
+        except Exception as e:
+            logger.exception("Error reading thermostat_conf from SQLite: %s", e)
+
+        logger.info("=" * 60)
+        logger.info("AC migration summary:")
+        for table, counts in stats.items():
+            logger.info("  %s: %d migrated, %d errors", table, counts["migrated"], counts["errors"])
+        logger.info("=" * 60)
+
+        return stats
