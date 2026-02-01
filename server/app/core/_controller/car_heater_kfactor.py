@@ -692,12 +692,13 @@ class CarHeaterKFactorMixin:
                 )
                 accepted_sessions = conn.execute(stmt).scalar() or 0
 
-                # Sessions in last N days
+                # Sessions in last N days (compare as ISO strings since column is TEXT)
                 cutoff = datetime.now() - timedelta(days=lookback_days)
+                cutoff_str = cutoff.isoformat()
                 stmt = (
                     select(func.count())
                     .select_from(car_heater_kfactor_session)
-                    .where(car_heater_kfactor_session.c.start_ts >= cutoff)
+                    .where(car_heater_kfactor_session.c.start_ts >= cutoff_str)
                 )
                 sessions_recent = conn.execute(stmt).scalar() or 0
 

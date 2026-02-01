@@ -265,37 +265,3 @@ class LogsMixin:
         except Exception:
             logger.exception("delete_duplicate_logs_postgres failed")
             return 0
-
-    def delete_duplicate_logs_sqlite(self) -> int:
-        """Delete duplicate log rows in SQLite (keeps the smallest id per timestamp/type/message)."""
-        logger.debug("delete_duplicate_logs_sqlite called")
-        try:
-            before_row = self.db.fetchone("SELECT COUNT(*) as cnt FROM logs")
-            before = int(before_row["cnt"] if before_row else 0)
-            logger.debug("delete_duplicate_logs_sqlite before_count=%s", before)
-            self.db.execute_query(
-                """
-                WITH ranked AS (
-                    SELECT id,
-                           ROW_NUMBER() OVER (
-                               PARTITION BY timestamp, type, message
-                               ORDER BY id
-                           ) AS rn
-                    FROM logs
-                )
-                DELETE FROM logs
-                WHERE id IN (SELECT id FROM ranked WHERE rn > 1)
-                """
-            )
-            after_row = self.db.fetchone("SELECT COUNT(*) as cnt FROM logs")
-            after = int(after_row["cnt"] if after_row else 0)
-            deleted = max(0, before - after)
-            logger.debug(
-                "delete_duplicate_logs_sqlite deleted=%s after_count=%s",
-                deleted,
-                after,
-            )
-            return deleted
-        except Exception:
-            logger.exception("delete_duplicate_logs_sqlite failed")
-            return 0
