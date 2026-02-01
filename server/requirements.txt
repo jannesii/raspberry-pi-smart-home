@@ -26,6 +26,7 @@ gunicorn==23.0.0
 h11==0.14.0
 identify==2.6.16
 idna==3.10
+iniconfig==2.3.0
 itsdangerous==2.2.0
 Jinja2==3.1.6
 limits==5.1.0
@@ -39,11 +40,13 @@ ordered-set==4.1.0
 packaging==25.0
 paho-mqtt==2.1.0
 platformdirs==4.5.1
+pluggy==1.6.0
 pre_commit==4.5.1
 psycopg==3.3.2
 pycparser==2.23
 pycryptodome==3.23.0
 Pygments==2.19.1
+pytest==9.0.2
 python-dotenv==1.1.1
 python-engineio==4.12.0
 python-socketio==5.13.0
