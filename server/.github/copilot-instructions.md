@@ -103,3 +103,7 @@ def controller(temp_db: str):
 - **Session cookies**: Use `Secure` flag — browsers may reject over plain HTTP localhost
 - **PostgreSQL upserts**: Use `from sqlalchemy.dialects.postgresql import insert as pg_insert` for `ON CONFLICT` clauses
 - **DatabaseManager singleton**: Thread-safe but single SQLite connection; don't call from multiple workers
+
+## Related: ESP32 Firmware
+
+`ESP32C3-Car-Heater/` contains PlatformIO firmware for the car heater controller. It posts status to the server via HTTP (`/api/car_heater/status/test`) and receives commands. The Python server handles this in `app/blueprints/api/car_heater/` and `app/sockets/car_heater_handlers.py`.
