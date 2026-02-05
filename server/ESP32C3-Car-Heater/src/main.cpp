@@ -5,6 +5,7 @@
 #include "io/ShellyHandler.h"
 #include "io/measurements.h"
 #include "io/PosterTask.h"
+#include "io/WebSocketTask.h"
 #include "core/staticconfig.h"
 #include "core/TimeKeeper.h"
 
@@ -14,6 +15,7 @@
 static ShellyHandler shelly(SHELLY_IP);
 static LogManager logManager;
 static PosterTask posterTask(shelly, logManager);
+static WebSocketTask wsTask(shelly, logManager);
 
 bool initMDNS();
 void printNvsStats();
@@ -49,7 +51,15 @@ void setup()
         I2C_SDA_PIN,
         I2C_SCL_PIN);
 
+    // Start HTTP poster task (fallback / primary for now)
     posterTask.start(8192, 1); // stack size, priority
+
+    // Start WebSocket task (real-time communication)
+    wsTask.start(10240, 1);  // Larger stack for SSL
+    Serial.println("[Main] WebSocket task started");
+
+    // Wire up WebSocket task to PosterTask for command deduplication
+    posterTask.setWebSocketTask(&wsTask);
 
     // Print NVS stats
     printNvsStats();

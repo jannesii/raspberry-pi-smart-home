@@ -8,12 +8,21 @@
 #include "core/LogManager.h"
 #include <core/staticconfig.h>
 
+// Forward declaration for command deduplication
+class WebSocketTask;
+
 // Wrapper around the FreeRTOS heater control task
 class PosterTask
 {
 public:
     PosterTask(ShellyHandler &shelly,
                LogManager &logManager);
+
+    /**
+     * Set WebSocket task reference for command deduplication.
+     * If set, HTTP commands that were already executed via WebSocket will be skipped.
+     */
+    void setWebSocketTask(WebSocketTask *wsTask) { wsTask_ = wsTask; }
 
     // Create and start the FreeRTOS task
     void start(uint32_t stackSize = 4096, UBaseType_t priority = 1);
@@ -86,6 +95,10 @@ private:
 
     uint32_t wifiDisconnectCount_ = 0;
     static constexpr uint32_t WIFI_MAX_DISCONNECT_LOOPS = 12; // e.g. 12 loops
+
+    // WebSocket task reference for command deduplication
+    WebSocketTask *wsTask_ = nullptr;
+    bool shouldSkipCommand(const char *action);
 
     void queueActionResult(const char *action, bool success, const String &note = "");
 };

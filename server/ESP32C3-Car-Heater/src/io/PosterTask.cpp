@@ -2,6 +2,7 @@
 #include <WiFi.h>
 
 #include "io/PosterTask.h"
+#include "io/WebSocketTask.h"
 #include "io/measurements.h"
 #include "core/TimeKeeper.h"
 
@@ -10,6 +11,17 @@ PosterTask::PosterTask(ShellyHandler &shelly,
     : shelly_(shelly),
       logger_(logManager)
 {
+}
+
+bool PosterTask::shouldSkipCommand(const char *action)
+{
+    // Skip if WebSocket already executed this command recently
+    if (wsTask_ != nullptr && wsTask_->wasCommandExecutedRecently(action, 5000))
+    {
+        Serial.printf("[CMD] Skipping '%s' - already executed via WebSocket\n", action);
+        return true;
+    }
+    return false;
 }
 
 void PosterTask::start(uint32_t stackSize, UBaseType_t priority)
@@ -465,6 +477,11 @@ void PosterTask::processServerCommands(const String &respBody)
     for (JsonObject cmd : arr) {
         const char *action = cmd["action"] | "";
         // Some commands (like post_delay) may carry additional parameters
+
+        // Skip if already executed via WebSocket (deduplication)
+        if (shouldSkipCommand(action)) {
+            continue;
+        }
 
         if (strcmp(action, "turn_on") == 0) {
             handleTurnOn();
