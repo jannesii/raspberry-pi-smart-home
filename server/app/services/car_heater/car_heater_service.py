@@ -1,8 +1,12 @@
+import json
 import logging
+import os
 import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
+
+import redis
 
 if TYPE_CHECKING:
     from ...core.controller import Controller
@@ -12,6 +16,12 @@ logger.setLevel(logging.INFO)
 
 # Timezone for logging timestamps
 _TZ = ZoneInfo("Europe/Helsinki")
+
+# Redis configuration
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+REDIS_CHANNEL_COMMANDS = "esp32:commands"
+REDIS_CHANNEL_STATUS = "esp32:status"
+REDIS_CHANNEL_ACTION_RESULTS = "esp32:action_results"
 
 status_levels = [None, "queued", "sent", "success", "failed"]
 
@@ -46,6 +56,9 @@ class CarHeaterService:
 
     If a Controller is provided, ChargeModeState is persisted to the
     database on every update so it survives reboots.
+
+    Commands are also published to Redis for the ESP32 WebSocket service
+    to push to the device in real-time.
     """
 
     def __init__(self, controller: "Controller | None" = None) -> None:
@@ -53,6 +66,17 @@ class CarHeaterService:
         self._commands: list[dict[str, Any]] = []
         self._command_status = CommandStatus()
         self._controller = controller
+
+        # Initialize Redis client for pub/sub
+        try:
+            self._redis = redis.from_url(REDIS_URL, decode_responses=True)
+            self._redis.ping()
+            self._redis_available = True
+            logger.info("Redis connection established for car heater commands")
+        except Exception as e:
+            logger.warning("Redis unavailable, falling back to HTTP-only mode: %s", e)
+            self._redis = None
+            self._redis_available = False
 
         # Load persisted state from DB if controller is available
         if self._controller is not None:
@@ -92,15 +116,28 @@ class CarHeaterService:
 
     def _queue_heater_command(self, action: str, source: str, reason: str) -> None:
         """Internal method to queue a heater command and log it."""
-        command = {"action": action}
+        command = {"action": action, "source": source, "reason": reason}
         with self._lock:
             self._commands.append(command)
             if hasattr(self._command_status, action):
                 setattr(self._command_status, action, "queued")
 
+        # Publish to Redis for real-time push via WebSocket service
+        self._publish_command(command)
+
         # Log to persistent storage
         self._log_heater_event(action, source, reason)
         logger.info("Heater %s queued by %s: %s", action.upper(), source, reason)
+
+    def _publish_command(self, command: dict[str, Any]) -> None:
+        """Publish command to Redis for the ESP32 WebSocket service."""
+        if not self._redis_available or self._redis is None:
+            return
+        try:
+            self._redis.publish(REDIS_CHANNEL_COMMANDS, json.dumps(command))
+            logger.debug("Published command to Redis: %r", command)
+        except Exception as e:
+            logger.warning("Failed to publish command to Redis: %s", e)
 
     def _log_heater_event(self, action: str, source: str, reason: str) -> None:
         """Log heater on/off event to persistent storage via Controller."""
@@ -117,6 +154,7 @@ class CarHeaterService:
         Queue a command to be sent to the ESP on the next status update.
 
         The command must be JSON-serializable (dict of simple types).
+        Also publishes to Redis for real-time push via WebSocket.
         """
         if not isinstance(command, dict):
             raise TypeError("command must be a dict")
@@ -124,6 +162,9 @@ class CarHeaterService:
             self._commands.append(command)
             action = command.get("action")
             setattr(self._command_status, action, "queued")
+
+        # Publish to Redis for real-time push
+        self._publish_command(command)
         logger.debug("Queued car heater command: %r", command)
 
     def mark_commands_sent(self, commands: list[dict[str, Any]]) -> None:

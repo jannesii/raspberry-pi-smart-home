@@ -1,0 +1,6 @@
+# ESP32 WebSocket Service
+# Separate from main Flask app to avoid eventlet conflicts
+
+flask-sock>=0.7.0
+redis>=5.0.0
+gunicorn>=21.0.0

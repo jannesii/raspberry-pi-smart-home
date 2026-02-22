@@ -218,4 +218,16 @@ def init_services(app) -> dict[str, Any]:
         kfactor_calibrator.set_keep_at_temp_service(keep_at_temp_service)
         kfactor_calibrator.set_weather_service(weather_service)
 
+    # --- ESP32 Redis bridge (for WebSocket service communication) ---
+    try:
+        from .esp32_redis_bridge import init_esp32_redis_bridge
+
+        esp32_bridge = init_esp32_redis_bridge(app)
+        if esp32_bridge is not None:
+            app.esp32_redis_bridge = esp32_bridge
+            services["esp32_redis_bridge"] = esp32_bridge
+            logger.info("ESP32 Redis bridge initialized")
+    except Exception as e:
+        logger.exception("Failed to initialize ESP32 Redis bridge: %s", e)
+
     return services
