@@ -16,11 +16,14 @@ Tests cover:
 from __future__ import annotations
 
 import tempfile
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.exc import IntegrityError
 
 from app.core import Controller
 from app.core.models import (
@@ -185,6 +188,65 @@ class TestKFactorSession:
 
         assert all(r.accepted for r in results)
         assert len(results) == 2
+
+    def test_record_session_retries_after_postgres_sequence_drift(self, controller: Controller):
+        """Test stale PostgreSQL PK sequence is realigned and insert is retried once."""
+
+        class _FakeDiag:
+            constraint_name = "car_heater_kfactor_session_pkey"
+
+        class _FakeOrig(Exception):
+            sqlstate = "23505"
+            diag = _FakeDiag()
+
+        class _FakeResult:
+            def __init__(self, value):
+                self._value = value
+
+            def scalar_one(self):
+                return self._value
+
+            def scalar_one_or_none(self):
+                return self._value
+
+        class _FakeConn:
+            def __init__(self, state):
+                self._state = state
+
+            def execute(self, stmt, params=None):
+                self._state.calls.append((stmt, params))
+                call_index = len(self._state.calls)
+                if call_index == 1:
+                    raise IntegrityError("INSERT", {}, _FakeOrig())
+                if call_index == 2:
+                    return _FakeResult("public.car_heater_kfactor_session_id_seq")
+                if call_index == 3:
+                    return _FakeResult(11)
+                if call_index == 4:
+                    return _FakeResult(None)
+                if call_index == 5:
+                    return _FakeResult(12)
+                raise AssertionError(f"Unexpected execute call {call_index}")
+
+        class _FakeEngine:
+            def __init__(self):
+                self.dialect = SimpleNamespace(name="postgresql")
+                self.calls = []
+
+            @contextmanager
+            def begin(self):
+                yield _FakeConn(self)
+
+        fake_engine = _FakeEngine()
+        controller._sa_engine = fake_engine
+
+        session = make_session()
+        persisted = controller.record_kfactor_session(session)
+
+        assert persisted.id == 12
+        assert len(fake_engine.calls) == 5
+        # Sequence lookup should target the same table name as the failed insert.
+        assert fake_engine.calls[1][1] == {"table_name": "car_heater_kfactor_session"}
 
 
 class TestKFactorResult:

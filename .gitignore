@@ -19,3 +19,5 @@ log
 stop
 commit.txt
 alembic.ini
+server/ESP32C3-Car-Heater
+server/ESP32C3-Car-Heater/

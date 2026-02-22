@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import Engine, and_, func, insert, outerjoin, select
+from sqlalchemy import Engine, and_, func, insert, outerjoin, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import IntegrityError
 
 from ..models import (
     CarHeaterKFactorActiveParams,
@@ -40,6 +41,104 @@ def _decode_wind_bucket(wind_bucket: int | None) -> int | None:
 
 
 class CarHeaterKFactorMixin:
+    def _is_postgres_pk_sequence_conflict(self, exc: Exception, table_name: str) -> bool:
+        """Return True when insert failed due to stale PostgreSQL PK sequence state."""
+        sa_engine: Engine | None = self._sa_engine
+        if sa_engine is None or sa_engine.dialect.name != "postgresql":
+            return False
+        if not isinstance(exc, IntegrityError):
+            return False
+
+        orig = getattr(exc, "orig", None)
+        sqlstate = getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)
+        if sqlstate != "23505":
+            return False
+
+        expected_constraint = f"{table_name}_pkey"
+        constraint_name = getattr(getattr(orig, "diag", None), "constraint_name", None)
+        if constraint_name:
+            return constraint_name == expected_constraint
+        return expected_constraint in str(orig)
+
+    def _realign_postgres_id_sequence(self, table_name: str) -> None:
+        """Align PostgreSQL serial sequence with MAX(id) so next insert gets a free PK."""
+        sa_engine: Engine | None = self._sa_engine
+        if sa_engine is None:
+            raise RuntimeError("SQLAlchemy engine not initialized")
+        if sa_engine.dialect.name != "postgresql":
+            logger.debug(
+                "_realign_postgres_id_sequence skipped for non-PostgreSQL backend table=%s",
+                table_name,
+            )
+            return
+
+        logger.debug("_realign_postgres_id_sequence called table=%s", table_name)
+        max_id_stmt = text(f'SELECT COALESCE(MAX(id), 0) FROM "{table_name}"')
+        seq_name_stmt = text("SELECT pg_get_serial_sequence(:table_name, 'id')")
+        setval_stmt = text("SELECT setval(:seq_name, :next_id, false)")
+
+        with sa_engine.begin() as conn:
+            seq_name = conn.execute(
+                seq_name_stmt,
+                {"table_name": table_name},
+            ).scalar_one_or_none()
+            if not seq_name:
+                logger.warning(
+                    "_realign_postgres_id_sequence: no serial sequence found table=%s",
+                    table_name,
+                )
+                return
+
+            max_id = int(conn.execute(max_id_stmt).scalar_one())
+            next_id = max_id + 1
+            conn.execute(setval_stmt, {"seq_name": seq_name, "next_id": next_id})
+            logger.info(
+                "_realign_postgres_id_sequence: set sequence %s next_id=%s table=%s",
+                seq_name,
+                next_id,
+                table_name,
+            )
+
+    def _execute_insert_with_sequence_retry(
+        self,
+        stmt,
+        *,
+        table_name: str,
+        returning_id: bool,
+    ) -> int | None:
+        """Execute insert and recover once from stale PostgreSQL serial sequence collisions."""
+        sa_engine: Engine | None = self._sa_engine
+        if sa_engine is None:
+            raise RuntimeError("SQLAlchemy engine not initialized")
+
+        logger.debug(
+            "_execute_insert_with_sequence_retry called table=%s returning_id=%s",
+            table_name,
+            returning_id,
+        )
+        try:
+            with sa_engine.begin() as conn:
+                result = conn.execute(stmt)
+                return int(result.scalar_one()) if returning_id else None
+        except Exception as exc:
+            if not self._is_postgres_pk_sequence_conflict(exc, table_name):
+                raise
+
+            logger.warning(
+                "Detected stale PK sequence for table=%s; realigning and retrying insert once",
+                table_name,
+            )
+            self._realign_postgres_id_sequence(table_name)
+            with sa_engine.begin() as conn:
+                result = conn.execute(stmt)
+                new_id = int(result.scalar_one()) if returning_id else None
+                logger.debug(
+                    "Insert retry succeeded after sequence realign table=%s new_id=%s",
+                    table_name,
+                    new_id,
+                )
+                return new_id
+
     # --- KFactor calibration sessions/results ---
     def record_kfactor_session(
         self,
@@ -78,12 +177,16 @@ class CarHeaterKFactorMixin:
                 .returning(car_heater_kfactor_session.c.id)
             )
 
-            with sa_engine.begin() as conn:
-                result = conn.execute(stmt)
-                new_id = result.scalar_one()
+            new_id = self._execute_insert_with_sequence_retry(
+                stmt,
+                table_name=car_heater_kfactor_session.name,
+                returning_id=True,
+            )
+            if new_id is None:
+                raise RuntimeError("Failed to get inserted id for kfactor session")
 
             return CarHeaterKFactorSession(
-                id=new_id,
+                id=int(new_id),
                 start_ts=session.start_ts,
                 end_ts=session.end_ts,
                 auto_window_date=session.auto_window_date,
@@ -135,12 +238,16 @@ class CarHeaterKFactorMixin:
                 .returning(car_heater_kfactor_result.c.id)
             )
 
-            with sa_engine.begin() as conn:
-                res = conn.execute(stmt)
-                new_id = res.scalar_one()
+            new_id = self._execute_insert_with_sequence_retry(
+                stmt,
+                table_name=car_heater_kfactor_result.name,
+                returning_id=True,
+            )
+            if new_id is None:
+                raise RuntimeError("Failed to get inserted id for kfactor result")
 
             return CarHeaterKFactorResult(
-                id=new_id,
+                id=int(new_id),
                 session_id=result.session_id,
                 model_version=result.model_version,
                 k_loss_W_per_K=result.k_loss_W_per_K,
@@ -182,8 +289,11 @@ class CarHeaterKFactorMixin:
                 created_ts=outcome.created_ts,
             )
 
-            with sa_engine.begin() as conn:
-                conn.execute(stmt)
+            self._execute_insert_with_sequence_retry(
+                stmt,
+                table_name=car_heater_kfactor_prediction_outcome.name,
+                returning_id=False,
+            )
         except Exception as e:
             logger.exception("Error recording kfactor prediction outcome: %s", e)
             raise

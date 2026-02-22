@@ -494,6 +494,8 @@ function update(data) {
 
 **KFactor config updates**: Use `KFactorCalibrator.update_config()` (not direct `_cfg` assignment) so submodules (`_physics`, `_session`, `_snapshot`) stay in sync.
 
+**PostgreSQL sequence drift note**: If rows are imported with explicit `id` values, the serial sequence may lag behind `MAX(id)` and cause duplicate PK errors on inserts. For kFactor insert paths, use controller-level sequence realignment (`pg_get_serial_sequence` + `setval`) and retry once.
+
 ### 6.2 Null Safety
 
 ```javascript
@@ -775,4 +777,4 @@ ALLOWED_WS_ORIGINS=["http://localhost:5555"]
 
 ---
 
-*Last updated: 2026-02-01*
+*Last updated: 2026-02-22*
