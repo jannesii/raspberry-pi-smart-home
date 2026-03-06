@@ -329,6 +329,10 @@ function queueCommand(action) {
   setQueueStatus('pending', 'Action queued…');
   updateSingleCommandStatus(action, 'queued');
 
+  if (action === 'get_logs') {
+    window.dispatchEvent(new CustomEvent('car_heater_get_logs_requested'));
+  }
+
   // Haptic feedback on iOS
   if (window.navigator && window.navigator.vibrate) {
     window.navigator.vibrate(10);
@@ -525,10 +529,14 @@ document.addEventListener('DOMContentLoaded', () => {
     window.socket.on('car_heater_action_result', data => {
       console.log('📡 car_heater_action_result:', data);
       if (!data) return;
-      const ok = data.ok !== false;
+      let ok = true;
+      if (typeof data.ok === 'boolean') ok = data.ok;
+      else if (typeof data.success === 'boolean') ok = data.success;
       setQueueStatus(ok ? 'pending' : 'error', ok ? 'Action queued…' : 'Action failed');
       if (ok && data.action) {
         updateSingleCommandStatus(data.action, 'queued');
+      } else if (!ok && data.action) {
+        updateSingleCommandStatus(data.action, 'failed');
       }
     });
 

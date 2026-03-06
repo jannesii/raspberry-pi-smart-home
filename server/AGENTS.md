@@ -423,6 +423,7 @@ if (window.socket) {
 | Event | Direction | Purpose |
 |-------|-----------|---------|
 | `car_heater_status` | Server→Client | Status updates |
+| `car_heater_logs` | Server→Client | Latest ESP32 log snapshot |
 | `car_heater_control` | Client→Server | Control commands |
 | `kfactor_extended_data` | Server→Client | Calibration data |
 | `*_action_result` | Server→Client | Command acknowledgment |
@@ -495,6 +496,8 @@ function update(data) {
 **KFactor config updates**: Use `KFactorCalibrator.update_config()` (not direct `_cfg` assignment) so submodules (`_physics`, `_session`, `_snapshot`) stay in sync.
 
 **PostgreSQL sequence drift note**: If rows are imported with explicit `id` values, the serial sequence may lag behind `MAX(id)` and cause duplicate PK errors on inserts. For kFactor insert paths, use controller-level sequence realignment (`pg_get_serial_sequence` + `setval`) and retry once.
+
+**Car heater logs note**: ESP32 log snapshots are emitted in a dedicated `car_heater_logs` Socket.IO event. For compatibility, frontend can still read `status.logs` from `car_heater_status`, but should dedupe because both WS and HTTP paths may carry the same snapshot.
 
 ### 6.2 Null Safety
 

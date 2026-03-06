@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/flash.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_chart.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_settings.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_logs.css') }}">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 {% endblock %}
@@ -323,11 +324,13 @@
 </script>
 {% include 'car_heater_chart_modal.html' %}
 {% include 'car_heater_settings_modal.html' %}
+{% include 'car_heater_logs_modal.html' %}
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/init_sio.js') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater.js') }}"></script>
+<script src="{{ url_for('static', filename='js/car_heater_logs.js') }}"></script>
 <script src="{{ url_for('static', filename='js/flash.js') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater_chart.js') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater_settings_base.js') }}"></script>
