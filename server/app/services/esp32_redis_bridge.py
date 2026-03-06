@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import threading
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import redis
@@ -147,8 +148,66 @@ class ESP32RedisBridge:
                 self._socketio.emit("car_heater_status", payload)
 
             logger.debug("ESP32RedisBridge emitted car_heater_status")
+
+            logs_payload = self._build_logs_event_payload(
+                raw_logs=data.get("logs"),
+                source="ws_status",
+                device_id=data.get("device_id"),
+            )
+            if logs_payload is None:
+                logger.debug("ESP32RedisBridge status had no usable logs payload")
+                return
+
+            if self._sio_handler is not None:
+                self._sio_handler.emit_to_views("car_heater_logs", logs_payload)
+            else:
+                self._socketio.emit("car_heater_logs", logs_payload)
+            logger.debug(
+                "ESP32RedisBridge emitted car_heater_logs source=%s logs_len=%s",
+                logs_payload.get("source"),
+                len(str(logs_payload.get("logs", ""))),
+            )
         except Exception as e:
             logger.warning("ESP32RedisBridge failed to emit status: %s", e)
+
+    def _build_logs_event_payload(
+        self,
+        *,
+        raw_logs: Any,
+        source: str,
+        device_id: Any = None,
+    ) -> dict[str, Any] | None:
+        """Normalize logs and build the Socket.IO payload for browser views."""
+        logger.debug(
+            "ESP32RedisBridge._build_logs_event_payload called source=%s type=%s",
+            source,
+            type(raw_logs).__name__,
+        )
+        if raw_logs is None:
+            return None
+        if isinstance(raw_logs, str):
+            logs_text = raw_logs.strip()
+        else:
+            try:
+                logs_text = str(raw_logs).strip()
+            except Exception:
+                logger.debug(
+                    "ESP32RedisBridge._build_logs_event_payload failed to coerce logs",
+                    exc_info=True,
+                )
+                return None
+        if not logs_text:
+            logger.debug("ESP32RedisBridge._build_logs_event_payload skipped empty logs")
+            return None
+
+        payload: dict[str, Any] = {
+            "logs": logs_text,
+            "received_ts": datetime.now(UTC).isoformat(),
+            "source": source,
+        }
+        if device_id:
+            payload["device_id"] = str(device_id)
+        return payload
 
     def _emit_action_result(self, data: dict[str, Any]) -> None:
         """Emit action result to browser views."""

@@ -1,0 +1,127 @@
+.car-heater-logs-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.78);
+  align-items: center;
+  justify-content: center;
+  z-index: 10010;
+}
+
+.car-heater-logs-modal.is-open {
+  display: flex;
+}
+
+.car-heater-logs-dialog {
+  width: min(92vw, 860px);
+  max-height: min(84vh, 900px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-radius: 14px;
+  background: #101112;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.65);
+  padding: 14px;
+}
+
+.car-heater-logs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.car-heater-logs-header h3 {
+  margin: 0;
+  color: var(--ch-text, #f5f5f7);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+#carHeaterLogsClose {
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--ch-text, #f5f5f7);
+  cursor: pointer;
+}
+
+.car-heater-logs-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  font-size: 12px;
+  color: var(--ch-text-secondary, #8e8e93);
+}
+
+.car-heater-logs-state {
+  min-height: 18px;
+  font-size: 13px;
+  color: var(--ch-text-secondary, #8e8e93);
+}
+
+.car-heater-logs-state.is-waiting {
+  color: var(--ch-warning, #ffd60a);
+}
+
+.car-heater-logs-state.is-ready {
+  color: var(--ch-success, #30d158);
+}
+
+.car-heater-logs-state.is-error {
+  color: var(--ch-danger, #ff453a);
+}
+
+.car-heater-logs-content {
+  margin: 0;
+  flex: 1;
+  min-height: 220px;
+  max-height: min(56vh, 620px);
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-radius: 10px;
+  padding: 12px;
+  background: #050607;
+  color: #d8f5da;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font: 12px/1.4 "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.car-heater-logs-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.car-heater-logs-actions button {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ch-text, #f5f5f7);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.car-heater-logs-actions button:active {
+  transform: scale(0.98);
+}
+
+@media (max-width: 768px) {
+  .car-heater-logs-dialog {
+    width: 96vw;
+    max-height: 90vh;
+    padding: 12px;
+  }
+
+  .car-heater-logs-content {
+    min-height: 180px;
+    max-height: 58vh;
+    font-size: 11px;
+  }
+}

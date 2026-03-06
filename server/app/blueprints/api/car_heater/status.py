@@ -75,6 +75,64 @@ _last_test_request_time: float | None = None
 _test_mode_was_active: bool = False
 
 
+def _normalize_logs_text(raw_logs: Any) -> str | None:
+    """Return a normalized non-empty logs string, or None if not usable."""
+    logger.debug("_normalize_logs_text called type=%s", type(raw_logs).__name__)
+    if raw_logs is None:
+        return None
+    if isinstance(raw_logs, str):
+        text = raw_logs.strip()
+        if not text:
+            logger.debug("_normalize_logs_text skipped empty string payload")
+            return None
+        return text
+    try:
+        text = str(raw_logs).strip()
+    except Exception:
+        logger.debug("_normalize_logs_text failed to coerce logs payload", exc_info=True)
+        return None
+    if not text:
+        logger.debug("_normalize_logs_text skipped empty coerced payload")
+        return None
+    return text
+
+
+def _build_logs_event_payload(
+    raw_logs: Any,
+    *,
+    source: str,
+    device_id: str | None = None,
+    note: str | None = None,
+    received_ts: str | None = None,
+) -> dict[str, Any] | None:
+    """Build car_heater_logs payload from raw logs input."""
+    logger.debug(
+        "_build_logs_event_payload called source=%s has_device_id=%s has_note=%s",
+        source,
+        bool(device_id),
+        bool(note),
+    )
+    logs = _normalize_logs_text(raw_logs)
+    if logs is None:
+        logger.debug("_build_logs_event_payload skipped source=%s (no logs)", source)
+        return None
+    payload: dict[str, Any] = {
+        "logs": logs,
+        "received_ts": received_ts or datetime.now(UTC).isoformat(),
+        "source": source,
+    }
+    if device_id:
+        payload["device_id"] = str(device_id)
+    if note:
+        payload["note"] = str(note)
+    logger.debug(
+        "_build_logs_event_payload built source=%s logs_len=%s",
+        source,
+        len(logs),
+    )
+    return payload
+
+
 def _is_test_mode_active() -> bool:
     """Check if test mode is active (test request received within timeout)."""
     if _last_test_request_time is None:
@@ -396,6 +454,24 @@ def handle_status_update_request(
         commands, command_status, charge_mode_state = process_commands(data, car)
     else:
         logger.debug("Car heater commands are disabled; skipping command queue handling.")
+
+    logs_payload = _build_logs_event_payload(
+        data.get("logs"),
+        source="http_status",
+        device_id=data.get("device_id"),
+    )
+    if logs_payload is not None:
+        try:
+            sio.emit_to_views("car_heater_logs", logs_payload)
+            logger.debug(
+                "car_heater_logs emitted source=%s logs_len=%s",
+                logs_payload.get("source"),
+                len(str(logs_payload.get("logs", ""))),
+            )
+        except Exception:
+            logger.exception("Failed to emit car_heater_logs from HTTP status path")
+    else:
+        logger.debug("No logs payload emitted from HTTP status path")
 
     # Notify browser clients
     sio.emit_car_heater_status_to_views(status_payload, command_status, charge_mode_state)

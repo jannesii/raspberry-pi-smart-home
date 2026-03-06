@@ -1,0 +1,22 @@
+<div id="carHeaterLogsModal" class="car-heater-logs-modal" aria-hidden="true">
+  <div class="car-heater-logs-dialog" role="dialog" aria-modal="true" aria-labelledby="carHeaterLogsTitle">
+    <div class="car-heater-logs-header">
+      <h3 id="carHeaterLogsTitle">ESP32 Logs</h3>
+      <button id="carHeaterLogsClose" type="button" aria-label="Close logs">✕</button>
+    </div>
+
+    <div class="car-heater-logs-meta">
+      <span id="carHeaterLogsSource">Source: —</span>
+      <span id="carHeaterLogsReceived">Received: —</span>
+    </div>
+
+    <div id="carHeaterLogsState" class="car-heater-logs-state">Waiting for logs…</div>
+
+    <pre id="carHeaterLogsContent" class="car-heater-logs-content">—</pre>
+
+    <div class="car-heater-logs-actions">
+      <button id="carHeaterLogsCopy" type="button">Copy</button>
+      <button id="carHeaterLogsClear" type="button">Clear</button>
+    </div>
+  </div>
+</div>

@@ -103,6 +103,7 @@ Browse to http://127.0.0.1:5555 and log in.
 - kFactor calibrator refreshes config from DB during tick/snapshot to keep multi-worker state in sync.
 - Disabling kFactor autonomous mode now cancels active autonomous state and syncs config updates across submodules.
 - kFactor controller auto-recovers from PostgreSQL sequence drift on insert (realigns `id` sequence and retries once).
+- Car heater "Get Logs" now streams ESP32 log snapshots to a floating UI window via `car_heater_logs` (WS + HTTP fallback).
 - Car heater settings include a kFactor cooldown reset button.
 - Live kFactor session panel updates asynchronously via Socket.IO status events.
 - Logging control now logs handler level updates when applied.
