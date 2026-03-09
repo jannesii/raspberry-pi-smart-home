@@ -582,6 +582,8 @@ window.socket.onAny((event, ...args) => {
 **Testing**: SQLite in-memory via `sqlite:///:memory:`  
 **All operations**: SQLAlchemy Core (no ORM)
 
+**Runtime hybrid note**: Current app startup still requires `DB_PATH`, and many runtime paths still use the legacy SQLite-backed `DatabaseManager`. `DATABASE_URL` + `USE_SQLA_READS=1` enables SQLAlchemy/PostgreSQL paths where implemented. Treat DB behavior as hybrid unless a feature is explicitly fully migrated.
+
 ### 8.2 Core Tables
 
 ```sql
@@ -731,10 +733,10 @@ class BackgroundService:
 ```bash
 # Required
 SECRET_KEY=...           # Flask secret
-DATABASE_URL=postgresql+psycopg://user:pass@localhost/dbname  # PostgreSQL connection
+DATABASE_URL=postgresql+psycopg://user:pass@localhost/dbname  # PostgreSQL connection (Alembic + SQLA paths)
 
-# Legacy (migration only)
-DB_PATH=/path/to/db.sqlite  # SQLite source for data migration
+# Required at runtime (current app factory)
+DB_PATH=/path/to/db.sqlite  # SQLite path used by legacy runtime paths
 
 # Optional
 WEB_USERNAME=admin       # Initial admin user
