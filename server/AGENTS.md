@@ -519,6 +519,8 @@ function update(data) {
 
 **YNAB category-list note**: Queue category lists should exclude `deleted` and `hidden` categories. Order categories with top 10 locally most-used (from `ynab_payee_category_stats` aggregate counts) first, then remaining categories alphabetically.
 
+**YNAB approvals note**: Unapproved transactions are fetched via YNAB transactions endpoint with `type=unapproved` and approved in bulk via PATCH payloads using `{"id": "...", "approved": true}`. Keep Root-Admin guard and CSRF enforcement identical to categorize apply endpoints.
+
 ### 6.2 Null Safety
 
 ```javascript

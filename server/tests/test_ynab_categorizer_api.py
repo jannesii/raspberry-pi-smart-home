@@ -27,6 +27,7 @@ class _CtrlStub:
 class _ServiceStub:
     def __init__(self):
         self.apply_payloads = []
+        self.approve_payloads = []
         self.config_payloads = []
 
     def is_configured(self):
@@ -53,6 +54,37 @@ class _ServiceStub:
             "transaction_count": len(transaction_ids),
             "inserted_events": len(transaction_ids),
             "skipped_existing": 0,
+        }
+
+    def get_approval_queue(self):
+        return {
+            "transaction_count": 1,
+            "transactions": [
+                {
+                    "id": "tx1",
+                    "date": "2026-03-09",
+                    "payee_name": "K MARKET",
+                    "account_name": "Nordea",
+                    "memo": "Groceries",
+                    "amount_milliunits": -12990,
+                    "category_id": "cat_groceries",
+                    "category_name": "Groceries",
+                    "approved": False,
+                    "cleared": "uncleared",
+                }
+            ],
+        }
+
+    def approve_transactions(self, transaction_ids, approved_by_username=None):
+        self.approve_payloads.append(
+            {
+                "transaction_ids": transaction_ids,
+                "approved_by_username": approved_by_username,
+            }
+        )
+        return {
+            "transaction_count": len(transaction_ids),
+            "approved_count": len(transaction_ids),
         }
 
     def bootstrap(self, force=False):
@@ -172,11 +204,35 @@ def test_queue_root_admin_ok(client):
     assert payload["ok"] is True
 
 
+def test_approvals_queue_requires_root_admin(client):
+    _login(client, "admin")
+    response = client.get("/api/ynab-categorizer/approvals-queue")
+    assert response.status_code == 403
+
+
+def test_approvals_queue_root_admin_ok(client):
+    _login(client, "root")
+    response = client.get("/api/ynab-categorizer/approvals-queue")
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["ok"] is True
+    assert payload["transaction_count"] == 1
+
+
 def test_apply_post_requires_csrf(client):
     _login(client, "root")
     response = client.post(
         "/api/ynab-categorizer/apply",
         json={"transaction_ids": ["tx1"], "category_id": "cat1"},
+    )
+    assert response.status_code == 400
+
+
+def test_approve_post_requires_csrf(client):
+    _login(client, "root")
+    response = client.post(
+        "/api/ynab-categorizer/approve",
+        json={"transaction_ids": ["tx1"]},
     )
     assert response.status_code == 400
 
@@ -200,6 +256,26 @@ def test_apply_post_with_csrf_and_root_admin(client, app):
     assert svc.apply_payloads[0]["transaction_ids"] == ["tx1", "tx2"]
     assert svc.apply_payloads[0]["category_id"] == "cat1"
     assert svc.apply_payloads[0]["applied_by_username"] == "root"
+
+
+def test_approve_post_with_csrf_and_root_admin(client, app):
+    _login(client, "root")
+    token = _csrf_token(client)
+
+    response = client.post(
+        "/api/ynab-categorizer/approve",
+        json={"transaction_ids": ["tx1", "tx2"]},
+        headers={"X-CSRFToken": token},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["ok"] is True
+    assert payload["approved_count"] == 2
+
+    svc = app.ynab_categorizer_service
+    assert svc.approve_payloads[0]["transaction_ids"] == ["tx1", "tx2"]
+    assert svc.approve_payloads[0]["approved_by_username"] == "root"
 
 
 def test_not_configured_returns_503(client, app):

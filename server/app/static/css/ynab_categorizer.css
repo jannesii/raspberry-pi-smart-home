@@ -90,6 +90,25 @@
   color: #cfcfcf;
 }
 
+.ynab-view-switch {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.ynab-view-switch button.is-active {
+  border-color: #2f7ad8;
+  color: #dbe9ff;
+}
+
+.ynab-view {
+  display: none;
+}
+
+.ynab-view.is-active {
+  display: block;
+}
+
 .ynab-quick-actions {
   display: flex;
   flex-wrap: wrap;
@@ -191,6 +210,11 @@
 
 .ynab-tx-date {
   color: #b8b8b8;
+  font-size: 12px;
+}
+
+.ynab-tx-category {
+  color: #8fb0d8;
   font-size: 12px;
 }
 

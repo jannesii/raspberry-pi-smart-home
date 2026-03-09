@@ -117,11 +117,22 @@ class YNABClient:
 
         return payload["data"]
 
-    def get_transactions_since(self, since_date: str | None = None) -> list[dict[str, Any]]:
-        logger.debug("get_transactions_since called since_date=%s", since_date)
+    def get_transactions_since(
+        self,
+        since_date: str | None = None,
+        *,
+        transaction_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        logger.debug(
+            "get_transactions_since called since_date=%s transaction_type=%s",
+            since_date,
+            transaction_type,
+        )
         params: dict[str, Any] = {}
         if since_date:
             params["since_date"] = since_date
+        if transaction_type:
+            params["type"] = transaction_type
         data = self._request(
             "GET",
             f"/budgets/{self.budget_id}/transactions",
@@ -142,7 +153,7 @@ class YNABClient:
         logger.debug("get_categories fetched_group_count=%s", len(groups))
         return groups
 
-    def update_transactions_bulk(self, items: list[dict[str, str]]) -> dict[str, Any]:
+    def update_transactions_bulk(self, items: list[dict[str, Any]]) -> dict[str, Any]:
         logger.debug("update_transactions_bulk called count=%s", len(items))
         if not items:
             return {"transaction_ids": []}

@@ -63,6 +63,7 @@ A comprehensive home automation server for Raspberry Pi (or any Linux host). Rea
 - **Starting Balance transactions are always excluded** from categorization queue
 - **Queue rows show EUR amounts and `DD-MM-YYYY` dates**, row click toggles selection, rows show source/target account context (not raw transaction UUID), selected actions appear in a floating apply bar, and advanced settings are tucked into a collapsible panel (reconciled + queue time limit)
 - **Default fallback category** can be configured for no-suggestion payees; category dropdowns prioritize top 10 locally most-used categories and hide hidden YNAB categories
+- **Approval view** for unapproved transactions with bulk `Approve selected` / `Approve visible` actions
 - **QoL quick actions**: apply suggestions in bulk (High by default, optional Medium), select/clear visible, queue text filter, per-group one-click suggestion apply, recent category chips, and keyboard shortcuts
 
 ### 📊 System Features

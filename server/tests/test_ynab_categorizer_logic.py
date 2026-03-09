@@ -82,8 +82,8 @@ class _CtrlStub:
 
 
 class _ClientStub:
-    def get_transactions_since(self, since_date):
-        return [
+    def get_transactions_since(self, since_date, *, transaction_type=None):
+        transactions = [
             {
                 "id": "tx1",
                 "date": "2026-03-05",
@@ -95,6 +95,7 @@ class _ClientStub:
                 "subtransactions": [],
                 "memo": "Groceries",
                 "amount": -15990,
+                "approved": False,
             },
             {
                 "id": "tx2",
@@ -107,6 +108,7 @@ class _ClientStub:
                 "subtransactions": [],
                 "memo": "Airport",
                 "amount": -25990,
+                "approved": True,
             },
             {
                 "id": "tx3",
@@ -119,6 +121,7 @@ class _ClientStub:
                 "subtransactions": [],
                 "memo": "Transfer",
                 "amount": -1000,
+                "approved": False,
             },
             {
                 "id": "tx4",
@@ -131,6 +134,7 @@ class _ClientStub:
                 "subtransactions": [{"id": "sub1"}],
                 "memo": "Split",
                 "amount": -2000,
+                "approved": False,
             },
             {
                 "id": "tx5",
@@ -144,6 +148,7 @@ class _ClientStub:
                 "memo": "Reconciled",
                 "amount": -3990,
                 "cleared": "reconciled",
+                "approved": False,
             },
             {
                 "id": "tx6",
@@ -156,6 +161,7 @@ class _ClientStub:
                 "subtransactions": [],
                 "memo": "Old uncategorized",
                 "amount": -2990,
+                "approved": False,
             },
             {
                 "id": "tx7",
@@ -169,8 +175,15 @@ class _ClientStub:
                 "subtransactions": [],
                 "memo": "",
                 "amount": 610000,
+                "approved": True,
             },
         ]
+        if transaction_type == "unapproved":
+            return [tx for tx in transactions if not bool(tx.get("approved"))]
+        return transactions
+
+    def update_transactions_bulk(self, items):
+        return {"transaction_ids": [item.get("id") for item in items]}
 
     def get_categories(self):
         return [
@@ -283,3 +296,24 @@ def test_queue_limit_filters_out_old_transactions():
         now=date(2026, 3, 9),
     )
     assert included is False
+
+
+def test_approval_queue_returns_only_unapproved_transactions():
+    ctrl = _CtrlStub(mode="strict")
+    svc = YnabCategorizerService(ctrl=ctrl, client=_ClientStub(), budget_id="budget1")
+
+    payload = svc.get_approval_queue()
+    ids = [tx["id"] for tx in payload["transactions"]]
+
+    assert payload["transaction_count"] == len(ids)
+    assert "tx2" not in ids
+    assert "tx7" not in ids
+    assert "tx3" in ids
+
+
+def test_approve_transactions_updates_bulk():
+    ctrl = _CtrlStub(mode="strict")
+    svc = YnabCategorizerService(ctrl=ctrl, client=_ClientStub(), budget_id="budget1")
+
+    result = svc.approve_transactions(["tx1", "tx3"], approved_by_username="root")
+    assert result["approved_count"] == 2

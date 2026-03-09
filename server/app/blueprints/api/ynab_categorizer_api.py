@@ -193,6 +193,102 @@ def ynab_apply():
         ), 500
 
 
+@ynab_categorizer_bp.route("/approvals-queue", methods=["GET"])
+@login_required
+def ynab_approvals_queue():
+    guard = require_root_admin_or_redirect("Root-Admin required", json=True)
+    if guard:
+        return guard
+
+    svc = _get_service()
+    if svc is None:
+        return _service_not_configured_response()
+
+    logger.debug("ynab_approvals_queue called user=%s", current_user.get_id())
+    try:
+        payload = svc.get_approval_queue()
+        return jsonify({"ok": True, **payload})
+    except ValueError as exc:
+        logger.warning("ynab_approvals_queue bad request: %s", exc)
+        return jsonify({"ok": False, "error": "bad_request", "message": str(exc)}), 400
+    except Exception as exc:
+        logger.exception("ynab_approvals_queue failed: %s", exc)
+        return jsonify(
+            {
+                "ok": False,
+                "error": "approval_queue_failed",
+                "message": "Failed to fetch approvals queue",
+            }
+        ), 500
+
+
+@ynab_categorizer_bp.route("/approve", methods=["POST"])
+@login_required
+def ynab_approve():
+    guard = require_root_admin_or_redirect("Root-Admin required", json=True)
+    if guard:
+        return guard
+
+    svc = _get_service()
+    if svc is None:
+        return _service_not_configured_response()
+
+    data = request.get_json(silent=True) or {}
+    tx_ids_raw = data.get("transaction_ids")
+
+    if not isinstance(tx_ids_raw, list):
+        return (
+            jsonify(
+                {"ok": False, "error": "bad_request", "message": "transaction_ids must be a list"}
+            ),
+            400,
+        )
+
+    tx_ids = [str(item).strip() for item in tx_ids_raw if str(item).strip()]
+    if not tx_ids:
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error": "bad_request",
+                    "message": "transaction_ids must not be empty",
+                }
+            ),
+            400,
+        )
+    if len(tx_ids) > 200:
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error": "bad_request",
+                    "message": "Max 200 transactions per approve",
+                }
+            ),
+            400,
+        )
+
+    logger.debug(
+        "ynab_approve called user=%s tx_count=%s",
+        current_user.get_id(),
+        len(tx_ids),
+    )
+    try:
+        result = svc.approve_transactions(
+            transaction_ids=tx_ids,
+            approved_by_username=current_user.get_id(),
+        )
+        return jsonify({"ok": True, **result})
+    except ValueError as exc:
+        logger.warning("ynab_approve bad request: %s", exc)
+        return jsonify({"ok": False, "error": "bad_request", "message": str(exc)}), 400
+    except Exception as exc:
+        logger.exception("ynab_approve failed: %s", exc)
+        return jsonify(
+            {"ok": False, "error": "approve_failed", "message": "Failed to approve transactions"}
+        ), 500
+
+
 @ynab_categorizer_bp.route("/bootstrap", methods=["POST"])
 @login_required
 def ynab_bootstrap():

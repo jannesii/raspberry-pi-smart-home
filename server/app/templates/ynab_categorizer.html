@@ -26,7 +26,7 @@
   {% else %}
     <section class="ynab-panel ynab-controls">
       <div class="ynab-control-row">
-        <button id="btnRefreshQueue" type="button">Refresh queue</button>
+        <button id="btnRefreshQueue" type="button">Refresh queues</button>
         <span id="bootstrapStatus">Bootstrap status: —</span>
         <button id="btnBootstrap" type="button">Bootstrap now</button>
       </div>
@@ -73,25 +73,50 @@
     </section>
 
     <section class="ynab-panel">
-      <h3>Grouped Queue</h3>
-      <div class="ynab-quick-actions">
-        <button id="btnApplySuggested" type="button">Apply suggested</button>
-        <label for="quickApplyIncludeMedium">
-          <input id="quickApplyIncludeMedium" name="quickApplyIncludeMedium" type="checkbox">
-          Include Medium
-        </label>
-        <button id="btnSelectVisible" type="button">Select visible</button>
-        <button id="btnClearSelection" type="button">Clear selection</button>
-        <input
-          id="queueFilterInput"
-          name="queueFilterInput"
-          type="text"
-          class="ynab-quick-actions-input"
-          placeholder="Filter queue (payee, memo, date, amount)"
-        >
+      <div class="ynab-view-switch">
+        <button id="btnViewCategorizer" type="button" class="is-active">Categorize</button>
+        <button id="btnViewApprovals" type="button">Approve</button>
       </div>
-      <div id="queueSummary" class="ynab-summary">Loading…</div>
-      <div id="ynabGroups" class="ynab-groups"></div>
+
+      <div id="categorizerView" class="ynab-view is-active">
+        <h3>Grouped Queue</h3>
+        <div class="ynab-quick-actions">
+          <button id="btnApplySuggested" type="button">Apply suggested</button>
+          <label for="quickApplyIncludeMedium">
+            <input id="quickApplyIncludeMedium" name="quickApplyIncludeMedium" type="checkbox">
+            Include Medium
+          </label>
+          <button id="btnSelectVisible" type="button">Select visible</button>
+          <button id="btnClearSelection" type="button">Clear selection</button>
+          <input
+            id="queueFilterInput"
+            name="queueFilterInput"
+            type="text"
+            class="ynab-quick-actions-input"
+            placeholder="Filter queue (payee, memo, date, amount)"
+          >
+        </div>
+        <div id="queueSummary" class="ynab-summary">Loading…</div>
+        <div id="ynabGroups" class="ynab-groups"></div>
+      </div>
+
+      <div id="approvalsView" class="ynab-view">
+        <h3>Approval Queue</h3>
+        <div class="ynab-quick-actions">
+          <button id="btnApproveSelected" type="button">Approve selected</button>
+          <button id="btnApproveVisible" type="button">Approve visible</button>
+          <button id="btnClearApprovalSelection" type="button">Clear selection</button>
+          <input
+            id="approvalFilterInput"
+            name="approvalFilterInput"
+            type="text"
+            class="ynab-quick-actions-input"
+            placeholder="Filter approvals (payee, memo, date, amount, category)"
+          >
+        </div>
+        <div id="approvalSummary" class="ynab-summary">Loading…</div>
+        <ul id="approvalList" class="ynab-tx-list"></ul>
+      </div>
     </section>
 
     <section id="floatingApplyBar" class="ynab-floating-apply" aria-live="polite">

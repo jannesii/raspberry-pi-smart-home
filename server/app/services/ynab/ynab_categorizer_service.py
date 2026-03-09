@@ -194,6 +194,10 @@ class YnabCategorizerService:
         return str(tx.get("cleared") or "").strip().lower() == "reconciled"
 
     @staticmethod
+    def _is_unapproved(tx: dict[str, Any]) -> bool:
+        return not bool(tx.get("approved"))
+
+    @staticmethod
     def _parse_tx_date(tx: dict[str, Any]) -> date | None:
         tx_date = tx.get("date")
         if not tx_date:
@@ -326,6 +330,23 @@ class YnabCategorizerService:
             return int(digits[:8])
         except ValueError:
             return 0
+
+    @staticmethod
+    def _queue_transaction_payload(tx: dict[str, Any], payee_display: str) -> dict[str, Any]:
+        tx_id = tx.get("id")
+        tx_date = tx.get("date")
+        return {
+            "id": str(tx_id),
+            "date": str(tx_date) if tx_date else "",
+            "payee_name": payee_display,
+            "account_name": str(tx.get("account_name") or ""),
+            "memo": str(tx.get("memo") or ""),
+            "amount_milliunits": tx.get("amount"),
+            "category_id": str(tx.get("category_id") or "") or None,
+            "category_name": str(tx.get("category_name") or "") or None,
+            "approved": bool(tx.get("approved")),
+            "cleared": str(tx.get("cleared") or ""),
+        }
 
     def _categories_payload(
         self,
@@ -494,16 +515,7 @@ class YnabCategorizerService:
                 current_latest = group["latest_date"]
                 if not current_latest or tx_date > current_latest:
                     group["latest_date"] = tx_date
-            group["transactions"].append(
-                {
-                    "id": str(tx_id),
-                    "date": str(tx_date) if tx_date else "",
-                    "payee_name": payee_display,
-                    "account_name": str(tx.get("account_name") or ""),
-                    "memo": str(tx.get("memo") or ""),
-                    "amount_milliunits": tx.get("amount"),
-                }
-            )
+            group["transactions"].append(self._queue_transaction_payload(tx, payee_display))
 
         groups: list[dict[str, Any]] = []
         default_category_id = str(cfg.default_category_id or "").strip() or None
@@ -560,6 +572,63 @@ class YnabCategorizerService:
             "transaction_count": len(filtered),
             "categories": categories,
             "groups": groups,
+        }
+
+    def get_approval_queue(self) -> dict[str, Any]:
+        cfg = self.ctrl.get_ynab_categorizer_config(self.budget_id)
+        show_reconciled = bool(cfg.show_reconciled_transactions)
+        queue_limit_enabled = bool(cfg.queue_limit_enabled)
+        queue_limit_value = int(cfg.queue_limit_value)
+        queue_limit_unit = str(cfg.queue_limit_unit or "days").strip().lower()
+        if queue_limit_unit not in _VALID_QUEUE_LIMIT_UNITS:
+            queue_limit_unit = "days"
+        if queue_limit_value < 1:
+            queue_limit_value = 30
+
+        logger.debug(
+            (
+                "get_approval_queue called show_reconciled=%s "
+                "queue_limit_enabled=%s queue_limit_value=%s queue_limit_unit=%s"
+            ),
+            show_reconciled,
+            queue_limit_enabled,
+            queue_limit_value,
+            queue_limit_unit,
+        )
+        transactions = self.client.get_transactions_since(None, transaction_type="unapproved")
+        filtered = [
+            tx
+            for tx in transactions
+            if not bool(tx.get("deleted"))
+            and self._is_unapproved(tx)
+            and self.should_include_reconciled(tx, show_reconciled)
+            and self.should_include_by_limit(
+                tx,
+                queue_limit_enabled=queue_limit_enabled,
+                queue_limit_value=queue_limit_value,
+                queue_limit_unit=queue_limit_unit,
+            )
+        ]
+        filtered.sort(key=lambda tx: -self._date_sort_value(str(tx.get("date") or "")))
+        payload_items = [
+            self._queue_transaction_payload(
+                tx,
+                str(tx.get("payee_name") or "Unknown").strip() or "Unknown",
+            )
+            for tx in filtered
+        ]
+        logger.debug(
+            "get_approval_queue filtered transactions total=%s queue=%s",
+            len(transactions),
+            len(payload_items),
+        )
+        return {
+            "show_reconciled_transactions": show_reconciled,
+            "queue_limit_enabled": queue_limit_enabled,
+            "queue_limit_value": queue_limit_value,
+            "queue_limit_unit": queue_limit_unit,
+            "transaction_count": len(payload_items),
+            "transactions": payload_items,
         }
 
     def apply_category(
@@ -630,6 +699,36 @@ class YnabCategorizerService:
             "transaction_count": len(tx_ids),
             "inserted_events": inserted_events,
             "skipped_existing": skipped_existing,
+            "ynab": ynab_result,
+        }
+
+    def approve_transactions(
+        self,
+        transaction_ids: list[str],
+        *,
+        approved_by_username: str | None,
+    ) -> dict[str, Any]:
+        logger.debug(
+            "approve_transactions called transaction_count=%s approved_by=%s",
+            len(transaction_ids),
+            approved_by_username,
+        )
+        tx_ids = [str(tx_id).strip() for tx_id in transaction_ids if str(tx_id).strip()]
+        tx_ids = list(dict.fromkeys(tx_ids))
+        if not tx_ids:
+            raise ValueError("transaction_ids must not be empty")
+        if len(tx_ids) > 200:
+            raise ValueError("Max 200 transactions per approve")
+
+        payload_items = [{"id": tx_id, "approved": True} for tx_id in tx_ids]
+        ynab_result = self.client.update_transactions_bulk(payload_items)
+        logger.debug(
+            "approve_transactions completed transaction_count=%s",
+            len(tx_ids),
+        )
+        return {
+            "transaction_count": len(tx_ids),
+            "approved_count": len(tx_ids),
             "ynab": ynab_result,
         }
 
