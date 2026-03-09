@@ -127,6 +127,10 @@ let queueState = {
   categories: [],
   groups: [],
   queue_filter_mode: 'strict',
+  show_reconciled_transactions: false,
+  queue_limit_enabled: false,
+  queue_limit_value: 30,
+  queue_limit_unit: 'days',
 };
 
 function selectedTransactionIds() {
@@ -151,6 +155,87 @@ function updateFloatingApplyBarVisibility() {
   floatingBar.classList.toggle('is-visible', selectedCount > 0);
 }
 
+function updateLimitControlsState() {
+  const enabledInput = document.getElementById('queueLimitEnabled');
+  const valueInput = document.getElementById('queueLimitValue');
+  const unitSelect = document.getElementById('queueLimitUnit');
+  const enabled = enabledInput instanceof HTMLInputElement ? enabledInput.checked : false;
+  if (valueInput instanceof HTMLInputElement) {
+    valueInput.disabled = !enabled;
+  }
+  if (unitSelect instanceof HTMLSelectElement) {
+    unitSelect.disabled = !enabled;
+  }
+}
+
+function applySettingsToUi(data) {
+  const modeSelect = document.getElementById('queueFilterMode');
+  const showReconciled = document.getElementById('showReconciledTransactions');
+  const queueLimitEnabled = document.getElementById('queueLimitEnabled');
+  const queueLimitValue = document.getElementById('queueLimitValue');
+  const queueLimitUnit = document.getElementById('queueLimitUnit');
+
+  if (modeSelect instanceof HTMLSelectElement && data && data.queue_filter_mode) {
+    modeSelect.value = data.queue_filter_mode;
+  }
+  if (showReconciled instanceof HTMLInputElement) {
+    showReconciled.checked = !!(data && data.show_reconciled_transactions);
+  }
+  if (queueLimitEnabled instanceof HTMLInputElement) {
+    queueLimitEnabled.checked = !!(data && data.queue_limit_enabled);
+  }
+  if (queueLimitValue instanceof HTMLInputElement && data && data.queue_limit_value !== undefined) {
+    queueLimitValue.value = String(data.queue_limit_value);
+  }
+  if (queueLimitUnit instanceof HTMLSelectElement && data && data.queue_limit_unit) {
+    queueLimitUnit.value = String(data.queue_limit_unit);
+  }
+  updateLimitControlsState();
+}
+
+function readSettingsFromUi() {
+  const modeSelect = document.getElementById('queueFilterMode');
+  const showReconciled = document.getElementById('showReconciledTransactions');
+  const queueLimitEnabled = document.getElementById('queueLimitEnabled');
+  const queueLimitValue = document.getElementById('queueLimitValue');
+  const queueLimitUnit = document.getElementById('queueLimitUnit');
+
+  const mode = modeSelect instanceof HTMLSelectElement ? modeSelect.value : '';
+  if (!mode) {
+    throw new Error('Select queue filter mode first');
+  }
+  const showReconciledValue = showReconciled instanceof HTMLInputElement
+    ? showReconciled.checked
+    : false;
+  const queueLimitEnabledValue = queueLimitEnabled instanceof HTMLInputElement
+    ? queueLimitEnabled.checked
+    : false;
+  const queueLimitValueRaw = queueLimitValue instanceof HTMLInputElement
+    ? Number(queueLimitValue.value)
+    : 30;
+  let queueLimitValueParsed = Number.isInteger(queueLimitValueRaw) ? queueLimitValueRaw : NaN;
+  if (queueLimitEnabledValue && (!Number.isFinite(queueLimitValueParsed) || queueLimitValueParsed < 1)) {
+    throw new Error('Queue limit value must be a positive integer');
+  }
+  if (!Number.isFinite(queueLimitValueParsed) || queueLimitValueParsed < 1) {
+    queueLimitValueParsed = 30;
+  }
+  const queueLimitUnitValue = queueLimitUnit instanceof HTMLSelectElement
+    ? queueLimitUnit.value
+    : 'days';
+  if (queueLimitEnabledValue && !['days', 'months', 'years'].includes(queueLimitUnitValue)) {
+    throw new Error('Queue limit unit must be days, months, or years');
+  }
+
+  return {
+    queue_filter_mode: mode,
+    show_reconciled_transactions: showReconciledValue,
+    queue_limit_enabled: queueLimitEnabledValue,
+    queue_limit_value: queueLimitValueParsed,
+    queue_limit_unit: queueLimitUnitValue,
+  };
+}
+
 function renderGlobalCategorySelect() {
   const select = document.getElementById('globalCategorySelect');
   if (!select) return;
@@ -163,11 +248,8 @@ function renderQueue(payload) {
 
   const groupsEl = document.getElementById('ynabGroups');
   const summaryEl = document.getElementById('queueSummary');
-  const modeSelect = document.getElementById('queueFilterMode');
 
-  if (modeSelect && payload.queue_filter_mode) {
-    modeSelect.value = payload.queue_filter_mode;
-  }
+  applySettingsToUi(payload || {});
 
   renderGlobalCategorySelect();
 
@@ -292,13 +374,9 @@ async function loadQueue() {
 }
 
 async function loadConfig() {
-  const modeSelect = document.getElementById('queueFilterMode');
-  if (!modeSelect) return;
   try {
     const data = await apiRequest('/api/ynab-categorizer/config');
-    if (data && data.queue_filter_mode) {
-      modeSelect.value = data.queue_filter_mode;
-    }
+    applySettingsToUi(data || {});
   } catch (error) {
     console.error('Config load failed:', error);
   }
@@ -348,32 +426,33 @@ document.addEventListener('DOMContentLoaded', () => {
   const bootstrapBtn = document.getElementById('btnBootstrap');
   const saveModeBtn = document.getElementById('btnSaveMode');
   const globalCategory = document.getElementById('globalCategorySelect');
+  const queueLimitEnabled = document.getElementById('queueLimitEnabled');
 
   if (refreshBtn) {
     refreshBtn.addEventListener('click', loadQueue);
   }
 
+  if (queueLimitEnabled instanceof HTMLInputElement) {
+    queueLimitEnabled.addEventListener('change', updateLimitControlsState);
+    updateLimitControlsState();
+  }
+
   if (saveModeBtn) {
     saveModeBtn.addEventListener('click', async () => {
-      const modeSelect = document.getElementById('queueFilterMode');
-      const mode = modeSelect instanceof HTMLSelectElement ? modeSelect.value : '';
-      if (!mode) {
-        showMessage('Select queue filter mode first', 'error');
-        return;
-      }
       try {
+        const payload = readSettingsFromUi();
         await apiRequest('/api/ynab-categorizer/config', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ queue_filter_mode: mode }),
+          body: JSON.stringify(payload),
         });
-        showMessage('Queue filter mode saved', 'ok');
+        showMessage('Settings saved', 'ok');
         await loadQueue();
       } catch (error) {
-        console.error('Mode save failed:', error);
-        showMessage(`Failed to save queue mode: ${error.message}`, 'error');
+        console.error('Settings save failed:', error);
+        showMessage(`Failed to save settings: ${error.message}`, 'error');
       }
     });
   }
@@ -418,11 +497,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  if (YNAB_INITIAL_CONFIG && YNAB_INITIAL_CONFIG.queue_filter_mode) {
-    const modeSelect = document.getElementById('queueFilterMode');
-    if (modeSelect instanceof HTMLSelectElement) {
-      modeSelect.value = YNAB_INITIAL_CONFIG.queue_filter_mode;
-    }
+  if (YNAB_INITIAL_CONFIG) {
+    applySettingsToUi(YNAB_INITIAL_CONFIG);
   }
 
   if (YNAB_BOOTSTRAP_STATUS && YNAB_BOOTSTRAP_STATUS.state) {

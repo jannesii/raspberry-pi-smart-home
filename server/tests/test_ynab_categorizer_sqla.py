@@ -31,14 +31,33 @@ def controller(temp_db):
 def test_config_defaults_to_strict(controller: Controller):
     cfg = controller.get_ynab_categorizer_config("budget1")
     assert cfg.queue_filter_mode == "strict"
+    assert cfg.show_reconciled_transactions is False
+    assert cfg.queue_limit_enabled is False
+    assert cfg.queue_limit_value == 30
+    assert cfg.queue_limit_unit == "days"
 
 
 def test_config_save_and_read(controller: Controller):
-    saved = controller.save_ynab_categorizer_config("budget1", "skip_transfers")
+    saved = controller.save_ynab_categorizer_config(
+        "budget1",
+        "skip_transfers",
+        show_reconciled_transactions=True,
+        queue_limit_enabled=True,
+        queue_limit_value=14,
+        queue_limit_unit="days",
+    )
     assert saved.queue_filter_mode == "skip_transfers"
+    assert saved.show_reconciled_transactions is True
+    assert saved.queue_limit_enabled is True
+    assert saved.queue_limit_value == 14
+    assert saved.queue_limit_unit == "days"
 
     loaded = controller.get_ynab_categorizer_config("budget1")
     assert loaded.queue_filter_mode == "skip_transfers"
+    assert loaded.show_reconciled_transactions is True
+    assert loaded.queue_limit_enabled is True
+    assert loaded.queue_limit_value == 14
+    assert loaded.queue_limit_unit == "days"
 
 
 def test_increment_stats_upsert(controller: Controller):

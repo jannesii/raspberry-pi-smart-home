@@ -62,6 +62,32 @@ def _parse_bool(value: Any, *, default: bool = False) -> bool:
     raise ValueError("Invalid boolean value")
 
 
+def _parse_int(value: Any, *, default: int | None = None) -> int:
+    if value is None:
+        if default is None:
+            raise ValueError("Invalid integer value")
+        return default
+    if isinstance(value, bool):
+        raise ValueError("Invalid integer value")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if value.is_integer():
+            return int(value)
+        raise ValueError("Invalid integer value")
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            if default is None:
+                raise ValueError("Invalid integer value")
+            return default
+        try:
+            return int(stripped)
+        except ValueError as exc:
+            raise ValueError("Invalid integer value") from exc
+    raise ValueError("Invalid integer value")
+
+
 @ynab_categorizer_bp.route("/queue", methods=["GET"])
 @login_required
 def ynab_queue():
@@ -258,14 +284,38 @@ def ynab_set_config():
             ),
             400,
         )
+    try:
+        show_reconciled_transactions = _parse_bool(
+            data.get("show_reconciled_transactions"), default=False
+        )
+        queue_limit_enabled = _parse_bool(data.get("queue_limit_enabled"), default=False)
+        queue_limit_value = _parse_int(data.get("queue_limit_value"), default=30)
+        queue_limit_unit = str(data.get("queue_limit_unit") or "days").strip().lower()
+    except ValueError as exc:
+        logger.warning("ynab_set_config bad request parse error: %s", exc)
+        return jsonify({"ok": False, "error": "bad_request", "message": str(exc)}), 400
 
     logger.debug(
-        "ynab_set_config called user=%s queue_filter_mode=%s",
+        (
+            "ynab_set_config called user=%s queue_filter_mode=%s "
+            "show_reconciled_transactions=%s queue_limit_enabled=%s "
+            "queue_limit_value=%s queue_limit_unit=%s"
+        ),
         current_user.get_id(),
         queue_filter_mode,
+        show_reconciled_transactions,
+        queue_limit_enabled,
+        queue_limit_value,
+        queue_limit_unit,
     )
     try:
-        result = svc.set_queue_filter_mode(queue_filter_mode)
+        result = svc.set_config(
+            queue_filter_mode=queue_filter_mode,
+            show_reconciled_transactions=show_reconciled_transactions,
+            queue_limit_enabled=queue_limit_enabled,
+            queue_limit_value=queue_limit_value,
+            queue_limit_unit=queue_limit_unit,
+        )
         return jsonify({"ok": True, **result})
     except ValueError as exc:
         logger.warning("ynab_set_config bad request: %s", exc)

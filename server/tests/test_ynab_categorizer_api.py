@@ -27,6 +27,7 @@ class _CtrlStub:
 class _ServiceStub:
     def __init__(self):
         self.apply_payloads = []
+        self.config_payloads = []
 
     def is_configured(self):
         return True
@@ -61,10 +62,41 @@ class _ServiceStub:
         return {"bootstrapped": False, "state": None}
 
     def get_config(self):
-        return {"queue_filter_mode": "strict", "updated_ts": "2026-03-09T10:00:00+02:00"}
+        return {
+            "queue_filter_mode": "strict",
+            "show_reconciled_transactions": False,
+            "queue_limit_enabled": False,
+            "queue_limit_value": 30,
+            "queue_limit_unit": "days",
+            "updated_ts": "2026-03-09T10:00:00+02:00",
+        }
 
-    def set_queue_filter_mode(self, mode):
-        return {"queue_filter_mode": mode, "updated_ts": "2026-03-09T10:00:00+02:00"}
+    def set_config(
+        self,
+        *,
+        queue_filter_mode,
+        show_reconciled_transactions,
+        queue_limit_enabled,
+        queue_limit_value,
+        queue_limit_unit,
+    ):
+        self.config_payloads.append(
+            {
+                "queue_filter_mode": queue_filter_mode,
+                "show_reconciled_transactions": show_reconciled_transactions,
+                "queue_limit_enabled": queue_limit_enabled,
+                "queue_limit_value": queue_limit_value,
+                "queue_limit_unit": queue_limit_unit,
+            }
+        )
+        return {
+            "queue_filter_mode": queue_filter_mode,
+            "show_reconciled_transactions": show_reconciled_transactions,
+            "queue_limit_enabled": queue_limit_enabled,
+            "queue_limit_value": queue_limit_value,
+            "queue_limit_unit": queue_limit_unit,
+            "updated_ts": "2026-03-09T10:00:00+02:00",
+        }
 
 
 @pytest.fixture
@@ -170,3 +202,53 @@ def test_not_configured_returns_503(client, app):
     assert response.status_code == 503
     payload = response.get_json()
     assert payload["error"] == "not_configured"
+
+
+def test_config_post_with_csrf_updates_all_fields(client, app):
+    _login(client, "root")
+    token = _csrf_token(client)
+
+    response = client.post(
+        "/api/ynab-categorizer/config",
+        json={
+            "queue_filter_mode": "strict",
+            "show_reconciled_transactions": True,
+            "queue_limit_enabled": True,
+            "queue_limit_value": 14,
+            "queue_limit_unit": "days",
+        },
+        headers={"X-CSRFToken": token},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["ok"] is True
+    assert payload["show_reconciled_transactions"] is True
+    assert payload["queue_limit_enabled"] is True
+    assert payload["queue_limit_value"] == 14
+    assert payload["queue_limit_unit"] == "days"
+
+    svc = app.ynab_categorizer_service
+    assert svc.config_payloads[0]["queue_filter_mode"] == "strict"
+    assert svc.config_payloads[0]["show_reconciled_transactions"] is True
+
+
+def test_config_post_rejects_invalid_int(client):
+    _login(client, "root")
+    token = _csrf_token(client)
+
+    response = client.post(
+        "/api/ynab-categorizer/config",
+        json={
+            "queue_filter_mode": "strict",
+            "show_reconciled_transactions": False,
+            "queue_limit_enabled": True,
+            "queue_limit_value": "abc",
+            "queue_limit_unit": "days",
+        },
+        headers={"X-CSRFToken": token},
+    )
+
+    assert response.status_code == 400
+    payload = response.get_json() or {}
+    assert payload.get("error") == "bad_request"

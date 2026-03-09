@@ -26,6 +26,7 @@ logger.setLevel(logging.INFO)
 
 
 _VALID_QUEUE_MODES = {"strict", "all_uncategorized", "skip_transfers"}
+_VALID_QUEUE_LIMIT_UNITS = {"days", "months", "years"}
 
 
 class YnabCategorizerMixin:
@@ -52,6 +53,10 @@ class YnabCategorizerMixin:
                 id=1,
                 budget_id=budget_id,
                 queue_filter_mode="strict",
+                show_reconciled_transactions=False,
+                queue_limit_enabled=False,
+                queue_limit_value=30,
+                queue_limit_unit="days",
                 updated_ts=self._ynab_now_iso(),
             )
             logger.debug("get_ynab_categorizer_config returning default config=%s", cfg)
@@ -61,6 +66,10 @@ class YnabCategorizerMixin:
             id=int(row["id"]),
             budget_id=str(row["budget_id"]),
             queue_filter_mode=str(row["queue_filter_mode"]),
+            show_reconciled_transactions=bool(row.get("show_reconciled_transactions")),
+            queue_limit_enabled=bool(row.get("queue_limit_enabled")),
+            queue_limit_value=int(row.get("queue_limit_value") or 30),
+            queue_limit_unit=str(row.get("queue_limit_unit") or "days"),
             updated_ts=str(row["updated_ts"]),
         )
         logger.debug("get_ynab_categorizer_config loaded config=%s", cfg)
@@ -70,15 +79,36 @@ class YnabCategorizerMixin:
         self,
         budget_id: str,
         queue_filter_mode: str,
+        *,
+        show_reconciled_transactions: bool | None = None,
+        queue_limit_enabled: bool | None = None,
+        queue_limit_value: int | None = None,
+        queue_limit_unit: str | None = None,
     ) -> YnabCategorizerConfig:
         logger.debug(
-            "save_ynab_categorizer_config called budget_id=%s queue_filter_mode=%s",
+            (
+                "save_ynab_categorizer_config called budget_id=%s queue_filter_mode=%s "
+                "show_reconciled_transactions=%s queue_limit_enabled=%s "
+                "queue_limit_value=%s queue_limit_unit=%s"
+            ),
             budget_id,
             queue_filter_mode,
+            show_reconciled_transactions,
+            queue_limit_enabled,
+            queue_limit_value,
+            queue_limit_unit,
         )
         mode = (queue_filter_mode or "").strip()
         if mode not in _VALID_QUEUE_MODES:
             raise ValueError(f"Invalid queue_filter_mode: {queue_filter_mode}")
+        show_reconciled = bool(show_reconciled_transactions)
+        limit_enabled = bool(queue_limit_enabled)
+        limit_value = int(queue_limit_value) if queue_limit_value is not None else 30
+        limit_unit_value = str(queue_limit_unit or "days").strip().lower()
+        if limit_value < 1:
+            raise ValueError(f"Invalid queue_limit_value: {queue_limit_value}")
+        if limit_unit_value not in _VALID_QUEUE_LIMIT_UNITS:
+            raise ValueError(f"Invalid queue_limit_unit: {queue_limit_unit}")
 
         sa_engine = self._ynab_require_sa_engine()
         now = self._ynab_now_iso()
@@ -89,6 +119,10 @@ class YnabCategorizerMixin:
                 id=1,
                 budget_id=budget_id,
                 queue_filter_mode=mode,
+                show_reconciled_transactions=show_reconciled,
+                queue_limit_enabled=limit_enabled,
+                queue_limit_value=limit_value,
+                queue_limit_unit=limit_unit_value,
                 updated_ts=now,
             )
             .on_conflict_do_update(
@@ -96,6 +130,10 @@ class YnabCategorizerMixin:
                 set_={
                     "budget_id": budget_id,
                     "queue_filter_mode": mode,
+                    "show_reconciled_transactions": show_reconciled,
+                    "queue_limit_enabled": limit_enabled,
+                    "queue_limit_value": limit_value,
+                    "queue_limit_unit": limit_unit_value,
                     "updated_ts": now,
                 },
             )
@@ -107,6 +145,10 @@ class YnabCategorizerMixin:
                     id=1,
                     budget_id=budget_id,
                     queue_filter_mode=mode,
+                    show_reconciled_transactions=show_reconciled,
+                    queue_limit_enabled=limit_enabled,
+                    queue_limit_value=limit_value,
+                    queue_limit_unit=limit_unit_value,
                     updated_ts=now,
                 )
                 .on_conflict_do_update(
@@ -114,6 +156,10 @@ class YnabCategorizerMixin:
                     set_={
                         "budget_id": budget_id,
                         "queue_filter_mode": mode,
+                        "show_reconciled_transactions": show_reconciled,
+                        "queue_limit_enabled": limit_enabled,
+                        "queue_limit_value": limit_value,
+                        "queue_limit_unit": limit_unit_value,
                         "updated_ts": now,
                     },
                 )
@@ -126,6 +172,10 @@ class YnabCategorizerMixin:
             id=1,
             budget_id=budget_id,
             queue_filter_mode=mode,
+            show_reconciled_transactions=show_reconciled,
+            queue_limit_enabled=limit_enabled,
+            queue_limit_value=limit_value,
+            queue_limit_unit=limit_unit_value,
             updated_ts=now,
         )
         logger.debug("save_ynab_categorizer_config saved config=%s", cfg)

@@ -26,19 +26,44 @@
   {% else %}
     <section class="ynab-panel ynab-controls">
       <div class="ynab-control-row">
-        <label for="queueFilterMode">Queue filter mode</label>
-        <select id="queueFilterMode" name="queueFilterMode">
-          <option value="strict">strict (skip transfers + split parents)</option>
-          <option value="skip_transfers">skip_transfers</option>
-          <option value="all_uncategorized">all_uncategorized</option>
-        </select>
-        <button id="btnSaveMode" type="button">Save mode</button>
         <button id="btnRefreshQueue" type="button">Refresh queue</button>
-      </div>
-      <div class="ynab-control-row">
         <span id="bootstrapStatus">Bootstrap status: —</span>
         <button id="btnBootstrap" type="button">Bootstrap now</button>
       </div>
+      <details id="ynabSettingsDetails" class="ynab-settings-details">
+        <summary>Categorizer settings</summary>
+        <div class="ynab-settings-grid">
+          <div class="ynab-control-row">
+            <label for="queueFilterMode">Queue filter mode</label>
+            <select id="queueFilterMode" name="queueFilterMode">
+              <option value="strict">strict (skip transfers + split parents)</option>
+              <option value="skip_transfers">skip_transfers</option>
+              <option value="all_uncategorized">all_uncategorized</option>
+            </select>
+          </div>
+          <div class="ynab-control-row">
+            <label for="showReconciledTransactions">
+              <input id="showReconciledTransactions" name="showReconciledTransactions" type="checkbox">
+              Show reconciled transactions
+            </label>
+          </div>
+          <div class="ynab-control-row">
+            <label for="queueLimitEnabled">
+              <input id="queueLimitEnabled" name="queueLimitEnabled" type="checkbox">
+              Limit queue
+            </label>
+            <input id="queueLimitValue" name="queueLimitValue" type="number" min="1" step="1" value="30" class="ynab-limit-input">
+            <select id="queueLimitUnit" name="queueLimitUnit">
+              <option value="days">days</option>
+              <option value="months">months</option>
+              <option value="years">years</option>
+            </select>
+          </div>
+          <div class="ynab-control-row">
+            <button id="btnSaveMode" type="button">Save settings</button>
+          </div>
+        </div>
+      </details>
     </section>
 
     <section class="ynab-panel">

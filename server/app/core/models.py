@@ -275,4 +275,8 @@ class YnabCategorizerConfig:
     id: int = 1
     budget_id: str = ""
     queue_filter_mode: str = "strict"
+    show_reconciled_transactions: bool = False
+    queue_limit_enabled: bool = False
+    queue_limit_value: int = 30
+    queue_limit_unit: str = "days"
     updated_ts: str = ""

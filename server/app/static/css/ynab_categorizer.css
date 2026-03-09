@@ -59,8 +59,30 @@
 }
 
 .ynab-control-row select,
-.ynab-control-row button {
+.ynab-control-row button,
+.ynab-control-row input {
   min-height: 34px;
+}
+
+.ynab-settings-details {
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.ynab-settings-details > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.ynab-settings-grid {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.ynab-limit-input {
+  width: 96px;
 }
 
 .ynab-summary {

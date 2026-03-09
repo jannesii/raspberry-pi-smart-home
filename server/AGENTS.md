@@ -505,6 +505,10 @@ function update(data) {
 
 **YNAB CSRF note**: Internal browser-driven YNAB mutation endpoints (`/api/ynab-categorizer/*` POST) keep CSRF enabled. Frontend must include CSRF token (`X-CSRFToken` or `X-CSRF-Token`) for JSON POSTs.
 
+**YNAB reconciled filter note**: Treat transactions as reconciled when `tx["cleared"] == "reconciled"` (case-insensitive). Default queue behavior hides reconciled items unless explicitly enabled in config.
+
+**YNAB queue-limit note**: Queue limiting is config-driven (`queue_limit_enabled`, `queue_limit_value`, `queue_limit_unit`) and should be applied on transaction date (`YYYY-MM-DD`) with supported units `days|months|years`.
+
 ### 6.2 Null Safety
 
 ```javascript

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from app.core.models import YnabCategorizerConfig, YnabPayeeCategoryStat
@@ -119,6 +119,29 @@ class _ClientStub:
                 "memo": "Split",
                 "amount": -2000,
             },
+            {
+                "id": "tx5",
+                "date": "2026-03-06",
+                "payee_name": "Reconciled store",
+                "category_id": None,
+                "deleted": False,
+                "transfer_account_id": None,
+                "subtransactions": [],
+                "memo": "Reconciled",
+                "amount": -3990,
+                "cleared": "reconciled",
+            },
+            {
+                "id": "tx6",
+                "date": "2025-01-01",
+                "payee_name": "Old tx",
+                "category_id": None,
+                "deleted": False,
+                "transfer_account_id": None,
+                "subtransactions": [],
+                "memo": "Old uncategorized",
+                "amount": -2990,
+            },
         ]
 
     def get_categories(self):
@@ -159,9 +182,9 @@ def test_queue_filtering_strict_skips_transfer_and_split_parent():
 
     payload = svc.get_queue()
 
-    assert payload["transaction_count"] == 2
+    assert payload["transaction_count"] == 3
     ids = {tx["id"] for g in payload["groups"] for tx in g["transactions"]}
-    assert ids == {"tx1", "tx2"}
+    assert ids == {"tx1", "tx2", "tx6"}
 
 
 def test_group_sort_by_confidence_then_latest_date_desc():
@@ -174,3 +197,25 @@ def test_group_sort_by_confidence_then_latest_date_desc():
     assert payload["groups"][0]["confidence_label"] == "High"
     assert payload["groups"][1]["payee_normalized"] == "TAXI HELSINKI"
     assert payload["groups"][1]["confidence_label"] == "Low"
+
+
+def test_reconciled_transactions_hidden_by_default():
+    ctrl = _CtrlStub(mode="strict")
+    svc = YnabCategorizerService(ctrl=ctrl, client=_ClientStub(), budget_id="budget1")
+
+    payload = svc.get_queue()
+    ids = {tx["id"] for g in payload["groups"] for tx in g["transactions"]}
+
+    assert "tx5" not in ids
+
+
+def test_queue_limit_filters_out_old_transactions():
+    tx = {"id": "old", "date": "2025-01-01", "deleted": False}
+    included = YnabCategorizerService.should_include_by_limit(
+        tx,
+        queue_limit_enabled=True,
+        queue_limit_value=30,
+        queue_limit_unit="days",
+        now=date(2026, 3, 9),
+    )
+    assert included is False

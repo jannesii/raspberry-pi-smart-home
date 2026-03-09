@@ -359,9 +359,18 @@ ynab_categorizer_config = Table(
     Column("id", Integer, primary_key=True),
     Column("budget_id", Text, nullable=False),
     Column("queue_filter_mode", Text, nullable=False, server_default=text("'strict'")),
+    Column("show_reconciled_transactions", Boolean, nullable=False, server_default=text("false")),
+    Column("queue_limit_enabled", Boolean, nullable=False, server_default=text("false")),
+    Column("queue_limit_value", Integer, nullable=False, server_default=text("30")),
+    Column("queue_limit_unit", Text, nullable=False, server_default=text("'days'")),
     Column("updated_ts", Text, nullable=False),
     UniqueConstraint("budget_id", name="uq_ynab_categorizer_config_budget"),
     CheckConstraint("id = 1", name="ck_ynab_categorizer_config_singleton"),
+    CheckConstraint("queue_limit_value >= 1", name="ck_ynab_queue_limit_value"),
+    CheckConstraint(
+        "queue_limit_unit IN ('days', 'months', 'years')",
+        name="ck_ynab_queue_limit_unit",
+    ),
 )
 
 Index(

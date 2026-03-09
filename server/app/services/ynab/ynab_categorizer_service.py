@@ -28,6 +28,7 @@ _VALID_QUEUE_MODES = {
     QUEUE_FILTER_ALL_UNCATEGORIZED,
     QUEUE_FILTER_SKIP_TRANSFERS,
 }
+_VALID_QUEUE_LIMIT_UNITS = {"days", "months", "years"}
 
 
 class YnabCategorizerService:
@@ -49,20 +50,80 @@ class YnabCategorizerService:
 
     def get_config(self) -> dict[str, Any]:
         cfg = self.ctrl.get_ynab_categorizer_config(self.budget_id)
-        logger.debug("get_config queue_filter_mode=%s", cfg.queue_filter_mode)
+        logger.debug(
+            (
+                "get_config queue_filter_mode=%s show_reconciled_transactions=%s "
+                "queue_limit_enabled=%s queue_limit_value=%s queue_limit_unit=%s"
+            ),
+            cfg.queue_filter_mode,
+            cfg.show_reconciled_transactions,
+            cfg.queue_limit_enabled,
+            cfg.queue_limit_value,
+            cfg.queue_limit_unit,
+        )
         return {
             "queue_filter_mode": cfg.queue_filter_mode,
+            "show_reconciled_transactions": bool(cfg.show_reconciled_transactions),
+            "queue_limit_enabled": bool(cfg.queue_limit_enabled),
+            "queue_limit_value": int(cfg.queue_limit_value),
+            "queue_limit_unit": str(cfg.queue_limit_unit),
             "updated_ts": cfg.updated_ts,
         }
 
     def set_queue_filter_mode(self, queue_filter_mode: str) -> dict[str, Any]:
         logger.debug("set_queue_filter_mode called mode=%s", queue_filter_mode)
+        current = self.ctrl.get_ynab_categorizer_config(self.budget_id)
+        return self.set_config(
+            queue_filter_mode=queue_filter_mode,
+            show_reconciled_transactions=bool(current.show_reconciled_transactions),
+            queue_limit_enabled=bool(current.queue_limit_enabled),
+            queue_limit_value=int(current.queue_limit_value),
+            queue_limit_unit=str(current.queue_limit_unit),
+        )
+
+    def set_config(
+        self,
+        *,
+        queue_filter_mode: str,
+        show_reconciled_transactions: bool,
+        queue_limit_enabled: bool,
+        queue_limit_value: int,
+        queue_limit_unit: str,
+    ) -> dict[str, Any]:
+        logger.debug(
+            (
+                "set_config called mode=%s show_reconciled=%s limit_enabled=%s "
+                "limit_value=%s limit_unit=%s"
+            ),
+            queue_filter_mode,
+            show_reconciled_transactions,
+            queue_limit_enabled,
+            queue_limit_value,
+            queue_limit_unit,
+        )
         mode = (queue_filter_mode or "").strip()
         if mode not in _VALID_QUEUE_MODES:
             raise ValueError("Invalid queue_filter_mode")
-        cfg = self.ctrl.save_ynab_categorizer_config(self.budget_id, mode)
+        limit_unit_value = str(queue_limit_unit or "").strip().lower()
+        if limit_unit_value not in _VALID_QUEUE_LIMIT_UNITS:
+            raise ValueError("Invalid queue_limit_unit")
+        if int(queue_limit_value) < 1:
+            raise ValueError("Invalid queue_limit_value")
+
+        cfg = self.ctrl.save_ynab_categorizer_config(
+            self.budget_id,
+            mode,
+            show_reconciled_transactions=bool(show_reconciled_transactions),
+            queue_limit_enabled=bool(queue_limit_enabled),
+            queue_limit_value=int(queue_limit_value),
+            queue_limit_unit=limit_unit_value,
+        )
         return {
             "queue_filter_mode": cfg.queue_filter_mode,
+            "show_reconciled_transactions": bool(cfg.show_reconciled_transactions),
+            "queue_limit_enabled": bool(cfg.queue_limit_enabled),
+            "queue_limit_value": int(cfg.queue_limit_value),
+            "queue_limit_unit": str(cfg.queue_limit_unit),
             "updated_ts": cfg.updated_ts,
         }
 
@@ -104,6 +165,66 @@ class YnabCategorizerService:
     def _is_uncategorized(tx: dict[str, Any]) -> bool:
         return tx.get("category_id") in (None, "")
 
+    @staticmethod
+    def _is_reconciled(tx: dict[str, Any]) -> bool:
+        return str(tx.get("cleared") or "").strip().lower() == "reconciled"
+
+    @staticmethod
+    def _parse_tx_date(tx: dict[str, Any]) -> date | None:
+        tx_date = tx.get("date")
+        if not tx_date:
+            return None
+        try:
+            return date.fromisoformat(str(tx_date))
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _subtract_months(value: date, months: int) -> date:
+        year = value.year
+        month = value.month - months
+        while month <= 0:
+            month += 12
+            year -= 1
+        month_days = [
+            31,
+            29 if (year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)) else 28,
+            31,
+            30,
+            31,
+            30,
+            31,
+            31,
+            30,
+            31,
+            30,
+            31,
+        ]
+        day = min(
+            value.day,
+            month_days[month - 1],
+        )
+        return date(year, month, day)
+
+    @staticmethod
+    def _subtract_years(value: date, years: int) -> date:
+        year = value.year - years
+        month = value.month
+        day = value.day
+        if month == 2 and day == 29:
+            leap = year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+            if not leap:
+                day = 28
+        return date(year, month, day)
+
+    @classmethod
+    def _limit_cutoff_date(cls, *, now: date, limit_value: int, limit_unit: str) -> date:
+        if limit_unit == "days":
+            return now - timedelta(days=limit_value)
+        if limit_unit == "months":
+            return cls._subtract_months(now, limit_value)
+        return cls._subtract_years(now, limit_value)
+
     @classmethod
     def should_include_for_queue(cls, tx: dict[str, Any], mode: str) -> bool:
         if bool(tx.get("deleted")):
@@ -116,6 +237,37 @@ class YnabCategorizerService:
             return not cls._is_transfer(tx)
         # strict default
         return (not cls._is_transfer(tx)) and (not cls._is_split_parent(tx))
+
+    @classmethod
+    def should_include_reconciled(cls, tx: dict[str, Any], show_reconciled: bool) -> bool:
+        if show_reconciled:
+            return True
+        return not cls._is_reconciled(tx)
+
+    @classmethod
+    def should_include_by_limit(
+        cls,
+        tx: dict[str, Any],
+        *,
+        queue_limit_enabled: bool,
+        queue_limit_value: int,
+        queue_limit_unit: str,
+        now: date | None = None,
+    ) -> bool:
+        if not queue_limit_enabled:
+            return True
+        tx_date = cls._parse_tx_date(tx)
+        if tx_date is None:
+            return False
+        if queue_limit_value < 1 or queue_limit_unit not in _VALID_QUEUE_LIMIT_UNITS:
+            return True
+        today = now or date.today()
+        cutoff = cls._limit_cutoff_date(
+            now=today,
+            limit_value=queue_limit_value,
+            limit_unit=queue_limit_unit,
+        )
+        return tx_date >= cutoff
 
     @classmethod
     def should_include_for_bootstrap(cls, tx: dict[str, Any]) -> bool:
@@ -202,14 +354,43 @@ class YnabCategorizerService:
         mode = (queue_filter_mode or cfg.queue_filter_mode or QUEUE_FILTER_STRICT).strip()
         if mode not in _VALID_QUEUE_MODES:
             mode = QUEUE_FILTER_STRICT
+        show_reconciled = bool(cfg.show_reconciled_transactions)
+        queue_limit_enabled = bool(cfg.queue_limit_enabled)
+        queue_limit_value = int(cfg.queue_limit_value)
+        queue_limit_unit = str(cfg.queue_limit_unit or "days").strip().lower()
+        if queue_limit_unit not in _VALID_QUEUE_LIMIT_UNITS:
+            queue_limit_unit = "days"
+        if queue_limit_value < 1:
+            queue_limit_value = 30
 
-        logger.debug("get_queue called mode=%s", mode)
+        logger.debug(
+            (
+                "get_queue called mode=%s show_reconciled=%s "
+                "queue_limit_enabled=%s queue_limit_value=%s queue_limit_unit=%s"
+            ),
+            mode,
+            show_reconciled,
+            queue_limit_enabled,
+            queue_limit_value,
+            queue_limit_unit,
+        )
         transactions = self.client.get_transactions_since(None)
         category_groups = self.client.get_categories()
         categories = self._categories_payload(category_groups)
         category_name_map = self._category_name_by_id(categories)
 
-        filtered = [tx for tx in transactions if self.should_include_for_queue(tx, mode)]
+        filtered = [
+            tx
+            for tx in transactions
+            if self.should_include_for_queue(tx, mode)
+            and self.should_include_reconciled(tx, show_reconciled)
+            and self.should_include_by_limit(
+                tx,
+                queue_limit_enabled=queue_limit_enabled,
+                queue_limit_value=queue_limit_value,
+                queue_limit_unit=queue_limit_unit,
+            )
+        ]
         logger.debug(
             "get_queue filtered transactions total=%s queue=%s",
             len(transactions),
@@ -289,6 +470,10 @@ class YnabCategorizerService:
 
         return {
             "queue_filter_mode": mode,
+            "show_reconciled_transactions": show_reconciled,
+            "queue_limit_enabled": queue_limit_enabled,
+            "queue_limit_value": queue_limit_value,
+            "queue_limit_unit": queue_limit_unit,
             "group_count": len(groups),
             "transaction_count": len(filtered),
             "categories": categories,
