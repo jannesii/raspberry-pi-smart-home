@@ -36,11 +36,6 @@
         <button id="btnRefreshQueue" type="button">Refresh queue</button>
       </div>
       <div class="ynab-control-row">
-        <label for="globalCategorySelect">Category for selected</label>
-        <select id="globalCategorySelect" name="globalCategorySelect"></select>
-        <button id="btnApplySelected" type="button">Apply selected</button>
-      </div>
-      <div class="ynab-control-row">
         <span id="bootstrapStatus">Bootstrap status: —</span>
         <button id="btnBootstrap" type="button">Bootstrap now</button>
       </div>
@@ -50,6 +45,15 @@
       <h3>Grouped Queue</h3>
       <div id="queueSummary" class="ynab-summary">Loading…</div>
       <div id="ynabGroups" class="ynab-groups"></div>
+    </section>
+
+    <section id="floatingApplyBar" class="ynab-floating-apply" aria-live="polite">
+      <div class="ynab-floating-apply-inner">
+        <span id="selectedTxCount">0 selected</span>
+        <label for="globalCategorySelect">Category for selected</label>
+        <select id="globalCategorySelect" name="globalCategorySelect"></select>
+        <button id="btnApplySelected" type="button">Apply selected</button>
+      </div>
     </section>
   {% endif %}
 </div>

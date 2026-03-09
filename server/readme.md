@@ -60,7 +60,7 @@ A comprehensive home automation server for Raspberry Pi (or any Linux host). Rea
 - **Explicit apply workflow** (no automatic category changes)
 - **Bootstrap learning** from 24 months of categorized history
 - **Configurable queue filter mode** (`strict`, `skip_transfers`, `all_uncategorized`)
-- **Queue rows show EUR amounts and `DD-MM-YYYY` dates**, and row click toggles selection
+- **Queue rows show EUR amounts and `DD-MM-YYYY` dates**, row click toggles selection, and selected actions appear in a floating apply bar
 
 ### 📊 System Features
 - **Real-time WebSocket updates** – instant UI refresh without polling

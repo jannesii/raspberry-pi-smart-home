@@ -140,6 +140,17 @@ function selectedTransactionIds() {
   return ids;
 }
 
+function updateFloatingApplyBarVisibility() {
+  const floatingBar = document.getElementById('floatingApplyBar');
+  if (!floatingBar) return;
+  const selectedCount = selectedTransactionIds().length;
+  const countLabel = document.getElementById('selectedTxCount');
+  if (countLabel) {
+    countLabel.textContent = `${selectedCount} selected`;
+  }
+  floatingBar.classList.toggle('is-visible', selectedCount > 0);
+}
+
 function renderGlobalCategorySelect() {
   const select = document.getElementById('globalCategorySelect');
   if (!select) return;
@@ -235,6 +246,7 @@ function renderQueue(payload) {
           cb.checked = true;
         }
       });
+      updateFloatingApplyBarVisibility();
       const catSelect = group.querySelector('.ynab-group-category');
       const categoryId = catSelect instanceof HTMLSelectElement ? catSelect.value : '';
       if (!txIds.length || !categoryId) {
@@ -243,6 +255,11 @@ function renderQueue(payload) {
       }
       await applyTransactions(txIds, categoryId);
     });
+  });
+
+  const transactionChecks = document.querySelectorAll('.ynab-tx-check');
+  transactionChecks.forEach(cb => {
+    cb.addEventListener('change', updateFloatingApplyBarVisibility);
   });
 
   const transactionRows = document.querySelectorAll('.ynab-tx-item');
@@ -255,8 +272,11 @@ function renderQueue(payload) {
       const checkbox = row.querySelector('.ynab-tx-check');
       if (!(checkbox instanceof HTMLInputElement)) return;
       checkbox.checked = !checkbox.checked;
+      updateFloatingApplyBarVisibility();
     });
   });
+
+  updateFloatingApplyBarVisibility();
 }
 
 async function loadQueue() {

@@ -1,7 +1,7 @@
 .ynab-page {
   max-width: 1100px;
   margin: 0 auto;
-  padding: 16px;
+  padding: 16px 16px 112px;
 }
 
 .ynab-header h2 {
@@ -160,6 +160,38 @@
   white-space: nowrap;
 }
 
+.ynab-floating-apply {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  width: min(960px, calc(100% - 24px));
+  display: none;
+  z-index: 1200;
+}
+
+.ynab-floating-apply.is-visible {
+  display: block;
+}
+
+.ynab-floating-apply-inner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 12px;
+  border: 1px solid #3f3f3f;
+  border-radius: 10px;
+  background: rgba(18, 18, 18, 0.96);
+  backdrop-filter: blur(4px);
+}
+
+.ynab-floating-apply-inner select,
+.ynab-floating-apply-inner button {
+  min-height: 34px;
+}
+
 @media (max-width: 768px) {
   .ynab-tx-item {
     grid-template-columns: auto 1fr;
@@ -168,5 +200,10 @@
   .ynab-tx-amount {
     grid-column: 2;
     justify-self: end;
+  }
+
+  .ynab-floating-apply {
+    bottom: 10px;
+    width: calc(100% - 16px);
   }
 }
