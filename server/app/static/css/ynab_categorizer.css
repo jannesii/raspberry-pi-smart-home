@@ -90,6 +90,19 @@
   color: #cfcfcf;
 }
 
+.ynab-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.ynab-quick-actions-input {
+  min-width: 280px;
+  flex: 1 1 280px;
+}
+
 .ynab-groups {
   display: grid;
   gap: 10px;
@@ -210,8 +223,29 @@
 }
 
 .ynab-floating-apply-inner select,
+.ynab-floating-apply-inner input,
 .ynab-floating-apply-inner button {
   min-height: 34px;
+}
+
+.ynab-recent-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.ynab-recent-chip {
+  border: 1px solid #474747;
+  background: #141414;
+  color: #d8d8d8;
+  border-radius: 999px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.ynab-recent-chip:hover {
+  border-color: #6d6d6d;
 }
 
 @media (max-width: 768px) {

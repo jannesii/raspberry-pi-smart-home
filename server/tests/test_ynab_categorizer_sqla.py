@@ -35,6 +35,7 @@ def test_config_defaults_to_strict(controller: Controller):
     assert cfg.queue_limit_enabled is False
     assert cfg.queue_limit_value == 30
     assert cfg.queue_limit_unit == "days"
+    assert cfg.quick_apply_include_medium is False
 
 
 def test_config_save_and_read(controller: Controller):
@@ -45,12 +46,14 @@ def test_config_save_and_read(controller: Controller):
         queue_limit_enabled=True,
         queue_limit_value=14,
         queue_limit_unit="days",
+        quick_apply_include_medium=True,
     )
     assert saved.queue_filter_mode == "skip_transfers"
     assert saved.show_reconciled_transactions is True
     assert saved.queue_limit_enabled is True
     assert saved.queue_limit_value == 14
     assert saved.queue_limit_unit == "days"
+    assert saved.quick_apply_include_medium is True
 
     loaded = controller.get_ynab_categorizer_config("budget1")
     assert loaded.queue_filter_mode == "skip_transfers"
@@ -58,6 +61,7 @@ def test_config_save_and_read(controller: Controller):
     assert loaded.queue_limit_enabled is True
     assert loaded.queue_limit_value == 14
     assert loaded.queue_limit_unit == "days"
+    assert loaded.quick_apply_include_medium is True
 
 
 def test_increment_stats_upsert(controller: Controller):

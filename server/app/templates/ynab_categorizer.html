@@ -68,6 +68,22 @@
 
     <section class="ynab-panel">
       <h3>Grouped Queue</h3>
+      <div class="ynab-quick-actions">
+        <button id="btnApplySuggested" type="button">Apply suggested</button>
+        <label for="quickApplyIncludeMedium">
+          <input id="quickApplyIncludeMedium" name="quickApplyIncludeMedium" type="checkbox">
+          Include Medium
+        </label>
+        <button id="btnSelectVisible" type="button">Select visible</button>
+        <button id="btnClearSelection" type="button">Clear selection</button>
+        <input
+          id="queueFilterInput"
+          name="queueFilterInput"
+          type="text"
+          class="ynab-quick-actions-input"
+          placeholder="Filter queue (payee, memo, date, amount)"
+        >
+      </div>
       <div id="queueSummary" class="ynab-summary">Loading…</div>
       <div id="ynabGroups" class="ynab-groups"></div>
     </section>
@@ -76,9 +92,17 @@
       <div class="ynab-floating-apply-inner">
         <span id="selectedTxCount">0 selected</span>
         <label for="globalCategorySelect">Category for selected</label>
+        <input
+          id="globalCategorySearch"
+          name="globalCategorySearch"
+          type="text"
+          placeholder="Find category"
+          autocomplete="off"
+        >
         <select id="globalCategorySelect" name="globalCategorySelect"></select>
         <button id="btnApplySelected" type="button">Apply selected</button>
       </div>
+      <div id="recentCategoryChips" class="ynab-recent-chips"></div>
     </section>
   {% endif %}
 </div>

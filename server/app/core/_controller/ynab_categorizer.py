@@ -57,6 +57,7 @@ class YnabCategorizerMixin:
                 queue_limit_enabled=False,
                 queue_limit_value=30,
                 queue_limit_unit="days",
+                quick_apply_include_medium=False,
                 updated_ts=self._ynab_now_iso(),
             )
             logger.debug("get_ynab_categorizer_config returning default config=%s", cfg)
@@ -70,6 +71,7 @@ class YnabCategorizerMixin:
             queue_limit_enabled=bool(row.get("queue_limit_enabled")),
             queue_limit_value=int(row.get("queue_limit_value") or 30),
             queue_limit_unit=str(row.get("queue_limit_unit") or "days"),
+            quick_apply_include_medium=bool(row.get("quick_apply_include_medium")),
             updated_ts=str(row["updated_ts"]),
         )
         logger.debug("get_ynab_categorizer_config loaded config=%s", cfg)
@@ -84,12 +86,13 @@ class YnabCategorizerMixin:
         queue_limit_enabled: bool | None = None,
         queue_limit_value: int | None = None,
         queue_limit_unit: str | None = None,
+        quick_apply_include_medium: bool | None = None,
     ) -> YnabCategorizerConfig:
         logger.debug(
             (
                 "save_ynab_categorizer_config called budget_id=%s queue_filter_mode=%s "
                 "show_reconciled_transactions=%s queue_limit_enabled=%s "
-                "queue_limit_value=%s queue_limit_unit=%s"
+                "queue_limit_value=%s queue_limit_unit=%s quick_apply_include_medium=%s"
             ),
             budget_id,
             queue_filter_mode,
@@ -97,6 +100,7 @@ class YnabCategorizerMixin:
             queue_limit_enabled,
             queue_limit_value,
             queue_limit_unit,
+            quick_apply_include_medium,
         )
         mode = (queue_filter_mode or "").strip()
         if mode not in _VALID_QUEUE_MODES:
@@ -105,6 +109,7 @@ class YnabCategorizerMixin:
         limit_enabled = bool(queue_limit_enabled)
         limit_value = int(queue_limit_value) if queue_limit_value is not None else 30
         limit_unit_value = str(queue_limit_unit or "days").strip().lower()
+        quick_apply_include_medium_value = bool(quick_apply_include_medium)
         if limit_value < 1:
             raise ValueError(f"Invalid queue_limit_value: {queue_limit_value}")
         if limit_unit_value not in _VALID_QUEUE_LIMIT_UNITS:
@@ -123,6 +128,7 @@ class YnabCategorizerMixin:
                 queue_limit_enabled=limit_enabled,
                 queue_limit_value=limit_value,
                 queue_limit_unit=limit_unit_value,
+                quick_apply_include_medium=quick_apply_include_medium_value,
                 updated_ts=now,
             )
             .on_conflict_do_update(
@@ -134,6 +140,7 @@ class YnabCategorizerMixin:
                     "queue_limit_enabled": limit_enabled,
                     "queue_limit_value": limit_value,
                     "queue_limit_unit": limit_unit_value,
+                    "quick_apply_include_medium": quick_apply_include_medium_value,
                     "updated_ts": now,
                 },
             )
@@ -149,6 +156,7 @@ class YnabCategorizerMixin:
                     queue_limit_enabled=limit_enabled,
                     queue_limit_value=limit_value,
                     queue_limit_unit=limit_unit_value,
+                    quick_apply_include_medium=quick_apply_include_medium_value,
                     updated_ts=now,
                 )
                 .on_conflict_do_update(
@@ -160,6 +168,7 @@ class YnabCategorizerMixin:
                         "queue_limit_enabled": limit_enabled,
                         "queue_limit_value": limit_value,
                         "queue_limit_unit": limit_unit_value,
+                        "quick_apply_include_medium": quick_apply_include_medium_value,
                         "updated_ts": now,
                     },
                 )
@@ -176,6 +185,7 @@ class YnabCategorizerMixin:
             queue_limit_enabled=limit_enabled,
             queue_limit_value=limit_value,
             queue_limit_unit=limit_unit_value,
+            quick_apply_include_medium=quick_apply_include_medium_value,
             updated_ts=now,
         )
         logger.debug("save_ynab_categorizer_config saved config=%s", cfg)

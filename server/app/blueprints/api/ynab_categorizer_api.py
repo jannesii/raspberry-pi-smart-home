@@ -291,6 +291,9 @@ def ynab_set_config():
         queue_limit_enabled = _parse_bool(data.get("queue_limit_enabled"), default=False)
         queue_limit_value = _parse_int(data.get("queue_limit_value"), default=30)
         queue_limit_unit = str(data.get("queue_limit_unit") or "days").strip().lower()
+        quick_apply_include_medium = _parse_bool(
+            data.get("quick_apply_include_medium"), default=False
+        )
     except ValueError as exc:
         logger.warning("ynab_set_config bad request parse error: %s", exc)
         return jsonify({"ok": False, "error": "bad_request", "message": str(exc)}), 400
@@ -299,7 +302,7 @@ def ynab_set_config():
         (
             "ynab_set_config called user=%s queue_filter_mode=%s "
             "show_reconciled_transactions=%s queue_limit_enabled=%s "
-            "queue_limit_value=%s queue_limit_unit=%s"
+            "queue_limit_value=%s queue_limit_unit=%s quick_apply_include_medium=%s"
         ),
         current_user.get_id(),
         queue_filter_mode,
@@ -307,6 +310,7 @@ def ynab_set_config():
         queue_limit_enabled,
         queue_limit_value,
         queue_limit_unit,
+        quick_apply_include_medium,
     )
     try:
         result = svc.set_config(
@@ -315,6 +319,7 @@ def ynab_set_config():
             queue_limit_enabled=queue_limit_enabled,
             queue_limit_value=queue_limit_value,
             queue_limit_unit=queue_limit_unit,
+            quick_apply_include_medium=quick_apply_include_medium,
         )
         return jsonify({"ok": True, **result})
     except ValueError as exc:

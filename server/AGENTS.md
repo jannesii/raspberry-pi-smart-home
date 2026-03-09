@@ -509,6 +509,8 @@ function update(data) {
 
 **YNAB queue-limit note**: Queue limiting is config-driven (`queue_limit_enabled`, `queue_limit_value`, `queue_limit_unit`) and should be applied on transaction date (`YYYY-MM-DD`) with supported units `days|months|years`.
 
+**YNAB quick-apply preference note**: `quick_apply_include_medium` is persisted in `ynab_categorizer_config` and defaults to `false`; keep High-confidence-only bulk suggestion apply as the safe default unless explicitly enabled.
+
 ### 6.2 Null Safety
 
 ```javascript

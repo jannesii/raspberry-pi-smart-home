@@ -68,6 +68,7 @@ class _ServiceStub:
             "queue_limit_enabled": False,
             "queue_limit_value": 30,
             "queue_limit_unit": "days",
+            "quick_apply_include_medium": False,
             "updated_ts": "2026-03-09T10:00:00+02:00",
         }
 
@@ -79,6 +80,7 @@ class _ServiceStub:
         queue_limit_enabled,
         queue_limit_value,
         queue_limit_unit,
+        quick_apply_include_medium,
     ):
         self.config_payloads.append(
             {
@@ -87,6 +89,7 @@ class _ServiceStub:
                 "queue_limit_enabled": queue_limit_enabled,
                 "queue_limit_value": queue_limit_value,
                 "queue_limit_unit": queue_limit_unit,
+                "quick_apply_include_medium": quick_apply_include_medium,
             }
         )
         return {
@@ -95,6 +98,7 @@ class _ServiceStub:
             "queue_limit_enabled": queue_limit_enabled,
             "queue_limit_value": queue_limit_value,
             "queue_limit_unit": queue_limit_unit,
+            "quick_apply_include_medium": quick_apply_include_medium,
             "updated_ts": "2026-03-09T10:00:00+02:00",
         }
 
@@ -216,6 +220,7 @@ def test_config_post_with_csrf_updates_all_fields(client, app):
             "queue_limit_enabled": True,
             "queue_limit_value": 14,
             "queue_limit_unit": "days",
+            "quick_apply_include_medium": True,
         },
         headers={"X-CSRFToken": token},
     )
@@ -227,10 +232,12 @@ def test_config_post_with_csrf_updates_all_fields(client, app):
     assert payload["queue_limit_enabled"] is True
     assert payload["queue_limit_value"] == 14
     assert payload["queue_limit_unit"] == "days"
+    assert payload["quick_apply_include_medium"] is True
 
     svc = app.ynab_categorizer_service
     assert svc.config_payloads[0]["queue_filter_mode"] == "strict"
     assert svc.config_payloads[0]["show_reconciled_transactions"] is True
+    assert svc.config_payloads[0]["quick_apply_include_medium"] is True
 
 
 def test_config_post_rejects_invalid_int(client):
@@ -245,6 +252,29 @@ def test_config_post_rejects_invalid_int(client):
             "queue_limit_enabled": True,
             "queue_limit_value": "abc",
             "queue_limit_unit": "days",
+            "quick_apply_include_medium": False,
+        },
+        headers={"X-CSRFToken": token},
+    )
+
+    assert response.status_code == 400
+    payload = response.get_json() or {}
+    assert payload.get("error") == "bad_request"
+
+
+def test_config_post_rejects_invalid_bool(client):
+    _login(client, "root")
+    token = _csrf_token(client)
+
+    response = client.post(
+        "/api/ynab-categorizer/config",
+        json={
+            "queue_filter_mode": "strict",
+            "show_reconciled_transactions": False,
+            "queue_limit_enabled": True,
+            "queue_limit_value": 30,
+            "queue_limit_unit": "days",
+            "quick_apply_include_medium": "maybe",
         },
         headers={"X-CSRFToken": token},
     )

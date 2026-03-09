@@ -183,6 +183,7 @@ def test_queue_filtering_strict_skips_transfer_and_split_parent():
     payload = svc.get_queue()
 
     assert payload["transaction_count"] == 3
+    assert payload["quick_apply_include_medium"] is False
     ids = {tx["id"] for g in payload["groups"] for tx in g["transactions"]}
     assert ids == {"tx1", "tx2", "tx6"}
 

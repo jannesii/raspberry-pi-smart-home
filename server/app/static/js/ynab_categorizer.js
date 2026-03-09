@@ -4,6 +4,24 @@
 
 console.log('📒 ynab_categorizer.js loaded');
 
+const RECENT_CATEGORY_STORAGE_KEY = 'ynabCategorizerRecentCategories';
+const RECENT_CATEGORY_LIMIT = 6;
+
+let queueStateRaw = null;
+let queueState = {
+  categories: [],
+  groups: [],
+  queue_filter_mode: 'strict',
+  show_reconciled_transactions: false,
+  queue_limit_enabled: false,
+  queue_limit_value: 30,
+  queue_limit_unit: 'days',
+  quick_apply_include_medium: false,
+};
+
+let queueFilterTerm = '';
+let recentCategoryIds = [];
+
 function fmtTs(ts) {
   if (!ts) return '—';
   try {
@@ -123,16 +141,6 @@ function serializeDateForSort(dateStr) {
   return Number.isFinite(n) ? n : 0;
 }
 
-let queueState = {
-  categories: [],
-  groups: [],
-  queue_filter_mode: 'strict',
-  show_reconciled_transactions: false,
-  queue_limit_enabled: false,
-  queue_limit_value: 30,
-  queue_limit_unit: 'days',
-};
-
 function selectedTransactionIds() {
   const ids = [];
   const checkboxes = document.querySelectorAll('.ynab-tx-check');
@@ -174,6 +182,7 @@ function applySettingsToUi(data) {
   const queueLimitEnabled = document.getElementById('queueLimitEnabled');
   const queueLimitValue = document.getElementById('queueLimitValue');
   const queueLimitUnit = document.getElementById('queueLimitUnit');
+  const quickApplyIncludeMedium = document.getElementById('quickApplyIncludeMedium');
 
   if (modeSelect instanceof HTMLSelectElement && data && data.queue_filter_mode) {
     modeSelect.value = data.queue_filter_mode;
@@ -190,6 +199,9 @@ function applySettingsToUi(data) {
   if (queueLimitUnit instanceof HTMLSelectElement && data && data.queue_limit_unit) {
     queueLimitUnit.value = String(data.queue_limit_unit);
   }
+  if (quickApplyIncludeMedium instanceof HTMLInputElement) {
+    quickApplyIncludeMedium.checked = !!(data && data.quick_apply_include_medium);
+  }
   updateLimitControlsState();
 }
 
@@ -199,6 +211,7 @@ function readSettingsFromUi() {
   const queueLimitEnabled = document.getElementById('queueLimitEnabled');
   const queueLimitValue = document.getElementById('queueLimitValue');
   const queueLimitUnit = document.getElementById('queueLimitUnit');
+  const quickApplyIncludeMedium = document.getElementById('quickApplyIncludeMedium');
 
   const mode = modeSelect instanceof HTMLSelectElement ? modeSelect.value : '';
   if (!mode) {
@@ -233,33 +246,192 @@ function readSettingsFromUi() {
     queue_limit_enabled: queueLimitEnabledValue,
     queue_limit_value: queueLimitValueParsed,
     queue_limit_unit: queueLimitUnitValue,
+    quick_apply_include_medium: quickApplyIncludeMedium instanceof HTMLInputElement
+      ? quickApplyIncludeMedium.checked
+      : false,
   };
+}
+
+function loadRecentCategoryIds() {
+  try {
+    const raw = window.localStorage.getItem(RECENT_CATEGORY_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map(item => String(item || '').trim())
+      .filter(Boolean)
+      .slice(0, RECENT_CATEGORY_LIMIT);
+  } catch {
+    return [];
+  }
+}
+
+function saveRecentCategoryIds(ids) {
+  try {
+    window.localStorage.setItem(RECENT_CATEGORY_STORAGE_KEY, JSON.stringify(ids));
+  } catch {
+    // Ignore storage errors.
+  }
+}
+
+function addRecentCategory(categoryId) {
+  const id = String(categoryId || '').trim();
+  if (!id) return;
+  const next = [id, ...recentCategoryIds.filter(existing => existing !== id)]
+    .slice(0, RECENT_CATEGORY_LIMIT);
+  recentCategoryIds = next;
+  saveRecentCategoryIds(next);
+  renderRecentCategoryChips();
+}
+
+function renderRecentCategoryChips() {
+  const chipsEl = document.getElementById('recentCategoryChips');
+  if (!chipsEl) return;
+  const byId = {};
+  (queueState.categories || []).forEach(cat => {
+    if (cat && cat.id) {
+      byId[String(cat.id)] = String(cat.name || cat.id);
+    }
+  });
+
+  const ids = recentCategoryIds.filter(id => Object.prototype.hasOwnProperty.call(byId, id));
+  if (!ids.length) {
+    chipsEl.innerHTML = '';
+    return;
+  }
+
+  chipsEl.innerHTML = ids
+    .map(id => `<button type="button" class="ynab-recent-chip" data-category-id="${id}">${byId[id]}</button>`)
+    .join('');
+
+  const chipButtons = chipsEl.querySelectorAll('.ynab-recent-chip');
+  chipButtons.forEach(btn => {
+    btn.addEventListener('click', event => {
+      const target = event.currentTarget;
+      if (!(target instanceof HTMLElement)) return;
+      const categoryId = String(target.getAttribute('data-category-id') || '').trim();
+      if (!categoryId) return;
+      const searchInput = document.getElementById('globalCategorySearch');
+      if (searchInput instanceof HTMLInputElement) {
+        searchInput.value = '';
+      }
+      renderGlobalCategorySelect();
+      const select = document.getElementById('globalCategorySelect');
+      if (select instanceof HTMLSelectElement) {
+        select.value = categoryId;
+      }
+    });
+  });
+}
+
+function globalCategorySearchTerm() {
+  const searchInput = document.getElementById('globalCategorySearch');
+  if (!(searchInput instanceof HTMLInputElement)) return '';
+  return String(searchInput.value || '').trim().toLowerCase();
 }
 
 function renderGlobalCategorySelect() {
   const select = document.getElementById('globalCategorySelect');
-  if (!select) return;
+  if (!(select instanceof HTMLSelectElement)) return;
+
   const currentValue = select.value;
-  select.innerHTML = makeCategoryOptions(queueState.categories, currentValue || '');
+  const term = globalCategorySearchTerm();
+  const allCategories = Array.isArray(queueState.categories) ? queueState.categories : [];
+  const categories = term
+    ? allCategories.filter(cat => {
+      const name = cat && cat.name ? String(cat.name) : '';
+      return name.toLowerCase().includes(term);
+    })
+    : allCategories;
+
+  let selected = currentValue || '';
+  if (!categories.some(cat => cat && String(cat.id || '') === selected)) {
+    selected = categories.length && categories[0] && categories[0].id
+      ? String(categories[0].id)
+      : '';
+  }
+
+  select.innerHTML = makeCategoryOptions(categories, selected);
+  if (selected) {
+    select.value = selected;
+  }
+  renderRecentCategoryChips();
+}
+
+function txMatchesFilter(tx, term) {
+  if (!term) return true;
+  const haystack = [
+    tx && tx.id ? String(tx.id) : '',
+    tx && tx.memo ? String(tx.memo) : '',
+    tx && tx.date ? String(tx.date) : '',
+    tx && tx.payee_name ? String(tx.payee_name) : '',
+    fmtEurFromMilliunits(tx ? tx.amount_milliunits : null),
+  ].join(' ').toLowerCase();
+  return haystack.includes(term);
+}
+
+function visibleSuggestedGroups(includeMedium) {
+  const allowed = includeMedium ? new Set(['high', 'medium']) : new Set(['high']);
+  const groups = [];
+  const nodes = document.querySelectorAll('#ynabGroups .ynab-group');
+
+  nodes.forEach(node => {
+    if (!(node instanceof HTMLElement)) return;
+    const confidence = String(node.getAttribute('data-confidence-label') || '').toLowerCase();
+    if (!allowed.has(confidence)) return;
+    const categoryId = String(node.getAttribute('data-suggested-category-id') || '').trim();
+    if (!categoryId) return;
+
+    const txIds = [];
+    const checkboxes = node.querySelectorAll('.ynab-tx-check');
+    checkboxes.forEach(cb => {
+      if (cb instanceof HTMLInputElement && cb.value) {
+        txIds.push(cb.value);
+      }
+    });
+
+    if (!txIds.length) return;
+    groups.push({
+      payee: String(node.getAttribute('data-payee') || 'UNKNOWN'),
+      categoryId,
+      txIds,
+    });
+  });
+
+  return groups;
+}
+
+function setVisibleSelection(checked) {
+  const checkboxes = document.querySelectorAll('#ynabGroups .ynab-tx-check');
+  checkboxes.forEach(cb => {
+    if (cb instanceof HTMLInputElement) {
+      cb.checked = checked;
+    }
+  });
+  updateFloatingApplyBarVisibility();
 }
 
 function renderQueue(payload) {
-  queueState = payload;
+  if (payload) {
+    queueStateRaw = payload;
+  }
+  if (!queueStateRaw) return;
 
+  queueState = queueStateRaw;
   const groupsEl = document.getElementById('ynabGroups');
   const summaryEl = document.getElementById('queueSummary');
+  const filterInput = document.getElementById('queueFilterInput');
+  queueFilterTerm = filterInput instanceof HTMLInputElement
+    ? String(filterInput.value || '').trim().toLowerCase()
+    : '';
 
-  applySettingsToUi(payload || {});
-
+  applySettingsToUi(queueState);
   renderGlobalCategorySelect();
-
-  if (summaryEl) {
-    summaryEl.textContent = `Groups: ${payload.group_count || 0} | Transactions: ${payload.transaction_count || 0}`;
-  }
 
   if (!groupsEl) return;
 
-  const groups = Array.isArray(payload.groups) ? payload.groups.slice() : [];
+  const groups = Array.isArray(queueState.groups) ? queueState.groups.slice() : [];
   groups.sort((a, b) => {
     const ranks = { High: 0, Medium: 1, Low: 2 };
     const rankA = Object.prototype.hasOwnProperty.call(ranks, a.confidence_label) ? ranks[a.confidence_label] : 3;
@@ -268,15 +440,52 @@ function renderQueue(payload) {
     return serializeDateForSort(b.latest_date) - serializeDateForSort(a.latest_date);
   });
 
-  const html = groups.map(group => {
+  const visibleGroups = [];
+  groups.forEach(group => {
+    const txAll = Array.isArray(group.transactions) ? group.transactions : [];
+    const payeeText = `${group.payee_display || ''} ${group.payee_normalized || ''}`.toLowerCase();
+    const payeeMatches = !queueFilterTerm || payeeText.includes(queueFilterTerm);
+    const txVisible = payeeMatches
+      ? txAll
+      : txAll.filter(tx => txMatchesFilter(tx, queueFilterTerm));
+
+    if (!txVisible.length) {
+      return;
+    }
+
+    visibleGroups.push({
+      ...group,
+      _visibleTransactions: txVisible,
+      _totalTransactions: txAll.length,
+    });
+  });
+
+  if (summaryEl) {
+    const visibleTxCount = visibleGroups.reduce((sum, group) => sum + group._visibleTransactions.length, 0);
+    if (queueFilterTerm) {
+      summaryEl.textContent = (
+        `Groups: ${visibleGroups.length}/${queueState.group_count || 0} | ` +
+        `Transactions: ${visibleTxCount}/${queueState.transaction_count || 0}`
+      );
+    } else {
+      summaryEl.textContent = `Groups: ${queueState.group_count || 0} | Transactions: ${queueState.transaction_count || 0}`;
+    }
+  }
+
+  const html = visibleGroups.map(group => {
     const suggestion = group.suggestion || null;
-    const suggestedCategory = suggestion && suggestion.category_id ? suggestion.category_id : '';
+    const suggestedCategory = suggestion && suggestion.category_id ? String(suggestion.category_id) : '';
     const suggestionText = suggestion
       ? `${suggestion.category_name || suggestion.category_id} (${Math.round((suggestion.confidence || 0) * 100)}%)`
       : 'No suggestion';
     const label = group.confidence_label || 'Low';
+    const visibleCount = group._visibleTransactions.length;
+    const totalCount = group._totalTransactions;
+    const countText = queueFilterTerm && visibleCount !== totalCount
+      ? `${visibleCount}/${totalCount} transaction(s)`
+      : `${totalCount} transaction(s)`;
 
-    const txRows = (group.transactions || []).map(tx => {
+    const txRows = group._visibleTransactions.map(tx => {
       const txId = tx && tx.id ? String(tx.id) : '';
       const memo = tx && tx.memo ? String(tx.memo) : '—';
       const date = fmtDateDDMMYYYY(tx && tx.date ? String(tx.date) : '');
@@ -294,17 +503,23 @@ function renderQueue(payload) {
     }).join('');
 
     return `
-      <article class="ynab-group" data-payee="${group.payee_normalized}">
+      <article
+        class="ynab-group"
+        data-payee="${group.payee_normalized}"
+        data-confidence-label="${String(label).toLowerCase()}"
+        data-suggested-category-id="${suggestedCategory}"
+      >
         <div class="ynab-group-header">
           <div>
             <div class="ynab-group-title">${group.payee_display || group.payee_normalized}</div>
-            <div>${group.transaction_count || 0} transaction(s)</div>
+            <div>${countText}</div>
           </div>
           <span class="ynab-badge ${badgeClass(label)}">${label}</span>
         </div>
         <div class="ynab-group-controls">
           <span>Suggestion: ${suggestionText}</span>
           <select class="ynab-group-category">${makeCategoryOptions(queueState.categories || [], suggestedCategory)}</select>
+          <button type="button" class="btnUseSuggestion" ${suggestedCategory ? '' : 'disabled'}>Use suggestion</button>
           <button type="button" class="btnApplyGroup">Apply group</button>
         </div>
         <ul class="ynab-tx-list">${txRows}</ul>
@@ -339,6 +554,42 @@ function renderQueue(payload) {
     });
   });
 
+  const suggestionButtons = document.querySelectorAll('.btnUseSuggestion');
+  suggestionButtons.forEach(btn => {
+    btn.addEventListener('click', async event => {
+      const target = event.currentTarget;
+      if (!(target instanceof HTMLElement)) return;
+      const group = target.closest('.ynab-group');
+      if (!group) return;
+
+      const suggestedCategoryId = String(group.getAttribute('data-suggested-category-id') || '').trim();
+      if (!suggestedCategoryId) {
+        showMessage('No suggestion available for this group', 'error');
+        return;
+      }
+
+      const txIds = [];
+      const checkboxes = group.querySelectorAll('.ynab-tx-check');
+      checkboxes.forEach(cb => {
+        if (cb instanceof HTMLInputElement && cb.value) {
+          txIds.push(cb.value);
+          cb.checked = true;
+        }
+      });
+      updateFloatingApplyBarVisibility();
+      if (!txIds.length) {
+        showMessage('No transactions available in this group', 'error');
+        return;
+      }
+
+      const catSelect = group.querySelector('.ynab-group-category');
+      if (catSelect instanceof HTMLSelectElement) {
+        catSelect.value = suggestedCategoryId;
+      }
+      await applyTransactions(txIds, suggestedCategoryId);
+    });
+  });
+
   const transactionChecks = document.querySelectorAll('.ynab-tx-check');
   transactionChecks.forEach(cb => {
     cb.addEventListener('change', updateFloatingApplyBarVisibility);
@@ -349,6 +600,9 @@ function renderQueue(payload) {
     row.addEventListener('click', event => {
       const target = event.target;
       if (target instanceof HTMLInputElement && target.classList.contains('ynab-tx-check')) {
+        return;
+      }
+      if (target instanceof HTMLElement && target.closest('button,select,input,label,a')) {
         return;
       }
       const checkbox = row.querySelector('.ynab-tx-check');
@@ -365,7 +619,8 @@ async function loadQueue() {
   showMessage('Loading queue...');
   try {
     const data = await apiRequest('/api/ynab-categorizer/queue');
-    renderQueue(data);
+    queueStateRaw = data;
+    renderQueue(queueStateRaw);
     showMessage('Queue loaded', 'ok');
   } catch (error) {
     console.error('Queue load failed:', error);
@@ -398,22 +653,163 @@ async function loadBootstrapStatus() {
   }
 }
 
-async function applyTransactions(txIds, categoryId) {
-  showMessage(`Applying category to ${txIds.length} transaction(s)...`);
+async function applyTransactions(txIds, categoryId, options = {}) {
+  const opts = Object.assign({
+    reloadQueue: true,
+    showStatus: true,
+  }, options || {});
+
+  if (opts.showStatus) {
+    showMessage(`Applying category to ${txIds.length} transaction(s)...`);
+  }
+
   try {
-    await apiRequest('/api/ynab-categorizer/apply', {
+    const data = await apiRequest('/api/ynab-categorizer/apply', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ transaction_ids: txIds, category_id: categoryId }),
     });
-    showMessage(`Applied category to ${txIds.length} transaction(s)`, 'ok');
-    await loadQueue();
+
+    addRecentCategory(categoryId);
+
+    if (opts.showStatus) {
+      showMessage(`Applied category to ${txIds.length} transaction(s)`, 'ok');
+    }
+    if (opts.reloadQueue) {
+      await loadQueue();
+    }
+
+    return data;
   } catch (error) {
     console.error('Apply failed:', error);
-    showMessage(`Apply failed: ${error.message}`, 'error');
+    if (opts.showStatus) {
+      showMessage(`Apply failed: ${error.message}`, 'error');
+    }
+    throw error;
   }
+}
+
+async function saveConfigFromUi(options = {}) {
+  const opts = Object.assign({
+    showSuccess: true,
+    reloadQueueAfter: true,
+  }, options || {});
+
+  const payload = readSettingsFromUi();
+  await apiRequest('/api/ynab-categorizer/config', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (opts.showSuccess) {
+    showMessage('Settings saved', 'ok');
+  }
+  if (opts.reloadQueueAfter) {
+    await loadQueue();
+  }
+}
+
+async function applySuggestedFromVisibleGroups() {
+  const includeMediumInput = document.getElementById('quickApplyIncludeMedium');
+  const includeMedium = includeMediumInput instanceof HTMLInputElement
+    ? includeMediumInput.checked
+    : false;
+  const groups = visibleSuggestedGroups(includeMedium);
+
+  if (!groups.length) {
+    showMessage('No visible suggested groups to apply', 'error');
+    return;
+  }
+
+  let appliedGroups = 0;
+  let appliedTransactions = 0;
+  let failedGroups = 0;
+
+  for (let i = 0; i < groups.length; i += 1) {
+    const group = groups[i];
+    showMessage(`Applying suggestions ${i + 1}/${groups.length}...`);
+    try {
+      await applyTransactions(group.txIds, group.categoryId, {
+        reloadQueue: false,
+        showStatus: false,
+      });
+      appliedGroups += 1;
+      appliedTransactions += group.txIds.length;
+    } catch (error) {
+      console.error('Suggested apply failed for payee:', group.payee, error);
+      failedGroups += 1;
+    }
+  }
+
+  await loadQueue();
+  const summary = (
+    `Suggestion apply complete: ${appliedGroups} group(s), ` +
+    `${appliedTransactions} transaction(s), ${failedGroups} failed`
+  );
+  showMessage(summary, failedGroups > 0 ? 'error' : 'ok');
+}
+
+function isTypingTarget(target) {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = String(target.tagName || '').toLowerCase();
+  return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable;
+}
+
+function setupKeyboardShortcuts() {
+  document.addEventListener('keydown', event => {
+    if (!YNAB_CONFIGURED) return;
+
+    const filterInput = document.getElementById('queueFilterInput');
+    const categorySearch = document.getElementById('globalCategorySearch');
+    const applySelectedBtn = document.getElementById('btnApplySelected');
+    const floatingBar = document.getElementById('floatingApplyBar');
+    const floatingVisible = floatingBar instanceof HTMLElement && floatingBar.classList.contains('is-visible');
+    const typing = isTypingTarget(event.target);
+
+    if (event.key === '/' && !event.ctrlKey && !event.metaKey && !event.altKey && !typing) {
+      if (filterInput instanceof HTMLInputElement) {
+        event.preventDefault();
+        filterInput.focus();
+        filterInput.select();
+      }
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      if (filterInput instanceof HTMLInputElement && filterInput.value) {
+        event.preventDefault();
+        filterInput.value = '';
+        queueFilterTerm = '';
+        renderQueue(queueStateRaw);
+      }
+      return;
+    }
+
+    if (typing) {
+      return;
+    }
+
+    if ((event.key === 'c' || event.key === 'C') && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      if (floatingVisible && categorySearch instanceof HTMLInputElement) {
+        event.preventDefault();
+        categorySearch.focus();
+        categorySearch.select();
+      }
+      return;
+    }
+
+    if (event.key === 'Enter' && event.ctrlKey) {
+      if (floatingVisible && applySelectedBtn instanceof HTMLButtonElement) {
+        event.preventDefault();
+        applySelectedBtn.click();
+      }
+    }
+  });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -421,12 +817,20 @@ document.addEventListener('DOMContentLoaded', () => {
     return;
   }
 
+  recentCategoryIds = loadRecentCategoryIds();
+
   const refreshBtn = document.getElementById('btnRefreshQueue');
   const applySelectedBtn = document.getElementById('btnApplySelected');
   const bootstrapBtn = document.getElementById('btnBootstrap');
   const saveModeBtn = document.getElementById('btnSaveMode');
   const globalCategory = document.getElementById('globalCategorySelect');
+  const globalCategorySearch = document.getElementById('globalCategorySearch');
   const queueLimitEnabled = document.getElementById('queueLimitEnabled');
+  const quickApplyIncludeMedium = document.getElementById('quickApplyIncludeMedium');
+  const applySuggestedBtn = document.getElementById('btnApplySuggested');
+  const selectVisibleBtn = document.getElementById('btnSelectVisible');
+  const clearSelectionBtn = document.getElementById('btnClearSelection');
+  const queueFilterInput = document.getElementById('queueFilterInput');
 
   if (refreshBtn) {
     refreshBtn.addEventListener('click', loadQueue);
@@ -437,22 +841,59 @@ document.addEventListener('DOMContentLoaded', () => {
     updateLimitControlsState();
   }
 
+  if (quickApplyIncludeMedium instanceof HTMLInputElement) {
+    quickApplyIncludeMedium.addEventListener('change', async () => {
+      try {
+        await saveConfigFromUi({ showSuccess: false, reloadQueueAfter: false });
+      } catch (error) {
+        console.error('Quick apply preference save failed:', error);
+        showMessage(`Failed to save preference: ${error.message}`, 'error');
+      }
+    });
+  }
+
   if (saveModeBtn) {
     saveModeBtn.addEventListener('click', async () => {
       try {
-        const payload = readSettingsFromUi();
-        await apiRequest('/api/ynab-categorizer/config', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(payload),
-        });
-        showMessage('Settings saved', 'ok');
-        await loadQueue();
+        await saveConfigFromUi();
       } catch (error) {
         console.error('Settings save failed:', error);
         showMessage(`Failed to save settings: ${error.message}`, 'error');
+      }
+    });
+  }
+
+  if (queueFilterInput instanceof HTMLInputElement) {
+    queueFilterInput.addEventListener('input', () => {
+      queueFilterTerm = String(queueFilterInput.value || '').trim().toLowerCase();
+      renderQueue(queueStateRaw);
+    });
+  }
+
+  if (selectVisibleBtn) {
+    selectVisibleBtn.addEventListener('click', () => setVisibleSelection(true));
+  }
+
+  if (clearSelectionBtn) {
+    clearSelectionBtn.addEventListener('click', () => setVisibleSelection(false));
+  }
+
+  if (applySuggestedBtn) {
+    applySuggestedBtn.addEventListener('click', async () => {
+      await applySuggestedFromVisibleGroups();
+    });
+  }
+
+  if (globalCategorySearch instanceof HTMLInputElement) {
+    globalCategorySearch.addEventListener('input', () => {
+      renderGlobalCategorySelect();
+    });
+    globalCategorySearch.addEventListener('keydown', event => {
+      if (event.key !== 'Enter') return;
+      const select = document.getElementById('globalCategorySelect');
+      if (!(select instanceof HTMLSelectElement)) return;
+      if (select.options.length > 0) {
+        select.selectedIndex = 0;
       }
     });
   }
@@ -508,6 +949,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  setupKeyboardShortcuts();
   loadConfig();
   loadBootstrapStatus();
   loadQueue();

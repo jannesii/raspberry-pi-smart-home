@@ -53,13 +53,15 @@ class YnabCategorizerService:
         logger.debug(
             (
                 "get_config queue_filter_mode=%s show_reconciled_transactions=%s "
-                "queue_limit_enabled=%s queue_limit_value=%s queue_limit_unit=%s"
+                "queue_limit_enabled=%s queue_limit_value=%s queue_limit_unit=%s "
+                "quick_apply_include_medium=%s"
             ),
             cfg.queue_filter_mode,
             cfg.show_reconciled_transactions,
             cfg.queue_limit_enabled,
             cfg.queue_limit_value,
             cfg.queue_limit_unit,
+            cfg.quick_apply_include_medium,
         )
         return {
             "queue_filter_mode": cfg.queue_filter_mode,
@@ -67,6 +69,7 @@ class YnabCategorizerService:
             "queue_limit_enabled": bool(cfg.queue_limit_enabled),
             "queue_limit_value": int(cfg.queue_limit_value),
             "queue_limit_unit": str(cfg.queue_limit_unit),
+            "quick_apply_include_medium": bool(cfg.quick_apply_include_medium),
             "updated_ts": cfg.updated_ts,
         }
 
@@ -79,6 +82,7 @@ class YnabCategorizerService:
             queue_limit_enabled=bool(current.queue_limit_enabled),
             queue_limit_value=int(current.queue_limit_value),
             queue_limit_unit=str(current.queue_limit_unit),
+            quick_apply_include_medium=bool(current.quick_apply_include_medium),
         )
 
     def set_config(
@@ -89,17 +93,19 @@ class YnabCategorizerService:
         queue_limit_enabled: bool,
         queue_limit_value: int,
         queue_limit_unit: str,
+        quick_apply_include_medium: bool,
     ) -> dict[str, Any]:
         logger.debug(
             (
                 "set_config called mode=%s show_reconciled=%s limit_enabled=%s "
-                "limit_value=%s limit_unit=%s"
+                "limit_value=%s limit_unit=%s quick_apply_include_medium=%s"
             ),
             queue_filter_mode,
             show_reconciled_transactions,
             queue_limit_enabled,
             queue_limit_value,
             queue_limit_unit,
+            quick_apply_include_medium,
         )
         mode = (queue_filter_mode or "").strip()
         if mode not in _VALID_QUEUE_MODES:
@@ -117,6 +123,7 @@ class YnabCategorizerService:
             queue_limit_enabled=bool(queue_limit_enabled),
             queue_limit_value=int(queue_limit_value),
             queue_limit_unit=limit_unit_value,
+            quick_apply_include_medium=bool(quick_apply_include_medium),
         )
         return {
             "queue_filter_mode": cfg.queue_filter_mode,
@@ -124,6 +131,7 @@ class YnabCategorizerService:
             "queue_limit_enabled": bool(cfg.queue_limit_enabled),
             "queue_limit_value": int(cfg.queue_limit_value),
             "queue_limit_unit": str(cfg.queue_limit_unit),
+            "quick_apply_include_medium": bool(cfg.quick_apply_include_medium),
             "updated_ts": cfg.updated_ts,
         }
 
@@ -474,6 +482,7 @@ class YnabCategorizerService:
             "queue_limit_enabled": queue_limit_enabled,
             "queue_limit_value": queue_limit_value,
             "queue_limit_unit": queue_limit_unit,
+            "quick_apply_include_medium": bool(cfg.quick_apply_include_medium),
             "group_count": len(groups),
             "transaction_count": len(filtered),
             "categories": categories,
