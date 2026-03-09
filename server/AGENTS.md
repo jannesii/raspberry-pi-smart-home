@@ -513,6 +513,8 @@ function update(data) {
 
 **YNAB starting-balance note**: Exclude "Starting Balance" transactions from categorization queue, even if uncategorized. Match by normalized `payee_name` (`STARTING BALANCE`) and fallback `payee_id` values (`starting_balance`, `starting-balance`).
 
+**YNAB row-display note**: Do not surface raw transaction UUIDs in queue rows. Prefer actionable context (`From/To account`) plus memo/date/amount while keeping UUIDs only as hidden checkbox values for apply actions.
+
 ### 6.2 Null Safety
 
 ```javascript

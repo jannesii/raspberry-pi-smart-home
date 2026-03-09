@@ -71,6 +71,17 @@ function fmtEurFromMilliunits(value) {
   }
 }
 
+function txAccountFlowLabel(tx) {
+  const accountName = tx && tx.account_name ? String(tx.account_name).trim() : '';
+  if (!accountName) return '—';
+  const amount = Number(tx && tx.amount_milliunits);
+  if (Number.isFinite(amount)) {
+    if (amount < 0) return `From account: ${accountName}`;
+    if (amount > 0) return `To account: ${accountName}`;
+  }
+  return `Account: ${accountName}`;
+}
+
 function showMessage(text, kind = 'ok') {
   const message = document.getElementById('ynabMessage');
   if (!message) return;
@@ -366,6 +377,7 @@ function txMatchesFilter(tx, term) {
     tx && tx.memo ? String(tx.memo) : '',
     tx && tx.date ? String(tx.date) : '',
     tx && tx.payee_name ? String(tx.payee_name) : '',
+    tx && tx.account_name ? String(tx.account_name) : '',
     fmtEurFromMilliunits(tx ? tx.amount_milliunits : null),
   ].join(' ').toLowerCase();
   return haystack.includes(term);
@@ -490,11 +502,12 @@ function renderQueue(payload) {
       const memo = tx && tx.memo ? String(tx.memo) : '—';
       const date = fmtDateDDMMYYYY(tx && tx.date ? String(tx.date) : '');
       const amount = fmtEurFromMilliunits(tx ? tx.amount_milliunits : null);
+      const accountFlow = txAccountFlowLabel(tx);
       return `
         <li class="ynab-tx-item">
           <input class="ynab-tx-check" type="checkbox" value="${txId}">
           <div class="ynab-tx-main">
-            <div>${txId}</div>
+            <div class="ynab-tx-account">${accountFlow}</div>
             <div class="ynab-tx-memo">${memo || '—'}</div>
             <div class="ynab-tx-date">${date}</div>
           </div>

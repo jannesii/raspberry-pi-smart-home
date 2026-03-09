@@ -461,6 +461,7 @@ class YnabCategorizerService:
                     "id": str(tx_id),
                     "date": str(tx_date) if tx_date else "",
                     "payee_name": payee_display,
+                    "account_name": str(tx.get("account_name") or ""),
                     "memo": str(tx.get("memo") or ""),
                     "amount_milliunits": tx.get("amount"),
                 }

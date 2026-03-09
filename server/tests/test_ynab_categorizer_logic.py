@@ -79,6 +79,7 @@ class _ClientStub:
                 "id": "tx1",
                 "date": "2026-03-05",
                 "payee_name": "K-Märket",
+                "account_name": "Nordea Everyday",
                 "category_id": None,
                 "deleted": False,
                 "transfer_account_id": None,
@@ -90,6 +91,7 @@ class _ClientStub:
                 "id": "tx2",
                 "date": "2026-03-07",
                 "payee_name": "Taxi Helsinki",
+                "account_name": "Nordea Everyday",
                 "category_id": None,
                 "deleted": False,
                 "transfer_account_id": None,
@@ -101,6 +103,7 @@ class _ClientStub:
                 "id": "tx3",
                 "date": "2026-03-08",
                 "payee_name": "Transfer test",
+                "account_name": "Nordea Everyday",
                 "category_id": None,
                 "deleted": False,
                 "transfer_account_id": "account_x",
@@ -112,6 +115,7 @@ class _ClientStub:
                 "id": "tx4",
                 "date": "2026-03-09",
                 "payee_name": "Split parent",
+                "account_name": "Nordea Everyday",
                 "category_id": None,
                 "deleted": False,
                 "transfer_account_id": None,
@@ -123,6 +127,7 @@ class _ClientStub:
                 "id": "tx5",
                 "date": "2026-03-06",
                 "payee_name": "Reconciled store",
+                "account_name": "Nordea Everyday",
                 "category_id": None,
                 "deleted": False,
                 "transfer_account_id": None,
@@ -135,6 +140,7 @@ class _ClientStub:
                 "id": "tx6",
                 "date": "2025-01-01",
                 "payee_name": "Old tx",
+                "account_name": "Nordea Everyday",
                 "category_id": None,
                 "deleted": False,
                 "transfer_account_id": None,
@@ -147,6 +153,7 @@ class _ClientStub:
                 "date": "2026-02-26",
                 "payee_name": "Starting Balance",
                 "payee_id": "starting_balance",
+                "account_name": "Nordea Everyday",
                 "category_id": None,
                 "deleted": False,
                 "transfer_account_id": None,
@@ -198,6 +205,11 @@ def test_queue_filtering_strict_skips_transfer_and_split_parent():
     assert payload["quick_apply_include_medium"] is False
     ids = {tx["id"] for g in payload["groups"] for tx in g["transactions"]}
     assert ids == {"tx1", "tx2", "tx6"}
+    assert all(
+        tx["account_name"] == "Nordea Everyday"
+        for g in payload["groups"]
+        for tx in g["transactions"]
+    )
 
 
 def test_group_sort_by_confidence_then_latest_date_desc():

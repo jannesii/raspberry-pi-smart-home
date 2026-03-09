@@ -180,6 +180,10 @@
   gap: 2px;
 }
 
+.ynab-tx-account {
+  color: #d8d8d8;
+}
+
 .ynab-tx-memo {
   color: #9c9c9c;
   font-size: 12px;

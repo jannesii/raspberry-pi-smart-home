@@ -61,7 +61,7 @@ A comprehensive home automation server for Raspberry Pi (or any Linux host). Rea
 - **Bootstrap learning** from 24 months of categorized history
 - **Configurable queue filter mode** (`strict`, `skip_transfers`, `all_uncategorized`)
 - **Starting Balance transactions are always excluded** from categorization queue
-- **Queue rows show EUR amounts and `DD-MM-YYYY` dates**, row click toggles selection, selected actions appear in a floating apply bar, and advanced settings are tucked into a collapsible panel (reconciled + queue time limit)
+- **Queue rows show EUR amounts and `DD-MM-YYYY` dates**, row click toggles selection, rows show source/target account context (not raw transaction UUID), selected actions appear in a floating apply bar, and advanced settings are tucked into a collapsible panel (reconciled + queue time limit)
 - **QoL quick actions**: apply suggestions in bulk (High by default, optional Medium), select/clear visible, queue text filter, per-group one-click suggestion apply, recent category chips, and keyboard shortcuts
 
 ### 📊 System Features
