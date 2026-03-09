@@ -20,4 +20,5 @@ from . import (
     settings_ops_web,
     settings_timelapse_web,
     settings_users_web,
+    ynab_categorizer_web,
 )

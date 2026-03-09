@@ -29,7 +29,8 @@ server/
 │   │   ├── hue/             # Philips Hue time-based routine
 │   │   ├── novpn/           # NoVPN device bypass configuration
 │   │   ├── sodexo/          # Sodexo lunch menu Discord webhook
-│   │   └── weather/         # FMI weather data service
+│   │   ├── weather/         # FMI weather data service
+│   │   └── ynab/            # YNAB categorizer client + suggestion service
 │   ├── core/
 │   │   ├── controller.py    # Business logic + DB gateway
 │   │   ├── database.py      # Thread‑safe SQLite wrapper
@@ -103,6 +104,10 @@ export RATE_LIMIT_STORAGE_URI="redis://localhost:6379"
 
 **Sodexo Discord Webhook**:
 - `SODEXO_WEBHOOK_URL`
+
+**YNAB Categorizer**:
+- `YNAB_API_KEY`, `YNAB_BUDGET_ID`
+- Optional: `YNAB_HTTP_TIMEOUT_S`, `YNAB_HTTP_RETRIES`
 
 ---
 
@@ -224,6 +229,9 @@ All routes require authentication (session cookie or API key).
 | `/api/hvac/avg_rates_today` | GET | Cooling/heating rates (°C/h and W) |
 | `/api/car_heater/status` | GET | Car heater status |
 | `/api/bmp` | GET | BMP pressure sensor data |
+| `/api/ynab-categorizer/queue` | GET | Grouped uncategorized YNAB queue (Root-Admin) |
+| `/api/ynab-categorizer/apply` | POST | Apply category to selected transaction IDs (Root-Admin, CSRF) |
+| `/api/ynab-categorizer/bootstrap` | POST | Seed local payee-category stats from 24-month history |
 | `/live/<path:filename>` | GET | HLS assets from `/srv/hls` |
 
 ---

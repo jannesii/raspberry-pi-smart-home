@@ -499,6 +499,28 @@ function update(data) {
 
 **Car heater logs note**: ESP32 log snapshots are emitted in a dedicated `car_heater_logs` Socket.IO event. For compatibility, frontend can still read `status.logs` from `car_heater_status`, but should dedupe because both WS and HTTP paths may carry the same snapshot.
 
+**YNAB queue filtering note**: Default queue mode is `strict` (skip transfers + split parents). Keep this as the default for both initial page data and API fallback to avoid applying categories to unsupported transaction types.
+
+**YNAB config persistence note**: Queue filtering mode is persisted in `ynab_categorizer_config` (singleton `id=1`, budget-aware row). Update/read config via controller methods, not direct table writes in routes.
+
+**YNAB CSRF note**: Internal browser-driven YNAB mutation endpoints (`/api/ynab-categorizer/*` POST) keep CSRF enabled. Frontend must include CSRF token (`X-CSRFToken` or `X-CSRF-Token`) for JSON POSTs.
+
+**YNAB reconciled filter note**: Treat transactions as reconciled when `tx["cleared"] == "reconciled"` (case-insensitive). Default queue behavior hides reconciled items unless explicitly enabled in config.
+
+**YNAB queue-limit note**: Queue limiting is config-driven (`queue_limit_enabled`, `queue_limit_value`, `queue_limit_unit`) and should be applied on transaction date (`YYYY-MM-DD`) with supported units `days|months|years`.
+
+**YNAB quick-apply preference note**: `quick_apply_include_medium` is persisted in `ynab_categorizer_config` and defaults to `false`; keep High-confidence-only bulk suggestion apply as the safe default unless explicitly enabled.
+
+**YNAB starting-balance note**: Exclude "Starting Balance" transactions from categorization queue, even if uncategorized. Match by normalized `payee_name` (`STARTING BALANCE`) and fallback `payee_id` values (`starting_balance`, `starting-balance`).
+
+**YNAB row-display note**: Do not surface raw transaction UUIDs in queue rows. Prefer actionable context (`From/To account`) plus memo/date/amount while keeping UUIDs only as hidden checkbox values for apply actions.
+
+**YNAB default-suggestion note**: Persist `default_category_id` in `ynab_categorizer_config`. When payee stats yield no suggestion, use this category as fallback suggestion only if it exists in the visible category set.
+
+**YNAB category-list note**: Queue category lists should exclude `deleted` and `hidden` categories. Order categories with top 10 locally most-used (from `ynab_payee_category_stats` aggregate counts) first, then remaining categories alphabetically.
+
+**YNAB approvals note**: Unapproved transactions are fetched via YNAB transactions endpoint with `type=unapproved` and approved in bulk via PATCH payloads using `{"id": "...", "approved": true}`. Keep Root-Admin guard and CSRF enforcement identical to categorize apply endpoints.
+
 ### 6.2 Null Safety
 
 ```javascript
@@ -743,6 +765,12 @@ WEB_USERNAME=admin       # Initial admin user
 WEB_PASSWORD=...         # Initial admin password
 RATE_LIMIT_WHITELIST=["127.0.0.1"]
 ALLOWED_WS_ORIGINS=["http://localhost:5555"]
+
+# Optional (YNAB Categorizer)
+YNAB_API_KEY=...
+YNAB_BUDGET_ID=...
+YNAB_HTTP_TIMEOUT_S=15
+YNAB_HTTP_RETRIES=2
 ```
 
 ---
@@ -782,4 +810,4 @@ ALLOWED_WS_ORIGINS=["http://localhost:5555"]
 
 ---
 
-*Last updated: 2026-02-22*
+*Last updated: 2026-03-09*

@@ -237,3 +237,48 @@ class CarHeaterReadyByConfig:
     id: int = 1
     config_json: str | None = None
     updated_ts: str | None = None
+
+
+@dataclass
+class YnabPayeeCategoryStat:
+    id: int | None = None
+    budget_id: str = ""
+    payee_normalized: str = ""
+    category_id: str = ""
+    count: int = 0
+    last_used_at: str | None = None
+    created_at: str = ""
+    updated_at: str = ""
+
+
+@dataclass
+class YnabApplyEvent:
+    id: int | None = None
+    budget_id: str = ""
+    transaction_id: str = ""
+    payee_normalized: str = ""
+    category_id: str = ""
+    applied_by_username: str | None = None
+    applied_at: str = ""
+
+
+@dataclass
+class YnabBootstrapState:
+    budget_id: str = ""
+    bootstrapped_at: str = ""
+    history_start_date: str = ""
+    history_end_date: str = ""
+
+
+@dataclass
+class YnabCategorizerConfig:
+    id: int = 1
+    budget_id: str = ""
+    queue_filter_mode: str = "strict"
+    show_reconciled_transactions: bool = False
+    queue_limit_enabled: bool = False
+    queue_limit_value: int = 30
+    queue_limit_unit: str = "days"
+    quick_apply_include_medium: bool = False
+    default_category_id: str | None = None
+    updated_ts: str = ""

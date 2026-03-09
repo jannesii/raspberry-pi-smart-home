@@ -54,6 +54,18 @@ A comprehensive home automation server for Raspberry Pi (or any Linux host). Rea
 - **Rate limiting** with Redis backend
 - **CSRF protection** on all forms
 
+### 💳 YNAB Categorizer
+- **Manual categorization queue** for uncategorized YNAB transactions
+- **Payee-based category suggestions** from local usage history
+- **Explicit apply workflow** (no automatic category changes)
+- **Bootstrap learning** from 24 months of categorized history
+- **Configurable queue filter mode** (`strict`, `skip_transfers`, `all_uncategorized`)
+- **Starting Balance transactions are always excluded** from categorization queue
+- **Queue rows show EUR amounts and `DD-MM-YYYY` dates**, row click toggles selection, rows show source/target account context (not raw transaction UUID), selected actions appear in a floating apply bar, and advanced settings are tucked into a collapsible panel (reconciled + queue time limit)
+- **Default fallback category** can be configured for no-suggestion payees; category dropdowns prioritize top 10 locally most-used categories and hide hidden YNAB categories
+- **Approval view** for unapproved transactions with bulk `Approve selected` / `Approve visible` actions
+- **QoL quick actions**: apply suggestions in bulk (High by default, optional Medium), select/clear visible, queue text filter, per-group one-click suggestion apply, recent category chips, and keyboard shortcuts
+
 ### 📊 System Features
 - **Real-time WebSocket updates** – instant UI refresh without polling
 - **Application logging** – error logs stored in database, viewable in UI
@@ -90,6 +102,8 @@ Browse to http://127.0.0.1:5555 and log in.
 ## Development Notes
 
 - `scripts/restart.sh` activates `.venv` and runs `pre-commit run --all-files`; the service restarts only if checks pass.
+- YNAB categorizer is Root-Admin only and configured via `YNAB_API_KEY` + `YNAB_BUDGET_ID`.
+- YNAB HTTP behavior can be tuned with `YNAB_HTTP_TIMEOUT_S` and `YNAB_HTTP_RETRIES`.
 - KFactor cooldown persistence uses a dedicated `car_heater_kfactor_cooldown` table.
 - KFactor calibrator weather parsing reads `WeatherValue.value` for t2m and ws_10min.
 - Car heater settings modules export UI helpers via `window.CarHeaterSettings` inside IIFEs.

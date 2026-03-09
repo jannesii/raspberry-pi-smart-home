@@ -1,0 +1,1097 @@
+<!DOCTYPE html>
+<!-- saved from url=(0036)https://api.ynab.com/#usage-overview -->
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <title>YNAB API</title>
+
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="apple-touch-icon" sizes="180x180" href="https://api.ynab.com/assets/apple-touch-icon-0c5007d15961cf91d0b100135f6b359453e23ce509c6cbe7c19940f3f6b572f7.png">
+<link rel="icon" type="image/png" sizes="32x32" href="https://api.ynab.com/assets/favicon-32x32-28259a0cbb8268c3b9e5262838be52377170898f4ab165deb13807bff29bd4f3.png">
+<link rel="icon" type="image/png" sizes="16x16" href="https://api.ynab.com/assets/favicon-16x16-7db7641a50068faeaaa4d8f94a58fc4b6eb13b61b2f818a2911c4d6206750983.png">
+<link rel="mask-icon" href="https://api.ynab.com/assets/safari-pinned-tab-0f6609450211c5050f3e0e002911754bd2adc442d0e562a8c49df516fc0f81bc.svg" color="#71A3C3">
+<link rel="shortcut icon" type="image/x-icon" href="https://api.ynab.com/assets/favicon-5348abbce55af32b0bdd189f51c2b2718b13e8cf0c0fe0bc8cef77472357c5b3.ico">
+<meta name="msapplication-config" content="none">
+
+    <link rel="stylesheet" href="./YNAB-API-DOCUMENTATION_files/papi-44be7a1325e09dd94749afa0574cdcfb57fd7fef1a9b752f31aeb664e725d1e8.css">
+  <style id="csstotlvolume" type="text/css">.totlmousewheelvideo progress[value]::-webkit-progress-value{background:#167ac6!important;background-color:#167ac6!important;border-radius:2px!important}.totlmousewheelvideo progress[value]::-moz-progress-bar{background:#167ac6!important;background-color:#167ac6!important;border-radius:2px!important}.totlmousewheelvideo progress[value]::progress-value{background:#167ac6!important;background-color:#167ac6!important;border-radius:2px!important}</style></head>
+  <body data-page="docs_#index">
+    <header>
+  <div class="logo">
+    <a href="https://api.ynab.com/">
+      <img class="wordmark" alt="YNAB Logo" src="./YNAB-API-DOCUMENTATION_files/logo_api_meadow.svg">
+</a>  </div>
+  <nav>
+    <ul>
+      <li>
+        <a class="active" href="https://api.ynab.com/">Documentation</a>
+      </li>
+      <li>
+        <a href="https://api.ynab.com/v1">Endpoints</a>
+      </li>
+      <li>
+        <a href="https://ynabstatus.com/">Status</a>
+      </li>
+      <li>
+        <a href="https://app.ynab.com/">YNAB App</a>
+      </li>
+    </ul>
+  </nav>
+</header>
+
+    <div class="container">
+  <aside>
+    <nav>
+      <ul>
+        <li>
+          <a href="https://api.ynab.com/#hello">Hello Developers</a>
+        </li>
+        <li>
+          <a href="https://api.ynab.com/#quick-start">Quick Start</a>
+        </li>
+      </ul>
+      <h5>Authentication</h5>
+      <ul>
+        <li>
+          <a href="https://api.ynab.com/#authentication">Overview</a>
+        </li>
+        <li>
+          <a href="https://api.ynab.com/#personal-access-tokens">Personal Access Tokens</a>
+        </li>
+        <li>
+          <a href="https://api.ynab.com/#oauth-applications">OAuth Applications</a>
+        </li>
+        <li>
+          <a href="https://api.ynab.com/#access-token-usage">Access Token Usage</a>
+        </li>
+      </ul>
+      <h5>Usage</h5>
+      <ul>
+        <li>
+          <a href="https://api.ynab.com/#usage-overview">Overview</a>
+        </li>
+        <li>
+          <a href="https://api.ynab.com/#best-practices">Best Practices</a>
+        </li>
+        <li>
+          <a href="https://api.ynab.com/#endpoints">Endpoints</a>
+        </li>
+        <li>
+          <a href="https://api.ynab.com/#response-format">Response Format</a>
+        </li>
+        <li>
+          <a href="https://api.ynab.com/#errors">Errors</a>
+        </li>
+        <li>
+          <a href="https://api.ynab.com/#formats">Data Formats</a>
+        </li>
+        <li>
+          <a href="https://api.ynab.com/#deltas">Delta Requests</a>
+        </li>
+        <li>
+          <a href="https://api.ynab.com/#rate-limiting">Rate Limiting</a>
+        </li>
+      </ul>
+      <h5>Libraries</h5>
+      <ul>
+        <li>
+          <a href="https://api.ynab.com/#client-javascript">JavaScript</a>
+        </li>
+        <li>
+          <a href="https://api.ynab.com/#client-ruby">Ruby</a>
+        </li>
+        <li>
+          <a href="https://api.ynab.com/#client-python">Python</a>
+        </li>
+        <li>
+          <a href="https://api.ynab.com/#clients-community">Community</a>
+        </li>
+      </ul>
+      <h5>Works with YNAB</h5>
+      <ul>
+        <li>
+          <a href="https://api.ynab.com/#works-with-ynab-official">Official</a>
+        </li>
+        <li>
+          <a href="https://api.ynab.com/#works-with-ynab-third-party">Third Party</a>
+        </li>
+      </ul>
+      <h5>Legal</h5>
+      <ul>
+        <li>
+          <a href="https://api.ynab.com/#terms">Terms of Service</a>
+        </li>
+        <li>
+          <a href="https://api.ynab.com/#oauth-requirements">OAuth Requirements</a>
+        </li>
+      </ul>
+      <h5>Changelog</h5>
+<ul>
+  <li><a href="https://api.ynab.com/#v1.79.0">v1.79.0</a></li>
+  <li><a href="https://api.ynab.com/#v1.78.0">v1.78.0</a></li>
+  <li><a href="https://api.ynab.com/#v1.77.0">v1.77.0</a></li>
+  <li><a href="https://api.ynab.com/#v1.76.0">v1.76.0</a></li>
+  <li><a href="https://api.ynab.com/#v1.75.0">v1.75.0</a></li>
+  <li><a href="https://api.ynab.com/#v1.74.0">v1.74.0</a></li>
+  <li><a href="https://api.ynab.com/#v1.73.0">v1.73.0</a></li>
+  <li><a href="https://api.ynab.com/#v1.72.0">v1.72.0</a></li>
+  <li><a href="https://api.ynab.com/#v1.71.0">v1.71.0</a></li>
+  <li><a href="https://api.ynab.com/#v1.70.0">v1.70.0</a></li>
+  <li><a href="https://api.ynab.com/#v1.69.0">v1.69.0</a></li>
+  <li><a href="https://api.ynab.com/#v1.68.1">v1.68.1</a></li>
+  <li><a href="https://api.ynab.com/#v1.68.0">v1.68.0</a></li>
+  <li><a href="https://api.ynab.com/#v1.1.0-v1.67.0">v1.1.0 - v1.67.0</a></li>
+  <li><a href="https://api.ynab.com/#v1.0.0">v1.0.0</a></li>
+</ul>
+
+    </nav>
+  </aside>
+  <main>
+    <section>
+      <h3 id="hello">Hello Developers</h3>
+      <p>Welcome to the YNAB API!</p>
+      <p><em>(If you aren't a developer or you have no idea what an "API" is and you just want to sign in to your YNAB account, <a href="https://app.ynab.com/">you can do that here</a>.)</em></p>
+      <p>The YNAB API is REST based, uses the JSON data format and is secured with HTTPS.  You can use it to build a personal application to interact with your own plan or build an application that any other YNABer can authorize and use.
+        Be sure to check out what other YNABers have built in the <a href="https://api.ynab.com/#works-with-ynab">Works with YNAB</a> section.</p>
+      <p>You can check our <a href="https://api.ynab.com/#changelog">changelog</a> to find out about updates and improvements to the API.</p>
+      <p>For support, email <strong>api@ynab.com</strong>. Because our team is small, we may need up to a week to respond. Support for the API is limited, and we cannot provide detailed coding assistance.</p>
+      <h3 id="quick-start">Quick Start</h3>
+      <p>If you're the type of person who just wants to get up and running as quickly as possible and then circle back to
+        fill in the gaps, these steps are for you:
+      </p>
+      <ol>
+        <li>
+          <a href="https://app.ynab.com/settings">Sign in to the YNAB web app</a> and go to the "Account Settings" page and then to the "Developer Settings" page.
+        </li>
+        <li>Under the "Personal Access Tokens" section, click "New Token", enter your password and click "Generate" to get an access token.</li>
+        <li>Open a terminal window and run this:<br>
+          <code>curl -H "Authorization: Bearer &lt;ACCESS_TOKEN&gt;" https://api.ynab.com/v1/plans</code>
+        </li>
+      </ol>
+      <p>You should get a response that looks something like this:</p>
+      <div>
+        <pre>HTTP/1.1 200 OK
+Content-Type: application/json; charset=utf-8
+
+{
+  "data": {
+    "plans": [
+      {
+        "id": "6ee704d9-ee24-4c36-b1a6-cb8ccf6a216c",
+        "name": "My Plan",
+        "last_modified_on": "2017-12-01T12:40:37.867Z",
+        "first_month": "2017-11-01",
+        "last_month": "2017-11-01"
+      }
+    ]
+  }
+}
+</pre>
+      </div>
+      <p>That's it! You just received a list of your plans in JSON format through the YNAB API. Hooray!</p>
+      <p>If you want to start working with the API to build something more substantial, you might want to check out our <a href="https://github.com/ynab/ynab-api-starter-kit">YNAB API Starter Kit</a> which is a simple, but functional web application that uses the API.</p>
+    </section>
+    <h2 id="authentication">Authentication</h2>
+    <section>
+      <h3>Overview</h3>
+      <p>All API resources require a valid access token for authentication.  There are two ways to obtain access tokens: <strong>Personal Access Tokens</strong> and <strong>OAuth Applications</strong>.</p>
+      <h3 id="personal-access-tokens">Personal Access Tokens</h3>
+      <p>Personal Access Tokens are access tokens created by an account owner and are intended to be used only by that same account owner.
+        They should not be shared and are intended for individual usage scenarios.  They are a convenient way to obtain an access token without having to use a full OAuth authentication flow.  <strong>If you are an individual developer and want to simply access your own account through the API, Personal Access Tokens are the best choice.</strong>
+      </p>
+      <h4>Obtaining a Personal Access Token</h4>
+      <p>To obtain a Personal Access Token,
+        <a href="https://app.ynab.com/settings">sign in to your account</a>, go to "Account Settings", scroll down and navigate to "Developer Settings" section.  From the <a href="https://app.ynab.com/settings/developer">Developer Settings</a> page, click "New Token" under the Personal Access Tokens section, enter your password
+        and you will be presented with a new Personal Access Token. You will not be able to retrieve the token later so you should store
+        it in a safe place. This new token will not expire but can be revoked at any time from this same screen.
+      </p>
+      <p><strong>You should not share this access token with anyone or ask for anyone else's access token.</strong> It should be
+        treated with as much care as your main account password.
+      </p>
+      <div>
+        <img class="screenshot" alt="Developer Settings" src="./YNAB-API-DOCUMENTATION_files/developer-settings.png">
+      </div>
+      <div>
+        <img class="screenshot" alt="Generate Personal Access Token" src="./YNAB-API-DOCUMENTATION_files/generate-personal-access-token.png">
+      </div>
+      <div>
+        <img class="screenshot" alt="New Personal Access Token" src="./YNAB-API-DOCUMENTATION_files/new-personal-access-token.png">
+      </div>
+      <h3 id="oauth-applications">OAuth Applications</h3>
+      <p>OAuth is a secure way for a third-party application to obtain delegated but limited permissions to a user account and is appropriate for use in applications that need to gain limited authorized permissions to accounts they do not own.  If you are developing an application that uses the API and want other users to be able to use your application, <strong>OAuth is the only option for obtaining access tokens for other users</strong>.
+      </p>
+      <p>All OAuth Application integrations must abide by the <a href="https://api.ynab.com/#terms">API Terms of Service</a> and the <a href="https://api.ynab.com/#oauth-requirements">OAuth Application Requirements</a>.  Failure to do so will result in disabling of the application.
+      </p>
+      <h4 id="oauth-restricted-mode">Restricted Mode</h4>
+      <p>When an OAuth application is created, it will be placed in <i>Restricted Mode</i> initially.  This means the application will be <strong>limited to obtaining 25 access tokens</strong> for users other than the OAuth application owner.  Once this limit is reached, a message will be placed on the Authorization screen and new authorizations will be prohibited.</p>
+      <p>To have Restricted Mode removed, you must <a href="https://form.asana.com/?k=waDWze4QA7flvIE_tCc27w&amp;d=63941951019692" target="_blank" rel="noopener noreferrer">request a review via this form</a>. Your OAuth application will need to abide by the <a href="https://api.ynab.com/#terms">API Terms of Service</a> and the <a href="https://api.ynab.com/#oauth-requirements">OAuth Application Requirements</a>. Once we review the application and confirm adherence to our policies, we will remove Restricted Mode and send you an email confirmation. This process takes 2-4 weeks.</p>
+      <h4>Creating an OAuth Application</h4>
+      <p>To create an OAuth Application, <a href="https://app.ynab.com/settings">sign in to your account</a>, go to "Account Settings", scroll down and navigate to "Developer Settings" section.  From the Developer Settings page, click "New Application" under the OAuth Applications section.  Here, you specify the details of your application and save it.  <img class="screenshot" alt="New OAuth Application" src="./YNAB-API-DOCUMENTATION_files/new-oauth-app.png">
+        After saving, you will see the details of the new application, including the Client ID and the Client Secret which are referenced in the instructions below. <img class="screenshot" alt="View OAuth Application" src="./YNAB-API-DOCUMENTATION_files/view-oauth-app.png">
+      </p>
+      <p>After creating the application, you are then able to use one of the supported <i>grant types</i> to obtain a valid access token.  The YNAB API supports two OAuth grant types: <strong>Implicit Grant</strong> and <strong>Authorization Code Grant</strong>.</p>
+      <h4>Implicit Grant Flow</h4>
+      <p>The Implicit Grant type, also informally known as the "client-side flow", should be used in scenarios <strong>where the application Secret cannot be kept private</strong>.  The application Secret should never be visible or accessible by a client!  If you are requesting an access token directly from a browser or other client that is not secure (i.e. mobile app) this is the flow you should use. This grant type does not support refresh tokens so once the access token <strong>expires 2 hours</strong> after it was granted, the user must be prompted again to authorize your application.</p>
+      <p>The <a href="https://github.com/ynab/ynab-api-starter-kit">YNAB API Starter Kit</a> implements the Implicit Grant Flow and can be a good starting point for your own project or used as a reference for implementing OAuth.</p>
+      <p>Here is the flow to obtain an access token:</p>
+      <ol>
+        <li>Perform an <strong>Authorization Request</strong>.  Send user to the authorization URL: <code>https://app.ynab.com/oauth/authorize?client_id=[CLIENT_ID]&amp;redirect_uri=[REDIRECT_URI]&amp;response_type=token</code>, replacing [CLIENT_ID] and [REDIRECT_URI] with the values configured when creating the OAuth Application.  The user will be given the option to approve your request for access:  <img class="screenshot" alt="Authorizing an OAuth Application" src="./YNAB-API-DOCUMENTATION_files/authorize-app.png"></li>
+        <li>Upon user approval, the server will send an <strong>Authorization Response</strong> and the user's browser will be redirected to the [REDIRECT_URI] with a new access token sent as a fragment (hash) identifier named <strong>access_token</strong>.  For example, if your Redirect URI is configured as https://quantumspending.com, upon the user
+          authorizing your application, they would be redirected to <code>https://quantumspending.com/#access_token=8bc63e42-1105-11e8-b642-0ed5f89f718b</code>.  This access token can then be used to authenticate through the API.
+        </li>
+      </ol>
+      <h4>Authorization Code Grant Flow</h4>
+      <p>The Authorization Code Grant type, also informally known as the "server-side flow", is intended for server-side applications, <strong>where the application Secret can be protected</strong>.  If you are requesting an access token from a server application that is private and under your control, this grant type can be used.  This grant type supports refresh tokens so once the access token <strong>expires 2 hours</strong> after it was granted, the application can request a new access token without having to prompt the user to authorize again.</p>
+      <h5>Obtaining an Access Token</h5>
+      <p>Here is the flow to obtain an access token:</p>
+      <ol>
+        <li>Perform an <strong>Authorization Request</strong>.  Send user to the authorization URL: <code>https://app.ynab.com/oauth/authorize?client_id=[CLIENT_ID]&amp;redirect_uri=[REDIRECT_URI]&amp;response_type=code</code>, replacing [CLIENT_ID] and [REDIRECT_URI] with the values configured when creating the OAuth Application.  The user will be given the option to approve your request for access:
+          <img class="screenshot" alt="Authorizing an OAuth Application" src="./YNAB-API-DOCUMENTATION_files/authorize-app.png">
+          There are additional security parameters that can be included in the authorization request to enhance security.  These include <code>scope</code>, <code>state</code>, and <code>code_challenge</code> (PKCE).  Refer to <a href="https://api.ynab.com/#oauth-authorization-parameters">Authorization Request Security Parameters</a> for more info.
+        </li>
+        <li>Upon user approval, the server will send an <strong>Authorization Response</strong> and the user's browser will be redirected to the [REDIRECT_URI] with a new authorization code sent as a query parameter named <strong>code</strong>.  For example, if your Redirect URI is configured as https://quantumspending.com, upon the user
+          authorizing your application, they would be redirected to <code>https://quantumspending.com/?code=8bc63e42-1105-11e8-b642-0ed5f89f718b</code>.
+        </li>
+        <li>
+          Perform a <strong>Token Request</strong>.  Now that your application has an authorization code, you need to request an access token by sending a <strong>POST</strong> request to <code>https://app.ynab.com/oauth/token</code> with the following parameters in the request body:
+          <ul>
+            <li><strong>client_id</strong> - The same [CLIENT_ID] sent with the original authorization code in Step 1 above and provided when setting up the OAuth Application.</li>
+            <li><strong>client_secret</strong> - The client secret provided when setting up the OAuth Application.</li>
+            <li><strong>redirect_uri</strong> - The same [REDIRECT_URI] sent with the original authorization code request in Step 1 above and specified when setting up the OAuth Application.</li>
+            <li><strong>grant_type</strong> - The value <code>authorization_code</code> should be provided for this field, which will indicate that you are supplying an authorization code and requesting an access token.</li>
+            <li><strong>code</strong> - The authorization code received as <strong>code</strong> query param in Step 2 above.</li>
+          </ul>
+          <p>Example token request:</p>
+          <pre>curl -X POST https://app.ynab.com/oauth/token \
+  -d client_id=[CLIENT_ID] \
+  -d client_secret=[CLIENT_SECRET] \
+  -d redirect_uri=[REDIRECT_URI] \
+  -d grant_type=authorization_code \
+  -d code=[AUTHORIZATION_CODE]
+</pre>
+        </li>
+        <li>If the Token Request is valid, the server will send a <strong>Token Response</strong>.  The body will contain these fields:
+          <pre>{
+  "access_token": "0cd3d1c4-1107-11e8-b642-0ed5f89f718b",
+  "token_type": "bearer",
+  "expires_in": 7200,
+  "refresh_token": "13ae9632-1107-11e8-b642-0ed5f89f718b"
+}
+</pre>
+          <p>  The <strong>access_token</strong> can be used to authenticate through the API.</p>
+        </li>
+      </ol>
+      <h5>Using a Refresh Token</h5>
+      <p>The access token has an expiration indicated by the "expires_in" value.  To obtain a new access token without requiring the user to manually authorize again, you should store the <strong>refresh_token</strong> and then send a <strong>POST</strong> request to <code>https://app.ynab.com/oauth/token</code> with the following parameters in the request body:</p>
+      <ul>
+        <li><strong>client_id</strong> - The same [CLIENT_ID] sent with the original authorization code in Step 1 above and provided when setting up the OAuth Application.</li>
+        <li><strong>client_secret</strong> - The client secret provided when setting up the OAuth Application.</li>
+        <li><strong>grant_type</strong> - The value <code>refresh_token</code> should be provided for this field, which will indicate that you are supplying a refresh token and requesting a new access token.</li>
+        <li><strong>refresh_token</strong> - The refresh token received as <strong>refresh_token</strong> in the token response.</li>
+      </ul>
+      <p>Example refresh token request:</p>
+      <pre>curl -X POST https://app.ynab.com/oauth/token \
+  -d client_id=[CLIENT_ID] \
+  -d client_secret=[CLIENT_SECRET] \
+  -d grant_type=refresh_token \
+  -d refresh_token=[REFRESH_TOKEN]
+</pre>
+      <p> The response will be in the same format as an initial token response.</p>
+      <h4 id="oauth-authorization-parameters">Authorization Request Security Parameters</h4>
+      <h5>read-only Scope</h5>
+      <p>When an OAuth application is requesting authorization, a <code>scope</code> parameter with a value of <code>read-only</code> can be passed to request read-only access to a plan.
+        For example: <code>https://app.ynab.com/oauth/authorize?client_id=[CLIENT_ID]&amp;redirect_uri=[REDIRECT_URI]&amp;response_type=token&amp;scope=read-only</code>.  If an access token issued with the <code>read-only</code> scope is used when requesting an endpoint that modifies the plan (POST, PATCH, etc.) a <code>403 Forbidden</code> response will be issued.
+        <strong>If you do not need write access to a plan, please use the read-only scope.</strong>
+      </p>
+      <h5>state parameter</h5>
+      <p>An optional, but recommended, <code>state</code> parameter can also be supplied to prevent <a href="https://owasp.org/www-community/attacks/csrf">Cross Site Request Forgery (CSRF)</a> attacks.  If specified, the same value will be returned to the [REDIRECT_URI] as a <code>state</code> parameter.  For example:
+        if you included parameter <code>state=4cac8f43</code> in the authorization URI, when the user is redirected to [REDIRECT_URI], the URL would contain that same value in a <code>state</code> parameter.  The value of <code>state</code> should be unique for each request.</p>
+      <h5>Proof Key for Code Exchange (PKCE)</h5>
+      <p>PKCE (<a href="https://datatracker.ietf.org/doc/html/rfc7636">RFC 7636</a>) protects the authorization code from interception by ensuring that the client exchanging the code is the same client that initiated the authorization request.  To use PKCE, generate a random <code>code_verifier</code> string (43-128 characters) and derive a <code>code_challenge</code> from it using SHA-256.</p>
+      <p>Example code verifier and code challenge generation:</p>
+      <pre>CODE_VERIFIER=$(openssl rand -base64 32 | tr -d '=' | tr '/+' '_-')
+CODE_CHALLENGE=$(echo -n "$CODE_VERIFIER" | openssl dgst -sha256 -binary | base64 | tr -d '=' | tr '/+' '_-')
+echo "code_verifier: $CODE_VERIFIER"
+echo "code_challenge: $CODE_CHALLENGE"
+</pre>
+      <p>Include the <code>code_challenge</code> and <code>code_challenge_method=S256</code> parameters in the authorization request.  For example:
+        <code>https://app.ynab.com/oauth/authorize?client_id=[CLIENT_ID]&amp;redirect_uri=[REDIRECT_URI]&amp;response_type=code&amp;code_challenge=[CODE_CHALLENGE]&amp;code_challenge_method=S256</code></p>
+      <p>When exchanging the authorization code for an access token, include the original <code>code_verifier</code> in the token request:</p>
+      <pre>curl -X POST https://app.ynab.com/oauth/token \
+  -d client_id=[CLIENT_ID] \
+  -d client_secret=[CLIENT_SECRET] \
+  -d grant_type=authorization_code \
+  -d code=[AUTHORIZATION_CODE] \
+  -d redirect_uri=[REDIRECT_URI] \
+  -d code_verifier=[CODE_VERIFIER]
+</pre>
+      <h4 id="oauth-default-plan">Default Plan Selection</h4>
+      <p>An OAuth application can optionally have 'default plan selection' enabled.</p>
+      <div>
+        <img class="screenshot" alt="OAuth Default Plan Setting" src="./YNAB-API-DOCUMENTATION_files/oauth-default-plan-setting.png">
+      </div>
+      <p>When default plan selection is enabled, a user will be asked to select a default plan when authorizing your application:</p>
+      <div>
+        <img class="screenshot" alt="OAuth Default Plan Selection" src="./YNAB-API-DOCUMENTATION_files/oauth-default-plan-selection.png">
+      </div>
+      <p>You can then pass in the value 'default' in lieu of a <code>plan_id</code> in endpoint calls.  For example, to get a list of accounts on the default plan you could use this endpoint: <code>https://api.ynab.com/v1/plans/default/accounts</code>.</p>
+      <h3 id="access-token-usage">Access Token Usage</h3>
+      <p>Once you have obtained an access token, you must use HTTP Bearer Authentication, as defined in <a href="https://tools.ietf.org/html/rfc6750">RFC6750</a>, to authenticate when sending requests to the API.  The token should be sent in the <code>Authorization</code> request header.</p>
+      <p>Example:</p>
+      <pre>curl -H "Authorization: Bearer &lt;ACCESS_TOKEN&gt;" https://api.ynab.com/v1/plans</pre>
+    </section>
+    <h2>Usage</h2>
+    <section>
+      <h3 id="usage-overview">Overview</h3>
+      <p>Our API uses a
+        <a href="https://aws.amazon.com/what-is/restful-api/">REST</a> based design, leverages the
+        <a href="https://www.json.org/json-en.html">JSON</a> data format, and relies upon HTTPS for transport. We respond with meaningful HTTP response codes and if an
+        <a href="https://api.ynab.com/#errors">error</a> occurs, we include error details in the response body.  We support <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS?utm_source=chatgpt.com">Cross-Origin Resource Sharing (CORS)</a> which allows you to use the API directly from a web application.
+      </p>
+      <h4>Mostly read-only</h4>
+      <p>The current version of the API ("v1") is <i>mostly</i> read-only, supporting <code>GET</code> requests.  However, we do support some <code>POST</code>, <code>PATCH</code>, and <code>DELETE</code> requests on several resources.  Take a look at the <a href="https://api.ynab.com/v1">API Endpoints</a> for details.</p>
+      <h4>Security</h4>
+      <p>TLS (a.k.a. SSL or HTTPS) is enforced on all requests to ensure communication from your client to our endpoint is encrypted,
+        end-to-end. You must <a href="https://api.ynab.com/#authentication">obtain an access token</a> and provide it with each request.  An access token is tied directly to a YNAB account but can be independently revoked.
+      </p>
+      <h3 id="best-practices">Best Practices</h3>
+      <h4>Caching</h4>
+      <p>Please cache data received from the API when possible to avoid unnecessary traffic.
+      </p>
+      <h4>Delta Requests</h4>
+      <p>Some endpoints support <a href="https://api.ynab.com/#deltas">Delta Requests</a>, where you can request to receive only what has changed since the last response.
+        It is highly recommended to use this feature as it reduces load on our servers as well as makes processing responses more efficient.
+      </p>
+      <h4>Fault Tolerance</h4>
+      <p>Errors and exceptions will sometimes happen. You might experience a connection problem between your app and the
+        YNAB API or a complete outage. You should always anticipate that errors or exceptions may occur and build in
+        accommodations for them in your application.
+      </p>
+      <h4>Specific Requests</h4>
+      <p>You should use the most specific request possible to avoid large responses which are taxing on the API server and
+        slower for your app to consume and process. For example, if you want to retrieve the balance for a particular
+        category, you should request that single category from <code>/plans/{plan_id}/categories/{category_id}</code> rather than requesting all categories.
+      </p>
+      <h3 id="endpoints">Endpoints</h3>
+      <p>The base URL is:
+        <code>https://api.ynab.com/v1</code>.  To see a list of all available endpoints, please refer to our <a href="https://api.ynab.com/v1">API Endpoints</a> page.  The documentation also lets you "Test Request" on each endpoint directly within the page.
+      </p>
+      <p>
+        <b>Note:</b> The YNAB API was previously available at <code>https://api.youneedabudget.com/v1</code>. <a rel="noopener noreferrer" target="_blank" href="https://support.ynab.com/en_us/ynab-s-domain-change-SJgdQjeW3">In 2023</a> it moved to <code>https://api.ynab.com/v1</code>. While existing applications using <code>https://api.youneedabudget.com/v1</code> will continue to function, all API consumers should be updated to use <code>https://api.ynab.com/v1</code>.
+      </p>
+      <h3 id="response-format">Response Format</h3>
+      <p>All responses from the API will come with a response wrapper object to make them predictable and easier to parse.</p>
+      <h4>Successful Responses</h4>
+      <p>Successful responses will return wrapper object with a <code>data</code> property that will contain the resource data.
+        The name of the object inside of the data property will correspond to the requested resource.
+      </p>
+      <p>For example, if you request <code>/plans</code>, the response will look like:</p>
+      <pre>{
+  "data": {
+    "plans": [
+      {"id": "cee64af3-a3df-425e-a18a-980e7ec10dc2", ...},
+      {"id": "55697d98-b942-4f29-97d8-f870edd001d6", ...}
+    ]
+  }
+}</pre>
+      <p>If you request a single account from <code>/accounts/{account_id}</code>:</p>
+      <pre>{
+  "data": {
+    "account": {"id": "16da87a0-66c7-442f-8216-a3daf9cb82a8", ...}
+  }
+}
+</pre>
+      <h5>Empty data</h5>
+      <p>Response data properties that have no data will be specified as <code>null</code> rather than being omitted.  For example, a transaction that does not have a payee would have a body that looks like this:</p>
+      <pre>{
+  "data": {
+    "transaction": {
+      "id": "16da87a0-66c7-442f-8216-a3daf9cb82a8",
+      "date": "2017-12-01",
+      "payee_id": null,  // This transaction does not have a payee
+      ...
+    }
+  }
+}
+</pre>
+      <h4>Error Responses</h4>
+      <p>For error responses, the HTTP Status Code will be specified as something other than <code>20X</code> and the body of the response will contain an error object.
+        The format of an error response is:
+      </p>
+      <pre>{
+  "error": {
+    "id": "123"
+    "name": "error_name"
+    "detail": "Error detail"
+  }
+}
+</pre>
+      <p>The <a href="https://api.ynab.com/#errors">Errors</a> section lists the possible errors.</p>
+      <h3 id="errors">Errors</h3>
+      <p>Errors from the API are indicated by the HTTP response status code and also included in the body of the response,
+        according to the
+        <a href="https://api.ynab.com/#response-format">response format</a>. The following errors are possible:
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>HTTP Status</th>
+            <th>Error ID</th>
+            <th>Name</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>400</td>
+            <td>400</td>
+            <td>bad_request</td>
+            <td>The request could not be understood by the API due to malformed syntax or validation errors.
+            </td>
+          </tr>
+          <tr>
+            <td>401</td>
+            <td>401</td>
+            <td>not_authorized</td>
+            <td>
+              This error will be returned in any of the following cases:
+              <ul>
+                <li>Missing access token</li>
+                <li>Invalid access token</li>
+                <li>Revoked access token</li>
+                <li>Expired access token</li>
+              </ul>
+            </td>
+          </tr>
+          <tr>
+            <td>403</td>
+            <td>403.1</td>
+            <td>subscription_lapsed</td>
+            <td>
+              The subscription for this account has lapsed
+            </td>
+          </tr>
+          <tr>
+            <td></td>
+            <td>403.2</td>
+            <td>trial_expired</td>
+            <td>
+              The trial for this account has expired
+            </td>
+          </tr>
+          <tr>
+            <td></td>
+            <td>403.3</td>
+            <td>unauthorized_scope</td>
+            <td>
+              The supplied access token has a scope which does not allow access.
+            </td>
+          </tr>
+          <tr>
+            <td></td>
+            <td>403.4</td>
+            <td>data_limit_reached</td>
+            <td>
+              The request will exceed one or more data limits in place to prevent abuse.
+            </td>
+          </tr>
+          <tr>
+            <td>404</td>
+            <td>404.1</td>
+            <td>not_found</td>
+            <td>
+              The specified URI does not exist
+            </td>
+          </tr>
+          <tr>
+            <td></td>
+            <td>404.2</td>
+            <td>resource_not_found</td>
+            <td>
+              This error will be returned when requesting a resource that is not found.  For example, if you requested <strong>/plans/123</strong> and a plan with the id '123' does not exist, this error would be returned.
+            </td>
+          </tr>
+          <tr>
+            <td>409</td>
+            <td>409</td>
+            <td>conflict</td>
+            <td>
+              If resource cannot be saved during a PUT or POST request because it conflicts with an existing resource, this error will be returned.
+            </td>
+          </tr>
+          <tr>
+            <td>429</td>
+            <td>429</td>
+            <td>too_many_requests</td>
+            <td>
+              This error is returned if you make too many requests to the API in a short amount of time.  Please see the <a href="https://api.ynab.com/#rate-limiting">Rate Limiting</a> section. Wait awhile and try again.
+            </td>
+          </tr>
+          <tr>
+            <td>500</td>
+            <td>500</td>
+            <td>internal_server_error</td>
+            <td>
+              This error will be returned if the API experiences an unexpected error.
+            </td>
+          </tr>
+          <tr>
+            <td>503</td>
+            <td>503</td>
+            <td>service_unavailable</td>
+            <td>
+              This error will be returned in any of the following cases:
+              <ul>
+                <li>We have temporarily disabled access to the API.  This can happen when we are experiencing heavy load or need to perform maintenance.</li>
+                <li>A request timeout has occurred.  This can happen if the API request is processing a large amount of data and takes longer than 30 seconds to complete.</li>
+              </ul>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <h3 id="formats">Data Formats</h3>
+      <h4>Numbers</h4>
+      <p>Currency amounts returned from the API—such as account balance, category balance, and transaction amounts—
+        use a format we call "milliunits". Most currencies don't have three decimal places, but you can think of it as the number of thousandths of a unit in the currency: 1,000
+        milliunits equals "one" unit of a currency (one Dollar, one Euro, one Pound, etc.). Here are some concrete examples:
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Currency</th>
+            <th>Milliunits</th>
+            <th>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>USD ($)</td>
+            <td>123930</td>
+            <td>$123.93</td>
+          </tr>
+          <tr>
+            <td>USD ($)</td>
+            <td>-220</td>
+            <td>-$0.22</td>
+          </tr>
+          <tr>
+            <td>Euro (€)</td>
+            <td>4924340</td>
+            <td>€4.924,34</td>
+          </tr>
+          <tr>
+            <td>Euro (€)</td>
+            <td>-2990</td>
+            <td>-€2,99</td>
+          </tr>
+          <tr>
+            <td>Jordanian dinar</td>
+            <td>-395032</td>
+            <td>-395.032</td>
+          </tr>
+        </tbody>
+      </table>
+      <h4>Dates</h4>
+      <p>All dates returned in response calls use <a href="https://www.iso.org/iso-8601-date-and-time-format.html">ISO 8601</a> (<a href="https://tools.ietf.org/html/rfc3339#section-5.6">RFC 3339 "full-date"</a>) format.  For example,
+        December 30, 2015 is formatted as <code>2015-12-30</code>.
+      </p>
+      <h4>Timezone</h4>
+      <p>All dates use UTC as the timezone.</p>
+      <h3 id="deltas">Delta Requests</h3>
+      <p>
+        The following API resources support "delta requests", where you ask
+        for only those entities that have changed since your last request:
+        </p><ul>
+          <li><code>GET /plans/{plan_id}</code></li>
+          <li><code>GET /plans/{plan_id}/accounts</code></li>
+          <li><code>GET /plans/{plan_id}/categories</code></li>
+          <li><code>GET /plans/{plan_id}/money_movements</code></li>
+          <li><code>GET /plans/{plan_id}/money_movement_groups</code></li>
+          <li><code>GET /plans/{plan_id}/months</code></li>
+          <li><code>GET /plans/{plan_id}/payees</code></li>
+          <li><code>GET /plans/{plan_id}/scheduled_transactions</code></li>
+          <li><code>GET /plans/{plan_id}/transactions</code></li>
+        </ul>
+      <p></p>
+      <p>
+        We recommend using delta requests as they allow API consumers to
+        parse less data and make updates more efficient, and decreases
+        server load on our end.
+      </p>
+      <p>
+        Resources supporting delta requests return a
+        <strong>server_knowledge</strong> number in the
+        <a href="https://api.ynab.com/#response-format">response</a>. This number can then be
+        passed in as the <strong>last_knowledge_of_server</strong> query
+        parameter. Then, only the data that has changed since the last
+        request will be included in the response.
+      </p>
+      <p>
+        For example, if you request a plan's contents from
+        <code>/plans/{plan_id}</code>, it will include the
+        <strong>server_knowledge</strong> like so:
+        </p><pre>{
+  "data": {
+    "server_knowledge": 100,
+    "plan": {
+      "id": "16da87a0-66c7-442f-8216-a3daf9cb82a8",
+      ...
+    }
+  }
+}
+</pre>
+      <p></p>
+      <p>
+        On a subsequent request, you can pass that same
+        <strong>server_knowledge</strong> in as a query parameter named
+        <strong>last_knowledge_of_server</strong>
+        (<code>/plans/{plan_id}?last_knowledge_of_server=100</code>)
+        and get back <i>only the entities that have changed</i> since your
+        last request.  For example, if a single account had its name changed
+        since your last request, the response would look something like:
+        </p><pre>{
+  "data": {
+    "server_knowledge":101,
+    "plan":{
+      ...
+      "accounts": [
+        {
+          "id":"ea0c0ace-1a8c-4692-9e1d-0a21fe67f10a",
+          "name":"Renamed Checking Account",
+          "type":"Checking",
+          "on_budget":true,
+          "closed":false,
+          "note":null,
+          "balance":20000
+        }
+      ],
+      ...
+    }
+  }
+}
+</pre>
+      <p></p>
+      <h3 id="rate-limiting">Rate Limiting</h3>
+      <p>An access token may be used for up to <strong>200 requests per hour</strong>.</p>
+      <p>The limit is enforced within a rolling window. If an access token is used at 12:30 PM and for 199 more requests up to 12:45 PM and then hits the limit, any additional requests will be forbidden until enough time has passed for earlier requests to fall outside of the preceding one-hour window.</p>
+      <p>If you exceed the rate limit, an error response returns a <strong>429</strong> error:</p>
+      <pre>HTTP/1.1 429 Too Many Requests
+Content-Type: application/json; charset=utf-8
+
+"error": {
+  "id": "429"
+  "name": "too_many_requests"
+  "detail": "Too many requests"
+}
+</pre>
+    </section>
+    <h2 id="libraries">Libraries</h2>
+    <section>
+      <h3 id="client-javascript">JavaScript</h3>
+      <p>The JavaScript library is available via
+        <a href="https://www.npmjs.com/package/ynab">npm</a> and the source and documentation is located on
+        <a href="https://github.com/ynab/ynab-sdk-js">GitHub</a>.  This library can be used server-side (Node.js) or client-side (web browser) since we support <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS">Cross-Origin Resource Sharing (CORS)</a>.
+      </p>
+      <p>
+        If you are using the JavaScript library, you might want to also take a look at the <a href="https://github.com/ynab/ynab-api-starter-kit">YNAB API Starter Kit</a> which is a simple, but functional web application that uses the JavaScript library.
+      </p>
+      <h4>Installation</h4>
+      <pre>npm install ynab</pre>
+      <h4>Usage</h4>
+      <pre>const ynab = require("ynab");
+const accessToken = "123-yourAccessTokenHere-456";
+const ynabAPI = new ynab.API(accessToken);
+
+(async function() {
+  const plansResponse = await ynabAPI.plans.getPlans();
+  const plans = plansResponse.data.plans;
+  for(let plan of plans) {
+    console.log(`Plan Name: ${plan.name}`);
+  }
+})();
+</pre>
+      <h3 id="client-ruby">Ruby</h3>
+      <p>The Ruby library is available via
+        <a href="https://rubygems.org/gems/ynab">RubyGems</a> and the source and documentation is located on
+        <a href="https://github.com/ynab/ynab-sdk-ruby">GitHub</a>.
+      </p>
+      <h4>Installation</h4>
+      <pre>gem install ynab</pre>
+      <p>If using Bundler, add <code>gem 'ynab'</code> to your Gemfile and then run <code>bundle</code>.</p>
+      <h4>Usage</h4>
+      <pre>require 'ynab'
+access_token = '123-yourAccessTokenHere-456'
+ynab_api = YNAB::API.new(access_token)
+
+plans_response = ynab_api.plan.get_plans
+plans = plans_response.data.plans
+
+plans.each do |plan|
+  puts "Plan Name: #{plan.name}"
+end
+</pre>
+      <h3 id="client-python">Python</h3>
+      <p>The Python library is available via
+        <a href="https://pypi.org/project/ynab/">PyPi</a> and the source and documentation is located on
+        <a href="https://github.com/ynab/ynab-sdk-python">GitHub</a>.
+      </p>
+      <h4>Installation</h4>
+      <pre>pip install ynab</pre>
+      <h4>Usage</h4>
+      <pre>import ynab
+
+configuration = ynab.Configuration(
+    access_token = "123-yourAccessTokenHere-456"
+)
+
+with ynab.ApiClient(configuration) as api_client:
+    plans_api = ynab.PlansApi(api_client)
+    plans_response = plans_api.get_plans()
+    plans = plans_response.data.plans
+
+    for plan in plans:
+        print(plan.name)
+</pre>
+      <h3 id="clients-community">Community</h3>
+      <p>The following libraries have been created and are maintained by YNABers.  We do not provide support for these clients but appreciate the effort!</p>
+      <ul>
+        <li>.NET - <a href="https://github.com/tombly/ynab-api-client">YNAB.API.Client</a> by Tom Bulatewicz</li>
+        <li>Elixir - <a href="https://github.com/teedang19/ynab-elixir">ynab-elixir</a> by Tam Dang</li>
+        <li>Go - <a href="https://github.com/brunomvsouza/ynab.go">ynab.go</a> by Bruno Souza</li>
+        <li>Java - <a href="https://github.com/daviddietz/ynab-sdk">Java SDK for YNAB API</a> by David Dietz</li>
+        <li>Julia - <a href="https://github.com/tonyrubak/ynab-tools">ynab-tools</a> by Joseph Peralta</li>
+        <li>Kotlin - <a href="https://github.com/libec/ynab-kmp-api">ynab-kmp-api</a> (Kotlin Multiplatform) by Libor Huspenina</li>
+        <li>Perl - <a href="https://metacpan.org/pod/WWW::YNAB">WWW::YNAB</a> by Jesse Luehrs</li>
+        <li>PHP - <a href="https://github.com/Jorijn/ynab-sdk-php">YNAB-SDK-PHP</a> by Jorijn Schrijvershof</li>
+        <li>PHP (Laravel) - <a href="https://github.com/ynab-sdk-laravel/ynab-sdk-laravel">YNAB SDK for Laravel</a> by Daniel Haven</li>
+        <li>PowerShell - <a href="https://github.com/ConnorGriffin/Posh-YNAB">Posh-YNAB</a> by Connor Griffin</li>
+        <li>R - <a href="https://github.com/ejkreboot/rnab">rnab</a> by Eric Kort</li>
+        <li>Rust - <a href="https://github.com/Phrohdoh/ynab-rs">ynab-rs</a> by Taryn Phrohdoh</li>
+        <li>Swift - <a href="https://github.com/andrebocchini/swiftynab">swiftynab</a> by Andre Bocchini</li>
+      </ul>
+      <p></p>
+      <p>
+        These libraries are not affiliated, associated, or officially connected with YNAB or any of its subsidiaries of affiliates. Please review their respective privacy policies, as they may differ from ours. YNAB is not responsible and cannot be held liable for any potential data breaches that may occur from their use. By adding any of these tools, you assume any associated risks.
+      </p>
+    </section>
+    <h2 id="works-with-ynab">Works with YNAB</h2>
+    <section>
+      <img class="works-with-ynab" alt="Works With YNAB" src="./YNAB-API-DOCUMENTATION_files/works_with_ynab.svg">
+      <h3 id="works-with-ynab-official">Official</h3>
+      <p>The following applications are official YNAB integrations that we developed and support.</p>
+      <ul>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://github.com/ynab/ynab-api-starter-kit">API Starter Kit</a> - Quickly get started developing an application with the YNAB API</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://zapier.com/apps/ynab/integrations">Zapier for YNAB</a> - Zapier allows you to instantly connect YNAB with 1,500+ apps to automate your work and find productivity super powers.</li>
+      </ul>
+      <h3 id="works-with-ynab-third-party">Third Party</h3>
+      <p>The following third party applications have been developed by the YNAB community. We do not provide support for these applications. If you have built an OAuth application you'd like shared here, see <a href="https://api.ynab.com/#oauth-applications">OAuth Applications</a>.</p>
+      <ul>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://additionalbudgetgraphs.web.app/">Additional Budget Graphs</a> - Some additional graphing and other abilities for YNAB</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://autoslip.ai/">AutoSlip</a> - Receipt parsing for YNAB: auto-split and categorize purchases from grocery, Amazon, Target, and anywhere else you shop.  </li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://www.beeminder.com/">Beeminder</a> - Beeminder is a tool that helps you meet your goals, by putting your money where your mouth is.</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://beyondrule4.jmmorrissey.com/">Beyond Rule 4</a> - Your Age of Money is ever rising. You're feeling in control of your money. Congratulations!
+What would you like to accomplish next?</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://danielhaven.com/billsforynab">Bills (for YNAB)</a> - A web app for tracking bills (recurring expenses) with YNAB.</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://bridgeyourbudget.com/">bridgeyourbudget</a> - Automatically sync your Amazon purchases with YNAB transactions</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://www.budgetfeeder.com/">Budget Feeder</a> - Sync your Australian bank transactions to YNAB!
+
+148 Australian Banks and credit cards supported including Amex, ANZ, Westpac, NAB and CBA.
+
+No need to enter transactions manually, with automatic bank feeds your transactions sync seamlessly to your YNAB budget accounts every day. Let Budget Feeder do the hard work for you.</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://calendarforynab.com/">Calendar for YNAB</a> - Subscribe to a calendar of your transactions.</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://checkoutmybudget.com/">Check Out My Budget: Browser Extension</a> - Take your budget with you to places you shop online. Displaying your budget there when you are ready to make a purchase will help you stick to your budget and avoid impulse buys.  Customize the categories that are displayed from your budget on each website so you can see the relevant ones easily for the website that you are visiting.</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://checkoutmybudget.com/tools/copy_transactions/">Check Out My Budget: Transaction Copier for YNAB</a> - Have you ever wanted to play around with your YNAB categories, re-categorizing some of your transactions just to see how it would work? YNAB’s Fresh Start only copies over the categories and accounts, but doesn’t bring the transactions over so it is hard to do this without risking messing up your existing budget.
+
+This tool copies the transactions from one budget to a new budget, containing all the transactions into a single "migration" account. When you run this tool, the new budget must be a "Fresh Start" of the old one with all the same groups and categories but once the tool has run and the transactions are are copied over, you can re-categorize and experiment to your hearts content!</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://coda.io/@david-weitzman/coda-for-ynab">Coda Sync for YNAB</a> - A Coda pack to sync your transactions into a doc</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://costsharingforynab.com/">Cost Sharing for YNAB</a> - Conveniently manage a shared credit card or bank account in YNAB</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://www.customreportsforynab.com/">Custom Reports for YNAB</a> - Explore your transactions further with custom reports beyond YNAB's built-in reports.</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://dakboard.com/">DAKboard</a> - DAKboard is a customizable display for photos, calendar, news, weather and so much more!</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://dashforynab.com/">Dash for YNAB</a> - Dashboard and reporting tools for YNAB.</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://daydash.io/">DayDash</a> - DayDash syncs your Ynab data so you can view and analyze your accounts and transactions.</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://www.email4ynab.com/">Email Integration for YNAB</a> - Add transactions to YNAB by forwarding your bank emails. Permission to Read is needed to match Accounts, Categories, and Payees.</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://fbar-max-balance-calculator.vercel.app/">FBAR Max Balance Calculator</a> - An app that allows you to calculate your max account balances for the Report of Foreign Bank and Financial Accounts (FBAR).</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://fininsights.io/">FinInsights for YNAB</a> - AI-powered financial intelligence for YNAB budgets. FinInsights provides
+  read-only budget analysis, spending pattern detection, and intelligent
+  reallocation recommendations to help users optimize their YNAB budgets.</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://chat.openai.com/g/g-88YNmz2RR-gpt-for-ynab">GPT for YNAB (Unofficial)</a> - AI assistant for You Need A Budget (YNAB), powered by ChatGPT. Not affiliated with or endorsed by YNAB. As with any AI, this assistant can hallucinate or be flat out wrong. DO NOT make financial decisions based on this assistant.</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://heatmapforynab.netlify.app/">Heatmap for YNAB</a> - A report that displays your YNAB transactions in a heatmap style to get a bird's eye view of your budget.</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://www.importer-for-ynab.app/">Importer for YNAB</a> - Importer for YNAB is a free, open-source tool that helps you convert Israeli bank and credit card files to the YNAB format. It supports major banks and credit cards including Isracard, Cal, Max, Mizrahi, and Poalim.</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://ledgergpt.io/">LedgerGPT</a> - AI-assisted ledger reconciliation for personal finances. Automatically parses statements, compares them to your ledger, and proposes accurate updates for review.</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://lumyforynab.app/">Lumy</a> - Lumy helps you get more out of your YNAB budget with features like Month in Review, Frugal Month, Spend Trackers, and more! Tune into your budget with configurable reports and charts, and join the active community of Lumy users on our Discord!</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://www.lunchflow.app/">Lunch Flow</a> - Connect your banks and investments globally to your favorite tools.</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://budget.friedmag.com/">Mobile Toolbox for YNAB</a> - This application connects with a user’s live budget data to generate actionable insights on cash-flow, measure progress toward financial independence, track savings for future liabilities (such as children’s education), and optimise credit-card reward strategies.</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://mosflows.com/">Mo's Flows</a> - Visualize your Value - A Budget Visualizer</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://ynab.rmillan.com/">Multi-currency for YNAB</a> - Manage YNAB accounts with multiple currencies in a single budget</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://www.makingyourmoneymatter.com/mymm-sync-for-ynab/">MYMM Sync for YNAB</a> - Import your YNAB data to your Personal Finance Bundle in Google Sheets with a few clicks!</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://www.ontargetanalysisforynab.com/">On Target Analysis For YNAB</a> - Allows you to compare how closely the money they assigned matches your targets/goals for the month. Quickly highlights categories you assigned much more than you targeted and much less than you targeted. This quick comparison makes it easy to reflect on if you made the right trade offs</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://peekforynab.com/">Peek for YNAB</a> - A browser extension to check on your category and account balances in YNAB, and quickly add transactions.</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://pipedream.com/">Pipedream</a> - Integration platform for developers</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://chrome.google.com/webstore/detail/ynab-%3E-projectionlab-sync/loeekpinmlccgelapofbejkbnfilfggl">ProjectionLab Sync</a> - Syncs YNAB account balances with ProjectionLab. Allows you to grow beyond Rule 4 with detailed projections and tax models.</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://receiptreaderai.app/">Receipt Reader AI</a> - All-in-one receipt management app</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://eturea.github.io/Receipts-for-YNAB-site/">Receipts for YNAB</a> - Scan receipts and auto-split line items into YNAB categories.
+Uses on-device Apple Intelligence — your receipts never leave your iPhone. iOS app.</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://usesnapt.com/">Snapt</a> - AI-powered receipt analyzer that automatically splits your purchases into budget categories. Send a receipt photo via Telegram, and SNAPT creates itemized split transactions in your YNAB budget.</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://splitwiseforynab.com/">Splitwise for YNAB</a> - Sync shared expenses with your partner between YNAB and Splitwise</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://apps.apple.com/us/app/stats-for-ynab/id6444380128">Stats for YNAB</a> - Discover money insights right in your device.</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://danielhaven.com/streaksforynab/">Streaks (For YNAB)</a> - Build healthy spending habits using your YNAB transactions.</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://syncforynab.com/">Sync for YNAB</a> - Connect your bank to YNAB</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://synci.io/">Synci.io</a> - Automatically import bank transactions to YNAB. Synci is connected to 2447 banks across 31 European countries.</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://bany.justindra.com/">Target Visualizer for YNAB</a> - Visualize your monthly targets to work out how much money you need to earn and where you've allocated your targets.</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://undebt.it/syncing-with-ynab.php">Undebt.it</a> - Undebt.it is a free, mobile-friendly debt snowball calculator</li>
+          <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://viasocket.com/">viaSocket</a> - viaSocket enables secure, no-code automation between YNAB and other 2000+ applications, allowing users to sync data and automate workflows.</li>
+      </ul>
+    </section>
+    <h2>Legal</h2>
+<section>
+  <h3 id="terms">API Terms of Service</h3>
+  <p>
+    We provide the YNAB API so that YNAB-loving developers can make really cool projects and applications. We have some expectations and guidelines about how you’ll do that. Officially, these guidelines are our API Terms of Service because, well, that’s what they’re called. They work hand-in-hand with our general <a href="https://www.ynab.com/terms/">YNAB Terms of Service</a>, the <a href="https://www.ynab.com/privacy-policy/">YNAB Privacy Policy</a>, and all apply to your use of the API. By accessing or using our APIs, you are agreeing to these terms. We appreciate you reading them carefully and, naturally, following them.
+  </p>
+  <p>
+    To keep the text here readable, we refer to the following as the “Terms”:
+  </p>
+  <ul>
+    <li>the YNAB Terms of Service;</li>
+    <li>the YNAB Privacy Policy;</li>
+    <li>the API Terms of Service below;</li>
+    <li>terms within any API documentation;</li>
+    <li>and any other applicable policies.</li>
+  </ul>
+  <br>
+  <p>
+    In order to protect the website, our apps, and our customers and their data, you agree to comply with them and that they govern your relationship with us.
+  </p>
+  <p>
+    With that said, here are the YNAB API Terms of Service:
+  </p>
+  <ol>
+    <li><strong>Authorized Use.</strong> To use the YNAB API and accept the Terms you must be of a legal age to form a binding contract with YNAB. The YNAB API may only be used when permission is explicitly given by a YNAB account owner through the Authentication processes described in the <a href="https://api.ynab.com/#authentication">documentation</a> above.</li>
+    <li><strong>Security and Permitted Access.</strong> Access tokens must be handled securely and never be exposed to a third party. The Terms and API documentation outline the only permissible ways in which you can interact with the YNAB API.  You are NEVER ALLOWED to directly request, handle or store credentials associated with users’ financial accounts.  Securely storing an access token obtained directly from a financial institution using OAuth is allowed.</li>
+    <li><strong>API Limitations.</strong> YNAB sets and enforces limits on your use of the APIs at our discretion. Those limits may change and are at our sole discretion. Any attempt to circumvent those limitations is a violation of these terms.</li>
+    <li><strong>Illegal and Restricted Use.</strong> We developed this API so you can do good, kind, helpful things with it and to make YNAB better. So: The YNAB API may not be used for illegal purposes (and this includes, without limitation, things like pornography, terrorism, you catch the drift). Which seems obvious, but it’s important to say it. Beyond legality, we also restrict the use of the YNAB API in certain ways. You agree not to use, or allow any third party to use, the YNAB API to engage in or promote any activity that is objectionable, violates the rights of others, is likely to cause notoriety, harm or damage to the reputation of YNAB or could subject YNAB to liability to third parties. This might include: (i) unauthorized access, monitoring, interference with, or use of the YNAB API or third-party accounts, data, computers, systems or networks; (ii) interference with others’ use of the YNAB API or any system or network; (iii) unauthorized collection or use of personal or confidential information; (iv) any other activity that places YNAB in the position of having potential or actual liability for activity in any jurisdiction.</li>
+    <li>
+      <strong>Attribution &amp; Intellectual Property.</strong>
+      <ol>
+        <li>
+          You and your integration or app  may not identify or refer to YNAB in any manner that creates a false suggestion (either directly or indirectly!) that an application is sponsored, endorsed, or supported by YNAB. This includes an application name, description, graphics and artwork, and/or web address (DNS name).
+        </li>
+        <li>
+          Somewhere on your site page, please add the following language at the footer:
+          <blockquote>
+            We are not affiliated, associated, or in any way officially connected with YNAB or any of its subsidiaries or affiliates. The official YNAB website can be found at <a href="https://www.ynab.com/">https://www.ynab.com</a>.
+            <br>
+            The names YNAB and You Need A Budget, as well as related names, tradenames, marks, trademarks, emblems, and images are registered trademarks of YNAB.
+          </blockquote>
+        </li>
+        <li>
+          To identify that your app integrates with YNAB, you may use <a href="./YNAB-API-DOCUMENTATION_files/works_with_ynab.svg">this linked image</a> and refer to “for YNAB” in the name of your application.  Any other uses of our content are subject to the <a href="https://www.ynab.com/terms/#h-intellectual-property-rights">Intellectual Property Rights</a> and <a href="https://www.ynab.com/terms/#h-trademarks">Trademarks</a> sections of the <a href="https://www.ynab.com/terms/">YNAB Terms of Service</a>. Don’t use ‘em.
+        </li>
+      </ol>
+    </li>
+    <li><strong>Functionality and Non-exclusivity.</strong> You may not use the YNAB API to copy or duplicate  products or services offered by YNAB. Also, you acknowledge that YNAB may, now or in the future, offer products, services, or features that are similar to your application.</li>
+    <li><strong>Compliance and Monitoring.</strong> YNAB may, but has no obligation to, monitor use of the YNAB API to verify your compliance with the Terms or any other applicable law or legal requirement.</li>
+    <li><strong>Accept Updates.</strong> The YNAB API may periodically be updated with tools, utilities, improvements, or general updates. You agree to receive these updates.</li>
+    <li><strong>Termination.</strong> YNAB may terminate or suspend any and all access to the API immediately at any time, without prior notice or liability at our sole discretion.</li>
+    <li><strong>Children.</strong> Your application may not be directed or for children under 13. The minimum age for a user to use YNAB is 13. </li>
+    <li><strong>Indemnification.</strong> You shall defend, hold harmless, and indemnify, YNAB, its contractors, employees, agents, and the like from and against any and all third-party claims, actions, suits, proceedings, and demands, including all damages, liabilities, costs, expenses, and reasonable attorney’s fees, arising out of your use of the API and/or violation of these Terms. </li>
+    <li><strong>Limitation of Liability.</strong> YNAB shall not be liable under this Agreement under any contract, negligence, strict liability, or other legal or equitable theory, whether in contract or in tort, for (1) lost profits or revenues, (2) any indirect, special, incidental, or consequential damages, (3) the cost of procurement of substitute products or services, or (4) interruption of use or loss or corruption of data. </li>
+    <li><strong>Warranties.</strong> YNAB’s API is provided on an “as is” and “as available” basis. YNAB disclaims all warranties of any kind, express or implied, including, without limitation, the warranties of merchantability, title, fitness for a particular purpose, and noninfringement. YNAB makes no warranty that the API will be error free, timely, or secure, or that access will be continuous or uninterrupted. </li>
+    <li><strong>Changes.</strong> YNAB reserves the right to revise, update, and/or modify these terms from time to time in YNAB’s sole discretion by posting them on this page and/or notifying. Your continued use of the API following the posting of the revised terms means that you accept and agree to these changes. It is important that you review the Terms whenever we modify them because your continued use of the YNAB API indicates your agreement to the modifications.</li>
+  </ol>
+  <h3 id="oauth-requirements">OAuth Application Requirements and User Data Policy</h3>
+  <p>
+    In addition to the above terms, OAuth Applications must adhere to these requirements:
+    </p><ol>
+      <li>You must publish a privacy policy that is displayed to users.
+        <ol>
+          <li>There are sites like Terms Feed that can assist with drafting a privacy policy. We do not represent, warrant, or guarantee that the language provided by the Terms Feed privacy policy generator will ensure compliance with data privacy laws. You may consult a lawyer at your own expense if you need guidance.</li>
+          <li>YNAB is not responsible for reviewing your Privacy Policy and determining whether it is compliant with all applicable privacy laws. YNAB is also not responsible for any other policies on your site.</li>
+          <li>Your privacy policy must include, but is not limited to, the following:</li>
+          <ol>
+            <li>You must be honest and transparent with users about the purpose for which you use their data. If you collect data for two purposes, you must disclose what those two purposes are. Your use of YNAB user data must be limited to the practices disclosed in your privacy policy.</li>
+            <li>A clear explanation of how the data obtained through the YNAB API will be handled, stored, secured, and how long it will be kept, which must be accurate and comprehensive. It must thoroughly disclose how your application accesses, users, stores, or shares YNAB user data.</li>
+            <li>A guarantee that the data obtained through the YNAB API will not unknowingly be passed to any third party.</li>
+            <li>A method for users to delete their data if they request it (can be a contact email). You must delete user data if they request.</li>
+            <li>A "Last Updated" date</li>
+          </ol>
+        </ol>
+      </li>
+      <li>If you access or use a type of data not originally disclosed in your privacy policy when a YNAB user initially authorized access or if you change the way your application uses YNABer data, you must update your privacy policy and prompt the user to consent to any changes before you may access the data.</li>
+
+    <li>
+      Display the privacy policy URL in your OAuth client configuration when your application is publicly available and ensure that it is prominently displayed in your application interface so that users can find this information easily.
+    </li>
+    <li>
+      Only request the minimum necessary permissions to run your application, features, or services and don’t request access to information that you don’t need. Request access in context, via incremental authorization, wherever possible.
+    </li>
+    <li>
+      Do not engage in any activity that may deceive, misrepresent, or lead to unauthorized use of YNAB’s API. Do not (1) misrepresent the data you collect or what you use with user data, (2) access, aggregate, or analyze YNAB user data if the data will be sold to a third party, (3) mislead us about your application’s operating environment, (4) use undocumented APIs without express written permission, and (5) make false or misleading statements about any entities that have authorized or managed your application.
+    </li>
+    <li>
+      The application must not directly request, handle or store any financial account credentials other than an access token obtained directly from a financial institution using OAuth.
+    </li>
+    <li>
+      Maintain a secure operating environment.
+    </li>
+    <li>
+      In line with the <em>Attribution &amp; Intellectual Property</em> section of the <a href="https://api.ynab.com/#terms">API Terms of Service</a> above:
+      <ol>
+        <li>The application and the web address (DNS name) must not include "YNAB" or "You Need A Budget" unless preceded by the word "for".<br>
+          <em>Acceptable</em>: "Budget Tools", "Transaction Syncer", "Currency Tools for YNAB".<br>
+          <em>Unacceptable</em>: "YNAB Tools", "YNAB Transaction Syncer", "Advanced YNAB".
+        </li>
+        <li>Any graphics or artwork may not be modifications to our official branding and must be distinguishable from YNAB itself and/or from YNAB’s graphics or artwork.</li>
+      </ol>
+    </li>
+  </ol>
+<p></p>
+<p>
+  <em>Last updated: May 28, 2025</em>
+</p>
+</section>
+
+    <h2 id="changelog">Changelog</h2>
+<section>
+  <div class="papi-version">
+    <h3 id="v1.79.0">v1.79.0</h3>
+    <p><strong>2026-02-05</strong></p>
+    <ul>
+      <li>All API endpoints now use <code>/plans/{plan_id}</code> as the primary resource path instead of <code>/budgets/{budget_id}</code>.  Response JSON keys have been updated accordingly: <code>budgets</code> is now <code>plans</code>, <code>default_budget</code> is now <code>default_plan</code>, and <code>budget</code> is now <code>plan</code>.</li>
+      <li>The previous <code>/budgets/{budget_id}</code> paths continue to work and will return the original response key names for backward compatibility, but are no longer documented.</li>
+    </ul>
+  </div>
+  <div class="papi-version">
+    <h3 id="v1.78.0">v1.78.0</h3>
+    <p><strong>2026-02-25</strong></p>
+    <ul>
+      <li>Added support for creating <a target="_blank" href="https://api.ynab.com/v1#tag/categories/POST/plans/{plan_id}/categories">categories</a> and category groups <a target="_blank" href="https://api.ynab.com/v1#tag/categories/POST/plans/{plan_id}/category_groups">category groups</a>.</li>
+      <li>Added support for updating <a target="_blank" href="https://api.ynab.com/v1#tag/categories/PATCH/plans/{plan_id}/category_groups/{category_group_id}">category groups</a>.</li>
+      <li>A <code>goal_target</code> amount and <code>goal_target_date</code> can be specified when <a target="_blank" href="https://api.ynab.com/v1#tag/categories/POST/plans/{plan_id}/categories">creating categories</a> or <a target="_blank" href="https://api.ynab.com/v1#tag/categories/PATCH/plans/{plan_id}/categories/{category_id}">updating categories</a>, even if a goal has not already been configured for the category.  A "set aside (monthly)" goal will be configured when <code>goal_target</code> is specified and a goal is not already configured.  If `goal_target_date` is also specified the goal will be configured with a "due on" date that repeats monthly.</li>
+      <li>Category models now include <code>goal_target_date</code> which should be used instead of <code>goal_target_month</code> (which is now deprecated).  <code>goal_target_month</code> will continue to be sent in responses for backwards compatibility but should not be used going forward.</li>
+      <li>Added <code>GET</code> endpoints for <a target="_blank" href="https://api.ynab.com/v1#tag/money-movements/GET/plans/{plan_id}/money_movements">money movements</a> and <a target="_blank" href="https://api.ynab.com/v1#tag/money-movements/GET/plans/{plan_id}/money_movement_groups">money movement groups</a>.  These new endpoints support <a href="https://api.ynab.com/#deltas">Delta Requests</a>.</li>
+      <li>All <code>budget_id</code> parameter names have been changed to <code>plan_id</code>.</li>
+    </ul>
+  </div>
+  <div class="papi-version">
+    <h3 id="v1.77.0">v1.77.0</h3>
+    <p><strong>2025-08-11</strong></p>
+    <ul>
+      <li>Deprecated <code>debt_original_balance</code> field on account data responses.  This field was never fully implemented, is now deprecated, and will always be specified as <code>null</code> in responses.</li>
+    </ul>
+  </div>
+  <div class="papi-version">
+    <h3 id="v1.76.0">v1.76.0</h3>
+    <p><strong>2025-08-05</strong></p>
+    <ul>
+      <li>Expose <code>goal_snoozed_at</code> timestamp on category data responses.</li>
+    </ul>
+  </div>
+  <div class="papi-version">
+    <h3 id="v1.75.0">v1.75.0</h3>
+    <p><strong>2025-06-30</strong></p>
+    <ul>
+      <li><code>GET budgets/{budget_id}/transactions/{transaction_id}</code> was incorrectly returning a <code>transaction_ids</code> object which was not defined in the spec.  This field has been removed.</li>
+      <li><code>POST /budgets/:{budget_id}/transactions</code> and <code>PATCH /budgets/{budget_id}/transactions</code> were missing <code>transaction_ids</code> object defined in the spec.  This field has been added to responses.</li>
+    </ul>
+  </div>
+  <div class="papi-version">
+    <h3 id="v1.74.0">v1.74.0</h3>
+    <p><strong>2025-03-03</strong></p>
+    <ul>
+      <li>New <code>PUT</code> and <code>DELETE</code> (<a target="_blank" href="https://api.ynab.com/v1#tag/scheduled-transactions/PUT/plans/{plan_id}/scheduled_transactions/{scheduled_transaction_id}">update</a> and <a target="_blank" href="https://api.ynab.com/v1#tag/scheduled-transactions/DELETE/plans/{plan_id}/scheduled_transactions/{scheduled_transaction_id}">delete</a>) endpoints for scheduled_transactions.</li>
+      <li><code>payee_name</code> and <code>category_name</code> fields have been added to <code>subtransactions</code> objects in <a target="_blank" href="https://api.ynab.com/v1#tag/scheduled-transactions/GET/plans/{plan_id}/scheduled_transactions">scheduled transaction</a> responses.</li>
+      <li>The <code>goal_target</code> amount for a category can now be <a target="_blank" href="https://api.ynab.com/v1#tag/categories/PATCH/plans/{plan_id}/categories/{category_id}">updated</a>.</li>
+    </ul>
+  </div>
+  <div class="papi-version">
+    <h3 id="v1.73.0">v1.73.0</h3>
+    <p><strong>2025-01-29</strong></p>
+    <p>When a <code>429 Too Many Requests</code> response is returned because the <a href="https://api.ynab.com/#rate-limiting">Rate Limit</a> has been exceeded, a <code>X-Rate-Limit</code> response header is no longer included.</p>
+  </div>
+  <div class="papi-version">
+    <h3 id="v1.72.0">v1.72.0</h3>
+    <p><strong>2024-07-10</strong></p>
+    <p>Add ability to fetch <a target="_blank" href="https://api.ynab.com/v1#tag/transactions/GET/plans/{plan_id}/months/{month}/transactions">transactions for a specific month</a>.</p>
+  </div>
+  <div class="papi-version">
+    <h3 id="v1.71.0">v1.71.0</h3>
+    <p><strong>2024-06-03</strong></p>
+    <p>Add support for creating <a target="_blank" href="https://api.ynab.com/v1#tag/scheduled-transactions/POST/plans/{plan_id}/scheduled_transactions">scheduled transactions</a>.</p>
+  </div>
+  <div class="papi-version">
+    <h3 id="v1.70.0">v1.70.0</h3>
+    <p><strong>2024-06-12</strong></p>
+    <p>Add <code>goal_needs_whole_amount</code> to all <a target="_blank" href="https://api.ynab.com/v1#tag/categories/GET/plans/{plan_id}/categories">category</a> responses. This field indicates the monthly rollover behavior for <code>NEED</code>-type goals. When "true", the goal will always ask for the target amount in the new month ("Set Aside"). When "false", previous month category funding is used ("Refill"). For other goal types, this field will be null.</p>
+  </div>
+  <div class="papi-version">
+    <h3 id="v1.69.0">v1.69.0</h3>
+    <p><strong>2024-05-14</strong></p>
+    <p>Add ability to update a <a target="_blank" href="https://api.ynab.com/v1#tag/payees/PATCH/plans/{plan_id}/payees/{payee_id}">payee's name</a></p>
+  </div>
+  <div class="papi-version">
+    <h3 id="v1.68.1">v1.68.1</h3>
+    <p><strong>2024-04-24</strong></p>
+    <p>Remove <code>server_knowledge</code> field from <em>single</em> category resource responses (<code>GET budgets/{budget_id}/months/{month}/categories/{category_id}</code> and <code>GET budgets/{budget_id}/categories/{category_id}</code>).  These endpoints do not support <a href="https://api.ynab.com/#deltas">delta requests</a> and the <code>server_knowledge</code> field has been mistakenly included in their responses.</p>
+  </div>
+  <div class="papi-version">
+    <h3 id="v1.68.0">v1.68.0</h3>
+    <p><strong>2024-02-26</strong></p>
+    <ul>
+      <li>Add <code>flag_name</code> to all <code>transaction</code> <a target="_blank" href="https://api.ynab.com/v1#tag/transactions/GET/plans/{plan_id}/transactions">responses</a></li>
+      <li>Add <code>flag_name</code> to all <code>scheduled_transaction</code> <a target="_blank" href="https://api.ynab.com/v1#tag/scheduled-transactions/GET/plans/{plan_id}/scheduled_transactions">responses</a></li>
+    </ul>
+  </div>
+  <div class="papi-version">
+    <h3 id="v1.1.0-v1.67.0">v1.1.0 - v1.67.0</h3>
+    <p><strong>2024-02-20</strong></p>
+    <p>Various new features and enhancements.</p>
+  </div>
+  <div class="papi-version">
+    <h3 id="v1.0.0">v1.0.0</h3>
+    <p><strong>2018-06-19</strong></p>
+    <p>Initial release of the <a target="_blank" href="https://www.ynab.com/blog/introducing-ynabs-api">YNAB API</a>.</p>
+  </div>
+</section>
+
+  </main>
+</div>
+
+<div id="give-freely-root-bcjindcccaagfpapjjmafapmmgkkhgoa" class="give-freely-root" data-extension-id="bcjindcccaagfpapjjmafapmmgkkhgoa" data-extension-name="JSON Formatter" style="display: block;"><template shadowrootmode="open"><style>
+  :host {
+    all: initial;
+  }
+
+  .gf-scroll-remove::-webkit-scrollbar {
+    border-radius-bottom-right: 15px;
+  }
+
+  button {
+    cursor: pointer;
+    transition: transform 0.1s ease;
+  }
+
+  button:active {
+    transform: scale(0.98);
+  }
+
+  .give-freely-close-button:hover {
+    opacity: 0.7;
+  }
+
+  input[type="radio"] {
+    margin-right: 8px;
+  }
+
+  hr {
+    border: none;
+    border-top: 1px solid #e5e5e5;
+    margin: 1em 0;
+  }
+
+  dialog::backdrop  {
+    background-color: rgba(180, 180, 180, 0.6);
+  }
+
+  dialog.backdrop-hidden::backdrop  {
+    background-color: transparent;
+  }
+</style><div><div class="gf-app"></div></div></template></div><div id="aUKCVgKPVGTHCEG" style="color-scheme: initial; forced-color-adjust: initial; mask: initial; math-depth: initial; position: relative; position-anchor: initial; text-size-adjust: initial; appearance: initial; color: initial; font: initial; font-palette: initial; font-synthesis: initial; position-area: initial; text-orientation: initial; text-rendering: initial; text-spacing-trim: initial; -webkit-font-smoothing: initial; -webkit-locale: initial; -webkit-text-orientation: initial; -webkit-writing-mode: initial; writing-mode: initial; zoom: initial; accent-color: initial; place-content: initial; place-items: initial; place-self: initial; alignment-baseline: initial; anchor-name: initial; anchor-scope: initial; animation-composition: initial; animation: initial; app-region: initial; aspect-ratio: initial; backdrop-filter: initial; backface-visibility: initial; background: initial; background-blend-mode: initial; baseline-shift: initial; baseline-source: initial; block-size: initial; border-block: initial; border: initial; border-radius: initial; border-collapse: initial; border-end-end-radius: initial; border-end-start-radius: initial; border-inline: initial; border-start-end-radius: initial; border-start-start-radius: initial; inset: initial; box-decoration-break: initial; box-shadow: initial; box-sizing: initial; break-after: initial; break-before: initial; break-inside: initial; buffered-rendering: initial; caption-side: initial; caret-animation: initial; caret-color: initial; caret-shape: initial; clear: initial; clip: initial; clip-path: initial; clip-rule: initial; color-interpolation: initial; color-interpolation-filters: initial; color-rendering: initial; columns: initial; column-fill: initial; gap: initial; column-rule: initial; column-span: initial; contain: initial; contain-intrinsic-block-size: initial; contain-intrinsic-size: initial; contain-intrinsic-inline-size: initial; container: initial; content: initial; content-visibility: initial; corner-shape: initial; corner-block-end-shape: initial; corner-block-start-shape: initial; counter-increment: initial; counter-reset: initial; counter-set: initial; cursor: initial; cx: initial; cy: initial; d: initial; display: initial; dominant-baseline: initial; dynamic-range-limit: initial; empty-cells: initial; field-sizing: initial; fill: initial; fill-opacity: initial; fill-rule: initial; filter: initial; flex: initial; flex-flow: initial; float: initial; flood-color: initial; flood-opacity: initial; grid: initial; grid-area: initial; height: 0px !important; hyphenate-character: initial; hyphenate-limit-chars: initial; hyphens: initial; image-orientation: initial; image-rendering: initial; initial-letter: initial; inline-size: initial; inset-block: initial; inset-inline: initial; interactivity: initial; interest-delay: initial; interpolate-size: initial; isolation: initial; letter-spacing: initial; lighting-color: initial; line-break: initial; list-style: initial; margin-block: initial; margin: initial; margin-inline: initial; marker: initial; mask-type: initial; math-shift: initial; math-style: initial; max-block-size: initial; max-height: initial; max-inline-size: initial; max-width: initial; min-block-size: initial; min-height: initial; min-inline-size: initial; min-width: initial; mix-blend-mode: initial; object-fit: initial; object-position: initial; object-view-box: initial; offset: initial; opacity: initial; order: initial; orphans: initial; outline: initial; outline-offset: initial; overflow-anchor: initial; overflow-block: initial; overflow-clip-margin: initial; overflow-inline: initial; overflow-wrap: initial; overflow: initial; overlay: initial; overscroll-behavior-block: initial; overscroll-behavior-inline: initial; overscroll-behavior: initial; padding-block: initial; padding: initial; padding-inline: initial; page: initial; page-orientation: initial; paint-order: initial; perspective: initial; perspective-origin: initial; pointer-events: initial; position-try: initial; position-visibility: initial; print-color-adjust: initial; quotes: initial; r: initial; reading-flow: initial; reading-order: initial; resize: initial; rotate: initial; ruby-align: initial; ruby-position: initial; rx: initial; ry: initial; scale: initial; scroll-behavior: initial; scroll-initial-target: initial; scroll-margin-block: initial; scroll-margin: initial; scroll-margin-inline: initial; scroll-marker-group: initial; scroll-padding-block: initial; scroll-padding: initial; scroll-padding-inline: initial; scroll-snap-align: initial; scroll-snap-stop: initial; scroll-snap-type: initial; scroll-target-group: initial; scroll-timeline: initial; scrollbar-color: initial; scrollbar-gutter: initial; scrollbar-width: initial; shape-image-threshold: initial; shape-margin: initial; shape-outside: initial; shape-rendering: initial; size: initial; speak: initial; stop-color: initial; stop-opacity: initial; stroke: initial; stroke-dasharray: initial; stroke-dashoffset: initial; stroke-linecap: initial; stroke-linejoin: initial; stroke-miterlimit: initial; stroke-opacity: initial; stroke-width: initial; tab-size: initial; table-layout: initial; text-align: initial; text-align-last: initial; text-anchor: initial; text-autospace: initial; text-box: initial; text-combine-upright: initial; text-decoration: initial; text-decoration-skip-ink: initial; text-emphasis: initial; text-emphasis-position: initial; text-indent: initial; text-justify: initial; text-overflow: initial; text-shadow: initial; text-transform: initial; text-underline-offset: initial; text-underline-position: initial; text-wrap: initial; timeline-scope: initial; touch-action: initial; transform: initial; transform-box: initial; transform-origin: initial; transform-style: initial; transition: initial; translate: initial; user-select: initial; vector-effect: initial; vertical-align: initial; view-timeline: initial; view-transition-class: initial; view-transition-group: initial; view-transition-name: initial; visibility: initial; border-spacing: initial; -webkit-box-align: initial; -webkit-box-decoration-break: initial; -webkit-box-direction: initial; -webkit-box-flex: initial; -webkit-box-ordinal-group: initial; -webkit-box-orient: initial; -webkit-box-pack: initial; -webkit-box-reflect: initial; -webkit-line-break: initial; -webkit-line-clamp: initial; -webkit-mask-box-image: initial; -webkit-rtl-ordering: initial; -webkit-ruby-position: initial; -webkit-tap-highlight-color: initial; -webkit-text-combine: initial; -webkit-text-decorations-in-effect: initial; -webkit-text-fill-color: initial; -webkit-text-security: initial; -webkit-text-stroke: initial; -webkit-user-drag: initial; white-space-collapse: initial; widows: initial; width: 0px !important; will-change: initial; word-break: initial; word-spacing: initial; x: initial; y: initial; z-index: 2147483647;"><div style="all: initial;"><template shadowrootmode="closed"><div></div></template></div></div></body></html>

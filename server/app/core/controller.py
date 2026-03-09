@@ -9,6 +9,7 @@ from ._controller import (
     LogsMixin,
     SensorsMixin,
     ThreeDMixin,
+    YnabCategorizerMixin,
 )
 
 
@@ -23,5 +24,6 @@ class Controller(
     LogsMixin,
     SensorsMixin,
     ThreeDMixin,
+    YnabCategorizerMixin,
 ):
     pass

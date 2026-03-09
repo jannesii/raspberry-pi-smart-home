@@ -29,6 +29,16 @@ def _json_list(env_var: str, default: list[str]) -> list[str]:
     raise RuntimeError(f"{env_var} isn't valid JSON list")
 
 
+def _env_int(env_var: str, default: int) -> int:
+    raw = os.getenv(env_var)
+    if raw is None or raw == "":
+        return default
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"{env_var} must be an integer") from exc
+
+
 def load_settings() -> dict[str, Any]:
     secret = os.getenv("SECRET_KEY")
     if not secret:
@@ -58,6 +68,11 @@ def load_settings() -> dict[str, Any]:
         # HVAC / Thermostat shared settings
         "THERMOSTAT_LOCATION": os.getenv("THERMOSTAT_LOCATION", "Tietokonepöytä"),
         "ROOM_THERMAL_CAPACITY_J_PER_K": os.getenv("ROOM_THERMAL_CAPACITY_J_PER_K"),
+        # YNAB categorizer
+        "YNAB_API_KEY": os.getenv("YNAB_API_KEY"),
+        "YNAB_BUDGET_ID": os.getenv("YNAB_BUDGET_ID"),
+        "YNAB_HTTP_TIMEOUT_S": _env_int("YNAB_HTTP_TIMEOUT_S", 15),
+        "YNAB_HTTP_RETRIES": _env_int("YNAB_HTTP_RETRIES", 2),
     }
 
     return settings

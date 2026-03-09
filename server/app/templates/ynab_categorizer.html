@@ -1,0 +1,149 @@
+{% extends 'base.html' %}
+
+{% block title %}YNAB Categorizer{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/ynab_categorizer.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/flash.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="ynab-page">
+  <header class="ynab-header">
+    <h2>YNAB Categorizer</h2>
+    <p class="ynab-subtitle">Review uncategorized transactions and apply categories manually.</p>
+  </header>
+
+  <input type="hidden" id="csrfToken" value="{{ csrf_token() }}">
+
+  <div id="ynabMessage" class="ynab-message" role="status" aria-live="polite"></div>
+
+  {% if not ynab_configured %}
+    <section class="ynab-panel ynab-panel-warning">
+      <h3>Not configured</h3>
+      <p>Set <code>YNAB_API_KEY</code> and <code>YNAB_BUDGET_ID</code> environment variables, then restart the service.</p>
+    </section>
+  {% else %}
+    <section class="ynab-panel ynab-controls">
+      <div class="ynab-control-row">
+        <button id="btnRefreshQueue" type="button">Refresh queues</button>
+        <span id="bootstrapStatus">Bootstrap status: —</span>
+        <button id="btnBootstrap" type="button">Bootstrap now</button>
+      </div>
+      <details id="ynabSettingsDetails" class="ynab-settings-details">
+        <summary>Categorizer settings</summary>
+        <div class="ynab-settings-grid">
+          <div class="ynab-control-row">
+            <label for="queueFilterMode">Queue filter mode</label>
+            <select id="queueFilterMode" name="queueFilterMode">
+              <option value="strict">strict (skip transfers + split parents)</option>
+              <option value="skip_transfers">skip_transfers</option>
+              <option value="all_uncategorized">all_uncategorized</option>
+            </select>
+          </div>
+          <div class="ynab-control-row">
+            <label for="showReconciledTransactions">
+              <input id="showReconciledTransactions" name="showReconciledTransactions" type="checkbox">
+              Show reconciled transactions
+            </label>
+          </div>
+          <div class="ynab-control-row">
+            <label for="queueLimitEnabled">
+              <input id="queueLimitEnabled" name="queueLimitEnabled" type="checkbox">
+              Limit queue
+            </label>
+            <input id="queueLimitValue" name="queueLimitValue" type="number" min="1" step="1" value="30" class="ynab-limit-input">
+            <select id="queueLimitUnit" name="queueLimitUnit">
+              <option value="days">days</option>
+              <option value="months">months</option>
+              <option value="years">years</option>
+            </select>
+          </div>
+          <div class="ynab-control-row">
+            <label for="defaultCategoryId">Default category (fallback when no suggestion)</label>
+            <select id="defaultCategoryId" name="defaultCategoryId">
+              <option value="">None</option>
+            </select>
+          </div>
+          <div class="ynab-control-row">
+            <button id="btnSaveMode" type="button">Save settings</button>
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <section class="ynab-panel">
+      <div class="ynab-view-switch">
+        <button id="btnViewCategorizer" type="button" class="is-active">Categorize</button>
+        <button id="btnViewApprovals" type="button">Approve</button>
+      </div>
+
+      <div id="categorizerView" class="ynab-view is-active">
+        <h3>Grouped Queue</h3>
+        <div class="ynab-quick-actions">
+          <button id="btnApplySuggested" type="button">Apply suggested</button>
+          <label for="quickApplyIncludeMedium">
+            <input id="quickApplyIncludeMedium" name="quickApplyIncludeMedium" type="checkbox">
+            Include Medium
+          </label>
+          <button id="btnSelectVisible" type="button">Select visible</button>
+          <button id="btnClearSelection" type="button">Clear selection</button>
+          <input
+            id="queueFilterInput"
+            name="queueFilterInput"
+            type="text"
+            class="ynab-quick-actions-input"
+            placeholder="Filter queue (payee, memo, date, amount)"
+          >
+        </div>
+        <div id="queueSummary" class="ynab-summary">Loading…</div>
+        <div id="ynabGroups" class="ynab-groups"></div>
+      </div>
+
+      <div id="approvalsView" class="ynab-view">
+        <h3>Approval Queue</h3>
+        <div class="ynab-quick-actions">
+          <button id="btnApproveSelected" type="button">Approve selected</button>
+          <button id="btnApproveVisible" type="button">Approve visible</button>
+          <button id="btnClearApprovalSelection" type="button">Clear selection</button>
+          <input
+            id="approvalFilterInput"
+            name="approvalFilterInput"
+            type="text"
+            class="ynab-quick-actions-input"
+            placeholder="Filter approvals (payee, memo, date, amount, category)"
+          >
+        </div>
+        <div id="approvalSummary" class="ynab-summary">Loading…</div>
+        <ul id="approvalList" class="ynab-tx-list"></ul>
+      </div>
+    </section>
+
+    <section id="floatingApplyBar" class="ynab-floating-apply" aria-live="polite">
+      <div class="ynab-floating-apply-inner">
+        <span id="selectedTxCount">0 selected</span>
+        <label for="globalCategorySelect">Category for selected</label>
+        <input
+          id="globalCategorySearch"
+          name="globalCategorySearch"
+          type="text"
+          placeholder="Find category"
+          autocomplete="off"
+        >
+        <select id="globalCategorySelect" name="globalCategorySelect"></select>
+        <button id="btnApplySelected" type="button">Apply selected</button>
+      </div>
+      <div id="recentCategoryChips" class="ynab-recent-chips"></div>
+    </section>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const YNAB_CONFIGURED = {{ ynab_configured | tojson | safe }};
+  const YNAB_INITIAL_CONFIG = {{ ynab_initial_config | tojson | safe }};
+  const YNAB_BOOTSTRAP_STATUS = {{ ynab_bootstrap_status | tojson | safe }};
+</script>
+<script src="{{ url_for('static', filename='js/ynab_categorizer.js') }}"></script>
+{% endblock %}

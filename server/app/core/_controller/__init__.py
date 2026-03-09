@@ -8,6 +8,7 @@ from .logging_control import LoggingControlMixin
 from .logs import LogsMixin
 from .sensors import SensorsMixin
 from .ThreeD import ThreeDMixin
+from .ynab_categorizer import YnabCategorizerMixin
 
 __all__ = [
     "ACMixin",
@@ -20,4 +21,5 @@ __all__ = [
     "LogsMixin",
     "SensorsMixin",
     "ThreeDMixin",
+    "YnabCategorizerMixin",
 ]
