@@ -137,6 +137,7 @@
   border: 1px solid #2c2c2c;
   border-radius: 8px;
   padding: 6px 8px;
+  cursor: pointer;
 }
 
 .ynab-tx-main {
@@ -149,12 +150,23 @@
   font-size: 12px;
 }
 
+.ynab-tx-date {
+  color: #b8b8b8;
+  font-size: 12px;
+}
+
+.ynab-tx-amount {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 @media (max-width: 768px) {
   .ynab-tx-item {
     grid-template-columns: auto 1fr;
   }
 
-  .ynab-tx-date {
+  .ynab-tx-amount {
     grid-column: 2;
+    justify-self: end;
   }
 }

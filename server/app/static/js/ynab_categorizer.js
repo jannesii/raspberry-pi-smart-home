@@ -17,6 +17,42 @@ function fmtTs(ts) {
   }
 }
 
+function fmtDateDDMMYYYY(dateStr) {
+  if (!dateStr) return '—';
+  const raw = String(dateStr).trim();
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    return `${isoMatch[3]}-${isoMatch[2]}-${isoMatch[1]}`;
+  }
+  try {
+    const d = new Date(raw);
+    if (!Number.isFinite(d.getTime())) return '—';
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yyyy = String(d.getFullYear());
+    return `${dd}-${mm}-${yyyy}`;
+  } catch {
+    return '—';
+  }
+}
+
+function fmtEurFromMilliunits(value) {
+  if (value === null || value === undefined || value === '') return '—';
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return '—';
+  const euros = amount / 1000;
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: 'EUR',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(euros);
+  } catch {
+    return `${euros.toFixed(2)} €`;
+  }
+}
+
 function showMessage(text, kind = 'ok') {
   const message = document.getElementById('ynabMessage');
   if (!message) return;
@@ -150,15 +186,17 @@ function renderQueue(payload) {
     const txRows = (group.transactions || []).map(tx => {
       const txId = tx && tx.id ? String(tx.id) : '';
       const memo = tx && tx.memo ? String(tx.memo) : '—';
-      const date = tx && tx.date ? String(tx.date) : '—';
+      const date = fmtDateDDMMYYYY(tx && tx.date ? String(tx.date) : '');
+      const amount = fmtEurFromMilliunits(tx ? tx.amount_milliunits : null);
       return `
         <li class="ynab-tx-item">
           <input class="ynab-tx-check" type="checkbox" value="${txId}">
           <div class="ynab-tx-main">
             <div>${txId}</div>
             <div class="ynab-tx-memo">${memo || '—'}</div>
+            <div class="ynab-tx-date">${date}</div>
           </div>
-          <div class="ynab-tx-date">${date}</div>
+          <div class="ynab-tx-amount">${amount}</div>
         </li>`;
     }).join('');
 
@@ -206,6 +244,19 @@ function renderQueue(payload) {
       await applyTransactions(txIds, categoryId);
     });
   });
+
+  const transactionRows = document.querySelectorAll('.ynab-tx-item');
+  transactionRows.forEach(row => {
+    row.addEventListener('click', event => {
+      const target = event.target;
+      if (target instanceof HTMLInputElement && target.classList.contains('ynab-tx-check')) {
+        return;
+      }
+      const checkbox = row.querySelector('.ynab-tx-check');
+      if (!(checkbox instanceof HTMLInputElement)) return;
+      checkbox.checked = !checkbox.checked;
+    });
+  });
 }
 
 async function loadQueue() {
@@ -242,7 +293,7 @@ async function loadBootstrapStatus() {
       statusEl.textContent = 'Bootstrap status: not bootstrapped';
       return;
     }
-    statusEl.textContent = `Bootstrap status: ${fmtTs(data.state.bootstrapped_at)}`;
+    statusEl.textContent = `Bootstrap status: ${fmtDateDDMMYYYY(data.state.bootstrapped_at)}`;
   } catch (error) {
     console.error('Bootstrap status failed:', error);
     statusEl.textContent = 'Bootstrap status: failed to load';
@@ -357,7 +408,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (YNAB_BOOTSTRAP_STATUS && YNAB_BOOTSTRAP_STATUS.state) {
     const statusEl = document.getElementById('bootstrapStatus');
     if (statusEl) {
-      statusEl.textContent = `Bootstrap status: ${fmtTs(YNAB_BOOTSTRAP_STATUS.state.bootstrapped_at)}`;
+      statusEl.textContent = `Bootstrap status: ${fmtDateDDMMYYYY(YNAB_BOOTSTRAP_STATUS.state.bootstrapped_at)}`;
     }
   }
 
