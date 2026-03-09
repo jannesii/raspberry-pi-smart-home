@@ -54,7 +54,7 @@ class YnabCategorizerService:
             (
                 "get_config queue_filter_mode=%s show_reconciled_transactions=%s "
                 "queue_limit_enabled=%s queue_limit_value=%s queue_limit_unit=%s "
-                "quick_apply_include_medium=%s"
+                "quick_apply_include_medium=%s default_category_id=%s"
             ),
             cfg.queue_filter_mode,
             cfg.show_reconciled_transactions,
@@ -62,6 +62,7 @@ class YnabCategorizerService:
             cfg.queue_limit_value,
             cfg.queue_limit_unit,
             cfg.quick_apply_include_medium,
+            cfg.default_category_id,
         )
         return {
             "queue_filter_mode": cfg.queue_filter_mode,
@@ -70,6 +71,7 @@ class YnabCategorizerService:
             "queue_limit_value": int(cfg.queue_limit_value),
             "queue_limit_unit": str(cfg.queue_limit_unit),
             "quick_apply_include_medium": bool(cfg.quick_apply_include_medium),
+            "default_category_id": cfg.default_category_id,
             "updated_ts": cfg.updated_ts,
         }
 
@@ -83,6 +85,7 @@ class YnabCategorizerService:
             queue_limit_value=int(current.queue_limit_value),
             queue_limit_unit=str(current.queue_limit_unit),
             quick_apply_include_medium=bool(current.quick_apply_include_medium),
+            default_category_id=current.default_category_id,
         )
 
     def set_config(
@@ -94,11 +97,13 @@ class YnabCategorizerService:
         queue_limit_value: int,
         queue_limit_unit: str,
         quick_apply_include_medium: bool,
+        default_category_id: str | None,
     ) -> dict[str, Any]:
         logger.debug(
             (
                 "set_config called mode=%s show_reconciled=%s limit_enabled=%s "
-                "limit_value=%s limit_unit=%s quick_apply_include_medium=%s"
+                "limit_value=%s limit_unit=%s quick_apply_include_medium=%s "
+                "default_category_id=%s"
             ),
             queue_filter_mode,
             show_reconciled_transactions,
@@ -106,6 +111,7 @@ class YnabCategorizerService:
             queue_limit_value,
             queue_limit_unit,
             quick_apply_include_medium,
+            default_category_id,
         )
         mode = (queue_filter_mode or "").strip()
         if mode not in _VALID_QUEUE_MODES:
@@ -124,6 +130,7 @@ class YnabCategorizerService:
             queue_limit_value=int(queue_limit_value),
             queue_limit_unit=limit_unit_value,
             quick_apply_include_medium=bool(quick_apply_include_medium),
+            default_category_id=str(default_category_id or "").strip() or None,
         )
         return {
             "queue_filter_mode": cfg.queue_filter_mode,
@@ -132,6 +139,7 @@ class YnabCategorizerService:
             "queue_limit_value": int(cfg.queue_limit_value),
             "queue_limit_unit": str(cfg.queue_limit_unit),
             "quick_apply_include_medium": bool(cfg.quick_apply_include_medium),
+            "default_category_id": cfg.default_category_id,
             "updated_ts": cfg.updated_ts,
         }
 
@@ -319,8 +327,13 @@ class YnabCategorizerService:
         except ValueError:
             return 0
 
-    def _categories_payload(self, groups: list[dict[str, Any]]) -> list[dict[str, str]]:
-        categories: list[dict[str, str]] = []
+    def _categories_payload(
+        self,
+        groups: list[dict[str, Any]],
+        *,
+        usage_counts: dict[str, int],
+    ) -> list[dict[str, str]]:
+        by_id: dict[str, dict[str, str]] = {}
         for group in groups:
             items = group.get("categories")
             if not isinstance(items, list):
@@ -328,15 +341,36 @@ class YnabCategorizerService:
             for cat in items:
                 if not isinstance(cat, dict):
                     continue
-                if cat.get("deleted"):
+                if cat.get("deleted") or cat.get("hidden"):
                     continue
                 cat_id = cat.get("id")
                 cat_name = cat.get("name")
                 if not cat_id or not cat_name:
                     continue
-                categories.append({"id": str(cat_id), "name": str(cat_name)})
-        categories.sort(key=lambda c: c["name"].upper())
-        return categories
+                by_id[str(cat_id)] = {"id": str(cat_id), "name": str(cat_name)}
+
+        categories = list(by_id.values())
+        categories_by_id = {item["id"]: item for item in categories}
+
+        ranked_ids = sorted(
+            categories_by_id.keys(),
+            key=lambda cat_id: (
+                -int(usage_counts.get(cat_id, 0)),
+                categories_by_id[cat_id]["name"].upper(),
+            ),
+        )
+        top_ids = [cat_id for cat_id in ranked_ids if int(usage_counts.get(cat_id, 0)) > 0][:10]
+        top_set = set(top_ids)
+        top_categories = [categories_by_id[cat_id] for cat_id in top_ids]
+        remaining_categories = [item for item in categories if item["id"] not in top_set]
+        remaining_categories.sort(key=lambda c: c["name"].upper())
+        ordered = top_categories + remaining_categories
+        logger.debug(
+            "categories payload built total=%s top_used=%s",
+            len(ordered),
+            len(top_categories),
+        )
+        return ordered
 
     @staticmethod
     def _category_name_by_id(categories: list[dict[str, str]]) -> dict[str, str]:
@@ -400,7 +434,11 @@ class YnabCategorizerService:
             starting_balance_skipped,
         )
         category_groups = self.client.get_categories()
-        categories = self._categories_payload(category_groups)
+        category_usage_counts = self.ctrl.get_ynab_category_usage_counts(self.budget_id)
+        categories = self._categories_payload(
+            category_groups,
+            usage_counts=category_usage_counts,
+        )
         category_name_map = self._category_name_by_id(categories)
 
         filtered = [
@@ -468,9 +506,26 @@ class YnabCategorizerService:
             )
 
         groups: list[dict[str, Any]] = []
+        default_category_id = str(cfg.default_category_id or "").strip() or None
         for payee_norm, group in grouped.items():
             stats = stats_by_payee.get(payee_norm, [])
             suggestion = self._build_suggestion(stats, category_name_map)
+            if (
+                suggestion is None
+                and default_category_id
+                and default_category_id in category_name_map
+            ):
+                suggestion = {
+                    "category_id": default_category_id,
+                    "category_name": category_name_map.get(
+                        default_category_id, default_category_id
+                    ),
+                    "top_count": 0,
+                    "total_count": 0,
+                    "confidence": 0.0,
+                    "confidence_label": "Low",
+                    "source": "default",
+                }
             confidence_label = suggestion.get("confidence_label") if suggestion else None
 
             groups.append(
@@ -500,6 +555,7 @@ class YnabCategorizerService:
             "queue_limit_value": queue_limit_value,
             "queue_limit_unit": queue_limit_unit,
             "quick_apply_include_medium": bool(cfg.quick_apply_include_medium),
+            "default_category_id": default_category_id,
             "group_count": len(groups),
             "transaction_count": len(filtered),
             "categories": categories,

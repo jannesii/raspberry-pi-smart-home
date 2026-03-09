@@ -88,6 +88,15 @@ def _parse_int(value: Any, *, default: int | None = None) -> int:
     raise ValueError("Invalid integer value")
 
 
+def _parse_optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        return stripped or None
+    raise ValueError("Invalid string value")
+
+
 @ynab_categorizer_bp.route("/queue", methods=["GET"])
 @login_required
 def ynab_queue():
@@ -294,6 +303,7 @@ def ynab_set_config():
         quick_apply_include_medium = _parse_bool(
             data.get("quick_apply_include_medium"), default=False
         )
+        default_category_id = _parse_optional_str(data.get("default_category_id"))
     except ValueError as exc:
         logger.warning("ynab_set_config bad request parse error: %s", exc)
         return jsonify({"ok": False, "error": "bad_request", "message": str(exc)}), 400
@@ -302,7 +312,8 @@ def ynab_set_config():
         (
             "ynab_set_config called user=%s queue_filter_mode=%s "
             "show_reconciled_transactions=%s queue_limit_enabled=%s "
-            "queue_limit_value=%s queue_limit_unit=%s quick_apply_include_medium=%s"
+            "queue_limit_value=%s queue_limit_unit=%s quick_apply_include_medium=%s "
+            "default_category_id=%s"
         ),
         current_user.get_id(),
         queue_filter_mode,
@@ -311,6 +322,7 @@ def ynab_set_config():
         queue_limit_value,
         queue_limit_unit,
         quick_apply_include_medium,
+        default_category_id,
     )
     try:
         result = svc.set_config(
@@ -320,6 +332,7 @@ def ynab_set_config():
             queue_limit_value=queue_limit_value,
             queue_limit_unit=queue_limit_unit,
             quick_apply_include_medium=quick_apply_include_medium,
+            default_category_id=default_category_id,
         )
         return jsonify({"ok": True, **result})
     except ValueError as exc:

@@ -364,6 +364,7 @@ ynab_categorizer_config = Table(
     Column("queue_limit_value", Integer, nullable=False, server_default=text("30")),
     Column("queue_limit_unit", Text, nullable=False, server_default=text("'days'")),
     Column("quick_apply_include_medium", Boolean, nullable=False, server_default=text("false")),
+    Column("default_category_id", Text),
     Column("updated_ts", Text, nullable=False),
     UniqueConstraint("budget_id", name="uq_ynab_categorizer_config_budget"),
     CheckConstraint("id = 1", name="ck_ynab_categorizer_config_singleton"),

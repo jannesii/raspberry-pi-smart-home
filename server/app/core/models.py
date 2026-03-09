@@ -280,4 +280,5 @@ class YnabCategorizerConfig:
     queue_limit_value: int = 30
     queue_limit_unit: str = "days"
     quick_apply_include_medium: bool = False
+    default_category_id: str | None = None
     updated_ts: str = ""

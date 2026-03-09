@@ -515,6 +515,10 @@ function update(data) {
 
 **YNAB row-display note**: Do not surface raw transaction UUIDs in queue rows. Prefer actionable context (`From/To account`) plus memo/date/amount while keeping UUIDs only as hidden checkbox values for apply actions.
 
+**YNAB default-suggestion note**: Persist `default_category_id` in `ynab_categorizer_config`. When payee stats yield no suggestion, use this category as fallback suggestion only if it exists in the visible category set.
+
+**YNAB category-list note**: Queue category lists should exclude `deleted` and `hidden` categories. Order categories with top 10 locally most-used (from `ynab_payee_category_stats` aggregate counts) first, then remaining categories alphabetically.
+
 ### 6.2 Null Safety
 
 ```javascript

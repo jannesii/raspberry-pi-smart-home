@@ -36,6 +36,7 @@ def test_config_defaults_to_strict(controller: Controller):
     assert cfg.queue_limit_value == 30
     assert cfg.queue_limit_unit == "days"
     assert cfg.quick_apply_include_medium is False
+    assert cfg.default_category_id is None
 
 
 def test_config_save_and_read(controller: Controller):
@@ -47,6 +48,7 @@ def test_config_save_and_read(controller: Controller):
         queue_limit_value=14,
         queue_limit_unit="days",
         quick_apply_include_medium=True,
+        default_category_id="cat_transport",
     )
     assert saved.queue_filter_mode == "skip_transfers"
     assert saved.show_reconciled_transactions is True
@@ -54,6 +56,7 @@ def test_config_save_and_read(controller: Controller):
     assert saved.queue_limit_value == 14
     assert saved.queue_limit_unit == "days"
     assert saved.quick_apply_include_medium is True
+    assert saved.default_category_id == "cat_transport"
 
     loaded = controller.get_ynab_categorizer_config("budget1")
     assert loaded.queue_filter_mode == "skip_transfers"
@@ -62,6 +65,7 @@ def test_config_save_and_read(controller: Controller):
     assert loaded.queue_limit_value == 14
     assert loaded.queue_limit_unit == "days"
     assert loaded.quick_apply_include_medium is True
+    assert loaded.default_category_id == "cat_transport"
 
 
 def test_increment_stats_upsert(controller: Controller):
@@ -83,6 +87,31 @@ def test_increment_stats_upsert(controller: Controller):
     assert len(stats["K MARKET"]) == 1
     assert stats["K MARKET"][0].count == 2
     assert stats["K MARKET"][0].last_used_at == "2026-03-10"
+
+
+def test_category_usage_counts_aggregated(controller: Controller):
+    controller.increment_ynab_payee_category_stat(
+        "budget1",
+        "K MARKET",
+        "cat_groceries",
+        last_used_at="2026-03-09",
+    )
+    controller.increment_ynab_payee_category_stat(
+        "budget1",
+        "K CITYMARKET",
+        "cat_groceries",
+        last_used_at="2026-03-10",
+    )
+    controller.increment_ynab_payee_category_stat(
+        "budget1",
+        "HSL",
+        "cat_transport",
+        last_used_at="2026-03-10",
+    )
+
+    usage = controller.get_ynab_category_usage_counts("budget1")
+    assert usage["cat_groceries"] == 2
+    assert usage["cat_transport"] == 1
 
 
 def test_apply_event_idempotency(controller: Controller):

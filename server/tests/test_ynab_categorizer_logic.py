@@ -11,6 +11,7 @@ from app.services.ynab.ynab_categorizer_service import YnabCategorizerService
 @dataclass
 class _CtrlStub:
     mode: str = "strict"
+    default_category_id: str | None = None
 
     def __post_init__(self):
         self.finland_tz = ZoneInfo("Europe/Helsinki")
@@ -20,6 +21,7 @@ class _CtrlStub:
             id=1,
             budget_id=budget_id,
             queue_filter_mode=self.mode,
+            default_category_id=self.default_category_id,
             updated_ts=datetime.now(self.finland_tz).isoformat(),
         )
 
@@ -69,6 +71,13 @@ class _CtrlStub:
                     updated_at="2026-01-01T00:00:00+02:00",
                 ),
             ],
+        }
+
+    def get_ynab_category_usage_counts(self, budget_id: str):
+        return {
+            "cat_transport": 10,
+            "cat_groceries": 8,
+            "cat_misc": 2,
         }
 
 
@@ -172,6 +181,7 @@ class _ClientStub:
                     {"id": "cat_groceries", "name": "Groceries", "deleted": False},
                     {"id": "cat_transport", "name": "Transport", "deleted": False},
                     {"id": "cat_misc", "name": "Misc", "deleted": False},
+                    {"id": "cat_hidden", "name": "Hidden", "deleted": False, "hidden": True},
                 ],
             }
         ]
@@ -210,6 +220,12 @@ def test_queue_filtering_strict_skips_transfer_and_split_parent():
         for g in payload["groups"]
         for tx in g["transactions"]
     )
+    assert [cat["id"] for cat in payload["categories"][:3]] == [
+        "cat_transport",
+        "cat_groceries",
+        "cat_misc",
+    ]
+    assert all(cat["id"] != "cat_hidden" for cat in payload["categories"])
 
 
 def test_group_sort_by_confidence_then_latest_date_desc():
@@ -242,6 +258,19 @@ def test_starting_balance_hidden_from_queue():
     ids = {tx["id"] for g in payload["groups"] for tx in g["transactions"]}
 
     assert "tx7" not in ids
+
+
+def test_default_category_used_when_no_payee_suggestion():
+    ctrl = _CtrlStub(mode="strict", default_category_id="cat_misc")
+    svc = YnabCategorizerService(ctrl=ctrl, client=_ClientStub(), budget_id="budget1")
+
+    payload = svc.get_queue()
+    by_payee = {group["payee_normalized"]: group for group in payload["groups"]}
+    old_tx_group = by_payee["OLD TX"]
+
+    assert old_tx_group["suggestion"] is not None
+    assert old_tx_group["suggestion"]["category_id"] == "cat_misc"
+    assert old_tx_group["suggestion"]["source"] == "default"
 
 
 def test_queue_limit_filters_out_old_transactions():

@@ -17,6 +17,7 @@ let queueState = {
   queue_limit_value: 30,
   queue_limit_unit: 'days',
   quick_apply_include_medium: false,
+  default_category_id: '',
 };
 
 let queueFilterTerm = '';
@@ -194,6 +195,7 @@ function applySettingsToUi(data) {
   const queueLimitValue = document.getElementById('queueLimitValue');
   const queueLimitUnit = document.getElementById('queueLimitUnit');
   const quickApplyIncludeMedium = document.getElementById('quickApplyIncludeMedium');
+  const defaultCategoryId = document.getElementById('defaultCategoryId');
 
   if (modeSelect instanceof HTMLSelectElement && data && data.queue_filter_mode) {
     modeSelect.value = data.queue_filter_mode;
@@ -213,6 +215,14 @@ function applySettingsToUi(data) {
   if (quickApplyIncludeMedium instanceof HTMLInputElement) {
     quickApplyIncludeMedium.checked = !!(data && data.quick_apply_include_medium);
   }
+  if (defaultCategoryId instanceof HTMLSelectElement) {
+    const value = data && data.default_category_id ? String(data.default_category_id) : '';
+    if (value) {
+      defaultCategoryId.value = value;
+    } else {
+      defaultCategoryId.value = '';
+    }
+  }
   updateLimitControlsState();
 }
 
@@ -223,6 +233,7 @@ function readSettingsFromUi() {
   const queueLimitValue = document.getElementById('queueLimitValue');
   const queueLimitUnit = document.getElementById('queueLimitUnit');
   const quickApplyIncludeMedium = document.getElementById('quickApplyIncludeMedium');
+  const defaultCategoryId = document.getElementById('defaultCategoryId');
 
   const mode = modeSelect instanceof HTMLSelectElement ? modeSelect.value : '';
   if (!mode) {
@@ -250,6 +261,19 @@ function readSettingsFromUi() {
   if (queueLimitEnabledValue && !['days', 'months', 'years'].includes(queueLimitUnitValue)) {
     throw new Error('Queue limit unit must be days, months, or years');
   }
+  let defaultCategoryValue = null;
+  if (defaultCategoryId instanceof HTMLSelectElement) {
+    const selected = String(defaultCategoryId.value || '').trim();
+    if (selected) {
+      defaultCategoryValue = selected;
+    } else if (
+      defaultCategoryId.options.length <= 1 &&
+      queueState &&
+      queueState.default_category_id
+    ) {
+      defaultCategoryValue = String(queueState.default_category_id);
+    }
+  }
 
   return {
     queue_filter_mode: mode,
@@ -260,6 +284,7 @@ function readSettingsFromUi() {
     quick_apply_include_medium: quickApplyIncludeMedium instanceof HTMLInputElement
       ? quickApplyIncludeMedium.checked
       : false,
+    default_category_id: defaultCategoryValue,
   };
 }
 
@@ -370,6 +395,24 @@ function renderGlobalCategorySelect() {
   renderRecentCategoryChips();
 }
 
+function renderDefaultCategorySelect() {
+  const select = document.getElementById('defaultCategoryId');
+  if (!(select instanceof HTMLSelectElement)) return;
+
+  const allCategories = Array.isArray(queueState.categories) ? queueState.categories : [];
+  const selected = queueState && queueState.default_category_id
+    ? String(queueState.default_category_id)
+    : '';
+  const options = ['<option value="">None</option>'];
+  options.push(makeCategoryOptions(allCategories, selected));
+  select.innerHTML = options.join('');
+  if (selected) {
+    select.value = selected;
+  } else {
+    select.value = '';
+  }
+}
+
 function txMatchesFilter(tx, term) {
   if (!term) return true;
   const haystack = [
@@ -440,6 +483,7 @@ function renderQueue(payload) {
 
   applySettingsToUi(queueState);
   renderGlobalCategorySelect();
+  renderDefaultCategorySelect();
 
   if (!groupsEl) return;
 
@@ -488,7 +532,9 @@ function renderQueue(payload) {
     const suggestion = group.suggestion || null;
     const suggestedCategory = suggestion && suggestion.category_id ? String(suggestion.category_id) : '';
     const suggestionText = suggestion
-      ? `${suggestion.category_name || suggestion.category_id} (${Math.round((suggestion.confidence || 0) * 100)}%)`
+      ? (suggestion.source === 'default'
+        ? `${suggestion.category_name || suggestion.category_id} (default)`
+        : `${suggestion.category_name || suggestion.category_id} (${Math.round((suggestion.confidence || 0) * 100)}%)`)
       : 'No suggestion';
     const label = group.confidence_label || 'Low';
     const visibleCount = group._visibleTransactions.length;
