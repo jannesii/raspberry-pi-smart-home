@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+
+{% block title %}YNAB Categorizer{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/ynab_categorizer.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/flash.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="ynab-page">
+  <header class="ynab-header">
+    <h2>YNAB Categorizer</h2>
+    <p class="ynab-subtitle">Review uncategorized transactions and apply categories manually.</p>
+  </header>
+
+  <input type="hidden" id="csrfToken" value="{{ csrf_token() }}">
+
+  <div id="ynabMessage" class="ynab-message" role="status" aria-live="polite"></div>
+
+  {% if not ynab_configured %}
+    <section class="ynab-panel ynab-panel-warning">
+      <h3>Not configured</h3>
+      <p>Set <code>YNAB_API_KEY</code> and <code>YNAB_BUDGET_ID</code> environment variables, then restart the service.</p>
+    </section>
+  {% else %}
+    <section class="ynab-panel ynab-controls">
+      <div class="ynab-control-row">
+        <label for="queueFilterMode">Queue filter mode</label>
+        <select id="queueFilterMode" name="queueFilterMode">
+          <option value="strict">strict (skip transfers + split parents)</option>
+          <option value="skip_transfers">skip_transfers</option>
+          <option value="all_uncategorized">all_uncategorized</option>
+        </select>
+        <button id="btnSaveMode" type="button">Save mode</button>
+        <button id="btnRefreshQueue" type="button">Refresh queue</button>
+      </div>
+      <div class="ynab-control-row">
+        <label for="globalCategorySelect">Category for selected</label>
+        <select id="globalCategorySelect" name="globalCategorySelect"></select>
+        <button id="btnApplySelected" type="button">Apply selected</button>
+      </div>
+      <div class="ynab-control-row">
+        <span id="bootstrapStatus">Bootstrap status: —</span>
+        <button id="btnBootstrap" type="button">Bootstrap now</button>
+      </div>
+    </section>
+
+    <section class="ynab-panel">
+      <h3>Grouped Queue</h3>
+      <div id="queueSummary" class="ynab-summary">Loading…</div>
+      <div id="ynabGroups" class="ynab-groups"></div>
+    </section>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const YNAB_CONFIGURED = {{ ynab_configured | tojson | safe }};
+  const YNAB_INITIAL_CONFIG = {{ ynab_initial_config | tojson | safe }};
+  const YNAB_BOOTSTRAP_STATUS = {{ ynab_bootstrap_status | tojson | safe }};
+</script>
+<script src="{{ url_for('static', filename='js/ynab_categorizer.js') }}"></script>
+{% endblock %}

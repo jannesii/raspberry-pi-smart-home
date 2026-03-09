@@ -22,6 +22,10 @@ from .models import (
     ThermostatConf,
     TimelapseConf,
     User,
+    YnabApplyEvent,
+    YnabBootstrapState,
+    YnabCategorizerConfig,
+    YnabPayeeCategoryStat,
 )
 
 __all__ = [
@@ -46,4 +50,8 @@ __all__ = [
     "ThermostatConf",
     "TimelapseConf",
     "User",
+    "YnabApplyEvent",
+    "YnabBootstrapState",
+    "YnabCategorizerConfig",
+    "YnabPayeeCategoryStat",
 ]

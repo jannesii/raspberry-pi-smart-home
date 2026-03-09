@@ -36,6 +36,7 @@ def init_services(app) -> dict[str, Any]:
     Returns a dictionary of created service instances.
     """
     services: dict[str, Any] = {}
+    app.ynab_categorizer_service = None  # type: ignore[attr-defined]
 
     # Ensure Socket event handlers are registered (singleton takes care of idempotency)
     from ..sockets import SocketEventHandler
@@ -229,5 +230,38 @@ def init_services(app) -> dict[str, Any]:
             logger.info("ESP32 Redis bridge initialized")
     except Exception as e:
         logger.exception("Failed to initialize ESP32 Redis bridge: %s", e)
+
+    # --- YNAB categorizer ---
+    try:
+        ynab_api_key = app.config.get("YNAB_API_KEY")
+        ynab_budget_id = app.config.get("YNAB_BUDGET_ID")
+        ynab_timeout_s = int(app.config.get("YNAB_HTTP_TIMEOUT_S", 15))
+        ynab_retries = int(app.config.get("YNAB_HTTP_RETRIES", 2))
+        logger.debug(
+            "YNAB init config budget_set=%s timeout=%s retries=%s",
+            bool(ynab_budget_id),
+            ynab_timeout_s,
+            ynab_retries,
+        )
+
+        if not ynab_api_key or not ynab_budget_id:
+            logger.info(
+                "YNAB categorizer disabled: missing YNAB_API_KEY or YNAB_BUDGET_ID environment variables"
+            )
+        else:
+            from .ynab import YnabCategorizerService, YNABClient
+
+            ynab_client = YNABClient(
+                api_key=ynab_api_key,
+                budget_id=ynab_budget_id,
+                timeout_s=ynab_timeout_s,
+                retries=ynab_retries,
+            )
+            ynab_service = YnabCategorizerService(app.ctrl, ynab_client, ynab_budget_id)  # type: ignore[attr-defined]
+            app.ynab_categorizer_service = ynab_service  # type: ignore[attr-defined]
+            services["ynab_categorizer_service"] = ynab_service
+            logger.info("YNAB categorizer service initialized for budget=%s", ynab_budget_id)
+    except Exception as e:
+        logger.exception("Failed to initialize YNAB categorizer service: %s", e)
 
     return services

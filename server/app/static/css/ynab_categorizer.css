@@ -1,0 +1,160 @@
+.ynab-page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.ynab-header h2 {
+  margin: 0;
+}
+
+.ynab-subtitle {
+  color: #b8b8b8;
+  margin: 8px 0 0;
+}
+
+.ynab-message {
+  display: none;
+  margin: 12px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #3a3a3a;
+  background: #1d1d1d;
+}
+
+.ynab-message.is-ok {
+  display: block;
+  border-color: #2e7d32;
+  background: #1a2b1b;
+}
+
+.ynab-message.is-error {
+  display: block;
+  border-color: #b33a3a;
+  background: #2a1a1a;
+}
+
+.ynab-panel {
+  background: #181818;
+  border: 1px solid #333;
+  border-radius: 10px;
+  padding: 14px;
+  margin-top: 14px;
+}
+
+.ynab-panel-warning {
+  border-color: #7c5f28;
+}
+
+.ynab-controls {
+  display: grid;
+  gap: 10px;
+}
+
+.ynab-control-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.ynab-control-row select,
+.ynab-control-row button {
+  min-height: 34px;
+}
+
+.ynab-summary {
+  margin-bottom: 10px;
+  color: #cfcfcf;
+}
+
+.ynab-groups {
+  display: grid;
+  gap: 10px;
+}
+
+.ynab-group {
+  border: 1px solid #333;
+  border-radius: 10px;
+  padding: 10px;
+  background: #131313;
+}
+
+.ynab-group-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.ynab-group-title {
+  font-weight: 700;
+}
+
+.ynab-badge {
+  border-radius: 999px;
+  font-size: 12px;
+  padding: 2px 8px;
+  border: 1px solid #444;
+}
+
+.ynab-badge.high {
+  border-color: #2e7d32;
+  color: #8cd88f;
+}
+
+.ynab-badge.medium {
+  border-color: #a87d2f;
+  color: #ffce6e;
+}
+
+.ynab-badge.low {
+  border-color: #555;
+  color: #b8b8b8;
+}
+
+.ynab-group-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.ynab-tx-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.ynab-tx-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid #2c2c2c;
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.ynab-tx-main {
+  display: grid;
+  gap: 2px;
+}
+
+.ynab-tx-memo {
+  color: #9c9c9c;
+  font-size: 12px;
+}
+
+@media (max-width: 768px) {
+  .ynab-tx-item {
+    grid-template-columns: auto 1fr;
+  }
+
+  .ynab-tx-date {
+    grid-column: 2;
+  }
+}

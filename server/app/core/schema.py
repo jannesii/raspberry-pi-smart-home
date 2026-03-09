@@ -312,6 +312,58 @@ logging_control = Table(
     CheckConstraint("id = 1", name="ck_logging_control_singleton"),
 )
 
+ynab_payee_category_stats = Table(
+    "ynab_payee_category_stats",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("budget_id", Text, nullable=False),
+    Column("payee_normalized", Text, nullable=False),
+    Column("category_id", Text, nullable=False),
+    Column("count", Integer, nullable=False, server_default=text("0")),
+    Column("last_used_at", Text),
+    Column("created_at", Text, nullable=False),
+    Column("updated_at", Text, nullable=False),
+    UniqueConstraint(
+        "budget_id",
+        "payee_normalized",
+        "category_id",
+        name="uq_ynab_payee_category_stats",
+    ),
+)
+
+ynab_apply_events = Table(
+    "ynab_apply_events",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("budget_id", Text, nullable=False),
+    Column("transaction_id", Text, nullable=False),
+    Column("payee_normalized", Text, nullable=False),
+    Column("category_id", Text, nullable=False),
+    Column("applied_by_username", Text),
+    Column("applied_at", Text, nullable=False),
+    UniqueConstraint("budget_id", "transaction_id", name="uq_ynab_apply_events"),
+)
+
+ynab_bootstrap_state = Table(
+    "ynab_bootstrap_state",
+    metadata,
+    Column("budget_id", Text, primary_key=True),
+    Column("bootstrapped_at", Text, nullable=False),
+    Column("history_start_date", Text, nullable=False),
+    Column("history_end_date", Text, nullable=False),
+)
+
+ynab_categorizer_config = Table(
+    "ynab_categorizer_config",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("budget_id", Text, nullable=False),
+    Column("queue_filter_mode", Text, nullable=False, server_default=text("'strict'")),
+    Column("updated_ts", Text, nullable=False),
+    UniqueConstraint("budget_id", name="uq_ynab_categorizer_config_budget"),
+    CheckConstraint("id = 1", name="ck_ynab_categorizer_config_singleton"),
+)
+
 Index(
     "idx_esp32_temphum_loc_ts_id",
     esp32_temphum.c.location,
@@ -325,3 +377,13 @@ Index(
 )
 Index("idx_ac_events_ts", ac_events.c.timestamp)
 Index("idx_api_keys_key_id", api_keys.c.key_id, unique=True)
+Index(
+    "idx_ynab_stats_budget_payee",
+    ynab_payee_category_stats.c.budget_id,
+    ynab_payee_category_stats.c.payee_normalized,
+)
+Index(
+    "idx_ynab_stats_budget_category",
+    ynab_payee_category_stats.c.budget_id,
+    ynab_payee_category_stats.c.category_id,
+)

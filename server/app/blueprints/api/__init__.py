@@ -13,6 +13,7 @@ from .hvac_api import hvac_bp
 from .misc_api import misc_bp
 from .novpn_api import novpn_bp
 from .timelapse_api import timelapse_bp
+from .ynab_categorizer_api import ynab_categorizer_bp
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
@@ -25,3 +26,4 @@ api_bp.register_blueprint(hvac_bp)
 api_bp.register_blueprint(timelapse_bp)
 api_bp.register_blueprint(misc_bp)
 api_bp.register_blueprint(car_bp)
+api_bp.register_blueprint(ynab_categorizer_bp)

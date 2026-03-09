@@ -499,6 +499,12 @@ function update(data) {
 
 **Car heater logs note**: ESP32 log snapshots are emitted in a dedicated `car_heater_logs` Socket.IO event. For compatibility, frontend can still read `status.logs` from `car_heater_status`, but should dedupe because both WS and HTTP paths may carry the same snapshot.
 
+**YNAB queue filtering note**: Default queue mode is `strict` (skip transfers + split parents). Keep this as the default for both initial page data and API fallback to avoid applying categories to unsupported transaction types.
+
+**YNAB config persistence note**: Queue filtering mode is persisted in `ynab_categorizer_config` (singleton `id=1`, budget-aware row). Update/read config via controller methods, not direct table writes in routes.
+
+**YNAB CSRF note**: Internal browser-driven YNAB mutation endpoints (`/api/ynab-categorizer/*` POST) keep CSRF enabled. Frontend must include CSRF token (`X-CSRFToken` or `X-CSRF-Token`) for JSON POSTs.
+
 ### 6.2 Null Safety
 
 ```javascript
@@ -743,6 +749,12 @@ WEB_USERNAME=admin       # Initial admin user
 WEB_PASSWORD=...         # Initial admin password
 RATE_LIMIT_WHITELIST=["127.0.0.1"]
 ALLOWED_WS_ORIGINS=["http://localhost:5555"]
+
+# Optional (YNAB Categorizer)
+YNAB_API_KEY=...
+YNAB_BUDGET_ID=...
+YNAB_HTTP_TIMEOUT_S=15
+YNAB_HTTP_RETRIES=2
 ```
 
 ---
@@ -782,4 +794,4 @@ ALLOWED_WS_ORIGINS=["http://localhost:5555"]
 
 ---
 
-*Last updated: 2026-02-22*
+*Last updated: 2026-03-09*
