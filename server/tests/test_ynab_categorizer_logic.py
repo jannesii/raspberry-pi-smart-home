@@ -142,6 +142,18 @@ class _ClientStub:
                 "memo": "Old uncategorized",
                 "amount": -2990,
             },
+            {
+                "id": "tx7",
+                "date": "2026-02-26",
+                "payee_name": "Starting Balance",
+                "payee_id": "starting_balance",
+                "category_id": None,
+                "deleted": False,
+                "transfer_account_id": None,
+                "subtransactions": [],
+                "memo": "",
+                "amount": 610000,
+            },
         ]
 
     def get_categories(self):
@@ -208,6 +220,16 @@ def test_reconciled_transactions_hidden_by_default():
     ids = {tx["id"] for g in payload["groups"] for tx in g["transactions"]}
 
     assert "tx5" not in ids
+
+
+def test_starting_balance_hidden_from_queue():
+    ctrl = _CtrlStub(mode="all_uncategorized")
+    svc = YnabCategorizerService(ctrl=ctrl, client=_ClientStub(), budget_id="budget1")
+
+    payload = svc.get_queue()
+    ids = {tx["id"] for g in payload["groups"] for tx in g["transactions"]}
+
+    assert "tx7" not in ids
 
 
 def test_queue_limit_filters_out_old_transactions():

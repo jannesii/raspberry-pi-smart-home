@@ -173,6 +173,14 @@ class YnabCategorizerService:
     def _is_uncategorized(tx: dict[str, Any]) -> bool:
         return tx.get("category_id") in (None, "")
 
+    @classmethod
+    def _is_starting_balance(cls, tx: dict[str, Any]) -> bool:
+        payee_name = str(tx.get("payee_name") or "").strip()
+        if cls.normalize_payee(payee_name) == "STARTING BALANCE":
+            return True
+        payee_id = str(tx.get("payee_id") or "").strip().lower()
+        return payee_id in {"starting_balance", "starting-balance"}
+
     @staticmethod
     def _is_reconciled(tx: dict[str, Any]) -> bool:
         return str(tx.get("cleared") or "").strip().lower() == "reconciled"
@@ -236,6 +244,8 @@ class YnabCategorizerService:
     @classmethod
     def should_include_for_queue(cls, tx: dict[str, Any], mode: str) -> bool:
         if bool(tx.get("deleted")):
+            return False
+        if cls._is_starting_balance(tx):
             return False
         if not cls._is_uncategorized(tx):
             return False
@@ -383,6 +393,12 @@ class YnabCategorizerService:
             queue_limit_unit,
         )
         transactions = self.client.get_transactions_since(None)
+        starting_balance_skipped = sum(1 for tx in transactions if self._is_starting_balance(tx))
+        logger.debug(
+            "get_queue source transactions=%s starting_balance_skipped=%s",
+            len(transactions),
+            starting_balance_skipped,
+        )
         category_groups = self.client.get_categories()
         categories = self._categories_payload(category_groups)
         category_name_map = self._category_name_by_id(categories)

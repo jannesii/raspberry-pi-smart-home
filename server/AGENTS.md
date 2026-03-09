@@ -511,6 +511,8 @@ function update(data) {
 
 **YNAB quick-apply preference note**: `quick_apply_include_medium` is persisted in `ynab_categorizer_config` and defaults to `false`; keep High-confidence-only bulk suggestion apply as the safe default unless explicitly enabled.
 
+**YNAB starting-balance note**: Exclude "Starting Balance" transactions from categorization queue, even if uncategorized. Match by normalized `payee_name` (`STARTING BALANCE`) and fallback `payee_id` values (`starting_balance`, `starting-balance`).
+
 ### 6.2 Null Safety
 
 ```javascript
