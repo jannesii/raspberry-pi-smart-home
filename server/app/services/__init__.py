@@ -37,6 +37,7 @@ def init_services(app) -> dict[str, Any]:
     """
     services: dict[str, Any] = {}
     app.ynab_categorizer_service = None  # type: ignore[attr-defined]
+    app.hue_ctrl = None  # type: ignore[attr-defined]
 
     # Ensure Socket event handlers are registered (singleton takes care of idempotency)
     from ..sockets import SocketEventHandler
@@ -100,10 +101,19 @@ def init_services(app) -> dict[str, Any]:
 
         hue_bridge_ip = os.getenv("HUE_BRIDGE_IP")
         hue_username = os.getenv("HUE_USERNAME")
-        hue = HueController(hue_bridge_ip, hue_username)
-        hue.start_time_based_routine(apply_immediately=False)
-        services["hue_controller"] = hue
-        logger.info("Hue time-based routine started.")
+        logger.debug(
+            "Hue init config bridge_set=%s username_set=%s",
+            bool(hue_bridge_ip),
+            bool(hue_username),
+        )
+        if not hue_bridge_ip or not hue_username:
+            logger.info("Hue routine disabled: missing HUE_BRIDGE_IP or HUE_USERNAME")
+        else:
+            hue_ctrl = HueController(hue_bridge_ip, hue_username)
+            app.hue_ctrl = hue_ctrl  # type: ignore[attr-defined]
+            hue_ctrl.start_time_based_routine(apply_immediately=False)
+            services["hue_controller"] = hue_ctrl
+            logger.info("Hue time-based routine started.")
     except Exception as e:
         logger.exception("Failed to initialize Hue routine: %s", e)
 

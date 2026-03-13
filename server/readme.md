@@ -134,6 +134,8 @@ Browse to http://127.0.0.1:5555 and log in.
 - Security headers (CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy) are applied by default, with CDN allowlist for Chart.js/HLS/Socket.IO.
 - `scripts/restart.sh` retries `pre-commit run --all-files` once before aborting.
 - AC controller methods migrated to SQLAlchemy Core (AC event logging, thermostat configuration).
+- Hue exposes an API key protected `POST /hue/set_current_color` endpoint to apply the current time-slot color immediately.
+- Hue service initialization now fails safe when `HUE_BRIDGE_IP` or `HUE_USERNAME` is missing.
 
 ---
 

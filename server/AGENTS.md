@@ -499,6 +499,8 @@ function update(data) {
 
 **Car heater logs note**: ESP32 log snapshots are emitted in a dedicated `car_heater_logs` Socket.IO event. For compatibility, frontend can still read `status.logs` from `car_heater_status`, but should dedupe because both WS and HTTP paths may carry the same snapshot.
 
+**Hue controller availability note**: `app.hue_ctrl` is optional at runtime. Guard Hue API routes with `getattr(..., "hue_ctrl", None)` and return a 503-style error when Hue env/config is missing.
+
 **YNAB queue filtering note**: Default queue mode is `strict` (skip transfers + split parents). Keep this as the default for both initial page data and API fallback to avoid applying categories to unsupported transaction types.
 
 **YNAB config persistence note**: Queue filtering mode is persisted in `ynab_categorizer_config` (singleton `id=1`, budget-aware row). Update/read config via controller methods, not direct table writes in routes.

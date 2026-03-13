@@ -14,18 +14,65 @@ import typing
 from datetime import datetime
 
 import pytz
-from flask import Blueprint, current_app, jsonify, request, send_from_directory
+from flask import Blueprint, current_app, g, jsonify, request, send_from_directory
 from flask_login import current_user, login_required
 
 from ...extensions import csrf
+from ...security import require_api_key
 
 if typing.TYPE_CHECKING:
     from ...core import Controller
+    from ...services.hue.controller import HueController
 
 misc_bp = Blueprint("api_misc", __name__, url_prefix="")
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+
+@misc_bp.route("/hue/set_current_color", methods=["POST"])
+@require_api_key
+@csrf.exempt
+def set_hue_color():
+    """Apply the configured Hue time slot immediately."""
+    api_key_meta = getattr(g, "api_key", {}) or {}
+    logger.info(
+        "API /hue/set_current_color called by key_id=%s",
+        api_key_meta.get("key_id", "unknown"),
+    )
+    hue_ctrl: HueController | None = getattr(current_app, "hue_ctrl", None)  # type: ignore[attr-defined]
+    if hue_ctrl is None:
+        logger.warning("Hue apply requested but app.hue_ctrl is not configured")
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error": "hue_unavailable",
+                    "message": "Hue controller is not configured.",
+                }
+            ),
+            503,
+        )
+
+    apply_ok = hue_ctrl.apply_current_slot()
+    logger.debug("Hue apply_current_slot result: ok=%s", apply_ok)
+    if apply_ok:
+        return jsonify(
+            {
+                "ok": True,
+                "message": "Hue color updated based on current time slot.",
+            }
+        )
+    return (
+        jsonify(
+            {
+                "ok": False,
+                "error": "hue_apply_failed",
+                "message": "Failed to update Hue color.",
+            }
+        ),
+        502,
+    )
 
 
 @misc_bp.route("/gcode")
