@@ -506,6 +506,93 @@ def run_ready_by_tick(
         logger.exception("Failed to run ready-by tick: %s", e)
 
 
+def process_car_heater_status_data(
+    data: dict[str, Any],
+    *,
+    commands_enabled: bool,
+    is_test: bool,
+    skip_db: bool,
+) -> tuple[dict[str, Any], dict[str, Any] | None, dict[str, Any] | None, list[dict[str, Any]]]:
+    """Process a car heater status payload for runtime state, DB, and UI emission."""
+    from .control import process_commands, sync_runtime_command_state
+
+    logger.debug(
+        "process_car_heater_status_data called commands_enabled=%s is_test=%s skip_db=%s data_keys=%s",
+        commands_enabled,
+        is_test,
+        skip_db,
+        list(data.keys()) if isinstance(data, dict) else None,
+    )
+    ctrl: Controller = getattr(current_app, "ctrl", None)
+    if ctrl is None:
+        raise RuntimeError("Controller not initialized")
+
+    sio: SocketEventHandler = getattr(current_app, "sio_handler", None)
+    if sio is None:
+        raise RuntimeError("SocketEventHandler not initialized")
+
+    timestamp = parse_timestamp(data.get("timestamp"))
+    shelly = parse_shelly_payload(data.get("shelly"))
+    shelly_connected = bool(data.get("shelly_connected", True))
+    ambient_temp = data.get("temperature")
+
+    fallback_status.timestamp = timestamp
+    fallback_status.ambient_temp = ambient_temp
+    fallback_status.shelly_connected = shelly_connected
+    logger.debug(
+        "process_car_heater_status_data updated fallback timestamp=%s ambient_temp=%s shelly_connected=%s",
+        fallback_status.timestamp,
+        fallback_status.ambient_temp,
+        fallback_status.shelly_connected,
+    )
+
+    car: CarHeaterStatus | None = None
+    if shelly and shelly_connected:
+        car = build_car_heater_status(timestamp, shelly, ambient_temp)
+        status_payload = record_and_build_payload(ctrl, car, skip_db=skip_db)
+        cache_latest_normalized_status(status_payload)
+        _process_alerts(
+            car=car,
+            shelly_connected=shelly_connected,
+            timestamp=timestamp,
+            is_test=is_test,
+        )
+        run_keep_at_temp_tick(car)
+        run_kfactor_tick(car, ambient_temp)
+        run_ready_by_tick(car, data.get("outside_temp"), is_test, sio)
+
+        ksvc: KFactorCalibrator | None = getattr(current_app, "kfactor_calibrator", None)
+        if ksvc is not None:
+            with contextlib.suppress(Exception):
+                sio.emit_kfactor_status(ksvc)
+    else:
+        logger.debug("process_car_heater_status_data had no usable shelly payload")
+        status_payload = build_fallback_payload(timestamp, ambient_temp, shelly_connected)
+        cache_latest_normalized_status(status_payload)
+        _process_alerts(
+            car=None,
+            shelly_connected=shelly_connected,
+            timestamp=timestamp,
+            is_test=is_test,
+        )
+
+    commands: list[dict[str, Any]] = []
+    command_status: dict[str, Any] | None = None
+    charge_mode_state: dict[str, Any] | None = None
+    if commands_enabled:
+        commands, command_status, charge_mode_state = process_commands(data, car)
+    else:
+        command_status, charge_mode_state = sync_runtime_command_state(data, car)
+    logger.debug(
+        "process_car_heater_status_data result has_status=%s commands=%s has_command_status=%s has_charge_mode=%s",
+        bool(status_payload),
+        len(commands),
+        command_status is not None,
+        charge_mode_state is not None,
+    )
+    return status_payload, command_status, charge_mode_state, commands
+
+
 # ==============================================================================
 # Main Status Handler
 # ==============================================================================
@@ -526,8 +613,6 @@ def handle_status_update_request(
     Returns:
         Flask response tuple (jsonify response, status code)
     """
-    from .control import process_commands
-
     start_time = time.perf_counter()
     logger.debug(
         "handle_status_update_request called commands_enabled=%s is_test=%s data_keys=%s",
@@ -536,71 +621,23 @@ def handle_status_update_request(
         list(data.keys()) if isinstance(data, dict) else None,
     )
 
-    ctrl: Controller = getattr(current_app, "ctrl", None)
-    if ctrl is None:
-        return jsonify({"error": "Controller not initialized"}), 500
+    if not data:
+        return jsonify({"error": "Invalid JSON payload"}), 400
+    try:
+        status_payload, command_status, charge_mode_state, commands = (
+            process_car_heater_status_data(
+                data,
+                commands_enabled=commands_enabled,
+                is_test=is_test,
+                skip_db=is_test,
+            )
+        )
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 500
 
     sio: SocketEventHandler = getattr(current_app, "sio_handler", None)
     if sio is None:
         return jsonify({"error": "SocketEventHandler not initialized"}), 500
-
-    if not data:
-        return jsonify({"error": "Invalid JSON payload"}), 400
-
-    # Parse incoming data
-    timestamp = parse_timestamp(data.get("timestamp"))
-    shelly = parse_shelly_payload(data.get("shelly"))
-    shelly_connected = bool(data.get("shelly_connected", True))
-    ambient_temp = data.get("temperature")
-
-    # Update global fallback status
-    fallback_status.timestamp = timestamp
-    fallback_status.ambient_temp = ambient_temp
-    fallback_status.shelly_connected = shelly_connected
-
-    # Build status and payload
-    car: CarHeaterStatus | None = None
-    status_payload: dict[str, Any]
-
-    if shelly and shelly_connected:
-        car = build_car_heater_status(timestamp, shelly, ambient_temp)
-        status_payload = record_and_build_payload(ctrl, car, skip_db=is_test)
-        cache_latest_normalized_status(status_payload)
-        _process_alerts(
-            car=car,
-            shelly_connected=shelly_connected,
-            timestamp=timestamp,
-            is_test=is_test,
-        )
-        run_keep_at_temp_tick(car)
-        run_kfactor_tick(car, ambient_temp)
-        run_ready_by_tick(car, data.get("outside_temp"), is_test, sio)
-
-        # Broadcast kFactor status to all connected views
-        ksvc: KFactorCalibrator | None = getattr(current_app, "kfactor_calibrator", None)
-        if ksvc is not None:
-            with contextlib.suppress(Exception):
-                sio.emit_kfactor_status(ksvc)
-    else:
-        logger.debug("No shelly data provided in car heater status update")
-        status_payload = build_fallback_payload(timestamp, ambient_temp, shelly_connected)
-        cache_latest_normalized_status(status_payload)
-        _process_alerts(
-            car=None,
-            shelly_connected=shelly_connected,
-            timestamp=timestamp,
-            is_test=is_test,
-        )
-
-    # Process commands
-    commands: list[dict[str, Any]] = []
-    command_status: dict[str, Any] | None = None
-    charge_mode_state: dict[str, Any] | None = None
-
-    if commands_enabled:
-        commands, command_status, charge_mode_state = process_commands(data, car)
-    else:
-        logger.debug("Car heater commands are disabled; skipping command queue handling.")
 
     logs_payload = _build_logs_event_payload(
         data.get("logs"),

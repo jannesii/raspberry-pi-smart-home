@@ -147,6 +147,7 @@ Browse to http://127.0.0.1:5555 and log in.
 - Car heater UI now consumes normalized live status over Socket.IO from the Redis bridge, with `GET /api/car_heater/status` as an HTTP fallback returning the same payload shape.
 - Car heater Details now show websocket-originated status with `source=WS`, and live timestamps render with seconds in 12-hour format.
 - Car heater command events now distinguish `queued` vs ESP `executed` results, and the ESP sends an immediate follow-up status frame after websocket command execution so the UI updates without waiting for the next periodic status tick.
+- WebSocket-delivered car heater status now runs the same backend runtime logic as the legacy HTTP status path, so Keep at Temperature, Ready by Time, Battery Charge Mode, alerts, and kFactor ticks keep working in websocket-primary mode.
 
 ---
 

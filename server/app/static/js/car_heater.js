@@ -15,14 +15,21 @@ function fmtTs(ts) {
   if (!ts) return '—';
   try {
     const d = new Date(ts);
-    return d.toLocaleString(undefined, {
+    const parts = new Intl.DateTimeFormat('en-US', {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
-      hour12: true
+      hour12: true,
+    }).formatToParts(d);
+    const byType = {};
+    parts.forEach(part => {
+      if (part.type !== 'literal') {
+        byType[part.type] = part.value;
+      }
     });
+    return `${byType.month} ${byType.day}, ${byType.hour}:${byType.minute}:${byType.second} ${byType.dayPeriod}`;
   } catch {
     return '—';
   }

@@ -541,6 +541,8 @@ function update(data) {
 
 **Car heater action-result note**: `car_heater_action_result` is two-stage: the web handler emits a local `stage=queued` ack immediately, while the Redis bridge emits `stage=executed` when the ESP reports success/failure. Keep these distinct so the UI does not treat queue ack as command completion.
 
+**Car heater WS runtime note**: Do not treat Redis/WS heater status as UI-only. Websocket-originated status must run the same runtime side effects as HTTP `/api/car_heater/status` (charge-mode state updates, keep-at-temp tick, ready-by tick, kFactor tick, alerts, and DB persistence where applicable), otherwise automation silently breaks in websocket-primary mode.
+
 **Migration helper note**: Controller-level legacy migration helpers (`migrate_3d_to_pg`, `migrate_auth_to_pg`, `migrate_ac_to_pg`, `migrate_car_heater_to_pg`, `migrate_ready_by_to_pg`) use `DB_PATH` as the SQLite source and `_sa_engine` as the SQLAlchemy target. Keep them idempotent.
 
 **Pytest bootstrap note**: Repo-root test runs should work without manually exporting `PYTHONPATH`; keep root import bootstrap intact for `.venv/bin/pytest -q`.

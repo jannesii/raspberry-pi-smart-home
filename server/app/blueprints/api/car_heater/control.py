@@ -37,6 +37,115 @@ if TYPE_CHECKING:
 # ==============================================================================
 
 
+def _normalize_action_results(action_results: Any) -> list[dict[str, Any]]:
+    """Normalize ESP action results into a consistent list format."""
+    logger.debug(
+        "_normalize_action_results called type=%s",
+        type(action_results).__name__,
+    )
+    normalized_results: list[dict[str, Any]] = []
+    if not action_results:
+        return normalized_results
+
+    if isinstance(action_results, list):
+        for item in action_results:
+            if isinstance(item, dict):
+                if "action" in item:
+                    normalized_results.append(
+                        {
+                            "action": item.get("action"),
+                            "success": item.get("success", item.get("ok", False)),
+                        }
+                    )
+                else:
+                    for key, val in item.items():
+                        normalized_results.append(
+                            {
+                                "action": key,
+                                "success": bool(val),
+                            }
+                        )
+            elif isinstance(item, str):
+                normalized_results.append({"action": item, "success": True})
+    elif isinstance(action_results, dict):
+        if "action" in action_results:
+            normalized_results.append(
+                {
+                    "action": action_results.get("action"),
+                    "success": action_results.get("success", action_results.get("ok", False)),
+                }
+            )
+        else:
+            for key, val in action_results.items():
+                normalized_results.append(
+                    {
+                        "action": key,
+                        "success": bool(val),
+                    }
+                )
+    logger.debug("_normalize_action_results returning count=%s", len(normalized_results))
+    return normalized_results
+
+
+def sync_runtime_command_state(
+    data: dict[str, Any],
+    car: CarHeaterStatus | None,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """
+    Sync runtime command/charge-mode state from an incoming heater status payload.
+
+    This updates charge mode from the latest power reading and applies ESP
+    action results, but does not consume queued commands.
+    """
+    command_status: dict[str, Any] | None = None
+    charge_mode_state: dict[str, Any] | None = None
+    logger.debug(
+        "sync_runtime_command_state called data_keys=%s has_car=%s",
+        list(data.keys()) if isinstance(data, dict) else None,
+        car is not None,
+    )
+
+    try:
+        service: CarHeaterService | None = getattr(current_app, "car_heater_service", None)
+        logger.debug("sync_runtime_command_state resolved car_heater_service=%s", service)
+        if not service:
+            return command_status, charge_mode_state
+
+        if car is not None:
+            try:
+                ts_iso = (
+                    car.timestamp.isoformat()
+                    if hasattr(car.timestamp, "isoformat")
+                    else str(car.timestamp)
+                )
+                service.handle_status_update(
+                    instant_power_w=car.instant_power_w,
+                    is_heater_on=car.is_heater_on,
+                    timestamp_iso=ts_iso,
+                )
+            except Exception as e:
+                logger.exception("Failed to update car heater charge mode: %s", e)
+
+        normalized_results = _normalize_action_results(data.get("action_results", {}))
+        if normalized_results:
+            service.mark_command_success(normalized_results)
+
+        command_status = asdict(service.get_command_status())
+        try:
+            charge_mode_state = asdict(service.get_charge_mode_state())
+        except Exception:
+            charge_mode_state = None
+        logger.debug(
+            "sync_runtime_command_state result command_status=%s charge_mode_state=%s",
+            command_status,
+            charge_mode_state,
+        )
+    except Exception as e:
+        logger.exception("Failed to sync car heater runtime command state: %s", e)
+
+    return command_status, charge_mode_state
+
+
 def process_commands(
     data: dict[str, Any],
     car: CarHeaterStatus | None,
@@ -64,66 +173,7 @@ def process_commands(
         if not service:
             return commands, command_status, charge_mode_state
 
-        # Update charge mode from the latest Shelly status
-        if car is not None:
-            try:
-                ts_iso = (
-                    car.timestamp.isoformat()
-                    if hasattr(car.timestamp, "isoformat")
-                    else str(car.timestamp)
-                )
-                service.handle_status_update(
-                    instant_power_w=car.instant_power_w,
-                    is_heater_on=car.is_heater_on,
-                    timestamp_iso=ts_iso,
-                )
-            except Exception as e:
-                logger.exception("Failed to update car heater charge mode: %s", e)
-
-        # Handle action results from ESP
-        action_results = data.get("action_results", {})
-        normalized_results: list[dict[str, Any]] = []
-        if action_results:
-            if isinstance(action_results, list):
-                for item in action_results:
-                    if isinstance(item, dict):
-                        if "action" in item:
-                            normalized_results.append(
-                                {
-                                    "action": item.get("action"),
-                                    "success": item.get("success", item.get("ok", False)),
-                                }
-                            )
-                        else:
-                            for key, val in item.items():
-                                normalized_results.append(
-                                    {
-                                        "action": key,
-                                        "success": bool(val),
-                                    }
-                                )
-                    elif isinstance(item, str):
-                        normalized_results.append({"action": item, "success": True})
-            elif isinstance(action_results, dict):
-                if "action" in action_results:
-                    normalized_results.append(
-                        {
-                            "action": action_results.get("action"),
-                            "success": action_results.get(
-                                "success", action_results.get("ok", False)
-                            ),
-                        }
-                    )
-                else:
-                    for key, val in action_results.items():
-                        normalized_results.append(
-                            {
-                                "action": key,
-                                "success": bool(val),
-                            }
-                        )
-            if normalized_results:
-                service.mark_command_success(normalized_results)
+        command_status, charge_mode_state = sync_runtime_command_state(data, car)
 
         # Check queue length alert
         try:
