@@ -539,6 +539,8 @@ function update(data) {
 
 **Car heater source note**: The UI `status.source` field represents the transport path (`WS`/HTTP fallback), not Shelly's internal `source` value such as `HTTP_in`. For websocket-originated status, override the normalized payload source to `WS`.
 
+**Car heater action-result note**: `car_heater_action_result` is two-stage: the web handler emits a local `stage=queued` ack immediately, while the Redis bridge emits `stage=executed` when the ESP reports success/failure. Keep these distinct so the UI does not treat queue ack as command completion.
+
 **Migration helper note**: Controller-level legacy migration helpers (`migrate_3d_to_pg`, `migrate_auth_to_pg`, `migrate_ac_to_pg`, `migrate_car_heater_to_pg`, `migrate_ready_by_to_pg`) use `DB_PATH` as the SQLite source and `_sa_engine` as the SQLAlchemy target. Keep them idempotent.
 
 **Pytest bootstrap note**: Repo-root test runs should work without manually exporting `PYTHONPATH`; keep root import bootstrap intact for `.venv/bin/pytest -q`.

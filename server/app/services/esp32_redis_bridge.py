@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import threading
+from dataclasses import asdict
 from datetime import UTC, datetime
 from time import monotonic
 from typing import TYPE_CHECKING, Any
@@ -47,9 +48,11 @@ class ESP32RedisBridge:
 
     def __init__(
         self,
+        app: Flask,
         socketio: SocketIO,
         sio_handler: SocketEventHandler | None = None,
     ) -> None:
+        self._app = app
         self._socketio = socketio
         self._sio_handler = sio_handler
         self._stop_event = threading.Event()
@@ -262,10 +265,30 @@ class ESP32RedisBridge:
     def _emit_action_result(self, data: dict[str, Any]) -> None:
         """Emit action result to browser views."""
         try:
+            logger.debug(
+                "ESP32RedisBridge processing action result device=%s action=%s success=%s",
+                data.get("device_id"),
+                data.get("action"),
+                data.get("success"),
+            )
+            payload = dict(data)
+            payload["stage"] = "executed"
+            payload["ok"] = bool(data.get("success", data.get("ok", False)))
+
+            service = getattr(self._app, "car_heater_service", None)
+            if service is not None and data.get("action"):
+                service.mark_command_success([data])
+                payload["command_status"] = asdict(service.get_command_status())
+                logger.debug(
+                    "ESP32RedisBridge updated command status action=%s status=%s",
+                    data.get("action"),
+                    payload["command_status"].get(data.get("action")),
+                )
+
             if self._sio_handler is not None:
-                self._sio_handler.emit_to_views("car_heater_action_result", data)
+                self._sio_handler.emit_to_views("car_heater_action_result", payload)
             else:
-                self._socketio.emit("car_heater_action_result", data)
+                self._socketio.emit("car_heater_action_result", payload)
 
             logger.debug("ESP32RedisBridge emitted car_heater_action_result")
         except Exception as e:
@@ -278,7 +301,7 @@ def init_esp32_redis_bridge(app: Flask) -> ESP32RedisBridge | None:
         from ..extensions import socketio
 
         sio_handler = getattr(app, "sio_handler", None)
-        bridge = ESP32RedisBridge(socketio, sio_handler)
+        bridge = ESP32RedisBridge(app, socketio, sio_handler)
         bridge.start()
         return bridge
     except Exception as e:

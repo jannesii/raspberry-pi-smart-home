@@ -583,14 +583,37 @@ document.addEventListener('DOMContentLoaded', () => {
     window.socket.on('car_heater_action_result', data => {
       console.log('📡 car_heater_action_result:', data);
       if (!data) return;
+      const stage = data.stage || 'executed';
       let ok = true;
       if (typeof data.ok === 'boolean') ok = data.ok;
       else if (typeof data.success === 'boolean') ok = data.success;
-      setQueueStatus(ok ? 'pending' : 'error', ok ? 'Action queued…' : 'Action failed');
-      if (ok && data.action) {
-        updateSingleCommandStatus(data.action, 'queued');
-      } else if (!ok && data.action) {
-        updateSingleCommandStatus(data.action, 'failed');
+
+      if (stage === 'queued') {
+        setQueueStatus(ok ? 'pending' : 'error', ok ? 'Action queued…' : 'Failed to queue action');
+        if (ok && data.action) {
+          updateSingleCommandStatus(data.action, 'queued');
+        } else if (!ok && data.action) {
+          updateSingleCommandStatus(data.action, 'failed');
+        }
+        return;
+      }
+
+      if (data.command_status) {
+        updateCommandStatusUI(data.command_status);
+      }
+
+      if (ok) {
+        setQueueStatus('sent', 'Action successful');
+        if (data.action) {
+          updateSingleCommandStatus(data.action, 'success');
+        }
+        lastQueuedAction = null;
+      } else {
+        setQueueStatus('error', 'Action failed');
+        if (data.action) {
+          updateSingleCommandStatus(data.action, 'failed');
+        }
+        lastQueuedAction = null;
       }
     });
 

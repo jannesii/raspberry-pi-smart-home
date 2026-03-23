@@ -82,6 +82,7 @@ def handle_car_heater_control(handler: SocketEventHandler, data: dict[str, Any])
         username = "unknown"
         if current_user and current_user.is_authenticated:
             username = current_user.get_id() or "unknown"
+        logger.debug("handle_car_heater_control action=%s user=%s", action, username)
 
         # Use centralized turn_on/turn_off methods
         if action == "turn_on":
@@ -97,6 +98,7 @@ def handle_car_heater_control(handler: SocketEventHandler, data: dict[str, Any])
             {
                 "ok": True,
                 "action": action,
+                "stage": "queued",
                 "label": f"Queued: {action}",
             },
         )
