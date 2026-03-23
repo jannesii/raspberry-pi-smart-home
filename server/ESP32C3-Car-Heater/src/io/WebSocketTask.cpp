@@ -229,9 +229,7 @@ void WebSocketTask::processMessage(const char *payload, size_t length)
         {
             Serial.println("[WebSocket] ✓ Authenticated successfully");
             authenticated_ = true;
-            
-            // Send initial status after authentication
-            sendStatus();
+            statusUpdatePending_ = true;
             return;
         }
     }
@@ -349,8 +347,9 @@ void WebSocketTask::handleTurnOff()
 void WebSocketTask::handleGetLogs()
 {
     Serial.println("[WebSocket] CMD: get_logs");
-    
+
     // Send logs in the next status update
+    logsRequested_ = true;
     statusUpdatePending_ = true;
 }
 
@@ -442,11 +441,15 @@ String WebSocketTask::buildStatusJson()
     else
         doc["shelly_connected"] = false;
 
-    // Include logs if requested
-    String logs = logger_.toStringNewestFirst();
-    if (logs.length() > 0 && logs.length() < 2000)
+    // Only include logs when the server explicitly asks for them.
+    if (logsRequested_)
     {
-        doc["logs"] = logs;
+        String logs = logger_.toStringNewestFirst();
+        if (logs.length() > 0 && logs.length() < 2000)
+        {
+            doc["logs"] = logs;
+        }
+        logsRequested_ = false;
     }
 
     // Include stats

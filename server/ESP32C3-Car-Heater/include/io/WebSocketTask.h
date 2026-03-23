@@ -137,6 +137,7 @@ private:
 
     // Status update flag (set by other tasks, cleared after sending)
     volatile bool statusUpdatePending_ = false;
+    volatile bool logsRequested_ = false;
 
     // Command deduplication
     struct RecentCommand {
