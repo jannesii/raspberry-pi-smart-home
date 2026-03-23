@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 from flask import current_app, jsonify, request
+from flask_login import current_user, login_required
 
 from ....core.models import CarHeaterStatus
 from ....extensions import csrf
@@ -237,6 +238,120 @@ def build_fallback_payload(
         "ambient_temp": ambient_temp,
         "shelly_connected": shelly_connected,
     }
+
+
+def normalize_status_payload_from_esp_data(
+    data: dict[str, Any],
+    ctrl: Controller | None = None,
+    *,
+    skip_db: bool = True,
+) -> dict[str, Any]:
+    """Normalize raw ESP status JSON into the frontend status payload shape."""
+    logger.debug(
+        "normalize_status_payload_from_esp_data called skip_db=%s data_keys=%s",
+        skip_db,
+        list(data.keys()) if isinstance(data, dict) else None,
+    )
+    if not data:
+        logger.debug("normalize_status_payload_from_esp_data received empty payload")
+        return {}
+
+    timestamp = parse_timestamp(data.get("timestamp"))
+    shelly = parse_shelly_payload(data.get("shelly"))
+    shelly_connected = bool(data.get("shelly_connected", True))
+    ambient_temp = data.get("temperature")
+
+    if shelly and shelly_connected:
+        car = build_car_heater_status(timestamp, shelly, ambient_temp)
+        if ctrl is not None:
+            payload = record_and_build_payload(ctrl, car, skip_db=skip_db)
+        else:
+            payload = {
+                "timestamp": car.timestamp.isoformat()
+                if hasattr(car.timestamp, "isoformat")
+                else car.timestamp,
+                "is_heater_on": car.is_heater_on,
+                "instant_power_w": car.instant_power_w,
+                "voltage_v": car.voltage_v,
+                "current_a": car.current_a,
+                "energy_total_wh": car.energy_total_wh,
+                "energy_last_min_wh": car.energy_last_min_wh,
+                "energy_ts": car.energy_ts,
+                "device_temp_c": car.device_temp_c,
+                "device_temp_f": car.device_temp_f,
+                "ambient_temp": car.ambient_temp,
+                "source": car.source,
+            }
+        logger.debug(
+            "normalize_status_payload_from_esp_data built heater payload is_on=%s power=%s",
+            payload.get("is_heater_on"),
+            payload.get("instant_power_w"),
+        )
+        return payload
+
+    payload = build_fallback_payload(timestamp, ambient_temp, shelly_connected)
+    logger.debug(
+        "normalize_status_payload_from_esp_data built fallback payload shelly_connected=%s",
+        shelly_connected,
+    )
+    return payload
+
+
+def build_current_status_response(ctrl: Controller) -> dict[str, Any]:
+    """Build the current car heater status response for HTTP and WS consumers."""
+    logger.debug("build_current_status_response called")
+    last_status: dict[str, Any] | None = None
+    if fallback_status.shelly_connected:
+        last = ctrl.get_last_car_heater_status()
+        last_status = (
+            record_and_build_payload(ctrl, last, skip_db=True) if last is not None else None
+        )
+        logger.debug("build_current_status_response using DB status present=%s", last is not None)
+    else:
+        if fallback_status.timestamp is not None:
+            last_status = build_fallback_payload(
+                fallback_status.timestamp,
+                fallback_status.ambient_temp,
+                bool(fallback_status.shelly_connected),
+            )
+        logger.debug("build_current_status_response using fallback status=%s", last_status)
+
+    payload: dict[str, Any] = {"status": last_status}
+
+    try:
+        service = getattr(current_app, "car_heater_service", None)
+        if service is not None:
+            payload["command_status"] = {
+                **vars(service.get_command_status()),
+            }
+            with contextlib.suppress(Exception):
+                payload["charge_mode"] = {
+                    **vars(service.get_charge_mode_state()),
+                }
+        logger.debug(
+            "build_current_status_response attached service data has_command_status=%s has_charge_mode=%s",
+            "command_status" in payload,
+            "charge_mode" in payload,
+        )
+    except Exception:
+        logger.exception("Failed to attach car heater service data to current status response")
+
+    try:
+        weather_svc = getattr(current_app, "weather_service", None)
+        if weather_svc is not None:
+            wd = weather_svc.get_latest()
+            if wd:
+                payload["weather"] = {
+                    "outside_temp_c": wd.t2m.value if wd.t2m else None,
+                    "wind_speed_mps": wd.ws_10min.value if wd.ws_10min else None,
+                    "humidity_pct": wd.rh.value if wd.rh else None,
+                    "station_name": wd.station_name,
+                }
+        logger.debug("build_current_status_response attached weather=%s", "weather" in payload)
+    except Exception:
+        logger.exception("Failed to attach weather data to current status response")
+
+    return payload
 
 
 # ==============================================================================
@@ -507,6 +622,27 @@ def update_car_heater_status():
         data=request.get_json(),
         commands_enabled=True,
     )
+
+
+@car_bp.route("/status", methods=["GET"])
+@login_required
+def get_car_heater_status():
+    """Return the latest normalized car heater status payload for the web UI."""
+    logger.debug("get_car_heater_status called user=%s", current_user.get_id())
+    ctrl: Controller = getattr(current_app, "ctrl", None)
+    if ctrl is None:
+        return jsonify({"error": "Controller not initialized"}), 500
+    try:
+        payload = build_current_status_response(ctrl)
+        logger.debug(
+            "get_car_heater_status returning has_status=%s has_weather=%s",
+            payload.get("status") is not None,
+            "weather" in payload,
+        )
+        return jsonify(payload), 200
+    except Exception as e:
+        logger.exception("Failed to get current car heater status: %s", e)
+    return jsonify({"error": "Failed to get current status"}), 500
 
 
 @car_bp.route("/status/test", methods=["POST"])

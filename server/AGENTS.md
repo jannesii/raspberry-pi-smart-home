@@ -535,6 +535,8 @@ function update(data) {
 
 **ESP32 WS Gunicorn note**: `esp32_ws.service` runs `gunicorn main:app`, so bootstrap that must exist in production cannot live only under `if __name__ == "__main__":`. Keep Redis/WebSocket manager startup reachable from module import or another Gunicorn-executed path.
 
+**Car heater WS payload note**: Browser `car_heater_status` handlers expect the normalized `CarHeaterStatus` payload shape (`is_heater_on`, `instant_power_w`, etc.), not the raw ESP JSON (`shelly`, `temperature`, `ws_stats`). When emitting heater status from Redis/WS paths, normalize to the HTTP status payload shape first.
+
 **Migration helper note**: Controller-level legacy migration helpers (`migrate_3d_to_pg`, `migrate_auth_to_pg`, `migrate_ac_to_pg`, `migrate_car_heater_to_pg`, `migrate_ready_by_to_pg`) use `DB_PATH` as the SQLite source and `_sa_engine` as the SQLAlchemy target. Keep them idempotent.
 
 **Pytest bootstrap note**: Repo-root test runs should work without manually exporting `PYTHONPATH`; keep root import bootstrap intact for `.venv/bin/pytest -q`.

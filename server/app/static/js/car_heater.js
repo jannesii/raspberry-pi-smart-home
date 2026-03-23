@@ -5,6 +5,8 @@
 
 console.log('🚗 car_heater.js loaded');
 
+let statusPollTimer = null;
+
 // ============================================
 // Utility Functions
 // ============================================
@@ -160,6 +162,70 @@ function updateDetailsSection(status) {
 function updateStatusUI(status) {
   updateHeroStatus(status);
   updateDetailsSection(status);
+}
+
+function applyCarHeaterPayload(data, source = 'unknown') {
+  console.log(`📡 applyCarHeaterPayload (${source}):`, data);
+  if (!data) return;
+
+  if (data.status) {
+    updateStatusUI(data.status);
+  } else {
+    updateStatusUI(data);
+  }
+
+  if (data.command_status || data.commandStatus) {
+    const cmdStatus = data.command_status || data.commandStatus;
+    updateCommandStatusUI(cmdStatus);
+    if (lastQueuedAction && cmdStatus && Object.prototype.hasOwnProperty.call(cmdStatus, lastQueuedAction)) {
+      const status = cmdStatus[lastQueuedAction];
+      if (status === 'sent') {
+        setQueueStatus('sent', 'Sent to heater');
+      } else if (status === 'success') {
+        setQueueStatus('sent', 'Action successful');
+        lastQueuedAction = null;
+      } else if (status === 'failed') {
+        setQueueStatus('error', 'Action failed');
+        lastQueuedAction = null;
+      }
+    }
+  }
+
+  if (data.charge_mode || data.chargeMode) {
+    updateChargeModeUI(data.charge_mode || data.chargeMode);
+  }
+
+  if (data.weather) {
+    updateWeatherDisplay(data.weather);
+  }
+}
+
+async function fetchCurrentStatus() {
+  try {
+    const resp = await fetch('/api/car_heater/status', {
+      cache: 'no-store',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    });
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status}`);
+    }
+    const data = await resp.json();
+    applyCarHeaterPayload(data, 'http');
+  } catch (err) {
+    console.warn('Failed to fetch current car heater status:', err);
+  }
+}
+
+function startStatusPolling() {
+  if (statusPollTimer) return;
+  fetchCurrentStatus();
+  statusPollTimer = window.setInterval(fetchCurrentStatus, 5000);
+}
+
+function stopStatusPolling() {
+  if (!statusPollTimer) return;
+  window.clearInterval(statusPollTimer);
+  statusPollTimer = null;
 }
 
 // ============================================
@@ -399,6 +465,8 @@ document.addEventListener('DOMContentLoaded', () => {
     updateWeatherDisplay(window.CAR_HEATER_WEATHER);
   }
 
+  fetchCurrentStatus();
+
   // Quick action buttons
   const btnOn = document.getElementById('btnTurnOn');
   const btnOff = document.getElementById('btnTurnOff');
@@ -494,36 +562,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Socket.IO event handlers
   if (window.socket) {
+    window.socket.on('connect', () => {
+      stopStatusPolling();
+      fetchCurrentStatus();
+    });
+
+    window.socket.on('disconnect', () => {
+      startStatusPolling();
+    });
+
     window.socket.on('car_heater_status', data => {
       console.log('📡 car_heater_status:', data);
-      if (data && data.status) {
-        updateStatusUI(data.status);
-      } else {
-        updateStatusUI(data);
-      }
-      if (data && (data.command_status || data.commandStatus)) {
-        const cmdStatus = data.command_status || data.commandStatus;
-        updateCommandStatusUI(cmdStatus);
-        if (lastQueuedAction && cmdStatus && Object.prototype.hasOwnProperty.call(cmdStatus, lastQueuedAction)) {
-          const status = cmdStatus[lastQueuedAction];
-          if (status === 'sent') {
-            setQueueStatus('sent', 'Sent to heater');
-          } else if (status === 'success') {
-            setQueueStatus('sent', 'Action successful');
-            lastQueuedAction = null;
-          } else if (status === 'failed') {
-            setQueueStatus('error', 'Action failed');
-            lastQueuedAction = null;
-          }
-        }
-      }
-      if (data && (data.charge_mode || data.chargeMode)) {
-        updateChargeModeUI(data.charge_mode || data.chargeMode);
-      }
-      // Update weather display if present
-      if (data && data.weather) {
-        updateWeatherDisplay(data.weather);
-      }
+      applyCarHeaterPayload(data, 'socket');
     });
 
     window.socket.on('car_heater_action_result', data => {
@@ -553,5 +603,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateKeepAtTempUI(data);
       }
     });
+  } else {
+    startStatusPolling();
   }
 });

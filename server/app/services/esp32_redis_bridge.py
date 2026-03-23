@@ -145,8 +145,16 @@ class ESP32RedisBridge:
                 data.get("device_id"),
                 data.get("timestamp"),
             )
-            # Build payload matching existing car_heater_status format
-            payload: dict[str, Any] = {"status": data}
+            from ..blueprints.api.car_heater.status import normalize_status_payload_from_esp_data
+
+            normalized_status = normalize_status_payload_from_esp_data(data, skip_db=True)
+            payload: dict[str, Any] = {"status": normalized_status}
+            logger.debug(
+                "ESP32RedisBridge normalized status device=%s is_on=%s power=%s",
+                data.get("device_id"),
+                normalized_status.get("is_heater_on"),
+                normalized_status.get("instant_power_w"),
+            )
 
             # If we have the socket handler, use emit_to_views for proper targeting
             if self._sio_handler is not None:
