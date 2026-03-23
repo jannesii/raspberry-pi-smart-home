@@ -221,6 +221,7 @@ class ESP32WebSocketManager:
         with self._lock:
             # Close existing connection for same device
             if device_id in self._connections:
+                logger.debug("Replacing existing ESP32 connection device=%s", device_id)
                 with contextlib.suppress(Exception):
                     self._connections[device_id].ws.close()
             self._connections[device_id] = conn
@@ -228,12 +229,22 @@ class ESP32WebSocketManager:
         logger.info("ESP32 device registered: %s", device_id)
         return conn
 
-    def unregister_connection(self, device_id: str) -> None:
-        """Unregister an ESP32 connection."""
-        logger.debug("Unregistering ESP32 connection device=%s", device_id)
+    def unregister_connection(self, device_id: str, ws: Any | None = None) -> None:
+        """Unregister an ESP32 connection if it is still the active mapping."""
+        logger.debug(
+            "Unregistering ESP32 connection device=%s has_ws=%s",
+            device_id,
+            ws is not None,
+        )
         with self._lock:
-            if device_id in self._connections:
-                del self._connections[device_id]
+            conn = self._connections.get(device_id)
+            if conn is None:
+                logger.debug("ESP32 device already absent during unregister: %s", device_id)
+                return
+            if ws is not None and conn.ws is not ws:
+                logger.debug("Skipping stale ESP32 unregister for replaced device=%s", device_id)
+                return
+            del self._connections[device_id]
         logger.info("ESP32 device unregistered: %s", device_id)
 
     def get_connection(self, device_id: str) -> ESP32Connection | None:
@@ -490,7 +501,7 @@ def esp32_websocket(ws):
         logger.exception("ESP32 WebSocket error for %s: %s", device_id, e)
     finally:
         if device_id:
-            manager.unregister_connection(device_id)
+            manager.unregister_connection(device_id, ws=ws)
 
 
 @app.route("/health")

@@ -144,6 +144,7 @@ Browse to http://127.0.0.1:5555 and log in.
 - `esp32_ws.service` uses `KillSignal=SIGKILL` with a 1 second stop timeout so Gunicorn-backed WebSocket restarts are immediate instead of waiting on long-lived connections.
 - ESP32 WebSocket ingress now logs throttled status summaries in `esp32_ws` and matching Redis-bridge summaries in `jannenkoti`, plus low-level WS ping receipts in `esp32_ws`, to verify live device traffic.
 - `esp32_ws` now initializes its Redis manager at module import so Gunicorn `main:app` runs the Redis publish/subscribe bridge instead of only the `__main__` code path.
+- ESP32 reconnects now preserve the newest same-device websocket session; stale disconnect cleanup no longer unregisters the replacement connection.
 - Car heater UI now consumes normalized live status over Socket.IO from the Redis bridge, with `GET /api/car_heater/status` as an HTTP fallback returning the same payload shape.
 - Car heater Details now show websocket-originated status with `source=WS`, and live timestamps render with seconds in 24-hour format.
 - Car heater command events now distinguish `queued` vs ESP `executed` results, and the ESP sends an immediate follow-up status frame after websocket command execution so the UI updates without waiting for the next periodic status tick.

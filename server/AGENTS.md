@@ -539,6 +539,8 @@ function update(data) {
 
 **ESP32 WS Gunicorn note**: `esp32_ws.service` runs `gunicorn main:app`, so bootstrap that must exist in production cannot live only under `if __name__ == "__main__":`. Keep Redis/WebSocket manager startup reachable from module import or another Gunicorn-executed path.
 
+**ESP32 WS reconnect note**: When replacing an existing device connection with the same `device_id`, stale socket cleanup must be identity-aware (`ws`/connection object), or the old socket's `finally` block can unregister the new replacement and make live status look like it came from an unknown device.
+
 **Car heater WS payload note**: Browser `car_heater_status` handlers expect the normalized `CarHeaterStatus` payload shape (`is_heater_on`, `instant_power_w`, etc.), not the raw ESP JSON (`shelly`, `temperature`, `ws_stats`). When emitting heater status from Redis/WS paths, normalize to the HTTP status payload shape first.
 
 **Car heater source note**: The UI `status.source` field represents the transport path (`WS`/HTTP fallback), not Shelly's internal `source` value such as `HTTP_in`. For websocket-originated status, override the normalized payload source to `WS`.
