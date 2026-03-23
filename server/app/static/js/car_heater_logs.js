@@ -16,7 +16,7 @@ function fmtTs(ts) {
   if (!ts) return '—';
   try {
     const d = new Date(ts);
-    return d.toLocaleString(undefined, {
+    return d.toLocaleString('fi-FI', {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',

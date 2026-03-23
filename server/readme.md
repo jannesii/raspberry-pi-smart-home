@@ -145,9 +145,12 @@ Browse to http://127.0.0.1:5555 and log in.
 - ESP32 WebSocket ingress now logs throttled status summaries in `esp32_ws` and matching Redis-bridge summaries in `jannenkoti`, plus low-level WS ping receipts in `esp32_ws`, to verify live device traffic.
 - `esp32_ws` now initializes its Redis manager at module import so Gunicorn `main:app` runs the Redis publish/subscribe bridge instead of only the `__main__` code path.
 - Car heater UI now consumes normalized live status over Socket.IO from the Redis bridge, with `GET /api/car_heater/status` as an HTTP fallback returning the same payload shape.
-- Car heater Details now show websocket-originated status with `source=WS`, and live timestamps render with seconds in 12-hour format.
+- Car heater Details now show websocket-originated status with `source=WS`, and live timestamps render with seconds in 24-hour format.
 - Car heater command events now distinguish `queued` vs ESP `executed` results, and the ESP sends an immediate follow-up status frame after websocket command execution so the UI updates without waiting for the next periodic status tick.
 - WebSocket-delivered car heater status now runs the same backend runtime logic as the legacy HTTP status path, so Keep at Temperature, Ready by Time, Battery Charge Mode, alerts, and kFactor ticks keep working in websocket-primary mode.
+- Car heater cabin temperature now renders with two decimals, and the main page version-busts `car_heater.js` so timestamp/format fixes are not hidden behind browser cache.
+- Car heater settings helpers no longer override the main page formatter globals, so the live card keeps second-precision timestamps and two-decimal cabin temperatures while websocket-originated live status shows `source=WS`.
+- Car heater settings and logs views now use explicit Finnish locale time formatting (`fi-FI`) instead of browser-default locale formatting.
 
 ---
 

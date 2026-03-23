@@ -15,21 +15,12 @@ function fmtTs(ts) {
   if (!ts) return '—';
   try {
     const d = new Date(ts);
-    const parts = new Intl.DateTimeFormat('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: true,
-    }).formatToParts(d);
-    const byType = {};
-    parts.forEach(part => {
-      if (part.type !== 'literal') {
-        byType[part.type] = part.value;
-      }
-    });
-    return `${byType.month} ${byType.day}, ${byType.hour}:${byType.minute}:${byType.second} ${byType.dayPeriod}`;
+    if (Number.isNaN(d.getTime())) return '—';
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const hour24 = String(d.getHours()).padStart(2, '0');
+    const minute = String(d.getMinutes()).padStart(2, '0');
+    const second = String(d.getSeconds()).padStart(2, '0');
+    return `${months[d.getMonth()]} ${d.getDate()}, ${hour24}:${minute}:${second}`;
   } catch {
     return '—';
   }
@@ -95,7 +86,7 @@ function updateHeroStatus(status) {
   }
 
   // Stats row
-  if (heroAmbient) heroAmbient.textContent = fmtNum(ambient, '°', 1);
+  if (heroAmbient) heroAmbient.textContent = fmtNum(ambient, '', 2);
   if (heroEnergy) heroEnergy.textContent = fmtCompact(energyToday, 'Wh');
 }
 
@@ -106,7 +97,7 @@ function updateWeatherDisplay(weather) {
   if (!weather) return;
 
   if (heroOutsideTemp && weather.outside_temp_c != null) {
-    heroOutsideTemp.textContent = fmtNum(weather.outside_temp_c, '°', 1);
+    heroOutsideTemp.textContent = fmtNum(weather.outside_temp_c, '', 1);
   }
   if (heroWind && weather.wind_speed_mps != null) {
     heroWind.textContent = fmtNum(weather.wind_speed_mps, ' m/s', 1);
@@ -149,7 +140,7 @@ function updateDetailsSection(status) {
 
   // Update detail list
   if (detailPower) detailPower.textContent = fmtNum(status.instant_power_w, ' W', 1);
-  if (detailAmbient) detailAmbient.textContent = fmtNum(status.ambient_temp, ' °C', 1);
+  if (detailAmbient) detailAmbient.textContent = fmtNum(status.ambient_temp, ' °C', 2);
   if (detailDeviceTemp) {
     detailDeviceTemp.textContent = fmtNum(status.device_temp_c, ' °C', 1);
     // Highlight if hot

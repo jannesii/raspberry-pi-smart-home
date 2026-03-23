@@ -499,6 +499,10 @@ function update(data) {
 
 **Car heater logs note**: ESP32 log snapshots are emitted in a dedicated `car_heater_logs` Socket.IO event. For compatibility, frontend can still read `status.logs` from `car_heater_status`, but should dedupe because both WS and HTTP paths may carry the same snapshot.
 
+**Static asset cache note**: When changing user-visible `app/static/js/car_heater.js` behavior in production, also bump the versioned script URL in `app/templates/car_heater.html` so browser cache does not mask the fix.
+
+**Car heater JS helper note**: `app/static/js/car_heater.js` and `app/static/js/car_heater_settings_*.js` share the same page. Do not leave generic helper names like `fmtTs` or `fmtNum` in the global scope in settings modules, or they will override the main page formatters at runtime.
+
 **Hue controller availability note**: `app.hue_ctrl` is optional at runtime. Guard Hue API routes with `getattr(..., "hue_ctrl", None)` and return a 503-style error when Hue env/config is missing.
 
 **YNAB queue filtering note**: Default queue mode is `strict` (skip transfers + split parents). Keep this as the default for both initial page data and API fallback to avoid applying categories to unsupported transaction types.

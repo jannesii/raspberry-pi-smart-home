@@ -512,15 +512,17 @@ def process_car_heater_status_data(
     commands_enabled: bool,
     is_test: bool,
     skip_db: bool,
+    status_source_override: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any] | None, dict[str, Any] | None, list[dict[str, Any]]]:
     """Process a car heater status payload for runtime state, DB, and UI emission."""
     from .control import process_commands, sync_runtime_command_state
 
     logger.debug(
-        "process_car_heater_status_data called commands_enabled=%s is_test=%s skip_db=%s data_keys=%s",
+        "process_car_heater_status_data called commands_enabled=%s is_test=%s skip_db=%s status_source_override=%s data_keys=%s",
         commands_enabled,
         is_test,
         skip_db,
+        status_source_override,
         list(data.keys()) if isinstance(data, dict) else None,
     )
     ctrl: Controller = getattr(current_app, "ctrl", None)
@@ -550,6 +552,12 @@ def process_car_heater_status_data(
     if shelly and shelly_connected:
         car = build_car_heater_status(timestamp, shelly, ambient_temp)
         status_payload = record_and_build_payload(ctrl, car, skip_db=skip_db)
+        if status_source_override:
+            status_payload["source"] = status_source_override
+            logger.debug(
+                "process_car_heater_status_data applied source override=%s",
+                status_source_override,
+            )
         cache_latest_normalized_status(status_payload)
         _process_alerts(
             car=car,
@@ -630,6 +638,7 @@ def handle_status_update_request(
                 commands_enabled=commands_enabled,
                 is_test=is_test,
                 skip_db=is_test,
+                status_source_override=None,
             )
         )
     except RuntimeError as e:

@@ -157,6 +157,7 @@ class ESP32RedisBridge:
                         commands_enabled=False,
                         is_test=False,
                         skip_db=False,
+                        status_source_override="WS",
                     )
                 )
 

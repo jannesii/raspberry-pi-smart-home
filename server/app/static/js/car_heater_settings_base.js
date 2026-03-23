@@ -9,11 +9,11 @@ console.log('⚙️ car_heater_settings_base.js loaded');
 // Utility Functions
 // ============================================
 
-function fmtTs(ts) {
+function settingsFmtTs(ts) {
   if (!ts) return '—';
   try {
     const d = new Date(ts);
-    return d.toLocaleString(undefined, {
+    return d.toLocaleString('fi-FI', {
       month: 'short', day: 'numeric',
       hour: '2-digit', minute: '2-digit'
     });
@@ -22,11 +22,11 @@ function fmtTs(ts) {
   }
 }
 
-function fmtTime(ts) {
+function settingsFmtTime(ts) {
   if (!ts) return '—';
   try {
     const d = new Date(ts);
-    return d.toLocaleTimeString(undefined, {
+    return d.toLocaleTimeString('fi-FI', {
       hour: '2-digit', minute: '2-digit'
     });
   } catch {
@@ -34,7 +34,7 @@ function fmtTime(ts) {
   }
 }
 
-function fmtNum(v, decimals = 1) {
+function settingsFmtNum(v, decimals = 1) {
   if (v === null || v === undefined) return '—';
   const n = Number(v);
   if (!Number.isFinite(n)) return '—';
@@ -152,9 +152,9 @@ document.addEventListener('DOMContentLoaded', () => {
 // Export utilities for other modules
 window.CarHeaterSettings = window.CarHeaterSettings || {};
 Object.assign(window.CarHeaterSettings, {
-  fmtTs,
-  fmtTime,
-  fmtNum,
+  fmtTs: settingsFmtTs,
+  fmtTime: settingsFmtTime,
+  fmtNum: settingsFmtNum,
   showToast,
   openSettingsModal,
   closeSettingsModal,
