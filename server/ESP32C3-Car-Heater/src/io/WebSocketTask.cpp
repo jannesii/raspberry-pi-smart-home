@@ -73,21 +73,6 @@ void WebSocketTask::run()
 
         uint32_t now = millis();
 
-        // Handle reconnection with backoff
-        if (!connected_ && (now - lastReconnectAttemptMs_ >= reconnectDelayMs_))
-        {
-            if (WiFi.status() == WL_CONNECTED)
-            {
-                Serial.printf("[WebSocket] Reconnecting (delay was %lu ms)...\n",
-                              static_cast<unsigned long>(reconnectDelayMs_));
-                connect();
-                lastReconnectAttemptMs_ = now;
-
-                // Exponential backoff
-                reconnectDelayMs_ = min(reconnectDelayMs_ * 2, RECONNECT_DELAY_MAX_MS);
-            }
-        }
-
         // Send heartbeat to keep connection alive
         if (connected_ && authenticated_ && (now - lastHeartbeatMs_ >= HEARTBEAT_INTERVAL_MS))
         {
@@ -127,6 +112,14 @@ void WebSocketTask::onWebSocketEvent(WStype_t type, uint8_t *payload, size_t len
         connected_ = false;
         authenticated_ = false;
         stats_.disconnectCount++;
+        if (running_ && WiFi.status() == WL_CONNECTED)
+        {
+            const uint32_t nextDelayMs = reconnectDelayMs_;
+            webSocket_.setReconnectInterval(nextDelayMs);
+            reconnectDelayMs_ = min(reconnectDelayMs_ * 2, RECONNECT_DELAY_MAX_MS);
+            Serial.printf("[WebSocket] Next reconnect attempt in %lu ms\n",
+                          static_cast<unsigned long>(nextDelayMs));
+        }
         break;
 
     case WStype_CONNECTED:
@@ -137,6 +130,7 @@ void WebSocketTask::onWebSocketEvent(WStype_t type, uint8_t *payload, size_t len
         
         // Reset backoff on successful connection
         reconnectDelayMs_ = RECONNECT_DELAY_MIN_MS;
+        webSocket_.setReconnectInterval(reconnectDelayMs_);
         
         // Send authentication immediately
         sendAuthentication();
@@ -177,8 +171,8 @@ void WebSocketTask::connect()
     webSocket_.beginSSL(WS_HOST, WS_PORT, WS_PATH);
     webSocket_.onEvent(webSocketEventStatic);
     
-    // Set reconnect interval (library handles basic reconnect, but we add backoff)
-    webSocket_.setReconnectInterval(0);  // We handle reconnection ourselves
+    // Let the library reconnect, but control its retry interval ourselves.
+    webSocket_.setReconnectInterval(reconnectDelayMs_);
     
     // Enable heartbeat (WebSocket ping/pong)
     webSocket_.enableHeartbeat(15000, 3000, 2);  // ping every 15s, timeout 3s, 2 retries

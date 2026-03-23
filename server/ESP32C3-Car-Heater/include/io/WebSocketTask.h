@@ -135,7 +135,6 @@ private:
     uint32_t reconnectDelayMs_ = 1000;
     static constexpr uint32_t RECONNECT_DELAY_MIN_MS = 1000;
     static constexpr uint32_t RECONNECT_DELAY_MAX_MS = 60000;
-    uint32_t lastReconnectAttemptMs_ = 0;
 
     // Heartbeat
     static constexpr uint32_t HEARTBEAT_INTERVAL_MS = 30000;  // 30s (Cloudflare timeout is 100s)
