@@ -523,6 +523,16 @@ function update(data) {
 
 **YNAB approvals note**: Unapproved transactions are fetched via YNAB transactions endpoint with `type=unapproved` and approved in bulk via PATCH payloads using `{"id": "...", "approved": true}`. Keep Root-Admin guard and CSRF enforcement identical to categorize apply endpoints.
 
+**API CORS note**: Cross-origin access for `/api/*` is opt-in via `API_ALLOWED_ORIGINS`. Do not reintroduce wildcard CORS defaults; same-origin browser traffic does not need CORS headers.
+
+**API key transport note**: Query-string API keys are disabled by default. Use `Authorization: Bearer <token>` or `X-API-Key`, and only enable `ALLOW_API_KEY_QUERY_PARAM=1` for temporary backward compatibility.
+
+**Hue timeout note**: Hue bridge HTTP calls should always use an explicit timeout. Configure via `HUE_HTTP_TIMEOUT_S` and preserve timeout usage in new Hue controller methods.
+
+**Migration helper note**: Controller-level legacy migration helpers (`migrate_3d_to_pg`, `migrate_auth_to_pg`, `migrate_ac_to_pg`, `migrate_car_heater_to_pg`, `migrate_ready_by_to_pg`) use `DB_PATH` as the SQLite source and `_sa_engine` as the SQLAlchemy target. Keep them idempotent.
+
+**Pytest bootstrap note**: Repo-root test runs should work without manually exporting `PYTHONPATH`; keep root import bootstrap intact for `.venv/bin/pytest -q`.
+
 ### 6.2 Null Safety
 
 ```javascript
@@ -766,7 +776,10 @@ DB_PATH=/path/to/db.sqlite  # SQLite path used by legacy runtime paths
 WEB_USERNAME=admin       # Initial admin user
 WEB_PASSWORD=...         # Initial admin password
 RATE_LIMIT_WHITELIST=["127.0.0.1"]
+API_ALLOWED_ORIGINS=["https://example.com"]  # Explicit CORS allowlist for /api/*
+ALLOW_API_KEY_QUERY_PARAM=0  # Keep disabled unless a legacy integration still depends on it
 ALLOWED_WS_ORIGINS=["http://localhost:5555"]
+HUE_HTTP_TIMEOUT_S=5.0
 
 # Optional (YNAB Categorizer)
 YNAB_API_KEY=...

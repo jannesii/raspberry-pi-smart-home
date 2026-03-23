@@ -6,6 +6,7 @@ from .car_heater_kfactor import CarHeaterKFactorMixin
 from .car_heater_ready_by import CarHeaterReadyByMixin
 from .logging_control import LoggingControlMixin
 from .logs import LogsMixin
+from .migrations import MigrationMixin
 from .sensors import SensorsMixin
 from .ThreeD import ThreeDMixin
 from .ynab_categorizer import YnabCategorizerMixin
@@ -19,6 +20,7 @@ __all__ = [
     "ControllerBase",
     "LoggingControlMixin",
     "LogsMixin",
+    "MigrationMixin",
     "SensorsMixin",
     "ThreeDMixin",
     "YnabCategorizerMixin",

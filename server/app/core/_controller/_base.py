@@ -13,6 +13,7 @@ class ControllerBase:
         db_path: str = os.getenv("DB_PATH", os.path.join(tempfile.gettempdir(), "timelapse.db")),
     ):
         logger.debug("ControllerBase.__init__ called db_path=%s", db_path)
+        self.db_path = db_path
         from .. import DatabaseManager
 
         self.db = DatabaseManager(db_path)

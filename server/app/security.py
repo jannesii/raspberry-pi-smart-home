@@ -102,6 +102,65 @@ def apply_security_headers(app) -> None:
         return response
 
 
+def apply_api_cors(app) -> None:
+    """Attach CORS headers for API routes using an explicit allowlist."""
+    logger.debug("apply_api_cors called")
+
+    @app.after_request
+    def _add_api_cors_headers(response):
+        try:
+            path = request.path or ""
+        except Exception:
+            path = ""
+
+        if not path.startswith("/api/"):
+            return response
+
+        allowed_origins = app.config.get("API_ALLOWED_ORIGINS", []) or []
+        origin = request.headers.get("Origin")
+        logger.debug(
+            "apply_api_cors path=%s origin=%s allowed_origins=%s",
+            path,
+            origin,
+            allowed_origins,
+        )
+        if "*" in allowed_origins:
+            response.headers["Access-Control-Allow-Origin"] = "*"
+        elif origin and origin in allowed_origins:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers.add("Vary", "Origin")
+        else:
+            return response
+
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = (
+            "Content-Type, Authorization, X-Requested-With, X-API-Key"
+        )
+        return response
+
+
+def _extract_api_key_token(*, allow_query_param: bool) -> tuple[str | None, str | None]:
+    """Extract API key token from headers, with opt-in query param fallback."""
+    logger.debug("Extracting API key token allow_query_param=%s", allow_query_param)
+    auth = request.headers.get("Authorization")
+    if auth and isinstance(auth, str) and auth.lower().startswith("bearer "):
+        return auth.split(" ", 1)[1].strip(), None
+
+    header_token = request.headers.get("X-API-Key")
+    if header_token:
+        return header_token, None
+
+    query_token = request.args.get("api_key")
+    if query_token and not allow_query_param:
+        logger.warning("Rejected API key from query string path=%s", request.path)
+        return None, "query_param_disabled"
+    if query_token:
+        logger.warning("Accepted API key from query string path=%s", request.path)
+        return query_token, None
+
+    return None, None
+
+
 def require_api_key(view_func):
     """Decorator to protect endpoints with an API key.
 
@@ -115,14 +174,17 @@ def require_api_key(view_func):
     @wraps(view_func)
     def _wrapped(*args, **kwargs):
         try:
-            token = None
-            auth = request.headers.get("Authorization")
-            if auth and isinstance(auth, str) and auth.lower().startswith("bearer "):
-                token = auth.split(" ", 1)[1].strip()
-            if not token:
-                token = request.headers.get("X-API-Key")
-            if not token:
-                token = request.args.get("api_key")
+            token, extraction_error = _extract_api_key_token(
+                allow_query_param=bool(current_app.config.get("ALLOW_API_KEY_QUERY_PARAM", False))
+            )
+            if extraction_error == "query_param_disabled":
+                return jsonify(
+                    {
+                        "ok": False,
+                        "error": "api_key_query_param_disabled",
+                        "message": "Provide API keys via Authorization or X-API-Key headers.",
+                    }
+                ), 401
             if not token:
                 return jsonify(
                     {
@@ -134,6 +196,7 @@ def require_api_key(view_func):
             ctrl = getattr(current_app, "ctrl", None)
             if ctrl is None:
                 return jsonify({"ok": False, "error": "server_not_ready"}), 503
+            logger.debug("Verifying API key for path=%s", request.path)
             meta = ctrl.verify_api_key_token(token)
             if not meta:
                 return jsonify({"ok": False, "error": "invalid_api_key"}), 401

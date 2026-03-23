@@ -132,10 +132,15 @@ Browse to http://127.0.0.1:5555 and log in.
 - SQLite connections (sqlite3 + SQLAlchemy/Alembic) enable the foreign_keys PRAGMA.
 - Logs reads can be served via SQLAlchemy when `USE_SQLA_READS=1` (Postgres) while writes remain on SQLite.
 - Security headers (CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy) are applied by default, with CDN allowlist for Chart.js/HLS/Socket.IO.
+- API CORS is now opt-in via `API_ALLOWED_ORIGINS`; same-origin browser use works without it, and cross-origin API use should be explicitly allowlisted.
+- API key query-string auth is disabled by default; use `Authorization: Bearer ...` or `X-API-Key`, and only set `ALLOW_API_KEY_QUERY_PARAM=1` for legacy compatibility.
+- Hue bridge HTTP calls now honor `HUE_HTTP_TIMEOUT_S` (default `5.0`) to avoid hanging worker threads on slow bridge responses.
+- Legacy-to-SQLAlchemy controller migration helpers are available for 3D, auth, AC, car heater, and ready-by data (`migrate_*_to_pg`).
 - `scripts/restart.sh` retries `pre-commit run --all-files` once before aborting.
 - AC controller methods migrated to SQLAlchemy Core (AC event logging, thermostat configuration).
 - Hue exposes an API key protected `POST /hue/set_current_color` endpoint to apply the current time-slot color immediately.
 - Hue service initialization now fails safe when `HUE_BRIDGE_IP` or `HUE_USERNAME` is missing.
+- Test bootstrap now works from the repo root without manually exporting `PYTHONPATH`.
 
 ---
 

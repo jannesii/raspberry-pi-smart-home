@@ -38,10 +38,13 @@ def init_services(app) -> dict[str, Any]:
     services: dict[str, Any] = {}
     app.ynab_categorizer_service = None  # type: ignore[attr-defined]
     app.hue_ctrl = None  # type: ignore[attr-defined]
+    keep_at_temp_service = None
+    ready_by_service = None
 
     # Ensure Socket event handlers are registered (singleton takes care of idempotency)
     from ..sockets import SocketEventHandler
 
+    logger.debug("Initializing socket event handler")
     app.sio_handler = SocketEventHandler(socketio, app.ctrl)  # type: ignore[attr-defined]
 
     # --- AC / Thermostat ---
@@ -62,7 +65,7 @@ def init_services(app) -> dict[str, Any]:
         winter = True
         tinytuya_device = Device(AC_DEVICE_ID, AC_IP, AC_LOCAL_KEY) if not winter else None
         ac_controller = ACController(tinytuya_device=tinytuya_device, winter=winter)
-        THERMOSTAT_LOCATION = os.getenv("THERMOSTAT_LOCATION", "Tietokonepöytä")
+        thermostat_location = app.config.get("THERMOSTAT_LOCATION", "Tietokonepöytä")
         # Load thermostat configuration from DB (seed default if missing)
         try:
             cfg = app.ctrl.get_thermostat_conf()  # type: ignore[attr-defined]
@@ -82,7 +85,7 @@ def init_services(app) -> dict[str, Any]:
             ac=ac_controller,
             cfg=cfg,  # type: ignore[arg-type]
             ctrl=app.ctrl,  # type: ignore[attr-defined]
-            location=THERMOSTAT_LOCATION,
+            location=thermostat_location,
             notify=_make_notify(app.sio_handler),  # type: ignore[attr-defined]
             winter=winter,
         )
@@ -109,7 +112,13 @@ def init_services(app) -> dict[str, Any]:
         if not hue_bridge_ip or not hue_username:
             logger.info("Hue routine disabled: missing HUE_BRIDGE_IP or HUE_USERNAME")
         else:
-            hue_ctrl = HueController(hue_bridge_ip, hue_username)
+            hue_timeout_s = float(app.config.get("HUE_HTTP_TIMEOUT_S", 5.0))
+            logger.debug("Starting Hue controller timeout=%s", hue_timeout_s)
+            hue_ctrl = HueController(
+                hue_bridge_ip,
+                hue_username,
+                request_timeout_s=hue_timeout_s,
+            )
             app.hue_ctrl = hue_ctrl  # type: ignore[attr-defined]
             hue_ctrl.start_time_based_routine(apply_immediately=False)
             services["hue_controller"] = hue_ctrl
@@ -148,12 +157,14 @@ def init_services(app) -> dict[str, Any]:
         from .sodexo import start_sodexo_webhook_thread
 
         webhook_url = os.getenv("SODEXO_WEBHOOK_URL")
-        hour = int(os.getenv("SODEXO_POST_HOUR"))
-        minute = int(os.getenv("SODEXO_POST_MINUTE"))
-        if not all([webhook_url, hour, minute]):
+        hour_raw = os.getenv("SODEXO_POST_HOUR")
+        minute_raw = os.getenv("SODEXO_POST_MINUTE")
+        if not all([webhook_url, hour_raw, minute_raw]):
             raise ValueError(
                 "Set SODEXO_WEBHOOK_URL, SODEXO_POST_HOUR, and SODEXO_POST_MINUTE env vars."
             )
+        hour = int(hour_raw)
+        minute = int(minute_raw)
         skip_weekends = True
         _ = start_sodexo_webhook_thread(
             webhook_url,

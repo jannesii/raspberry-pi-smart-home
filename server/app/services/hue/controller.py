@@ -20,31 +20,44 @@ logger.setLevel(logging.INFO)
 
 
 class HueController:
-    def __init__(self, bridge_ip: str, username: str):
+    def __init__(self, bridge_ip: str, username: str, request_timeout_s: float = 5.0):
         if not bridge_ip or not username:
             raise ValueError("bridge_ip and username are required")
         self.base_url = f"http://{bridge_ip}/api/{username}"
         self.tz = pytz.timezone("Europe/Helsinki")
+        self.request_timeout_s = float(request_timeout_s)
         self._routine_thread = None
         self._routine_stop = None
-        logger.debug("HueController initialized for bridge=%s", bridge_ip)
+        logger.debug(
+            "HueController initialized for bridge=%s timeout=%s",
+            bridge_ip,
+            self.request_timeout_s,
+        )
 
     def get_lights(self):
-        resp = requests.get(f"{self.base_url}/lights")
+        logger.debug("HueController.get_lights called")
+        resp = requests.get(f"{self.base_url}/lights", timeout=self.request_timeout_s)
         resp.raise_for_status()
         return resp.json()  # { "1": {...}, "2": {...}, ... }
 
     def get_active_lights(self):
+        logger.debug("HueController.get_active_lights called")
         lights = self.get_lights()
         return {k: v for k, v in lights.items() if v["state"]["on"]}
 
     def get_groups(self):
-        resp = requests.get(f"{self.base_url}/groups")
+        logger.debug("HueController.get_groups called")
+        resp = requests.get(f"{self.base_url}/groups", timeout=self.request_timeout_s)
         resp.raise_for_status()
         return resp.json()  # { "0": {...}, "1": {...}, ... }
 
     def set_light_state(self, light_id, state):
-        resp = requests.put(f"{self.base_url}/lights/{light_id}/state", json=state)
+        logger.debug("HueController.set_light_state called light_id=%s state=%s", light_id, state)
+        resp = requests.put(
+            f"{self.base_url}/lights/{light_id}/state",
+            json=state,
+            timeout=self.request_timeout_s,
+        )
         resp.raise_for_status()
         return resp.json()
 

@@ -18,5 +18,8 @@ fi
 echo "[INFO] Restarting jannenkoti service..."
 sudo systemctl restart jannenkoti
 
+echo "[INFO] Restarting esp32_ws service..."
+sudo systemctl restart esp32_ws
+
 echo "[INFO] Tailing jannenkoti service logs..."
 journalctl -u jannenkoti.service -f

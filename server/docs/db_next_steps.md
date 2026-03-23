@@ -5,7 +5,8 @@ Work remaining for the SQLite → Postgres transition (no ORM).
 ---
 
 ## 1) Data migration
-- Write a one-time SQLite → Postgres import script (table-by-table).
+- Controller-level SQLite → SQLAlchemy migration helpers exist for 3D/auth/AC/car-heater/ready-by data; keep them working as smoke-checked import paths.
+- Write a one-time SQLite → Postgres import script (table-by-table) or compose one from the controller migration helpers.
 - Migrate low-risk tables first (logs, api_keys), then car_heater_* tables.
 - Validate row counts + spot-check latest rows per table.
 
