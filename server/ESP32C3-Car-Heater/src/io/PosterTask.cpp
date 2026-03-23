@@ -113,28 +113,28 @@ void PosterTask::run()
         doc["temperature"] = currentTemp;
         doc["timestamp"]  = timekeeper::formatLocal();
 
-        // ---- attach pending action results (from previous loop) ----
-        if (pendingActionCount_ > 0) {
+        const size_t sentActionCount = pendingActionCount_;
+        if (sentActionCount > 0) {
             JsonArray results = doc["action_results"].to<JsonArray>();
-            for (size_t i = 0; i < pendingActionCount_; ++i) {
+            for (size_t i = 0; i < sentActionCount; ++i) {
                 JsonObject r = results.add<JsonObject>();
-                String action = pendingActions_[i].action;
-                if (action == "esp_restart") 
-                    espRestartResultSent_ = true;
-                r["action"]  = action;
+                r["action"] = pendingActions_[i].action;
                 r["success"] = pendingActions_[i].success;
                 if (pendingActions_[i].note.length() > 0) {
                     r["note"] = pendingActions_[i].note;
                 }
             }
-            // clear after sending
-            pendingActionCount_ = 0;
         }
-
-        // ---- attach logs (from previous handleGetLogs) ----
-        if (pendingLogs_.length() > 0) {
-            doc["logs"] = pendingLogs_;
-            pendingLogs_.clear();
+        const String sentLogs = pendingLogs_;
+        bool sentEspRestartResult = false;
+        for (size_t i = 0; i < sentActionCount; ++i) {
+            if (pendingActions_[i].action == "esp_restart") {
+                sentEspRestartResult = true;
+                break;
+            }
+        }
+        if (sentLogs.length() > 0) {
+            doc["logs"] = sentLogs;
         }
         // ----------------------------------------------------
 
@@ -173,6 +173,20 @@ void PosterTask::run()
             respBody = http_.getString();
             Serial.println("Response body:");
             Serial.println(respBody);
+
+            if (sentActionCount > 0) {
+                const size_t remaining = pendingActionCount_ - sentActionCount;
+                for (size_t i = 0; i < remaining; ++i) {
+                    pendingActions_[i] = pendingActions_[i + sentActionCount];
+                }
+                pendingActionCount_ = remaining;
+            }
+            if (pendingLogs_ == sentLogs) {
+                pendingLogs_.clear();
+            }
+            if (sentEspRestartResult) {
+                espRestartResultSent_ = true;
+            }
 
             processServerCommands(respBody);   // may queue action_results / logs
             t4 = millis();
@@ -324,25 +338,28 @@ void PosterTask::sendImmediateResultIfNeeded()
     doc["temperature"] = currentTemp;
     doc["timestamp"]  = timekeeper::formatLocal();
 
-    if (pendingActionCount_ > 0) {
+    const size_t sentActionCount = pendingActionCount_;
+    if (sentActionCount > 0) {
         JsonArray results = doc["action_results"].to<JsonArray>();
-        for (size_t i = 0; i < pendingActionCount_; ++i) {
+        for (size_t i = 0; i < sentActionCount; ++i) {
             JsonObject r = results.add<JsonObject>();
-            String action = pendingActions_[i].action;
-            if (action == "esp_restart")
-                espRestartResultSent_ = true;
-            r["action"]  = action;
+            r["action"] = pendingActions_[i].action;
             r["success"] = pendingActions_[i].success;
             if (pendingActions_[i].note.length() > 0) {
                 r["note"] = pendingActions_[i].note;
             }
         }
-        pendingActionCount_ = 0;
     }
-
-    if (pendingLogs_.length() > 0) {
-        doc["logs"] = pendingLogs_;
-        pendingLogs_.clear();
+    const String sentLogs = pendingLogs_;
+    bool sentEspRestartResult = false;
+    for (size_t i = 0; i < sentActionCount; ++i) {
+        if (pendingActions_[i].action == "esp_restart") {
+            sentEspRestartResult = true;
+            break;
+        }
+    }
+    if (sentLogs.length() > 0) {
+        doc["logs"] = sentLogs;
     }
 
     String apiPayload;
@@ -372,6 +389,21 @@ void PosterTask::sendImmediateResultIfNeeded()
         uint32_t t4 = millis();
         Serial.println("Immediate response body:");
         Serial.println(respBody);
+
+        if (sentActionCount > 0) {
+            const size_t remaining = pendingActionCount_ - sentActionCount;
+            for (size_t i = 0; i < remaining; ++i) {
+                pendingActions_[i] = pendingActions_[i + sentActionCount];
+            }
+            pendingActionCount_ = remaining;
+        }
+        if (pendingLogs_ == sentLogs) {
+            pendingLogs_.clear();
+        }
+        if (sentEspRestartResult) {
+            espRestartResultSent_ = true;
+        }
+
         // IMPORTANT: don't process more commands here to avoid chains;
         // any new commands will be processed on the next scheduled cycle.
         http_.end();

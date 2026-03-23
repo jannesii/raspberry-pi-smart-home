@@ -94,7 +94,7 @@ private:
     
     // Message handling
     void processMessage(const char* payload, size_t length);
-    void processCommands(const char* jsonArray);
+    void processCommands(const char* jsonArray, size_t length);
     
     // Command execution (shared with PosterTask)
     void executeCommand(const char* action, const char* source = nullptr);

@@ -246,17 +246,17 @@ void WebSocketTask::processMessage(const char *payload, size_t length)
     // Handle command array (same format as HTTP response)
     if (doc.is<JsonArray>())
     {
-        processCommands(payload);
+        processCommands(payload, length);
         return;
     }
 
     Serial.println("[WebSocket] Unknown message format");
 }
 
-void WebSocketTask::processCommands(const char *jsonArray)
+void WebSocketTask::processCommands(const char *jsonArray, size_t length)
 {
     JsonDocument doc;
-    DeserializationError err = deserializeJson(doc, jsonArray);
+    DeserializationError err = deserializeJson(doc, jsonArray, length);
     if (err || !doc.is<JsonArray>())
     {
         Serial.println("[WebSocket] Invalid command array");
