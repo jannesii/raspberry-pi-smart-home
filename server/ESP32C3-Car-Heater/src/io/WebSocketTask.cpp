@@ -222,7 +222,7 @@ void WebSocketTask::processMessage(const char *payload, size_t length)
     }
 
     // Handle authentication response
-    if (doc.containsKey("status"))
+    if (doc["status"].is<const char*>())
     {
         const char *status = doc["status"];
         if (strcmp(status, "authenticated") == 0)
@@ -237,7 +237,7 @@ void WebSocketTask::processMessage(const char *payload, size_t length)
     }
 
     // Handle error response
-    if (doc.containsKey("error"))
+    if (doc["error"].is<const char*>())
     {
         const char *error = doc["error"];
         Serial.printf("[WebSocket] Server error: %s\n", error);
