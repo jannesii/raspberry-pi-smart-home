@@ -48,6 +48,7 @@ private:
 
     // Helpers
     String log(const String &msg) const;
+    bool isWebSocketPrimaryActive() const;
     void sleepUntilNextSlot();
     void processServerCommands(const String &respBody);
     void handleTurnOn();
@@ -98,6 +99,7 @@ private:
 
     // WebSocket task reference for command deduplication
     WebSocketTask *wsTask_ = nullptr;
+    bool httpFallbackActive_ = true;
     bool shouldSkipCommand(const char *action);
 
     void queueActionResult(const char *action, bool success, const String &note = "");

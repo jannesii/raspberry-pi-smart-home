@@ -24,6 +24,11 @@ bool PosterTask::shouldSkipCommand(const char *action)
     return false;
 }
 
+bool PosterTask::isWebSocketPrimaryActive() const
+{
+    return wsTask_ != nullptr && wsTask_->isReady();
+}
+
 void PosterTask::start(uint32_t stackSize, UBaseType_t priority)
 {
     // Initialize lastInDeadzone_ before starting
@@ -55,12 +60,6 @@ void PosterTask::run()
 {
     for (;;)
     {
-        String body = "";
-        bool isShellyOn = false;
-        bool shellySuccess = shelly_.getStatus(isShellyOn, false, &body);
-
-        float currentTemp = takeMeasurement(false).temperature;
-
         if (WiFi.status() != WL_CONNECTED) {
             wifiDisconnectCount_++;
 
@@ -82,6 +81,28 @@ void PosterTask::run()
 
         // Wi-Fi is OK: reset the counter
         wifiDisconnectCount_ = 0;
+
+        if (isWebSocketPrimaryActive()) {
+            if (httpFallbackActive_) {
+                Serial.println("[PosterTask] WebSocket is healthy, HTTP fallback idle");
+                httpFallbackActive_ = false;
+            }
+
+            wsTask_->queueStatusUpdate();
+            sleepUntilNextSlot();
+            continue;
+        }
+
+        if (!httpFallbackActive_) {
+            Serial.println("[PosterTask] WebSocket unavailable, resuming HTTP fallback");
+            httpFallbackActive_ = true;
+        }
+
+        String body = "";
+        bool isShellyOn = false;
+        bool shellySuccess = shelly_.getStatus(isShellyOn, false, &body);
+
+        float currentTemp = takeMeasurement(false).temperature;
 
 
         JsonDocument doc;

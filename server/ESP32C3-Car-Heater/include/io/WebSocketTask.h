@@ -40,6 +40,12 @@ public:
     bool isConnected() const { return connected_; }
 
     /**
+     * Check if WebSocket is connected and authenticated, so it is safe to use
+     * as the primary transport.
+     */
+    bool isReady() const { return connected_ && authenticated_; }
+
+    /**
      * Get connection statistics.
      */
     struct Stats {
