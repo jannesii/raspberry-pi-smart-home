@@ -537,6 +537,8 @@ function update(data) {
 
 **Car heater WS payload note**: Browser `car_heater_status` handlers expect the normalized `CarHeaterStatus` payload shape (`is_heater_on`, `instant_power_w`, etc.), not the raw ESP JSON (`shelly`, `temperature`, `ws_stats`). When emitting heater status from Redis/WS paths, normalize to the HTTP status payload shape first.
 
+**Car heater source note**: The UI `status.source` field represents the transport path (`WS`/HTTP fallback), not Shelly's internal `source` value such as `HTTP_in`. For websocket-originated status, override the normalized payload source to `WS`.
+
 **Migration helper note**: Controller-level legacy migration helpers (`migrate_3d_to_pg`, `migrate_auth_to_pg`, `migrate_ac_to_pg`, `migrate_car_heater_to_pg`, `migrate_ready_by_to_pg`) use `DB_PATH` as the SQLite source and `_sa_engine` as the SQLAlchemy target. Keep them idempotent.
 
 **Pytest bootstrap note**: Repo-root test runs should work without manually exporting `PYTHONPATH`; keep root import bootstrap intact for `.venv/bin/pytest -q`.

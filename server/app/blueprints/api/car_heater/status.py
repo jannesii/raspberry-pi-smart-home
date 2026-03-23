@@ -16,6 +16,7 @@ import logging
 import os
 import time
 from datetime import UTC, datetime
+from threading import Lock
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
@@ -74,6 +75,8 @@ fallback_status = FallbackStatus()
 TEST_MODE_TIMEOUT_SECONDS = 10.0
 _last_test_request_time: float | None = None
 _test_mode_was_active: bool = False
+_LATEST_STATUS_LOCK = Lock()
+_LATEST_NORMALIZED_STATUS: dict[str, Any] | None = None
 
 
 def _normalize_logs_text(raw_logs: Any) -> str | None:
@@ -96,6 +99,30 @@ def _normalize_logs_text(raw_logs: Any) -> str | None:
         logger.debug("_normalize_logs_text skipped empty coerced payload")
         return None
     return text
+
+
+def cache_latest_normalized_status(status_payload: dict[str, Any] | None) -> None:
+    """Store the latest normalized status payload for UI fallback reads."""
+    logger.debug(
+        "cache_latest_normalized_status called has_payload=%s source=%s",
+        status_payload is not None,
+        status_payload.get("source") if isinstance(status_payload, dict) else None,
+    )
+    with _LATEST_STATUS_LOCK:
+        global _LATEST_NORMALIZED_STATUS
+        _LATEST_NORMALIZED_STATUS = dict(status_payload) if status_payload else None
+
+
+def get_cached_latest_normalized_status() -> dict[str, Any] | None:
+    """Return a copy of the latest normalized status payload, if available."""
+    with _LATEST_STATUS_LOCK:
+        cached = dict(_LATEST_NORMALIZED_STATUS) if _LATEST_NORMALIZED_STATUS else None
+    logger.debug(
+        "get_cached_latest_normalized_status returning has_payload=%s source=%s",
+        cached is not None,
+        cached.get("source") if isinstance(cached, dict) else None,
+    )
+    return cached
 
 
 def _build_logs_event_payload(
@@ -282,6 +309,7 @@ def normalize_status_payload_from_esp_data(
                 "ambient_temp": car.ambient_temp,
                 "source": car.source,
             }
+        payload["source"] = "WS"
         logger.debug(
             "normalize_status_payload_from_esp_data built heater payload is_on=%s power=%s",
             payload.get("is_heater_on"),
@@ -300,8 +328,10 @@ def normalize_status_payload_from_esp_data(
 def build_current_status_response(ctrl: Controller) -> dict[str, Any]:
     """Build the current car heater status response for HTTP and WS consumers."""
     logger.debug("build_current_status_response called")
-    last_status: dict[str, Any] | None = None
-    if fallback_status.shelly_connected:
+    last_status = get_cached_latest_normalized_status()
+    if last_status is not None:
+        logger.debug("build_current_status_response using cached normalized status")
+    elif fallback_status.shelly_connected:
         last = ctrl.get_last_car_heater_status()
         last_status = (
             record_and_build_payload(ctrl, last, skip_db=True) if last is not None else None
@@ -535,6 +565,7 @@ def handle_status_update_request(
     if shelly and shelly_connected:
         car = build_car_heater_status(timestamp, shelly, ambient_temp)
         status_payload = record_and_build_payload(ctrl, car, skip_db=is_test)
+        cache_latest_normalized_status(status_payload)
         _process_alerts(
             car=car,
             shelly_connected=shelly_connected,
@@ -553,6 +584,7 @@ def handle_status_update_request(
     else:
         logger.debug("No shelly data provided in car heater status update")
         status_payload = build_fallback_payload(timestamp, ambient_temp, shelly_connected)
+        cache_latest_normalized_status(status_payload)
         _process_alerts(
             car=None,
             shelly_connected=shelly_connected,

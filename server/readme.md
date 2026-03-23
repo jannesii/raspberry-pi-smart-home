@@ -145,6 +145,7 @@ Browse to http://127.0.0.1:5555 and log in.
 - ESP32 WebSocket ingress now logs throttled status summaries in `esp32_ws` and matching Redis-bridge summaries in `jannenkoti`, plus low-level WS ping receipts in `esp32_ws`, to verify live device traffic.
 - `esp32_ws` now initializes its Redis manager at module import so Gunicorn `main:app` runs the Redis publish/subscribe bridge instead of only the `__main__` code path.
 - Car heater UI now consumes normalized live status over Socket.IO from the Redis bridge, with `GET /api/car_heater/status` as an HTTP fallback returning the same payload shape.
+- Car heater Details now show websocket-originated status with `source=WS`, and live timestamps render with seconds in 12-hour format.
 
 ---
 

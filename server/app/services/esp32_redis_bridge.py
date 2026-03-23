@@ -145,9 +145,13 @@ class ESP32RedisBridge:
                 data.get("device_id"),
                 data.get("timestamp"),
             )
-            from ..blueprints.api.car_heater.status import normalize_status_payload_from_esp_data
+            from ..blueprints.api.car_heater.status import (
+                cache_latest_normalized_status,
+                normalize_status_payload_from_esp_data,
+            )
 
             normalized_status = normalize_status_payload_from_esp_data(data, skip_db=True)
+            cache_latest_normalized_status(normalized_status)
             payload: dict[str, Any] = {"status": normalized_status}
             logger.debug(
                 "ESP32RedisBridge normalized status device=%s is_on=%s power=%s",
