@@ -529,6 +529,8 @@ function update(data) {
 
 **Hue timeout note**: Hue bridge HTTP calls should always use an explicit timeout. Configure via `HUE_HTTP_TIMEOUT_S` and preserve timeout usage in new Hue controller methods.
 
+**ESP32 WS restart note**: `esp32_ws.service` runs Gunicorn with long-lived WebSocket requests. Keep the systemd stop path hard-kill based (`KillSignal=SIGKILL`, short `TimeoutStopSec`) so restarts do not block on stuck Gunicorn shutdown.
+
 **Migration helper note**: Controller-level legacy migration helpers (`migrate_3d_to_pg`, `migrate_auth_to_pg`, `migrate_ac_to_pg`, `migrate_car_heater_to_pg`, `migrate_ready_by_to_pg`) use `DB_PATH` as the SQLite source and `_sa_engine` as the SQLAlchemy target. Keep them idempotent.
 
 **Pytest bootstrap note**: Repo-root test runs should work without manually exporting `PYTHONPATH`; keep root import bootstrap intact for `.venv/bin/pytest -q`.

@@ -141,6 +141,7 @@ Browse to http://127.0.0.1:5555 and log in.
 - Hue exposes an API key protected `POST /hue/set_current_color` endpoint to apply the current time-slot color immediately.
 - Hue service initialization now fails safe when `HUE_BRIDGE_IP` or `HUE_USERNAME` is missing.
 - Test bootstrap now works from the repo root without manually exporting `PYTHONPATH`.
+- `esp32_ws.service` uses `KillSignal=SIGKILL` with a 1 second stop timeout so Gunicorn-backed WebSocket restarts are immediate instead of waiting on long-lived connections.
 
 ---
 

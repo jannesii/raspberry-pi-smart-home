@@ -63,6 +63,10 @@ sudo systemctl status esp32_ws
 journalctl -u esp32_ws -f
 ```
 
+The packaged `esp32_ws.service` uses `KillSignal=SIGKILL` and
+`TimeoutStopSec=1` so restart/stop actions do not hang behind long-lived
+Gunicorn WebSocket requests.
+
 ## Configuration
 
 Environment variables in `esp32_ws.service`:
