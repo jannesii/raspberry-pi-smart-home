@@ -283,21 +283,25 @@ void WebSocketTask::executeCommand(const char *action, const char *source)
 {
     bool success = false;
     const char *note = nullptr;
+    bool sendImmediateStatus = false;
 
     if (strcmp(action, "turn_on") == 0)
     {
         handleTurnOn();
         success = true;
+        sendImmediateStatus = true;
     }
     else if (strcmp(action, "turn_off") == 0)
     {
         handleTurnOff();
         success = true;
+        sendImmediateStatus = true;
     }
     else if (strcmp(action, "get_logs") == 0)
     {
         handleGetLogs();
         success = true;
+        sendImmediateStatus = true;
     }
     else if (strcmp(action, "esp_restart") == 0)
     {
@@ -322,6 +326,11 @@ void WebSocketTask::executeCommand(const char *action, const char *source)
 
     // Send result back to server
     sendActionResult(action, success, note);
+    if (success && sendImmediateStatus)
+    {
+        Serial.printf("[WebSocket] Sending immediate status update after %s\n", action);
+        sendStatus();
+    }
 }
 
 void WebSocketTask::handleTurnOn()
