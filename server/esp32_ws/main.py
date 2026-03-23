@@ -23,11 +23,25 @@ import secrets
 import threading
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from time import monotonic
 from typing import Any
 
+import flask_sock
 import redis
 from flask import Flask
-from flask_sock import Sock
+from simple_websocket.ws import Server as SimpleWebSocketServer
+from wsproto.events import (
+    AcceptConnection,
+    BytesMessage,
+    CloseConnection,
+    Ping,
+    Pong,
+    Request,
+    TextMessage,
+)
+from wsproto.extensions import PerMessageDeflate
+from wsproto.frame_protocol import CloseReason
+from wsproto.utilities import LocalProtocolError
 
 # Configure logging
 logging.basicConfig(
@@ -46,9 +60,91 @@ HOST = os.getenv("ESP32_WS_HOST", "0.0.0.0")
 CHANNEL_COMMANDS = "esp32:commands"
 CHANNEL_STATUS = "esp32:status"
 CHANNEL_ACTION_RESULTS = "esp32:action_results"
+STATUS_SUMMARY_INTERVAL_S = float(os.getenv("ESP32_WS_STATUS_LOG_INTERVAL_S", "30"))
 
 app = Flask(__name__)
-sock = Sock(app)
+
+
+class LoggingWebSocketServer(SimpleWebSocketServer):
+    """simple-websocket server variant that logs control-frame traffic."""
+
+    def _handle_events(self):
+        keep_going = True
+        out_data = b""
+        for event in self.ws.events():
+            try:
+                if isinstance(event, Request):
+                    self.subprotocol = self.choose_subprotocol(event)
+                    out_data += self.ws.send(
+                        AcceptConnection(
+                            subprotocol=self.subprotocol,
+                            extensions=[PerMessageDeflate()],
+                        )
+                    )
+                elif isinstance(event, CloseConnection):
+                    if self.is_server:
+                        out_data += self.ws.send(event.response())
+                    self.close_reason = event.code
+                    self.close_message = event.reason
+                    self.connected = False
+                    self.event.set()
+                    keep_going = False
+                elif isinstance(event, Ping):
+                    manager.note_transport_event(self, "ping")
+                    out_data += self.ws.send(event.response())
+                elif isinstance(event, Pong):
+                    self.pong_received = True
+                    manager.note_transport_event(self, "pong")
+                elif isinstance(event, TextMessage | BytesMessage):
+                    self.incoming_message_len += len(event.data)
+                    if self.max_message_size and self.incoming_message_len > self.max_message_size:
+                        out_data += self.ws.send(
+                            CloseConnection(
+                                CloseReason.MESSAGE_TOO_BIG,
+                                "Message is too big",
+                            )
+                        )
+                        self.event.set()
+                        keep_going = False
+                        break
+                    if self.incoming_message is None:
+                        self.incoming_message = event.data
+                    elif isinstance(event, TextMessage):
+                        if not isinstance(self.incoming_message, bytearray):
+                            self.incoming_message = bytearray(
+                                (self.incoming_message + event.data).encode()
+                            )
+                        else:
+                            self.incoming_message += event.data.encode()
+                    else:
+                        if not isinstance(self.incoming_message, bytearray):
+                            self.incoming_message = bytearray(self.incoming_message + event.data)
+                        else:
+                            self.incoming_message += event.data
+                    if not event.message_finished:
+                        continue
+                    if isinstance(self.incoming_message, str | bytes):
+                        self.input_buffer.append(self.incoming_message)
+                    elif isinstance(event, TextMessage):
+                        self.input_buffer.append(self.incoming_message.decode())
+                    else:
+                        self.input_buffer.append(bytes(self.incoming_message))
+                    self.incoming_message = None
+                    self.incoming_message_len = 0
+                    self.event.set()
+                else:  # pragma: no cover
+                    pass
+            except LocalProtocolError:  # pragma: no cover
+                out_data = b""
+                self.event.set()
+                keep_going = False
+        if out_data:
+            self.sock.send(out_data)
+        return keep_going
+
+
+flask_sock.Server = LoggingWebSocketServer
+sock = flask_sock.Sock(app)
 
 
 @dataclass
@@ -60,6 +156,13 @@ class ESP32Connection:
     connected_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     last_message_at: datetime | None = None
     message_count: int = 0
+    last_status_at: datetime | None = None
+    status_count: int = 0
+    transport_ping_count: int = 0
+    last_transport_ping_at: datetime | None = None
+    transport_pong_count: int = 0
+    last_transport_pong_at: datetime | None = None
+    last_status_log_monotonic: float = 0.0
 
 
 class ESP32WebSocketManager:
@@ -78,6 +181,9 @@ class ESP32WebSocketManager:
 
     def start(self) -> None:
         """Initialize Redis and start subscriber thread."""
+        if self._subscriber_thread is not None and self._subscriber_thread.is_alive():
+            logger.debug("ESP32 manager already running")
+            return
         try:
             self._redis = redis.from_url(REDIS_URL, decode_responses=True)
             self._redis.ping()
@@ -97,6 +203,7 @@ class ESP32WebSocketManager:
 
     def stop(self) -> None:
         """Stop the manager and close connections."""
+        logger.debug("ESP32 manager stop requested")
         self._stop_event.set()
         if self._subscriber_thread:
             self._subscriber_thread.join(timeout=5.0)
@@ -109,6 +216,7 @@ class ESP32WebSocketManager:
 
     def register_connection(self, device_id: str, ws: Any) -> ESP32Connection:
         """Register a new ESP32 connection."""
+        logger.debug("Registering ESP32 connection device=%s", device_id)
         conn = ESP32Connection(ws=ws, device_id=device_id)
         with self._lock:
             # Close existing connection for same device
@@ -122,6 +230,7 @@ class ESP32WebSocketManager:
 
     def unregister_connection(self, device_id: str) -> None:
         """Unregister an ESP32 connection."""
+        logger.debug("Unregistering ESP32 connection device=%s", device_id)
         with self._lock:
             if device_id in self._connections:
                 del self._connections[device_id]
@@ -140,22 +249,102 @@ class ESP32WebSocketManager:
     def publish_status(self, status: dict[str, Any]) -> None:
         """Publish ESP32 status to Redis for main app."""
         if self._redis is None:
+            logger.debug(
+                "Skipping ESP32 status publish device=%s because redis is unavailable",
+                status.get("device_id"),
+            )
             return
         try:
             self._redis.publish(CHANNEL_STATUS, json.dumps(status))
-            logger.debug("Published status to Redis")
+            logger.debug("Published status to Redis device=%s", status.get("device_id"))
         except Exception as e:
             logger.warning("Failed to publish status: %s", e)
 
     def publish_action_result(self, result: dict[str, Any]) -> None:
         """Publish action result to Redis for main app."""
         if self._redis is None:
+            logger.debug(
+                "Skipping action-result publish device=%s because redis is unavailable",
+                result.get("device_id"),
+            )
             return
         try:
             self._redis.publish(CHANNEL_ACTION_RESULTS, json.dumps(result))
-            logger.debug("Published action result to Redis")
+            logger.debug(
+                "Published action result to Redis device=%s action=%s",
+                result.get("device_id"),
+                result.get("action"),
+            )
         except Exception as e:
             logger.warning("Failed to publish action result: %s", e)
+
+    def note_transport_event(self, ws: Any, event_type: str) -> None:
+        """Record and log low-level WebSocket control-frame traffic."""
+        device_id = getattr(ws, "device_id", None) or "unauthed"
+        count: int | None = None
+        now = datetime.now(UTC)
+        with self._lock:
+            conn = self._connections.get(device_id)
+            if conn is not None:
+                if event_type == "ping":
+                    conn.transport_ping_count += 1
+                    conn.last_transport_ping_at = now
+                    count = conn.transport_ping_count
+                elif event_type == "pong":
+                    conn.transport_pong_count += 1
+                    conn.last_transport_pong_at = now
+                    count = conn.transport_pong_count
+        if event_type == "ping":
+            logger.info("ESP32 WS ping received device=%s count=%s", device_id, count or 1)
+        else:
+            logger.debug("ESP32 WS pong received device=%s count=%s", device_id, count or 1)
+
+    def note_status_update(self, device_id: str, message: dict[str, Any]) -> None:
+        """Track and log status frames from an ESP32 device."""
+        now = datetime.now(UTC)
+        now_mono = monotonic()
+        should_log = False
+        status_count = 0
+        message_count = 0
+        with self._lock:
+            conn = self._connections.get(device_id)
+            if conn is None:
+                logger.debug("Ignoring status metrics for unknown device=%s", device_id)
+            else:
+                conn.last_status_at = now
+                conn.status_count += 1
+                status_count = conn.status_count
+                message_count = conn.message_count
+                should_log = (
+                    conn.status_count == 1
+                    or now_mono - conn.last_status_log_monotonic >= STATUS_SUMMARY_INTERVAL_S
+                )
+                if should_log:
+                    conn.last_status_log_monotonic = now_mono
+
+        logger.debug(
+            "ESP32 status frame device=%s keys=%s",
+            device_id,
+            ",".join(sorted(message.keys())),
+        )
+        if not should_log:
+            return
+
+        ws_stats = message.get("ws_stats")
+        if not isinstance(ws_stats, dict):
+            ws_stats = {}
+        logger.info(
+            "ESP32 status received device=%s statuses=%s messages=%s payload_ts=%s temp=%s ws_sent=%s ws_received=%s ws_commands=%s ws_uptime_ms=%s",
+            device_id,
+            status_count,
+            message_count,
+            message.get("timestamp"),
+            message.get("temperature"),
+            ws_stats.get("messages_sent"),
+            ws_stats.get("messages_received"),
+            ws_stats.get("commands_executed"),
+            ws_stats.get("uptime_ms"),
+        )
 
     def _redis_subscriber(self) -> None:
         """Subscribe to Redis commands channel and forward to ESP32."""
@@ -212,6 +401,7 @@ class ESP32WebSocketManager:
 
 # Global manager instance
 manager = ESP32WebSocketManager()
+manager.start()
 
 
 def verify_api_key(provided_key: str) -> bool:
@@ -258,6 +448,7 @@ def esp32_websocket(ws):
 
         # Register connection
         conn = manager.register_connection(device_id, ws)
+        ws.device_id = device_id
         ws.send(json.dumps({"status": "authenticated", "device_id": device_id}))
         logger.info("ESP32 %s authenticated successfully", device_id)
 
@@ -282,6 +473,7 @@ def esp32_websocket(ws):
                 # Status update from ESP32
                 message["device_id"] = device_id
                 message["received_at"] = datetime.now(UTC).isoformat()
+                manager.note_status_update(device_id, message)
                 manager.publish_status(message)
 
             if "action_results" in message:
@@ -305,6 +497,7 @@ def esp32_websocket(ws):
 def health():
     """Health check endpoint."""
     connections = manager.get_all_connections()
+    logger.debug("Health endpoint called connected_devices=%s", len(connections))
     return {
         "status": "healthy",
         "connected_devices": len(connections),
@@ -314,6 +507,16 @@ def health():
                 "connected_at": c.connected_at.isoformat(),
                 "last_message_at": c.last_message_at.isoformat() if c.last_message_at else None,
                 "message_count": c.message_count,
+                "last_status_at": c.last_status_at.isoformat() if c.last_status_at else None,
+                "status_count": c.status_count,
+                "last_transport_ping_at": (
+                    c.last_transport_ping_at.isoformat() if c.last_transport_ping_at else None
+                ),
+                "transport_ping_count": c.transport_ping_count,
+                "last_transport_pong_at": (
+                    c.last_transport_pong_at.isoformat() if c.last_transport_pong_at else None
+                ),
+                "transport_pong_count": c.transport_pong_count,
             }
             for c in connections
         ],
@@ -323,6 +526,7 @@ def health():
 @app.route("/")
 def index():
     """Simple index page."""
+    logger.debug("Index endpoint called")
     return {
         "service": "ESP32 WebSocket Service",
         "version": "1.0.0",

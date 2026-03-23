@@ -16,6 +16,7 @@ import logging
 import os
 import threading
 from datetime import UTC, datetime
+from time import monotonic
 from typing import TYPE_CHECKING, Any
 
 import redis
@@ -27,12 +28,13 @@ if TYPE_CHECKING:
     from ..sockets import SocketEventHandler
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 # Redis configuration (same as car_heater_service.py)
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 REDIS_CHANNEL_STATUS = "esp32:status"
 REDIS_CHANNEL_ACTION_RESULTS = "esp32:action_results"
+STATUS_SUMMARY_INTERVAL_S = float(os.getenv("ESP32_REDIS_STATUS_LOG_INTERVAL_S", "30"))
 
 
 class ESP32RedisBridge:
@@ -53,6 +55,7 @@ class ESP32RedisBridge:
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._redis: redis.Redis | None = None
+        self._status_log_state: dict[str, dict[str, float | int]] = {}
 
     def start(self) -> None:
         """Start the Redis subscriber thread."""
@@ -137,6 +140,11 @@ class ESP32RedisBridge:
     def _emit_status(self, data: dict[str, Any]) -> None:
         """Emit ESP32 status update to browser views."""
         try:
+            logger.debug(
+                "ESP32RedisBridge emitting status device=%s payload_ts=%s",
+                data.get("device_id"),
+                data.get("timestamp"),
+            )
             # Build payload matching existing car_heater_status format
             payload: dict[str, Any] = {"status": data}
 
@@ -148,6 +156,7 @@ class ESP32RedisBridge:
                 self._socketio.emit("car_heater_status", payload)
 
             logger.debug("ESP32RedisBridge emitted car_heater_status")
+            self._log_status_summary(data)
 
             logs_payload = self._build_logs_event_payload(
                 raw_logs=data.get("logs"),
@@ -169,6 +178,35 @@ class ESP32RedisBridge:
             )
         except Exception as e:
             logger.warning("ESP32RedisBridge failed to emit status: %s", e)
+
+    def _log_status_summary(self, data: dict[str, Any]) -> None:
+        """Emit a throttled status summary to prove Redis handoff is alive."""
+        device_id = str(data.get("device_id") or "unknown")
+        now_mono = monotonic()
+        state = self._status_log_state.get(device_id, {"count": 0, "last_log": 0.0})
+        count = int(state.get("count", 0)) + 1
+        last_log = float(state.get("last_log", 0.0))
+        should_log = count == 1 or now_mono - last_log >= STATUS_SUMMARY_INTERVAL_S
+        self._status_log_state[device_id] = {
+            "count": count,
+            "last_log": now_mono if should_log else last_log,
+        }
+        if not should_log:
+            return
+
+        ws_stats = data.get("ws_stats")
+        if not isinstance(ws_stats, dict):
+            ws_stats = {}
+        logger.info(
+            "ESP32RedisBridge status device=%s redis_statuses=%s payload_ts=%s temp=%s ws_sent=%s ws_received=%s ws_commands=%s",
+            device_id,
+            count,
+            data.get("timestamp"),
+            data.get("temperature"),
+            ws_stats.get("messages_sent"),
+            ws_stats.get("messages_received"),
+            ws_stats.get("commands_executed"),
+        )
 
     def _build_logs_event_payload(
         self,

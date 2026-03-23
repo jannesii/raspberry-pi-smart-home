@@ -531,6 +531,10 @@ function update(data) {
 
 **ESP32 WS restart note**: `esp32_ws.service` runs Gunicorn with long-lived WebSocket requests. Keep the systemd stop path hard-kill based (`KillSignal=SIGKILL`, short `TimeoutStopSec`) so restarts do not block on stuck Gunicorn shutdown.
 
+**ESP32 WS diagnostics note**: Flask-Sock/simple-websocket handles WS control frames below the route handler. If you need to verify device heartbeat pings in server logs, keep the custom server shim in `esp32_ws/main.py`; route-level JSON logging alone will not show protocol `PING` frames.
+
+**ESP32 WS Gunicorn note**: `esp32_ws.service` runs `gunicorn main:app`, so bootstrap that must exist in production cannot live only under `if __name__ == "__main__":`. Keep Redis/WebSocket manager startup reachable from module import or another Gunicorn-executed path.
+
 **Migration helper note**: Controller-level legacy migration helpers (`migrate_3d_to_pg`, `migrate_auth_to_pg`, `migrate_ac_to_pg`, `migrate_car_heater_to_pg`, `migrate_ready_by_to_pg`) use `DB_PATH` as the SQLite source and `_sa_engine` as the SQLAlchemy target. Keep them idempotent.
 
 **Pytest bootstrap note**: Repo-root test runs should work without manually exporting `PYTHONPATH`; keep root import bootstrap intact for `.venv/bin/pytest -q`.

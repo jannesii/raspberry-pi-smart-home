@@ -142,6 +142,8 @@ Browse to http://127.0.0.1:5555 and log in.
 - Hue service initialization now fails safe when `HUE_BRIDGE_IP` or `HUE_USERNAME` is missing.
 - Test bootstrap now works from the repo root without manually exporting `PYTHONPATH`.
 - `esp32_ws.service` uses `KillSignal=SIGKILL` with a 1 second stop timeout so Gunicorn-backed WebSocket restarts are immediate instead of waiting on long-lived connections.
+- ESP32 WebSocket ingress now logs throttled status summaries in `esp32_ws` and matching Redis-bridge summaries in `jannenkoti`, plus low-level WS ping receipts in `esp32_ws`, to verify live device traffic.
+- `esp32_ws` now initializes its Redis manager at module import so Gunicorn `main:app` runs the Redis publish/subscribe bridge instead of only the `__main__` code path.
 
 ---
 

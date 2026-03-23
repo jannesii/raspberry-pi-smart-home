@@ -67,6 +67,11 @@ The packaged `esp32_ws.service` uses `KillSignal=SIGKILL` and
 `TimeoutStopSec=1` so restart/stop actions do not hang behind long-lived
 Gunicorn WebSocket requests.
 
+The service logs throttled `ESP32 status received ...` summaries for incoming
+JSON status frames and `ESP32 WS ping received ...` for low-level WebSocket
+heartbeat pings from the device, which is useful when verifying live traffic in
+`journalctl -u esp32_ws -f`.
+
 ## Configuration
 
 Environment variables in `esp32_ws.service`:
