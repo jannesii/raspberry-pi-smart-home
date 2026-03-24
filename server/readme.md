@@ -55,16 +55,15 @@ A comprehensive home automation server for Raspberry Pi (or any Linux host). Rea
 - **CSRF protection** on all forms
 
 ### 💳 YNAB Categorizer
-- **Manual categorization queue** for uncategorized YNAB transactions
+- **Unified review workspace** for uncategorized and unapproved YNAB transactions
 - **Payee-based category suggestions** from local usage history
-- **Explicit apply workflow** (no automatic category changes)
+- **Batch-first apply workflow** with grouped payee review, a shared search rail, and a bottom action tray
 - **Bootstrap learning** from 24 months of categorized history
 - **Configurable queue filter mode** (`strict`, `skip_transfers`, `all_uncategorized`)
 - **Starting Balance transactions are always excluded** from categorization queue
-- **Queue rows show EUR amounts and `DD-MM-YYYY` dates**, row click toggles selection, rows show source/target account context (not raw transaction UUID), selected actions appear in a floating apply bar, and advanced settings are tucked into a collapsible panel (reconciled + queue time limit)
+- **Workspace settings drawer** keeps bootstrap, reconciled filtering, queue age limits, and fallback-category controls out of the main review surface
 - **Default fallback category** can be configured for no-suggestion payees; category dropdowns prioritize top 10 locally most-used categories and hide hidden YNAB categories
-- **Approval view** for unapproved transactions with bulk `Approve selected` / `Approve visible` actions
-- **QoL quick actions**: apply suggestions in bulk (High by default, optional Medium), select/clear visible, queue text filter, per-group one-click suggestion apply, recent category chips, and keyboard shortcuts
+- **QoL quick actions**: apply visible suggestions in bulk (High by default, optional Medium), select/clear visible, recent category chips, sticky counts, and keyboard shortcuts
 
 ### 📊 System Features
 - **Real-time WebSocket updates** – instant UI refresh without polling

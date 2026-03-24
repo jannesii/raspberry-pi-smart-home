@@ -3,136 +3,199 @@
 {% block title %}YNAB Categorizer{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/ynab_categorizer.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/ynab_categorizer.css', v='20260324-1') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/flash.css') }}">
 {% endblock %}
 
 {% block content %}
 <div class="ynab-page">
-  <header class="ynab-header">
-    <h2>YNAB Categorizer</h2>
-    <p class="ynab-subtitle">Review uncategorized transactions and apply categories manually.</p>
-  </header>
-
   <input type="hidden" id="csrfToken" value="{{ csrf_token() }}">
-
   <div id="ynabMessage" class="ynab-message" role="status" aria-live="polite"></div>
 
   {% if not ynab_configured %}
-    <section class="ynab-panel ynab-panel-warning">
-      <h3>Not configured</h3>
-      <p>Set <code>YNAB_API_KEY</code> and <code>YNAB_BUDGET_ID</code> environment variables, then restart the service.</p>
+    <section class="ynab-empty-state ynab-empty-state-warning">
+      <p class="ynab-eyebrow">YNAB</p>
+      <h2>Workspace unavailable</h2>
+      <p class="ynab-empty-copy">
+        Set <code>YNAB_API_KEY</code> and <code>YNAB_BUDGET_ID</code>, then restart the service to load the review workspace.
+      </p>
     </section>
   {% else %}
-    <section class="ynab-panel ynab-controls">
-      <div class="ynab-control-row">
-        <button id="btnRefreshQueue" type="button">Refresh queues</button>
-        <span id="bootstrapStatus">Bootstrap status: —</span>
-        <button id="btnBootstrap" type="button">Bootstrap now</button>
-      </div>
-      <details id="ynabSettingsDetails" class="ynab-settings-details">
-        <summary>Categorizer settings</summary>
-        <div class="ynab-settings-grid">
-          <div class="ynab-control-row">
-            <label for="queueFilterMode">Queue filter mode</label>
-            <select id="queueFilterMode" name="queueFilterMode">
-              <option value="strict">strict (skip transfers + split parents)</option>
-              <option value="skip_transfers">skip_transfers</option>
-              <option value="all_uncategorized">all_uncategorized</option>
-            </select>
-          </div>
-          <div class="ynab-control-row">
-            <label for="showReconciledTransactions">
-              <input id="showReconciledTransactions" name="showReconciledTransactions" type="checkbox">
-              Show reconciled transactions
-            </label>
-          </div>
-          <div class="ynab-control-row">
-            <label for="queueLimitEnabled">
-              <input id="queueLimitEnabled" name="queueLimitEnabled" type="checkbox">
-              Limit queue
-            </label>
-            <input id="queueLimitValue" name="queueLimitValue" type="number" min="1" step="1" value="30" class="ynab-limit-input">
-            <select id="queueLimitUnit" name="queueLimitUnit">
-              <option value="days">days</option>
-              <option value="months">months</option>
-              <option value="years">years</option>
-            </select>
-          </div>
-          <div class="ynab-control-row">
-            <label for="defaultCategoryId">Default category (fallback when no suggestion)</label>
-            <select id="defaultCategoryId" name="defaultCategoryId">
-              <option value="">None</option>
-            </select>
-          </div>
-          <div class="ynab-control-row">
-            <button id="btnSaveMode" type="button">Save settings</button>
-          </div>
+    <header class="ynab-header">
+      <div class="ynab-header-main">
+        <div class="ynab-header-copy">
+          <p class="ynab-eyebrow">YNAB</p>
+          <h2>Review workspace</h2>
+          <p class="ynab-subtitle">Batch through categorization and approvals without leaving the same surface.</p>
         </div>
-      </details>
+        <div class="ynab-header-actions">
+          <button id="btnRefreshQueue" class="ynab-btn ynab-btn-secondary" type="button">Refresh</button>
+          <button id="btnOpenSettings" class="ynab-btn ynab-btn-secondary" type="button">Settings</button>
+        </div>
+      </div>
+
+      <div class="ynab-header-stats">
+        <article class="ynab-stat-card">
+          <span class="ynab-stat-label">Categorize</span>
+          <strong id="headerCategorizeCount" class="ynab-stat-value">—</strong>
+          <span id="headerCategorizeMeta" class="ynab-stat-meta">Loading queue…</span>
+        </article>
+        <article class="ynab-stat-card">
+          <span class="ynab-stat-label">Approve</span>
+          <strong id="headerApproveCount" class="ynab-stat-value">—</strong>
+          <span id="headerApproveMeta" class="ynab-stat-meta">Loading approvals…</span>
+        </article>
+      </div>
+
+      <div class="ynab-mode-row">
+        <div class="ynab-segmented-control" role="tablist" aria-label="Workspace mode">
+          <button id="btnViewCategorizer" class="is-active" type="button" role="tab" aria-selected="true">Categorize</button>
+          <button id="btnViewApprovals" type="button" role="tab" aria-selected="false">Approve</button>
+        </div>
+        <div id="workspaceSummary" class="ynab-summary">Loading…</div>
+      </div>
+    </header>
+
+    <section class="ynab-toolbar">
+      <div class="ynab-search">
+        <label class="ynab-search-label" for="workspaceFilterInput">Search current mode</label>
+        <input
+          id="workspaceFilterInput"
+          name="workspaceFilterInput"
+          type="text"
+          class="ynab-search-input"
+          autocomplete="off"
+          placeholder="Filter payee, memo, date, amount"
+        >
+      </div>
+      <div class="ynab-toolbar-actions">
+        <button id="btnToolbarPrimaryAction" class="ynab-btn ynab-btn-primary" type="button">Apply visible suggestions</button>
+        <label id="quickApplyIncludeMediumWrap" class="ynab-toggle-chip" for="quickApplyIncludeMedium">
+          <input id="quickApplyIncludeMedium" name="quickApplyIncludeMedium" type="checkbox">
+          <span>Include Medium</span>
+        </label>
+        <button id="btnToolbarSelectVisible" class="ynab-btn ynab-btn-secondary" type="button">Select visible</button>
+        <button id="btnToolbarClearSelection" class="ynab-btn ynab-btn-secondary" type="button">Clear selection</button>
+      </div>
     </section>
 
-    <section class="ynab-panel">
-      <div class="ynab-view-switch">
-        <button id="btnViewCategorizer" type="button" class="is-active">Categorize</button>
-        <button id="btnViewApprovals" type="button">Approve</button>
-      </div>
-
-      <div id="categorizerView" class="ynab-view is-active">
-        <h3>Grouped Queue</h3>
-        <div class="ynab-quick-actions">
-          <button id="btnApplySuggested" type="button">Apply suggested</button>
-          <label for="quickApplyIncludeMedium">
-            <input id="quickApplyIncludeMedium" name="quickApplyIncludeMedium" type="checkbox">
-            Include Medium
-          </label>
-          <button id="btnSelectVisible" type="button">Select visible</button>
-          <button id="btnClearSelection" type="button">Clear selection</button>
-          <input
-            id="queueFilterInput"
-            name="queueFilterInput"
-            type="text"
-            class="ynab-quick-actions-input"
-            placeholder="Filter queue (payee, memo, date, amount)"
-          >
-        </div>
-        <div id="queueSummary" class="ynab-summary">Loading…</div>
+    <section class="ynab-workspace">
+      <div id="categorizerView" class="ynab-view is-active" aria-live="polite">
         <div id="ynabGroups" class="ynab-groups"></div>
       </div>
-
-      <div id="approvalsView" class="ynab-view">
-        <h3>Approval Queue</h3>
-        <div class="ynab-quick-actions">
-          <button id="btnApproveSelected" type="button">Approve selected</button>
-          <button id="btnApproveVisible" type="button">Approve visible</button>
-          <button id="btnClearApprovalSelection" type="button">Clear selection</button>
-          <input
-            id="approvalFilterInput"
-            name="approvalFilterInput"
-            type="text"
-            class="ynab-quick-actions-input"
-            placeholder="Filter approvals (payee, memo, date, amount, category)"
-          >
-        </div>
-        <div id="approvalSummary" class="ynab-summary">Loading…</div>
-        <ul id="approvalList" class="ynab-tx-list"></ul>
+      <div id="approvalsView" class="ynab-view" aria-live="polite">
+        <ul id="approvalList" class="ynab-tx-list ynab-approval-list"></ul>
       </div>
     </section>
+
+    <div id="ynabSettingsShell" class="ynab-settings-shell" aria-hidden="true">
+      <button id="btnCloseSettingsBackdrop" class="ynab-settings-backdrop" type="button" aria-label="Close settings"></button>
+      <aside class="ynab-settings-sheet" aria-labelledby="ynabSettingsTitle">
+        <div class="ynab-settings-sheet-header">
+          <div>
+            <p class="ynab-eyebrow">Workspace settings</p>
+            <h3 id="ynabSettingsTitle">Queue and learning controls</h3>
+          </div>
+          <button id="btnCloseSettings" class="ynab-icon-btn" type="button" aria-label="Close settings">✕</button>
+        </div>
+
+        <section class="ynab-settings-section">
+          <div class="ynab-settings-section-header">
+            <h4>Bootstrap</h4>
+            <span id="bootstrapStatus" class="ynab-settings-hint">Bootstrap status: —</span>
+          </div>
+          <p class="ynab-settings-copy">Seed suggestions from the last 24 months of categorized YNAB history.</p>
+          <button id="btnBootstrap" class="ynab-btn ynab-btn-secondary" type="button">Bootstrap now</button>
+        </section>
+
+        <section class="ynab-settings-section">
+          <div class="ynab-settings-section-header">
+            <h4>Queue rules</h4>
+            <span class="ynab-settings-hint">Applied to both modes</span>
+          </div>
+          <div class="ynab-settings-grid">
+            <label class="ynab-field">
+              <span>Queue filter mode</span>
+              <select id="queueFilterMode" name="queueFilterMode">
+                <option value="strict">strict (skip transfers + split parents)</option>
+                <option value="skip_transfers">skip_transfers</option>
+                <option value="all_uncategorized">all_uncategorized</option>
+              </select>
+            </label>
+
+            <label class="ynab-check-row" for="showReconciledTransactions">
+              <input id="showReconciledTransactions" name="showReconciledTransactions" type="checkbox">
+              <span>Show reconciled transactions</span>
+            </label>
+
+            <div class="ynab-field">
+              <span>Queue age limit</span>
+              <div class="ynab-inline-fields">
+                <label class="ynab-check-row ynab-check-row-tight" for="queueLimitEnabled">
+                  <input id="queueLimitEnabled" name="queueLimitEnabled" type="checkbox">
+                  <span>Enabled</span>
+                </label>
+                <input id="queueLimitValue" name="queueLimitValue" type="number" min="1" step="1" value="30" class="ynab-limit-input">
+                <select id="queueLimitUnit" name="queueLimitUnit">
+                  <option value="days">days</option>
+                  <option value="months">months</option>
+                  <option value="years">years</option>
+                </select>
+              </div>
+            </div>
+
+            <label class="ynab-field">
+              <span>Default category fallback</span>
+              <select id="defaultCategoryId" name="defaultCategoryId">
+                <option value="">None</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="ynab-settings-footer">
+            <button id="btnSaveMode" class="ynab-btn ynab-btn-primary" type="button">Save settings</button>
+          </div>
+        </section>
+      </aside>
+    </div>
 
     <section id="floatingApplyBar" class="ynab-floating-apply" aria-live="polite">
       <div class="ynab-floating-apply-inner">
-        <span id="selectedTxCount">0 selected</span>
-        <label for="globalCategorySelect">Category for selected</label>
-        <input
-          id="globalCategorySearch"
-          name="globalCategorySearch"
-          type="text"
-          placeholder="Find category"
-          autocomplete="off"
-        >
-        <select id="globalCategorySelect" name="globalCategorySelect"></select>
-        <button id="btnApplySelected" type="button">Apply selected</button>
+        <div class="ynab-floating-apply-top">
+          <div>
+            <span id="selectedTxCount" class="ynab-floating-count">0 selected</span>
+            <p id="floatingApplyHint" class="ynab-floating-hint">Choose a category, then apply.</p>
+          </div>
+          <button id="btnTrayClearSelection" class="ynab-btn ynab-btn-secondary" type="button">Clear</button>
+        </div>
+
+        <div id="categorizeTray" class="ynab-floating-mode">
+          <label class="ynab-field ynab-field-grow" for="globalCategorySearch">
+            <span>Category for selected</span>
+            <input
+              id="globalCategorySearch"
+              name="globalCategorySearch"
+              type="text"
+              placeholder="Find category"
+              autocomplete="off"
+            >
+          </label>
+          <label class="ynab-field ynab-field-grow" for="globalCategorySelect">
+            <span>Category list</span>
+            <select id="globalCategorySelect" name="globalCategorySelect"></select>
+          </label>
+          <button id="btnApplySelected" class="ynab-btn ynab-btn-primary" type="button">Apply category</button>
+        </div>
+
+        <div id="approveTray" class="ynab-floating-mode">
+          <div class="ynab-approve-copy">
+            <strong>Approve selected transactions</strong>
+            <span>Use the tray to confirm the current approval selection.</span>
+          </div>
+          <button id="btnApproveSelected" class="ynab-btn ynab-btn-primary" type="button">Approve selected</button>
+        </div>
       </div>
+
       <div id="recentCategoryChips" class="ynab-recent-chips"></div>
     </section>
   {% endif %}
@@ -145,5 +208,5 @@
   const YNAB_INITIAL_CONFIG = {{ ynab_initial_config | tojson | safe }};
   const YNAB_BOOTSTRAP_STATUS = {{ ynab_bootstrap_status | tojson | safe }};
 </script>
-<script src="{{ url_for('static', filename='js/ynab_categorizer.js') }}"></script>
+<script src="{{ url_for('static', filename='js/ynab_categorizer.js', v='20260324-1') }}"></script>
 {% endblock %}

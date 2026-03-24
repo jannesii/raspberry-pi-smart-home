@@ -501,6 +501,8 @@ function update(data) {
 
 **Static asset cache note**: When changing user-visible `app/static/js/car_heater.js` behavior in production, also bump the versioned script URL in `app/templates/car_heater.html` so browser cache does not mask the fix.
 
+**YNAB asset cache note**: When changing user-visible `app/static/js/ynab_categorizer.js` or `app/static/css/ynab_categorizer.css` behavior in production, also bump the versioned asset URLs in `app/templates/ynab_categorizer.html` so browser cache does not mask the fix.
+
 **Car heater JS helper note**: `app/static/js/car_heater.js` and `app/static/js/car_heater_settings_*.js` share the same page. Do not leave generic helper names like `fmtTs` or `fmtNum` in the global scope in settings modules, or they will override the main page formatters at runtime.
 
 **Hue controller availability note**: `app.hue_ctrl` is optional at runtime. Guard Hue API routes with `getattr(..., "hue_ctrl", None)` and return a 503-style error when Hue env/config is missing.
@@ -845,4 +847,4 @@ YNAB_HTTP_RETRIES=2
 
 ---
 
-*Last updated: 2026-03-09*
+*Last updated: 2026-03-24*
