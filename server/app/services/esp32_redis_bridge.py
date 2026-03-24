@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from ..sockets import SocketEventHandler
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 # Redis configuration (same as car_heater_service.py)
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")

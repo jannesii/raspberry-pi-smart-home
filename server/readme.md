@@ -57,11 +57,13 @@ A comprehensive home automation server for Raspberry Pi (or any Linux host). Rea
 ### 💳 YNAB Categorizer
 - **Unified review workspace** for uncategorized and unapproved YNAB transactions
 - **Payee-based category suggestions** from local usage history
-- **Batch-first apply workflow** with grouped payee review, a shared search rail, and a bottom action tray
+- **Custom categorization rules** with ordered first-match wins logic for payee text plus optional absolute-euro amount thresholds
+- **Batch-first apply workflow** with grouped review cards, a shared search rail, and a bottom action tray
+- **Applying a category also approves the same transactions**, while already categorized items can still be approved as-is from the same queue
 - **Bootstrap learning** from 24 months of categorized history
 - **Configurable queue filter mode** (`strict`, `skip_transfers`, `all_uncategorized`)
 - **Starting Balance transactions are always excluded** from categorization queue
-- **Workspace settings drawer** keeps bootstrap, reconciled filtering, queue age limits, and fallback-category controls out of the main review surface
+- **Workspace settings drawer** keeps bootstrap, reconciled filtering, queue age limits, fallback-category controls, and custom rules out of the main review surface
 - **Default fallback category** can be configured for no-suggestion payees; category dropdowns prioritize top 10 locally most-used categories and hide hidden YNAB categories
 - **QoL quick actions**: apply visible suggestions in bulk (High by default, optional Medium), select/clear visible, recent category chips, sticky counts, and keyboard shortcuts
 

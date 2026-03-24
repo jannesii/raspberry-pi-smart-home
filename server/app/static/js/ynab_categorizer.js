@@ -18,17 +18,17 @@ let queueState = {
   queue_limit_unit: 'days',
   quick_apply_include_medium: false,
   default_category_id: '',
+  custom_rules: [],
+  needs_category_count: 0,
+  needs_approval_count: 0,
 };
 
-let approvalsStateRaw = null;
-let currentView = 'categorize';
-let queueFilterTerm = '';
-let approvalFilterTerm = '';
 let recentCategoryIds = [];
 let selectedQueueIds = new Set();
-let selectedApprovalTxIds = new Set();
 let groupExpansionState = {};
 let resizeTimer = null;
+let customRulesState = [];
+let customRuleCounter = 0;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -102,6 +102,21 @@ function txAccountFlowLabel(tx) {
   return `Account: ${accountName}`;
 }
 
+function txLookupMap() {
+  const byId = {};
+  const groups = Array.isArray(queueStateRaw && queueStateRaw.groups) ? queueStateRaw.groups : [];
+  groups.forEach(group => {
+    const transactions = Array.isArray(group && group.transactions) ? group.transactions : [];
+    transactions.forEach(tx => {
+      const txId = tx && tx.id ? String(tx.id) : '';
+      if (txId) {
+        byId[txId] = tx;
+      }
+    });
+  });
+  return byId;
+}
+
 function showMessage(text, kind = 'ok') {
   const message = document.getElementById('ynabMessage');
   if (!message) return;
@@ -148,33 +163,48 @@ async function apiRequest(url, options = {}) {
 }
 
 function makeCategoryOptions(categories, selectedId, options = {}) {
-  const opts = Object.assign({
-    includeEmptyOption: false,
-    emptyLabel: 'None',
-  }, options || {});
+  const opts = Object.assign(
+    {
+      includeEmptyOption: false,
+      emptyLabel: 'None',
+      allowMissingSelected: false,
+    },
+    options || {}
+  );
 
   const items = [];
   if (opts.includeEmptyOption) {
     items.push(`<option value="">${escapeHtml(opts.emptyLabel)}</option>`);
   }
 
+  const seenIds = new Set();
   categories.forEach(cat => {
     const id = cat && cat.id ? String(cat.id) : '';
     const name = cat && cat.name ? String(cat.name) : id;
     if (!id) return;
+    seenIds.add(id);
     const selected = selectedId && selectedId === id ? ' selected' : '';
-    items.push(
-      `<option value="${escapeHtml(id)}"${selected}>${escapeHtml(name)}</option>`
-    );
+    items.push(`<option value="${escapeHtml(id)}"${selected}>${escapeHtml(name)}</option>`);
   });
+
+  if (opts.allowMissingSelected && selectedId && !seenIds.has(String(selectedId))) {
+    items.push(
+      `<option value="${escapeHtml(String(selectedId))}" selected>${escapeHtml(String(selectedId))}</option>`
+    );
+  }
 
   return items.join('');
 }
 
 function badgeClass(label) {
-  if (label === 'High') return 'high';
-  if (label === 'Medium') return 'medium';
-  return 'low';
+  const normalized = String(label || '').toLowerCase();
+  if (normalized === 'rule') return 'rule';
+  if (normalized === 'current') return 'current';
+  if (normalized === 'default') return 'default';
+  if (normalized === 'high') return 'high';
+  if (normalized === 'medium') return 'medium';
+  if (normalized === 'low') return 'low';
+  return 'neutral';
 }
 
 function serializeDateForSort(dateStr) {
@@ -210,8 +240,7 @@ function saveRecentCategoryIds(ids) {
 function addRecentCategory(categoryId) {
   const id = String(categoryId || '').trim();
   if (!id) return;
-  const next = [id, ...recentCategoryIds.filter(existing => existing !== id)]
-    .slice(0, RECENT_CATEGORY_LIMIT);
+  const next = [id, ...recentCategoryIds.filter(existing => existing !== id)].slice(0, RECENT_CATEGORY_LIMIT);
   recentCategoryIds = next;
   saveRecentCategoryIds(next);
   renderRecentCategoryChips();
@@ -230,36 +259,13 @@ function availableQueueTransactionIds() {
   return ids;
 }
 
-function availableApprovalIds() {
-  const ids = new Set();
-  const transactions = Array.isArray(approvalsStateRaw && approvalsStateRaw.transactions)
-    ? approvalsStateRaw.transactions
-    : [];
-  transactions.forEach(tx => {
-    const txId = tx && tx.id ? String(tx.id) : '';
-    if (txId) ids.add(txId);
-  });
-  return ids;
-}
-
 function pruneSelectionState() {
   const queueIds = availableQueueTransactionIds();
   selectedQueueIds = new Set([...selectedQueueIds].filter(id => queueIds.has(id)));
-
-  const approvalIds = availableApprovalIds();
-  selectedApprovalTxIds = new Set([...selectedApprovalTxIds].filter(id => approvalIds.has(id)));
-}
-
-function currentSelectionSet() {
-  return currentView === 'approve' ? selectedApprovalTxIds : selectedQueueIds;
 }
 
 function currentSelectionIds() {
-  return [...currentSelectionSet()];
-}
-
-function currentFilterValue() {
-  return currentView === 'approve' ? approvalFilterTerm : queueFilterTerm;
+  return [...selectedQueueIds];
 }
 
 function setWorkspaceSummary(text) {
@@ -274,8 +280,12 @@ function defaultGroupExpanded(group) {
   return !(window.innerWidth >= 980 && txCount > 4);
 }
 
+function groupExpansionKey(group) {
+  return String(group && group.group_key ? group.group_key : '');
+}
+
 function isGroupExpanded(group) {
-  const key = String(group && group.payee_normalized ? group.payee_normalized : '');
+  const key = groupExpansionKey(group);
   if (!key) return true;
   if (Object.prototype.hasOwnProperty.call(groupExpansionState, key)) {
     return !!groupExpansionState[key];
@@ -289,29 +299,33 @@ function setGroupExpanded(groupKey, expanded) {
 }
 
 function updateHeaderStats() {
-  const categorizeCountEl = document.getElementById('headerCategorizeCount');
-  const categorizeMetaEl = document.getElementById('headerCategorizeMeta');
-  const approveCountEl = document.getElementById('headerApproveCount');
-  const approveMetaEl = document.getElementById('headerApproveMeta');
+  const needsCategoryCountEl = document.getElementById('headerNeedsCategoryCount');
+  const needsCategoryMetaEl = document.getElementById('headerNeedsCategoryMeta');
+  const needsApprovalCountEl = document.getElementById('headerNeedsApprovalCount');
+  const needsApprovalMetaEl = document.getElementById('headerNeedsApprovalMeta');
 
-  if (categorizeCountEl) {
-    categorizeCountEl.textContent = queueStateRaw ? String(queueStateRaw.transaction_count || 0) : '—';
+  if (needsCategoryCountEl) {
+    needsCategoryCountEl.textContent = queueStateRaw
+      ? String(queueStateRaw.needs_category_count || 0)
+      : '—';
   }
-  if (categorizeMetaEl) {
+  if (needsCategoryMetaEl) {
     if (queueStateRaw) {
-      categorizeMetaEl.textContent = `${queueStateRaw.group_count || 0} group(s) ready`;
+      needsCategoryMetaEl.textContent = `${queueStateRaw.group_count || 0} group(s) in review`;
     } else {
-      categorizeMetaEl.textContent = 'Loading queue…';
+      needsCategoryMetaEl.textContent = 'Loading queue…';
     }
   }
-  if (approveCountEl) {
-    approveCountEl.textContent = approvalsStateRaw ? String(approvalsStateRaw.transaction_count || 0) : '—';
+  if (needsApprovalCountEl) {
+    needsApprovalCountEl.textContent = queueStateRaw
+      ? String(queueStateRaw.needs_approval_count || 0)
+      : '—';
   }
-  if (approveMetaEl) {
-    if (approvalsStateRaw) {
-      approveMetaEl.textContent = `${approvalsStateRaw.transaction_count || 0} item(s) pending`;
+  if (needsApprovalMetaEl) {
+    if (queueStateRaw) {
+      needsApprovalMetaEl.textContent = `${queueStateRaw.transaction_count || 0} transaction(s) shown`;
     } else {
-      approveMetaEl.textContent = 'Loading approvals…';
+      needsApprovalMetaEl.textContent = 'Loading queue…';
     }
   }
 }
@@ -327,6 +341,98 @@ function updateLimitControlsState() {
   if (unitSelect instanceof HTMLSelectElement) {
     unitSelect.disabled = !enabled;
   }
+}
+
+function createBlankRule() {
+  customRuleCounter += 1;
+  return {
+    id: `rule-${Date.now()}-${customRuleCounter}`,
+    enabled: true,
+    payee_match_type: 'contains',
+    payee_value: '',
+    amount_operator: 'any',
+    amount_value_eur: null,
+    category_id: '',
+  };
+}
+
+function cloneRules(rules) {
+  if (!Array.isArray(rules)) return [];
+  return rules.map(rule => ({
+    id: String(rule && rule.id ? rule.id : createBlankRule().id),
+    enabled: !!(rule && rule.enabled),
+    payee_match_type: String(rule && rule.payee_match_type ? rule.payee_match_type : 'contains'),
+    payee_value: String(rule && rule.payee_value ? rule.payee_value : ''),
+    amount_operator: String(rule && rule.amount_operator ? rule.amount_operator : 'any'),
+    amount_value_eur:
+      rule && rule.amount_value_eur !== null && rule.amount_value_eur !== undefined && rule.amount_value_eur !== ''
+        ? Number(rule.amount_value_eur)
+        : null,
+    category_id: String(rule && rule.category_id ? rule.category_id : ''),
+  }));
+}
+
+function renderCustomRulesEditor() {
+  const listEl = document.getElementById('customRulesList');
+  if (!(listEl instanceof HTMLElement)) return;
+
+  if (!customRulesState.length) {
+    listEl.innerHTML = '<div class="ynab-empty-placeholder">No custom rules yet. Add one to override learned suggestions.</div>';
+    return;
+  }
+
+  const categories = Array.isArray(queueState.categories) ? queueState.categories : [];
+  listEl.innerHTML = customRulesState.map((rule, index) => {
+    const amountDisabled = rule.amount_operator === 'any' ? ' disabled' : '';
+    const amountValue = rule.amount_value_eur === null || Number.isNaN(Number(rule.amount_value_eur))
+      ? ''
+      : String(rule.amount_value_eur);
+    return (
+      `<article class="ynab-rule-card" data-rule-id="${escapeHtml(rule.id)}">` +
+      '<div class="ynab-rule-row ynab-rule-row-top">' +
+      `<div class="ynab-rule-index">Rule ${index + 1}</div>` +
+      '<div class="ynab-rule-actions">' +
+      '<button type="button" class="ynab-btn ynab-btn-secondary jsRuleMoveUp">Up</button>' +
+      '<button type="button" class="ynab-btn ynab-btn-secondary jsRuleMoveDown">Down</button>' +
+      '<button type="button" class="ynab-btn ynab-btn-secondary jsRuleDelete">Delete</button>' +
+      '</div>' +
+      '</div>' +
+      '<div class="ynab-rule-grid">' +
+      '<label class="ynab-check-row">' +
+      `<input class="jsRuleEnabled" type="checkbox"${rule.enabled ? ' checked' : ''}>` +
+      '<span>Enabled</span>' +
+      '</label>' +
+      '<label class="ynab-field">' +
+      '<span>Payee match</span>' +
+      '<select class="jsRuleMatchType">' +
+      `<option value="contains"${rule.payee_match_type === 'contains' ? ' selected' : ''}>contains</option>` +
+      `<option value="equals"${rule.payee_match_type === 'equals' ? ' selected' : ''}>equals</option>` +
+      '</select>' +
+      '</label>' +
+      '<label class="ynab-field ynab-rule-wide">' +
+      '<span>Payee text</span>' +
+      `<input class="jsRulePayeeValue" type="text" value="${escapeHtml(rule.payee_value)}" placeholder="ABC or Suomen Vahinkovakuutus Oy">` +
+      '</label>' +
+      '<label class="ynab-field">' +
+      '<span>Amount</span>' +
+      '<select class="jsRuleAmountOperator">' +
+      `<option value="any"${rule.amount_operator === 'any' ? ' selected' : ''}>any</option>` +
+      `<option value="over"${rule.amount_operator === 'over' ? ' selected' : ''}>over</option>` +
+      `<option value="under"${rule.amount_operator === 'under' ? ' selected' : ''}>under</option>` +
+      '</select>' +
+      '</label>' +
+      '<label class="ynab-field">' +
+      '<span>Amount EUR</span>' +
+      `<input class="jsRuleAmountValue" type="number" min="0" step="0.01" value="${escapeHtml(amountValue)}"${amountDisabled} placeholder="50">` +
+      '</label>' +
+      '<label class="ynab-field ynab-rule-wide">' +
+      '<span>Category</span>' +
+      `<select class="jsRuleCategoryId">${makeCategoryOptions(categories, rule.category_id, { includeEmptyOption: true, emptyLabel: 'Choose category', allowMissingSelected: true })}</select>` +
+      '</label>' +
+      '</div>' +
+      '</article>'
+    );
+  }).join('');
 }
 
 function applySettingsToUi(data) {
@@ -360,7 +466,10 @@ function applySettingsToUi(data) {
     const value = data && data.default_category_id ? String(data.default_category_id) : '';
     defaultCategoryId.value = value || '';
   }
+
+  customRulesState = cloneRules(data && Array.isArray(data.custom_rules) ? data.custom_rules : []);
   updateLimitControlsState();
+  renderCustomRulesEditor();
 }
 
 function readSettingsFromUi() {
@@ -401,16 +510,42 @@ function readSettingsFromUi() {
   let defaultCategoryValue = null;
   if (defaultCategoryId instanceof HTMLSelectElement) {
     const selected = String(defaultCategoryId.value || '').trim();
-    if (selected) {
-      defaultCategoryValue = selected;
-    } else if (
-      defaultCategoryId.options.length <= 1 &&
-      queueState &&
-      queueState.default_category_id
-    ) {
-      defaultCategoryValue = String(queueState.default_category_id);
-    }
+    defaultCategoryValue = selected || null;
   }
+
+  const normalizedRules = customRulesState.map((rule, index) => {
+    const payeeValue = String(rule.payee_value || '').trim();
+    const categoryId = String(rule.category_id || '').trim();
+    const amountOperator = String(rule.amount_operator || 'any').trim().toLowerCase();
+    let amountValueEur = null;
+    if (!payeeValue) {
+      throw new Error(`Custom rule ${index + 1}: payee text is required`);
+    }
+    if (!categoryId) {
+      throw new Error(`Custom rule ${index + 1}: category is required`);
+    }
+    if (!['contains', 'equals'].includes(String(rule.payee_match_type || ''))) {
+      throw new Error(`Custom rule ${index + 1}: invalid payee match type`);
+    }
+    if (!['any', 'over', 'under'].includes(amountOperator)) {
+      throw new Error(`Custom rule ${index + 1}: invalid amount operator`);
+    }
+    if (amountOperator !== 'any') {
+      amountValueEur = Number(rule.amount_value_eur);
+      if (!Number.isFinite(amountValueEur) || amountValueEur <= 0) {
+        throw new Error(`Custom rule ${index + 1}: amount must be positive`);
+      }
+    }
+    return {
+      id: String(rule.id || createBlankRule().id),
+      enabled: !!rule.enabled,
+      payee_match_type: String(rule.payee_match_type),
+      payee_value: payeeValue,
+      amount_operator: amountOperator,
+      amount_value_eur: amountOperator === 'any' ? null : amountValueEur,
+      category_id: categoryId,
+    };
+  });
 
   return {
     queue_filter_mode: mode,
@@ -424,6 +559,7 @@ function readSettingsFromUi() {
       ? quickApplyIncludeMedium.checked
       : false,
     default_category_id: defaultCategoryValue,
+    custom_rules: normalizedRules,
   };
 }
 
@@ -436,11 +572,6 @@ function globalCategorySearchTerm() {
 function renderRecentCategoryChips() {
   const chipsEl = document.getElementById('recentCategoryChips');
   if (!chipsEl) return;
-
-  if (currentView !== 'categorize') {
-    chipsEl.innerHTML = '';
-    return;
-  }
 
   const byId = {};
   (queueState.categories || []).forEach(cat => {
@@ -507,6 +638,7 @@ function renderDefaultCategorySelect() {
   select.innerHTML = makeCategoryOptions(allCategories, selected, {
     includeEmptyOption: true,
     emptyLabel: 'None',
+    allowMissingSelected: true,
   });
   select.value = selected || '';
 }
@@ -514,41 +646,43 @@ function renderDefaultCategorySelect() {
 function txMatchesFilter(tx, term) {
   if (!term) return true;
   const haystack = [
-    tx && tx.id ? String(tx.id) : '',
     tx && tx.memo ? String(tx.memo) : '',
     tx && tx.date ? String(tx.date) : '',
     tx && tx.payee_name ? String(tx.payee_name) : '',
     tx && tx.account_name ? String(tx.account_name) : '',
+    tx && tx.current_category_name ? String(tx.current_category_name) : '',
+    tx && tx.resolved_category_name ? String(tx.resolved_category_name) : '',
+    tx && tx.resolved_source ? String(tx.resolved_source) : '',
     fmtEurFromMilliunits(tx ? tx.amount_milliunits : null),
   ].join(' ').toLowerCase();
   return haystack.includes(term);
 }
 
-function approvalMatchesFilter(tx, term) {
-  if (!term) return true;
-  const haystack = [
-    tx && tx.payee_name ? String(tx.payee_name) : '',
-    tx && tx.account_name ? String(tx.account_name) : '',
-    tx && tx.memo ? String(tx.memo) : '',
-    tx && tx.date ? String(tx.date) : '',
-    tx && tx.category_name ? String(tx.category_name) : '',
-    tx && tx.category_id ? String(tx.category_id) : '',
-    fmtEurFromMilliunits(tx ? tx.amount_milliunits : null),
-  ].join(' ').toLowerCase();
-  return haystack.includes(term);
+function groupIsQuickApplicable(source, label, includeMedium) {
+  const normalizedSource = String(source || '').toLowerCase();
+  const normalizedLabel = String(label || '').toLowerCase();
+  if (normalizedSource === 'rule' || normalizedSource === 'default' || normalizedSource === 'current_category') {
+    return true;
+  }
+  if (normalizedSource !== 'learned') {
+    return false;
+  }
+  if (normalizedLabel === 'high') return true;
+  if (normalizedLabel === 'medium') return includeMedium;
+  return false;
 }
 
-function visibleSuggestedGroups(includeMedium) {
-  const allowed = includeMedium ? new Set(['high', 'medium']) : new Set(['high']);
+function visibleResolvedGroups(includeMedium) {
   const groups = [];
   const nodes = document.querySelectorAll('#ynabGroups .ynab-group');
 
   nodes.forEach(node => {
     if (!(node instanceof HTMLElement)) return;
-    const confidence = String(node.getAttribute('data-confidence-label') || '').toLowerCase();
-    if (!allowed.has(confidence)) return;
-    const categoryId = String(node.getAttribute('data-suggested-category-id') || '').trim();
+    const categoryId = String(node.getAttribute('data-resolved-category-id') || '').trim();
+    const resolvedSource = String(node.getAttribute('data-resolved-source') || '').trim();
+    const confidenceLabel = String(node.getAttribute('data-confidence-label') || '').trim();
     if (!categoryId) return;
+    if (!groupIsQuickApplicable(resolvedSource, confidenceLabel, includeMedium)) return;
 
     const txIds = [];
     const checkboxes = node.querySelectorAll('.ynab-tx-check');
@@ -560,8 +694,8 @@ function visibleSuggestedGroups(includeMedium) {
 
     if (!txIds.length) return;
     groups.push({
-      payee: String(node.getAttribute('data-payee') || 'UNKNOWN'),
       categoryId,
+      resolvedSource,
       txIds,
     });
   });
@@ -575,68 +709,45 @@ function visibleQueueTransactionIds() {
     .map(cb => cb.value);
 }
 
-function visibleApprovalIds() {
-  return Array.from(document.querySelectorAll('#approvalList .ynab-approval-check'))
-    .filter(cb => cb instanceof HTMLInputElement && cb.value)
-    .map(cb => cb.value);
-}
-
 function setVisibleSelection(checked) {
-  const ids = currentView === 'approve' ? visibleApprovalIds() : visibleQueueTransactionIds();
-  const selection = currentSelectionSet();
+  const ids = visibleQueueTransactionIds();
   ids.forEach(id => {
     if (checked) {
-      selection.add(id);
+      selectedQueueIds.add(id);
     } else {
-      selection.delete(id);
+      selectedQueueIds.delete(id);
     }
   });
-  if (currentView === 'approve') {
-    renderApprovalQueue(approvalsStateRaw);
-  } else {
-    renderQueue(queueStateRaw);
-  }
+  renderQueue(queueStateRaw);
 }
 
 function clearCurrentSelection() {
-  if (currentView === 'approve') {
-    selectedApprovalTxIds.clear();
-    renderApprovalQueue(approvalsStateRaw);
-  } else {
-    selectedQueueIds.clear();
-    renderQueue(queueStateRaw);
-  }
+  selectedQueueIds.clear();
+  renderQueue(queueStateRaw);
 }
 
-function updateToolbarForCurrentView() {
-  const searchInput = document.getElementById('workspaceFilterInput');
-  const primaryActionBtn = document.getElementById('btnToolbarPrimaryAction');
-  const quickApplyWrap = document.getElementById('quickApplyIncludeMediumWrap');
+function selectedTransactions() {
+  const byId = txLookupMap();
+  return currentSelectionIds()
+    .map(txId => byId[txId])
+    .filter(Boolean);
+}
 
-  if (searchInput instanceof HTMLInputElement) {
-    searchInput.value = currentFilterValue();
-    searchInput.placeholder = currentView === 'approve'
-      ? 'Filter approvals by payee, account, memo, date, amount, category'
-      : 'Filter queue by payee, account, memo, date, amount';
-  }
-
-  if (primaryActionBtn instanceof HTMLButtonElement) {
-    primaryActionBtn.textContent = currentView === 'approve'
-      ? 'Approve visible'
-      : 'Apply visible suggestions';
-  }
-
-  if (quickApplyWrap instanceof HTMLElement) {
-    quickApplyWrap.style.display = currentView === 'approve' ? 'none' : 'inline-flex';
-  }
+function canApproveSelectedAsIs() {
+  const transactions = selectedTransactions();
+  if (!transactions.length) return false;
+  return transactions.every(tx => (
+    !!(tx && tx.current_category_id) &&
+    !!(tx && tx.needs_approval) &&
+    !(tx && tx.needs_category)
+  ));
 }
 
 function updateFloatingApplyBarVisibility() {
   const floatingBar = document.getElementById('floatingApplyBar');
   const countLabel = document.getElementById('selectedTxCount');
   const hintLabel = document.getElementById('floatingApplyHint');
-  const categorizeTray = document.getElementById('categorizeTray');
-  const approveTray = document.getElementById('approveTray');
+  const approveBtn = document.getElementById('btnApproveSelected');
 
   if (!(floatingBar instanceof HTMLElement)) return;
 
@@ -645,67 +756,16 @@ function updateFloatingApplyBarVisibility() {
     countLabel.textContent = `${selectedCount} selected`;
   }
   if (hintLabel) {
-    hintLabel.textContent = currentView === 'approve'
-      ? 'Confirm the current approval selection.'
-      : 'Choose a category, then apply.';
+    hintLabel.textContent = canApproveSelectedAsIs()
+      ? 'Approve selected categorized transactions as-is, or pick a new category.'
+      : 'Choose a category to apply. Approve as-is is only available when every selected item already has a category.';
   }
-  if (categorizeTray instanceof HTMLElement) {
-    categorizeTray.classList.toggle('is-active', currentView === 'categorize');
-  }
-  if (approveTray instanceof HTMLElement) {
-    approveTray.classList.toggle('is-active', currentView === 'approve');
+  if (approveBtn instanceof HTMLButtonElement) {
+    approveBtn.disabled = !canApproveSelectedAsIs();
   }
 
   floatingBar.classList.toggle('is-visible', selectedCount > 0);
   renderRecentCategoryChips();
-}
-
-function setActiveYnabView(viewName) {
-  currentView = viewName === 'approve' ? 'approve' : 'categorize';
-  const categorizeBtn = document.getElementById('btnViewCategorizer');
-  const approvalsBtn = document.getElementById('btnViewApprovals');
-  const categorizeView = document.getElementById('categorizerView');
-  const approvalsView = document.getElementById('approvalsView');
-
-  if (categorizeBtn instanceof HTMLButtonElement) {
-    categorizeBtn.classList.toggle('is-active', currentView === 'categorize');
-    categorizeBtn.setAttribute('aria-selected', currentView === 'categorize' ? 'true' : 'false');
-  }
-  if (approvalsBtn instanceof HTMLButtonElement) {
-    approvalsBtn.classList.toggle('is-active', currentView === 'approve');
-    approvalsBtn.setAttribute('aria-selected', currentView === 'approve' ? 'true' : 'false');
-  }
-  if (categorizeView instanceof HTMLElement) {
-    categorizeView.classList.toggle('is-active', currentView === 'categorize');
-  }
-  if (approvalsView instanceof HTMLElement) {
-    approvalsView.classList.toggle('is-active', currentView === 'approve');
-  }
-
-  updateToolbarForCurrentView();
-  updateFloatingApplyBarVisibility();
-
-  if (currentView === 'approve') {
-    renderApprovalQueue(approvalsStateRaw);
-  } else {
-    renderQueue(queueStateRaw);
-  }
-}
-
-function openSettingsSheet() {
-  const shell = document.getElementById('ynabSettingsShell');
-  if (!(shell instanceof HTMLElement)) return;
-  shell.classList.add('is-open');
-  shell.setAttribute('aria-hidden', 'false');
-  console.debug('YNAB settings sheet opened');
-}
-
-function closeSettingsSheet() {
-  const shell = document.getElementById('ynabSettingsShell');
-  if (!(shell instanceof HTMLElement)) return;
-  shell.classList.remove('is-open');
-  shell.setAttribute('aria-hidden', 'true');
-  console.debug('YNAB settings sheet closed');
 }
 
 function updateGroupCheckboxStates() {
@@ -724,6 +784,39 @@ function updateGroupCheckboxStates() {
   });
 }
 
+function suggestionSummary(group) {
+  const suggestion = group && group.suggestion ? group.suggestion : null;
+  if (!suggestion || !suggestion.category_id) {
+    return 'Choose in tray';
+  }
+  const source = String(suggestion.source || '');
+  const categoryName = suggestion.category_name || suggestion.category_id;
+  if (source === 'rule') return `${categoryName} via custom rule`;
+  if (source === 'current_category') return `${categoryName} current category`;
+  if (source === 'default') return `${categoryName} default fallback`;
+  const confidence = Math.round((Number(suggestion.confidence) || 0) * 100);
+  return `${categoryName} ${confidence}%`;
+}
+
+function badgeLabel(group) {
+  if (!group || !group.suggestion) return 'None';
+  return String(group.suggestion.confidence_label || group.confidence_label || 'None');
+}
+
+function rowCategorySummary(tx) {
+  const currentCategory = tx && tx.current_category_name ? String(tx.current_category_name) : 'Uncategorized';
+  const resolvedCategory = tx && tx.resolved_category_name ? String(tx.resolved_category_name) : '';
+  const resolvedSource = tx && tx.resolved_source ? String(tx.resolved_source) : 'none';
+
+  if (!resolvedCategory || resolvedSource === 'none') {
+    return `Current: ${currentCategory}`;
+  }
+  if (resolvedSource === 'current_category') {
+    return `Current: ${currentCategory}`;
+  }
+  return `Current: ${currentCategory} • Review: ${resolvedCategory}`;
+}
+
 function renderQueue(payload) {
   if (payload) {
     queueStateRaw = payload;
@@ -732,20 +825,26 @@ function renderQueue(payload) {
 
   pruneSelectionState();
   queueState = queueStateRaw;
-  applySettingsToUi(queueState);
   renderGlobalCategorySelect();
   renderDefaultCategorySelect();
+  renderCustomRulesEditor();
   updateHeaderStats();
 
   const groupsEl = document.getElementById('ynabGroups');
+  const filterInput = document.getElementById('workspaceFilterInput');
   if (!(groupsEl instanceof HTMLElement)) return;
+  const filterTerm = filterInput instanceof HTMLInputElement
+    ? String(filterInput.value || '').trim().toLowerCase()
+    : '';
 
   const groups = Array.isArray(queueState.groups) ? queueState.groups.slice() : [];
   groups.sort((a, b) => {
-    const ranks = { High: 0, Medium: 1, Low: 2 };
-    const rankA = Object.prototype.hasOwnProperty.call(ranks, a.confidence_label) ? ranks[a.confidence_label] : 3;
-    const rankB = Object.prototype.hasOwnProperty.call(ranks, b.confidence_label) ? ranks[b.confidence_label] : 3;
-    if (rankA !== rankB) return rankA - rankB;
+    const rankA = badgeLabel(a);
+    const rankB = badgeLabel(b);
+    if (rankA !== rankB) {
+      const order = { Rule: 0, High: 1, Current: 2, Medium: 3, Default: 4, Low: 5, None: 6 };
+      return (order[rankA] ?? 99) - (order[rankB] ?? 99);
+    }
     return serializeDateForSort(b.latest_date) - serializeDateForSort(a.latest_date);
   });
 
@@ -753,13 +852,9 @@ function renderQueue(payload) {
   groups.forEach(group => {
     const txAll = Array.isArray(group.transactions) ? group.transactions : [];
     const payeeText = `${group.payee_display || ''} ${group.payee_normalized || ''}`.toLowerCase();
-    const payeeMatches = !queueFilterTerm || payeeText.includes(queueFilterTerm);
-    const txVisible = payeeMatches
-      ? txAll
-      : txAll.filter(tx => txMatchesFilter(tx, queueFilterTerm));
-
+    const payeeMatches = !filterTerm || payeeText.includes(filterTerm);
+    const txVisible = payeeMatches ? txAll : txAll.filter(tx => txMatchesFilter(tx, filterTerm));
     if (!txVisible.length) return;
-
     visibleGroups.push({
       ...group,
       _visibleTransactions: txVisible,
@@ -768,43 +863,40 @@ function renderQueue(payload) {
   });
 
   const visibleTxCount = visibleGroups.reduce((sum, group) => sum + group._visibleTransactions.length, 0);
-  if (currentView === 'categorize') {
-    if (queueFilterTerm) {
-      setWorkspaceSummary(
-        `Showing ${visibleGroups.length}/${queueState.group_count || 0} groups • ` +
-        `${visibleTxCount}/${queueState.transaction_count || 0} transactions`
-      );
-    } else {
-      setWorkspaceSummary(
-        `${queueState.group_count || 0} groups • ${queueState.transaction_count || 0} transactions`
-      );
-    }
+  if (filterTerm) {
+    setWorkspaceSummary(
+      `Showing ${visibleGroups.length}/${queueState.group_count || 0} groups • ` +
+      `${visibleTxCount}/${queueState.transaction_count || 0} transactions`
+    );
+  } else {
+    setWorkspaceSummary(
+      `${queueState.group_count || 0} groups • ${queueState.transaction_count || 0} transactions • ` +
+      `${queueState.needs_category_count || 0} need category • ${queueState.needs_approval_count || 0} need approval`
+    );
   }
 
   if (!visibleGroups.length) {
-    groupsEl.innerHTML = (
-      '<div class="ynab-empty-placeholder">No uncategorized transactions match the current filter.</div>'
-    );
+    groupsEl.innerHTML = '<div class="ynab-empty-placeholder">No review transactions match the current filter.</div>';
     updateFloatingApplyBarVisibility();
     return;
   }
 
   const html = visibleGroups.map(group => {
     const suggestion = group.suggestion || null;
-    const suggestedCategory = suggestion && suggestion.category_id ? String(suggestion.category_id) : '';
-    const suggestionText = suggestion
-      ? (suggestion.source === 'default'
-        ? `${suggestion.category_name || suggestion.category_id} default`
-        : `${suggestion.category_name || suggestion.category_id} ${Math.round((suggestion.confidence || 0) * 100)}%`)
-      : 'Choose in tray';
-    const label = group.confidence_label || 'Low';
+    const resolvedCategoryId = suggestion && suggestion.category_id ? String(suggestion.category_id) : '';
+    const label = badgeLabel(group);
     const visibleCount = group._visibleTransactions.length;
     const totalCount = group._totalTransactions;
-    const countText = queueFilterTerm && visibleCount !== totalCount
+    const countText = filterTerm && visibleCount !== totalCount
       ? `${visibleCount}/${totalCount} transaction(s)`
       : `${totalCount} transaction(s)`;
     const expanded = isGroupExpanded(group);
-    const payeeKey = String(group.payee_normalized || '');
+    const groupKey = String(group.group_key || group.payee_normalized || '');
+    const lastActivity = group.latest_date ? fmtDateDDMMYYYY(group.latest_date) : '—';
+    const actionLabel = suggestion && suggestion.source === 'current_category'
+      ? 'Approve group'
+      : 'Apply suggestion';
+    const needsSummary = `${group.needs_category_count || 0} need category • ${group.needs_approval_count || 0} need approval`;
 
     const txRows = group._visibleTransactions.map(tx => {
       const txId = tx && tx.id ? String(tx.id) : '';
@@ -812,44 +904,46 @@ function renderQueue(payload) {
       const dateText = fmtDateDDMMYYYY(tx && tx.date ? String(tx.date) : '');
       const amountText = fmtEurFromMilliunits(tx ? tx.amount_milliunits : null);
       const accountFlow = txAccountFlowLabel(tx);
+      const categoryText = rowCategorySummary(tx);
       const isSelected = selectedQueueIds.has(txId);
       return (
         `<li class="ynab-tx-item${isSelected ? ' is-selected' : ''}" data-tx-id="${escapeHtml(txId)}">` +
         `<input class="ynab-tx-check" type="checkbox" value="${escapeHtml(txId)}"${isSelected ? ' checked' : ''}>` +
         '<div class="ynab-tx-main">' +
         `<div class="ynab-tx-primary">${escapeHtml(accountFlow)}</div>` +
-        `<div class="ynab-tx-secondary">${escapeHtml(memoText)}</div>` +
-        `<div class="ynab-tx-tertiary">${escapeHtml(dateText)}</div>` +
+        `<div class="ynab-tx-secondary">${escapeHtml(categoryText)}</div>` +
+        `<div class="ynab-tx-tertiary">${escapeHtml(memoText)} • ${escapeHtml(dateText)}</div>` +
         '</div>' +
         `<div class="ynab-tx-amount">${escapeHtml(amountText)}</div>` +
         '</li>'
       );
     }).join('');
 
-    const suggestionButton = suggestedCategory
-      ? `<button type="button" class="ynab-btn ynab-btn-primary ynab-group-inline-action btnUseSuggestion">Apply suggestion</button>`
+    const suggestionButton = resolvedCategoryId
+      ? `<button type="button" class="ynab-btn ynab-btn-primary ynab-group-inline-action btnUseSuggestion">${escapeHtml(actionLabel)}</button>`
       : '';
 
     const toggleLabel = expanded ? 'Collapse' : 'Expand';
-    const lastActivity = group.latest_date ? fmtDateDDMMYYYY(group.latest_date) : '—';
 
     return (
-      `<article class="ynab-group" data-payee="${escapeHtml(payeeKey)}" ` +
+      `<article class="ynab-group" data-group-key="${escapeHtml(groupKey)}" ` +
+      `data-resolved-source="${escapeHtml(String(group.resolved_source || 'none'))}" ` +
       `data-confidence-label="${escapeHtml(String(label).toLowerCase())}" ` +
-      `data-suggested-category-id="${escapeHtml(suggestedCategory)}">` +
+      `data-resolved-category-id="${escapeHtml(resolvedCategoryId)}">` +
       '<div class="ynab-group-shell">' +
       '<div class="ynab-group-top">' +
       '<label class="ynab-group-checkbox-wrap" aria-label="Select group">' +
-      `<input class="ynab-group-checkbox" type="checkbox" data-payee="${escapeHtml(payeeKey)}">` +
+      `<input class="ynab-group-checkbox" type="checkbox" data-group-key="${escapeHtml(groupKey)}">` +
       '</label>' +
-      `<button type="button" class="ynab-group-expand" data-payee="${escapeHtml(payeeKey)}">` +
+      `<button type="button" class="ynab-group-expand" data-group-key="${escapeHtml(groupKey)}">` +
       '<div class="ynab-group-heading">' +
       `<div class="ynab-group-title">${escapeHtml(group.payee_display || group.payee_normalized)}</div>` +
       `<div class="ynab-group-count">${escapeHtml(countText)}</div>` +
       '</div>' +
       '<div class="ynab-group-meta">' +
       `<span class="ynab-badge ${badgeClass(label)}">${escapeHtml(label)}</span>` +
-      `<span class="ynab-group-meta-item">${escapeHtml(suggestionText)}</span>` +
+      `<span class="ynab-group-meta-item">${escapeHtml(suggestionSummary(group))}</span>` +
+      `<span class="ynab-group-meta-item">${escapeHtml(needsSummary)}</span>` +
       `<span class="ynab-group-meta-item">Last activity ${escapeHtml(lastActivity)}</span>` +
       '</div>' +
       '</button>' +
@@ -857,7 +951,7 @@ function renderQueue(payload) {
       '</div>' +
       `<div class="ynab-group-body${expanded ? '' : ' is-collapsed'}">` +
       `<ul class="ynab-tx-list">${txRows}</ul>` +
-      `<button type="button" class="ynab-group-toggle" data-payee="${escapeHtml(payeeKey)}">${escapeHtml(toggleLabel)}</button>` +
+      `<button type="button" class="ynab-group-toggle" data-group-key="${escapeHtml(groupKey)}">${escapeHtml(toggleLabel)}</button>` +
       '</div>' +
       '</div>' +
       '</article>'
@@ -869,78 +963,12 @@ function renderQueue(payload) {
   updateFloatingApplyBarVisibility();
 }
 
-function renderApprovalQueue(payload) {
-  if (payload) {
-    approvalsStateRaw = payload;
-  }
-  if (!approvalsStateRaw) return;
-
-  pruneSelectionState();
-  updateHeaderStats();
-
-  const listEl = document.getElementById('approvalList');
-  if (!(listEl instanceof HTMLElement)) return;
-
-  const allTransactions = Array.isArray(approvalsStateRaw.transactions)
-    ? approvalsStateRaw.transactions
-    : [];
-  const visibleTransactions = approvalFilterTerm
-    ? allTransactions.filter(tx => approvalMatchesFilter(tx, approvalFilterTerm))
-    : allTransactions;
-
-  if (currentView === 'approve') {
-    if (approvalFilterTerm) {
-      setWorkspaceSummary(
-        `Showing ${visibleTransactions.length}/${approvalsStateRaw.transaction_count || 0} approval items`
-      );
-    } else {
-      setWorkspaceSummary(`${approvalsStateRaw.transaction_count || 0} approval items`);
-    }
-  }
-
-  if (!visibleTransactions.length) {
-    listEl.innerHTML = (
-      '<li class="ynab-empty-placeholder">No approval transactions match the current filter.</li>'
-    );
-    updateFloatingApplyBarVisibility();
-    return;
-  }
-
-  const html = visibleTransactions.map(tx => {
-    const txId = tx && tx.id ? String(tx.id) : '';
-    const payee = tx && tx.payee_name ? String(tx.payee_name) : 'Unknown';
-    const accountFlow = txAccountFlowLabel(tx);
-    const memo = tx && tx.memo ? String(tx.memo) : 'No memo';
-    const date = fmtDateDDMMYYYY(tx && tx.date ? String(tx.date) : '');
-    const amount = fmtEurFromMilliunits(tx ? tx.amount_milliunits : null);
-    const categoryText = tx && tx.category_name
-      ? String(tx.category_name)
-      : (tx && tx.category_id ? String(tx.category_id) : 'Uncategorized');
-    const isSelected = selectedApprovalTxIds.has(txId);
-
-    return (
-      `<li class="ynab-approval-item${isSelected ? ' is-selected' : ''}" data-tx-id="${escapeHtml(txId)}">` +
-      `<input class="ynab-approval-check" type="checkbox" value="${escapeHtml(txId)}"${isSelected ? ' checked' : ''}>` +
-      '<div class="ynab-tx-main">' +
-      `<div class="ynab-tx-primary">${escapeHtml(payee)}</div>` +
-      `<div class="ynab-tx-secondary">${escapeHtml(categoryText)} • ${escapeHtml(accountFlow)}</div>` +
-      `<div class="ynab-tx-tertiary">${escapeHtml(memo)} • ${escapeHtml(date)}</div>` +
-      '</div>' +
-      `<div class="ynab-tx-amount">${escapeHtml(amount)}</div>` +
-      '</li>'
-    );
-  }).join('');
-
-  listEl.innerHTML = html;
-  updateFloatingApplyBarVisibility();
-}
-
 async function loadQueue(options = {}) {
   const opts = Object.assign({ showStatus: true }, options || {});
   if (opts.showStatus) {
-    showMessage('Loading queue...');
+    showMessage('Loading review queue...');
   }
-  console.debug('Loading YNAB categorize queue');
+  console.debug('Loading YNAB review queue');
   try {
     const data = await apiRequest('/api/ynab-categorizer/queue');
     queueStateRaw = data;
@@ -951,25 +979,6 @@ async function loadQueue(options = {}) {
   } catch (error) {
     console.error('Queue load failed:', error);
     showMessage(`Queue load failed: ${error.message}`, 'error');
-  }
-}
-
-async function loadApprovalQueue(options = {}) {
-  const opts = Object.assign({ showStatus: false }, options || {});
-  if (opts.showStatus) {
-    showMessage('Loading approval queue...');
-  }
-  console.debug('Loading YNAB approval queue');
-  try {
-    const data = await apiRequest('/api/ynab-categorizer/approvals-queue');
-    approvalsStateRaw = data;
-    renderApprovalQueue(approvalsStateRaw);
-    if (opts.showStatus) {
-      showMessage('Approval queue loaded', 'ok');
-    }
-  } catch (error) {
-    console.error('Approval queue load failed:', error);
-    showMessage(`Approval queue load failed: ${error.message}`, 'error');
   }
 }
 
@@ -999,10 +1008,13 @@ async function loadBootstrapStatus() {
 }
 
 async function applyTransactions(txIds, categoryId, options = {}) {
-  const opts = Object.assign({
-    reloadQueue: true,
-    showStatus: true,
-  }, options || {});
+  const opts = Object.assign(
+    {
+      reloadQueue: true,
+      showStatus: true,
+    },
+    options || {}
+  );
 
   if (opts.showStatus) {
     showMessage(`Applying category to ${txIds.length} transaction(s)...`);
@@ -1024,9 +1036,8 @@ async function applyTransactions(txIds, categoryId, options = {}) {
 
     addRecentCategory(categoryId);
     txIds.forEach(id => selectedQueueIds.delete(id));
-
     if (opts.showStatus) {
-      showMessage(`Applied category to ${txIds.length} transaction(s)`, 'ok');
+      showMessage(`Applied category and approved ${txIds.length} transaction(s)`, 'ok');
     }
     if (opts.reloadQueue) {
       await loadQueue({ showStatus: false });
@@ -1043,10 +1054,13 @@ async function applyTransactions(txIds, categoryId, options = {}) {
 }
 
 async function approveTransactions(txIds, options = {}) {
-  const opts = Object.assign({
-    reloadQueue: true,
-    showStatus: true,
-  }, options || {});
+  const opts = Object.assign(
+    {
+      reloadQueue: true,
+      showStatus: true,
+    },
+    options || {}
+  );
 
   if (opts.showStatus) {
     showMessage(`Approving ${txIds.length} transaction(s)...`);
@@ -1065,13 +1079,12 @@ async function approveTransactions(txIds, options = {}) {
       body: JSON.stringify({ transaction_ids: txIds }),
     });
 
-    txIds.forEach(id => selectedApprovalTxIds.delete(id));
-
+    txIds.forEach(id => selectedQueueIds.delete(id));
     if (opts.showStatus) {
       showMessage(`Approved ${txIds.length} transaction(s)`, 'ok');
     }
     if (opts.reloadQueue) {
-      await loadApprovalQueue({ showStatus: false });
+      await loadQueue({ showStatus: false });
     }
     return data;
   } catch (error) {
@@ -1084,14 +1097,17 @@ async function approveTransactions(txIds, options = {}) {
 }
 
 async function saveConfigFromUi(options = {}) {
-  const opts = Object.assign({
-    showSuccess: true,
-    reloadQueueAfter: true,
-  }, options || {});
+  const opts = Object.assign(
+    {
+      showSuccess: true,
+      reloadQueueAfter: true,
+    },
+    options || {}
+  );
 
   const payload = readSettingsFromUi();
   console.debug('Saving YNAB workspace config', payload);
-  await apiRequest('/api/ynab-categorizer/config', {
+  const data = await apiRequest('/api/ynab-categorizer/config', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -1099,24 +1115,24 @@ async function saveConfigFromUi(options = {}) {
     body: JSON.stringify(payload),
   });
 
+  applySettingsToUi(data || payload);
   if (opts.showSuccess) {
     showMessage('Settings saved', 'ok');
   }
   if (opts.reloadQueueAfter) {
     await loadQueue({ showStatus: false });
-    await loadApprovalQueue({ showStatus: false });
   }
 }
 
-async function applySuggestedFromVisibleGroups() {
+async function applyResolvedFromVisibleGroups() {
   const includeMediumInput = document.getElementById('quickApplyIncludeMedium');
   const includeMedium = includeMediumInput instanceof HTMLInputElement
     ? includeMediumInput.checked
     : false;
-  const groups = visibleSuggestedGroups(includeMedium);
+  const groups = visibleResolvedGroups(includeMedium);
 
   if (!groups.length) {
-    showMessage('No visible suggested groups to apply', 'error');
+    showMessage('No visible resolvable groups to apply', 'error');
     return;
   }
 
@@ -1126,7 +1142,7 @@ async function applySuggestedFromVisibleGroups() {
 
   for (let i = 0; i < groups.length; i += 1) {
     const group = groups[i];
-    showMessage(`Applying suggestions ${i + 1}/${groups.length}...`);
+    showMessage(`Applying visible groups ${i + 1}/${groups.length}...`);
     try {
       await applyTransactions(group.txIds, group.categoryId, {
         reloadQueue: false,
@@ -1135,14 +1151,14 @@ async function applySuggestedFromVisibleGroups() {
       appliedGroups += 1;
       appliedTransactions += group.txIds.length;
     } catch (error) {
-      console.error('Suggested apply failed for payee:', group.payee, error);
+      console.error('Visible group apply failed:', group, error);
       failedGroups += 1;
     }
   }
 
   await loadQueue({ showStatus: false });
   const summary = (
-    `Suggestion apply complete: ${appliedGroups} group(s), ` +
+    `Visible apply complete: ${appliedGroups} group(s), ` +
     `${appliedTransactions} transaction(s), ${failedGroups} failed`
   );
   showMessage(summary, failedGroups > 0 ? 'error' : 'ok');
@@ -1161,7 +1177,6 @@ function setupKeyboardShortcuts() {
     const filterInput = document.getElementById('workspaceFilterInput');
     const categorySearch = document.getElementById('globalCategorySearch');
     const applySelectedBtn = document.getElementById('btnApplySelected');
-    const approveSelectedBtn = document.getElementById('btnApproveSelected');
     const typing = isTypingTarget(event.target);
     const settingsShell = document.getElementById('ynabSettingsShell');
     const settingsOpen = settingsShell instanceof HTMLElement && settingsShell.classList.contains('is-open');
@@ -1185,13 +1200,7 @@ function setupKeyboardShortcuts() {
       if (filterInput instanceof HTMLInputElement && filterInput.value) {
         event.preventDefault();
         filterInput.value = '';
-        if (currentView === 'approve') {
-          approvalFilterTerm = '';
-          renderApprovalQueue(approvalsStateRaw);
-        } else {
-          queueFilterTerm = '';
-          renderQueue(queueStateRaw);
-        }
+        renderQueue(queueStateRaw);
       }
       return;
     }
@@ -1201,7 +1210,7 @@ function setupKeyboardShortcuts() {
     }
 
     if ((event.key === 'c' || event.key === 'C') && !event.ctrlKey && !event.metaKey && !event.altKey) {
-      if (currentView === 'categorize' && categorySearch instanceof HTMLInputElement) {
+      if (categorySearch instanceof HTMLInputElement) {
         const floatingBar = document.getElementById('floatingApplyBar');
         const floatingVisible = floatingBar instanceof HTMLElement && floatingBar.classList.contains('is-visible');
         if (floatingVisible) {
@@ -1214,7 +1223,7 @@ function setupKeyboardShortcuts() {
     }
 
     if (event.key === 'Enter' && event.ctrlKey) {
-      if (currentView === 'categorize' && applySelectedBtn instanceof HTMLButtonElement) {
+      if (applySelectedBtn instanceof HTMLButtonElement) {
         const floatingBar = document.getElementById('floatingApplyBar');
         const floatingVisible = floatingBar instanceof HTMLElement && floatingBar.classList.contains('is-visible');
         if (floatingVisible) {
@@ -1222,16 +1231,24 @@ function setupKeyboardShortcuts() {
           applySelectedBtn.click();
         }
       }
-      if (currentView === 'approve' && approveSelectedBtn instanceof HTMLButtonElement) {
-        const floatingBar = document.getElementById('floatingApplyBar');
-        const floatingVisible = floatingBar instanceof HTMLElement && floatingBar.classList.contains('is-visible');
-        if (floatingVisible) {
-          event.preventDefault();
-          approveSelectedBtn.click();
-        }
-      }
     }
   });
+}
+
+function openSettingsSheet() {
+  const shell = document.getElementById('ynabSettingsShell');
+  if (!(shell instanceof HTMLElement)) return;
+  shell.classList.add('is-open');
+  shell.setAttribute('aria-hidden', 'false');
+  console.debug('YNAB settings sheet opened');
+}
+
+function closeSettingsSheet() {
+  const shell = document.getElementById('ynabSettingsShell');
+  if (!(shell instanceof HTMLElement)) return;
+  shell.classList.remove('is-open');
+  shell.setAttribute('aria-hidden', 'true');
+  console.debug('YNAB settings sheet closed');
 }
 
 function handleQueueListClick(event) {
@@ -1242,9 +1259,9 @@ function handleQueueListClick(event) {
   if (suggestionBtn instanceof HTMLElement) {
     const group = suggestionBtn.closest('.ynab-group');
     if (!group) return;
-    const suggestedCategoryId = String(group.getAttribute('data-suggested-category-id') || '').trim();
-    if (!suggestedCategoryId) {
-      showMessage('No suggestion available for this group', 'error');
+    const resolvedCategoryId = String(group.getAttribute('data-resolved-category-id') || '').trim();
+    if (!resolvedCategoryId) {
+      showMessage('No resolved category available for this group', 'error');
       return;
     }
     const txIds = Array.from(group.querySelectorAll('.ynab-tx-check'))
@@ -1254,24 +1271,24 @@ function handleQueueListClick(event) {
       showMessage('No transactions available in this group', 'error');
       return;
     }
-    applyTransactions(txIds, suggestedCategoryId).catch(() => {});
+    applyTransactions(txIds, resolvedCategoryId).catch(() => {});
     return;
   }
 
   const toggleBtn = target.closest('.ynab-group-toggle');
   if (toggleBtn instanceof HTMLElement) {
-    const payee = String(toggleBtn.getAttribute('data-payee') || '').trim();
-    const groupData = (queueState.groups || []).find(group => String(group.payee_normalized || '') === payee);
-    setGroupExpanded(payee, !isGroupExpanded(groupData || { payee_normalized: payee }));
+    const groupKey = String(toggleBtn.getAttribute('data-group-key') || '').trim();
+    const groupData = (queueState.groups || []).find(group => String(group.group_key || '') === groupKey);
+    setGroupExpanded(groupKey, !isGroupExpanded(groupData || { group_key: groupKey }));
     renderQueue(queueStateRaw);
     return;
   }
 
   const expandBtn = target.closest('.ynab-group-expand');
   if (expandBtn instanceof HTMLElement) {
-    const payee = String(expandBtn.getAttribute('data-payee') || '').trim();
-    const groupData = (queueState.groups || []).find(group => String(group.payee_normalized || '') === payee);
-    setGroupExpanded(payee, !isGroupExpanded(groupData || { payee_normalized: payee }));
+    const groupKey = String(expandBtn.getAttribute('data-group-key') || '').trim();
+    const groupData = (queueState.groups || []).find(group => String(group.group_key || '') === groupKey);
+    setGroupExpanded(groupKey, !isGroupExpanded(groupData || { group_key: groupKey }));
     renderQueue(queueStateRaw);
     return;
   }
@@ -1324,36 +1341,94 @@ function handleQueueListChange(event) {
   }
 }
 
-function handleApprovalListClick(event) {
+function handleRuleListClick(event) {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
-  if (target.closest('button,input,label,a')) {
+  const card = target.closest('.ynab-rule-card');
+  if (!(card instanceof HTMLElement)) return;
+  const ruleId = String(card.getAttribute('data-rule-id') || '').trim();
+  if (!ruleId) return;
+
+  if (target.closest('.jsRuleDelete')) {
+    customRulesState = customRulesState.filter(rule => rule.id !== ruleId);
+    renderCustomRulesEditor();
     return;
   }
-
-  const row = target.closest('.ynab-approval-item');
-  if (!(row instanceof HTMLElement)) return;
-  const checkbox = row.querySelector('.ynab-approval-check');
-  if (!(checkbox instanceof HTMLInputElement)) return;
-  checkbox.checked = !checkbox.checked;
-  if (checkbox.checked) {
-    selectedApprovalTxIds.add(checkbox.value);
-  } else {
-    selectedApprovalTxIds.delete(checkbox.value);
+  if (target.closest('.jsRuleMoveUp')) {
+    const index = customRulesState.findIndex(rule => rule.id === ruleId);
+    if (index > 0) {
+      const next = customRulesState.slice();
+      [next[index - 1], next[index]] = [next[index], next[index - 1]];
+      customRulesState = next;
+      renderCustomRulesEditor();
+    }
+    return;
   }
-  renderApprovalQueue(approvalsStateRaw);
+  if (target.closest('.jsRuleMoveDown')) {
+    const index = customRulesState.findIndex(rule => rule.id === ruleId);
+    if (index >= 0 && index < customRulesState.length - 1) {
+      const next = customRulesState.slice();
+      [next[index], next[index + 1]] = [next[index + 1], next[index]];
+      customRulesState = next;
+      renderCustomRulesEditor();
+    }
+  }
 }
 
-function handleApprovalListChange(event) {
+function handleRuleListInput(event) {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
-  if (target instanceof HTMLInputElement && target.classList.contains('ynab-approval-check')) {
-    if (target.checked) {
-      selectedApprovalTxIds.add(target.value);
-    } else {
-      selectedApprovalTxIds.delete(target.value);
-    }
-    renderApprovalQueue(approvalsStateRaw);
+  const card = target.closest('.ynab-rule-card');
+  if (!(card instanceof HTMLElement)) return;
+  const ruleId = String(card.getAttribute('data-rule-id') || '').trim();
+  if (!ruleId) return;
+
+  if (target.classList.contains('jsRuleEnabled') && target instanceof HTMLInputElement) {
+    customRulesState = customRulesState.map(rule => (
+      rule.id === ruleId ? { ...rule, enabled: target.checked } : rule
+    ));
+    return;
+  }
+  if (target.classList.contains('jsRuleMatchType') && target instanceof HTMLSelectElement) {
+    customRulesState = customRulesState.map(rule => (
+      rule.id === ruleId ? { ...rule, payee_match_type: target.value } : rule
+    ));
+    return;
+  }
+  if (target.classList.contains('jsRulePayeeValue') && target instanceof HTMLInputElement) {
+    customRulesState = customRulesState.map(rule => (
+      rule.id === ruleId ? { ...rule, payee_value: target.value } : rule
+    ));
+    return;
+  }
+  if (target.classList.contains('jsRuleAmountOperator') && target instanceof HTMLSelectElement) {
+    customRulesState = customRulesState.map(rule => (
+      rule.id === ruleId
+        ? {
+          ...rule,
+          amount_operator: target.value,
+          amount_value_eur: target.value === 'any' ? null : rule.amount_value_eur,
+        }
+        : rule
+    ));
+    renderCustomRulesEditor();
+    return;
+  }
+  if (target.classList.contains('jsRuleAmountValue') && target instanceof HTMLInputElement) {
+    customRulesState = customRulesState.map(rule => (
+      rule.id === ruleId
+        ? {
+          ...rule,
+          amount_value_eur: target.value === '' ? null : Number(target.value),
+        }
+        : rule
+    ));
+    return;
+  }
+  if (target.classList.contains('jsRuleCategoryId') && target instanceof HTMLSelectElement) {
+    customRulesState = customRulesState.map(rule => (
+      rule.id === ruleId ? { ...rule, category_id: target.value } : rule
+    ));
   }
 }
 
@@ -1369,6 +1444,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const approveSelectedBtn = document.getElementById('btnApproveSelected');
   const bootstrapBtn = document.getElementById('btnBootstrap');
   const saveModeBtn = document.getElementById('btnSaveMode');
+  const addCustomRuleBtn = document.getElementById('btnAddCustomRule');
   const globalCategory = document.getElementById('globalCategorySelect');
   const globalCategorySearch = document.getElementById('globalCategorySearch');
   const queueLimitEnabled = document.getElementById('queueLimitEnabled');
@@ -1378,31 +1454,18 @@ document.addEventListener('DOMContentLoaded', () => {
   const toolbarClearSelectionBtn = document.getElementById('btnToolbarClearSelection');
   const trayClearSelectionBtn = document.getElementById('btnTrayClearSelection');
   const filterInput = document.getElementById('workspaceFilterInput');
-  const btnViewCategorizer = document.getElementById('btnViewCategorizer');
-  const btnViewApprovals = document.getElementById('btnViewApprovals');
   const openSettingsBtn = document.getElementById('btnOpenSettings');
   const closeSettingsBtn = document.getElementById('btnCloseSettings');
   const closeSettingsBackdropBtn = document.getElementById('btnCloseSettingsBackdrop');
   const queueContainer = document.getElementById('ynabGroups');
-  const approvalContainer = document.getElementById('approvalList');
   const recentCategoryContainer = document.getElementById('recentCategoryChips');
-
-  setActiveYnabView('categorize');
+  const customRulesList = document.getElementById('customRulesList');
 
   if (refreshBtn instanceof HTMLButtonElement) {
     refreshBtn.addEventListener('click', async () => {
       await loadQueue();
-      await loadApprovalQueue();
       await loadBootstrapStatus();
     });
-  }
-
-  if (btnViewCategorizer instanceof HTMLButtonElement) {
-    btnViewCategorizer.addEventListener('click', () => setActiveYnabView('categorize'));
-  }
-
-  if (btnViewApprovals instanceof HTMLButtonElement) {
-    btnViewApprovals.addEventListener('click', () => setActiveYnabView('approve'));
   }
 
   if (openSettingsBtn instanceof HTMLButtonElement) {
@@ -1445,15 +1508,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  if (addCustomRuleBtn instanceof HTMLButtonElement) {
+    addCustomRuleBtn.addEventListener('click', () => {
+      customRulesState = [...customRulesState, createBlankRule()];
+      renderCustomRulesEditor();
+    });
+  }
+
   if (filterInput instanceof HTMLInputElement) {
     filterInput.addEventListener('input', () => {
-      if (currentView === 'approve') {
-        approvalFilterTerm = String(filterInput.value || '').trim().toLowerCase();
-        renderApprovalQueue(approvalsStateRaw);
-      } else {
-        queueFilterTerm = String(filterInput.value || '').trim().toLowerCase();
-        renderQueue(queueStateRaw);
-      }
+      renderQueue(queueStateRaw);
     });
   }
 
@@ -1471,24 +1535,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (toolbarPrimaryActionBtn instanceof HTMLButtonElement) {
     toolbarPrimaryActionBtn.addEventListener('click', async () => {
-      if (currentView === 'approve') {
-        const txIds = visibleApprovalIds();
-        if (!txIds.length) {
-          showMessage('No visible approval transactions to approve', 'error');
-          return;
-        }
-        await approveTransactions(txIds);
-        return;
-      }
-      await applySuggestedFromVisibleGroups();
+      await applyResolvedFromVisibleGroups();
     });
   }
 
   if (approveSelectedBtn instanceof HTMLButtonElement) {
     approveSelectedBtn.addEventListener('click', async () => {
-      const txIds = [...selectedApprovalTxIds];
+      const txIds = currentSelectionIds();
       if (!txIds.length) {
-        showMessage('Select at least one approval transaction', 'error');
+        showMessage('Select at least one transaction', 'error');
+        return;
+      }
+      if (!canApproveSelectedAsIs()) {
+        showMessage('Approve as-is only works when every selected transaction already has a category', 'error');
         return;
       }
       await approveTransactions(txIds);
@@ -1529,7 +1588,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (applySelectedBtn instanceof HTMLButtonElement) {
     applySelectedBtn.addEventListener('click', async () => {
-      const txIds = [...selectedQueueIds];
+      const txIds = currentSelectionIds();
       const categoryId = globalCategory instanceof HTMLSelectElement ? globalCategory.value : '';
       if (!txIds.length) {
         showMessage('Select at least one transaction', 'error');
@@ -1560,7 +1619,6 @@ document.addEventListener('DOMContentLoaded', () => {
         showMessage('Bootstrap completed', 'ok');
         await loadBootstrapStatus();
         await loadQueue({ showStatus: false });
-        await loadApprovalQueue({ showStatus: false });
       } catch (error) {
         console.error('Bootstrap failed:', error);
         showMessage(`Bootstrap failed: ${error.message}`, 'error');
@@ -1573,9 +1631,10 @@ document.addEventListener('DOMContentLoaded', () => {
     queueContainer.addEventListener('change', handleQueueListChange);
   }
 
-  if (approvalContainer instanceof HTMLElement) {
-    approvalContainer.addEventListener('click', handleApprovalListClick);
-    approvalContainer.addEventListener('change', handleApprovalListChange);
+  if (customRulesList instanceof HTMLElement) {
+    customRulesList.addEventListener('click', handleRuleListClick);
+    customRulesList.addEventListener('input', handleRuleListInput);
+    customRulesList.addEventListener('change', handleRuleListInput);
   }
 
   if (YNAB_INITIAL_CONFIG) {
@@ -1592,11 +1651,7 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('resize', () => {
     window.clearTimeout(resizeTimer);
     resizeTimer = window.setTimeout(() => {
-      if (currentView === 'approve') {
-        renderApprovalQueue(approvalsStateRaw);
-      } else {
-        renderQueue(queueStateRaw);
-      }
+      renderQueue(queueStateRaw);
     }, 120);
   });
 
@@ -1604,5 +1659,4 @@ document.addEventListener('DOMContentLoaded', () => {
   loadConfig();
   loadBootstrapStatus();
   loadQueue();
-  loadApprovalQueue();
 });

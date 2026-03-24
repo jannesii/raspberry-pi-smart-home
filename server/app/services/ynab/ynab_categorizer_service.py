@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 import logging
 import re
 import unicodedata
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 from ...core import (
     Controller,
@@ -29,6 +31,8 @@ _VALID_QUEUE_MODES = {
     QUEUE_FILTER_SKIP_TRANSFERS,
 }
 _VALID_QUEUE_LIMIT_UNITS = {"days", "months", "years"}
+_VALID_RULE_PAYEE_MATCH_TYPES = {"contains", "equals"}
+_VALID_RULE_AMOUNT_OPERATORS = {"any", "over", "under"}
 
 
 class YnabCategorizerService:
@@ -50,11 +54,12 @@ class YnabCategorizerService:
 
     def get_config(self) -> dict[str, Any]:
         cfg = self.ctrl.get_ynab_categorizer_config(self.budget_id)
+        custom_rules = self._parse_custom_rules_json(cfg.custom_rules_json)
         logger.debug(
             (
                 "get_config queue_filter_mode=%s show_reconciled_transactions=%s "
                 "queue_limit_enabled=%s queue_limit_value=%s queue_limit_unit=%s "
-                "quick_apply_include_medium=%s default_category_id=%s"
+                "quick_apply_include_medium=%s default_category_id=%s custom_rules=%s"
             ),
             cfg.queue_filter_mode,
             cfg.show_reconciled_transactions,
@@ -63,6 +68,7 @@ class YnabCategorizerService:
             cfg.queue_limit_unit,
             cfg.quick_apply_include_medium,
             cfg.default_category_id,
+            len(custom_rules),
         )
         return {
             "queue_filter_mode": cfg.queue_filter_mode,
@@ -72,6 +78,7 @@ class YnabCategorizerService:
             "queue_limit_unit": str(cfg.queue_limit_unit),
             "quick_apply_include_medium": bool(cfg.quick_apply_include_medium),
             "default_category_id": cfg.default_category_id,
+            "custom_rules": custom_rules,
             "updated_ts": cfg.updated_ts,
         }
 
@@ -86,6 +93,7 @@ class YnabCategorizerService:
             queue_limit_unit=str(current.queue_limit_unit),
             quick_apply_include_medium=bool(current.quick_apply_include_medium),
             default_category_id=current.default_category_id,
+            custom_rules=self._parse_custom_rules_json(current.custom_rules_json),
         )
 
     def set_config(
@@ -98,12 +106,13 @@ class YnabCategorizerService:
         queue_limit_unit: str,
         quick_apply_include_medium: bool,
         default_category_id: str | None,
+        custom_rules: list[dict[str, Any]] | None,
     ) -> dict[str, Any]:
         logger.debug(
             (
                 "set_config called mode=%s show_reconciled=%s limit_enabled=%s "
                 "limit_value=%s limit_unit=%s quick_apply_include_medium=%s "
-                "default_category_id=%s"
+                "default_category_id=%s custom_rules_supplied=%s"
             ),
             queue_filter_mode,
             show_reconciled_transactions,
@@ -112,6 +121,7 @@ class YnabCategorizerService:
             queue_limit_unit,
             quick_apply_include_medium,
             default_category_id,
+            custom_rules is not None,
         )
         mode = (queue_filter_mode or "").strip()
         if mode not in _VALID_QUEUE_MODES:
@@ -122,6 +132,14 @@ class YnabCategorizerService:
         if int(queue_limit_value) < 1:
             raise ValueError("Invalid queue_limit_value")
 
+        current = self.ctrl.get_ynab_categorizer_config(self.budget_id)
+        validated_custom_rules = (
+            self._parse_custom_rules_json(current.custom_rules_json)
+            if custom_rules is None
+            else self._validate_custom_rules(custom_rules)
+        )
+        custom_rules_json = self._serialize_custom_rules(validated_custom_rules)
+
         cfg = self.ctrl.save_ynab_categorizer_config(
             self.budget_id,
             mode,
@@ -131,6 +149,7 @@ class YnabCategorizerService:
             queue_limit_unit=limit_unit_value,
             quick_apply_include_medium=bool(quick_apply_include_medium),
             default_category_id=str(default_category_id or "").strip() or None,
+            custom_rules_json=custom_rules_json,
         )
         return {
             "queue_filter_mode": cfg.queue_filter_mode,
@@ -140,6 +159,7 @@ class YnabCategorizerService:
             "queue_limit_unit": str(cfg.queue_limit_unit),
             "quick_apply_include_medium": bool(cfg.quick_apply_include_medium),
             "default_category_id": cfg.default_category_id,
+            "custom_rules": validated_custom_rules,
             "updated_ts": cfg.updated_ts,
         }
 
@@ -167,6 +187,112 @@ class YnabCategorizerService:
         if confidence >= 0.60 and top_count >= 2:
             return confidence, "Medium"
         return confidence, "Low"
+
+    @staticmethod
+    def _amount_eur_from_tx(tx: dict[str, Any]) -> float | None:
+        amount_raw = tx.get("amount")
+        try:
+            return abs(float(amount_raw)) / 1000.0
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _coerce_rule_bool(value: Any, *, default: bool = False) -> bool:
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int | float):
+            return bool(value)
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in {"1", "true", "yes", "on"}:
+                return True
+            if lowered in {"0", "false", "no", "off", ""}:
+                return False
+        raise ValueError("Invalid custom rule boolean value")
+
+    @classmethod
+    def _normalize_custom_rule(cls, rule: dict[str, Any], index: int) -> dict[str, Any]:
+        if not isinstance(rule, dict):
+            raise ValueError(f"custom_rules[{index}] must be an object")
+
+        rule_id = str(rule.get("id") or "").strip() or f"rule-{uuid4().hex[:12]}"
+        enabled = cls._coerce_rule_bool(rule.get("enabled"), default=True)
+        payee_match_type = str(rule.get("payee_match_type") or "").strip().lower()
+        if payee_match_type not in _VALID_RULE_PAYEE_MATCH_TYPES:
+            raise ValueError(f"custom_rules[{index}].payee_match_type is invalid")
+
+        payee_value = str(rule.get("payee_value") or "").strip()
+        if not payee_value:
+            raise ValueError(f"custom_rules[{index}].payee_value is required")
+
+        amount_operator = str(rule.get("amount_operator") or "any").strip().lower()
+        if amount_operator not in _VALID_RULE_AMOUNT_OPERATORS:
+            raise ValueError(f"custom_rules[{index}].amount_operator is invalid")
+
+        amount_value_eur: float | None = None
+        if amount_operator != "any":
+            try:
+                amount_value_eur = float(rule.get("amount_value_eur"))
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"custom_rules[{index}].amount_value_eur is invalid") from exc
+            if amount_value_eur <= 0:
+                raise ValueError(f"custom_rules[{index}].amount_value_eur must be positive")
+
+        category_id = str(rule.get("category_id") or "").strip()
+        if not category_id:
+            raise ValueError(f"custom_rules[{index}].category_id is required")
+
+        return {
+            "id": rule_id,
+            "enabled": enabled,
+            "payee_match_type": payee_match_type,
+            "payee_value": payee_value,
+            "amount_operator": amount_operator,
+            "amount_value_eur": amount_value_eur,
+            "category_id": category_id,
+        }
+
+    @classmethod
+    def _validate_custom_rules(cls, custom_rules: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        logger.debug("validate_custom_rules called count=%s", len(custom_rules))
+        if not isinstance(custom_rules, list):
+            raise ValueError("custom_rules must be a list")
+        normalized = [
+            cls._normalize_custom_rule(rule, index) for index, rule in enumerate(custom_rules)
+        ]
+        logger.debug("validate_custom_rules completed count=%s", len(normalized))
+        return normalized
+
+    @classmethod
+    def _parse_custom_rules_json(cls, custom_rules_json: str | None) -> list[dict[str, Any]]:
+        if not custom_rules_json:
+            return []
+        try:
+            parsed = json.loads(custom_rules_json)
+        except (TypeError, ValueError):
+            logger.warning("Failed to parse custom_rules_json")
+            return []
+        if not isinstance(parsed, list):
+            logger.warning("custom_rules_json did not decode to a list")
+            return []
+
+        custom_rules: list[dict[str, Any]] = []
+        for index, raw_rule in enumerate(parsed):
+            try:
+                custom_rules.append(cls._normalize_custom_rule(raw_rule, index))
+            except ValueError as exc:
+                logger.warning(
+                    "Ignoring invalid persisted custom rule index=%s error=%s", index, exc
+                )
+        return custom_rules
+
+    @staticmethod
+    def _serialize_custom_rules(custom_rules: list[dict[str, Any]]) -> str | None:
+        if not custom_rules:
+            return None
+        return json.dumps(custom_rules, ensure_ascii=True, separators=(",", ":"))
 
     @staticmethod
     def _is_transfer(tx: dict[str, Any]) -> bool:
@@ -228,10 +354,7 @@ class YnabCategorizerService:
             30,
             31,
         ]
-        day = min(
-            value.day,
-            month_days[month - 1],
-        )
+        day = min(value.day, month_days[month - 1])
         return date(year, month, day)
 
     @staticmethod
@@ -265,8 +388,17 @@ class YnabCategorizerService:
             return True
         if mode == QUEUE_FILTER_SKIP_TRANSFERS:
             return not cls._is_transfer(tx)
-        # strict default
         return (not cls._is_transfer(tx)) and (not cls._is_split_parent(tx))
+
+    @classmethod
+    def should_include_for_review(cls, tx: dict[str, Any], mode: str) -> bool:
+        if bool(tx.get("deleted")):
+            return False
+        if cls._is_starting_balance(tx):
+            return False
+        if cls._is_unapproved(tx):
+            return True
+        return cls.should_include_for_queue(tx, mode)
 
     @classmethod
     def should_include_reconciled(cls, tx: dict[str, Any], show_reconciled: bool) -> bool:
@@ -311,13 +443,15 @@ class YnabCategorizerService:
 
     @staticmethod
     def _label_sort_rank(label: str | None) -> int:
-        if label == "High":
-            return 0
-        if label == "Medium":
-            return 1
-        if label == "Low":
-            return 2
-        return 3
+        ranking = {
+            "Rule": 0,
+            "High": 1,
+            "Current": 2,
+            "Medium": 3,
+            "Default": 4,
+            "Low": 5,
+        }
+        return ranking.get(str(label), 6)
 
     @staticmethod
     def _date_sort_value(date_str: str | None) -> int:
@@ -332,9 +466,18 @@ class YnabCategorizerService:
             return 0
 
     @staticmethod
-    def _queue_transaction_payload(tx: dict[str, Any], payee_display: str) -> dict[str, Any]:
+    def _queue_transaction_payload(
+        tx: dict[str, Any],
+        payee_display: str,
+        *,
+        needs_category: bool,
+        needs_approval: bool,
+        resolved: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         tx_id = tx.get("id")
         tx_date = tx.get("date")
+        current_category_id = str(tx.get("category_id") or "") or None
+        current_category_name = str(tx.get("category_name") or "") or None
         return {
             "id": str(tx_id),
             "date": str(tx_date) if tx_date else "",
@@ -342,10 +485,24 @@ class YnabCategorizerService:
             "account_name": str(tx.get("account_name") or ""),
             "memo": str(tx.get("memo") or ""),
             "amount_milliunits": tx.get("amount"),
-            "category_id": str(tx.get("category_id") or "") or None,
-            "category_name": str(tx.get("category_name") or "") or None,
+            "category_id": current_category_id,
+            "category_name": current_category_name,
+            "current_category_id": current_category_id,
+            "current_category_name": current_category_name,
             "approved": bool(tx.get("approved")),
             "cleared": str(tx.get("cleared") or ""),
+            "needs_category": bool(needs_category),
+            "needs_approval": bool(needs_approval),
+            "resolved_category_id": (
+                str(resolved.get("category_id") or "") or None if resolved else None
+            ),
+            "resolved_category_name": (
+                str(resolved.get("category_name") or "") or None if resolved else None
+            ),
+            "resolved_source": (str(resolved.get("source") or "none") if resolved else "none"),
+            "matched_rule_id": (
+                str(resolved.get("matched_rule_id") or "") or None if resolved else None
+            ),
         }
 
     def _categories_payload(
@@ -372,7 +529,6 @@ class YnabCategorizerService:
 
         categories = list(by_id.values())
         categories_by_id = {item["id"]: item for item in categories}
-
         ranked_ids = sorted(
             categories_by_id.keys(),
             key=lambda cat_id: (
@@ -402,16 +558,17 @@ class YnabCategorizerService:
         stats: list[YnabPayeeCategoryStat],
         category_name_map: dict[str, str],
     ) -> dict[str, Any] | None:
-        if not stats:
+        valid_stats = [stat for stat in stats if stat.category_id in category_name_map]
+        if not valid_stats:
             return None
         top = max(
-            stats,
+            valid_stats,
             key=lambda s: (
                 int(s.count),
                 s.last_used_at or "",
             ),
         )
-        total = sum(int(s.count) for s in stats)
+        total = sum(int(s.count) for s in valid_stats)
         confidence, label = self.confidence_label(int(top.count), int(total))
         return {
             "category_id": top.category_id,
@@ -420,7 +577,115 @@ class YnabCategorizerService:
             "total_count": int(total),
             "confidence": confidence,
             "confidence_label": label,
+            "source": "learned",
+            "matched_rule_id": None,
         }
+
+    @classmethod
+    def _rule_matches_transaction(cls, tx: dict[str, Any], rule: dict[str, Any]) -> bool:
+        if not bool(rule.get("enabled")):
+            return False
+
+        payee_name = cls.normalize_payee(str(tx.get("payee_name") or ""))
+        rule_payee = cls.normalize_payee(str(rule.get("payee_value") or ""))
+        if not payee_name or not rule_payee:
+            return False
+
+        match_type = str(rule.get("payee_match_type") or "contains")
+        if match_type == "equals":
+            if payee_name != rule_payee:
+                return False
+        elif rule_payee not in payee_name:
+            return False
+
+        amount_operator = str(rule.get("amount_operator") or "any")
+        if amount_operator == "any":
+            return True
+
+        amount_eur = cls._amount_eur_from_tx(tx)
+        if amount_eur is None:
+            return False
+        amount_threshold = rule.get("amount_value_eur")
+        if amount_threshold is None:
+            return False
+        threshold_value = float(amount_threshold)
+        if amount_operator == "over":
+            return amount_eur > threshold_value
+        return amount_eur < threshold_value
+
+    def _build_rule_suggestion(
+        self,
+        tx: dict[str, Any],
+        *,
+        custom_rules: list[dict[str, Any]],
+        category_name_map: dict[str, str],
+    ) -> dict[str, Any] | None:
+        for rule in custom_rules:
+            category_id = str(rule.get("category_id") or "").strip()
+            if not category_id or category_id not in category_name_map:
+                continue
+            if not self._rule_matches_transaction(tx, rule):
+                continue
+            return {
+                "category_id": category_id,
+                "category_name": category_name_map[category_id],
+                "confidence": 1.0,
+                "confidence_label": "Rule",
+                "source": "rule",
+                "matched_rule_id": str(rule.get("id") or "").strip() or None,
+            }
+        return None
+
+    @staticmethod
+    def _current_category_suggestion(tx: dict[str, Any]) -> dict[str, Any] | None:
+        category_id = str(tx.get("category_id") or "").strip()
+        category_name = str(tx.get("category_name") or "").strip()
+        if not category_id:
+            return None
+        return {
+            "category_id": category_id,
+            "category_name": category_name or category_id,
+            "confidence": 1.0,
+            "confidence_label": "Current",
+            "source": "current_category",
+            "matched_rule_id": None,
+        }
+
+    def _resolve_transaction_suggestion(
+        self,
+        tx: dict[str, Any],
+        *,
+        custom_rules: list[dict[str, Any]],
+        payee_norm: str,
+        stats_by_payee: dict[str, list[YnabPayeeCategoryStat]],
+        category_name_map: dict[str, str],
+        default_category_id: str | None,
+    ) -> dict[str, Any] | None:
+        rule_suggestion = self._build_rule_suggestion(
+            tx,
+            custom_rules=custom_rules,
+            category_name_map=category_name_map,
+        )
+        if rule_suggestion is not None:
+            return rule_suggestion
+        if not self._is_uncategorized(tx) and self._is_unapproved(tx):
+            return self._current_category_suggestion(tx)
+
+        learned = self._build_suggestion(stats_by_payee.get(payee_norm, []), category_name_map)
+        if learned is not None:
+            return learned
+        if default_category_id and default_category_id in category_name_map:
+            return {
+                "category_id": default_category_id,
+                "category_name": category_name_map.get(default_category_id, default_category_id),
+                "top_count": 0,
+                "total_count": 0,
+                "confidence": 0.0,
+                "confidence_label": "Default",
+                "source": "default",
+                "matched_rule_id": None,
+            }
+        return None
 
     def get_queue(self, queue_filter_mode: str | None = None) -> dict[str, Any]:
         cfg = self.ctrl.get_ynab_categorizer_config(self.budget_id)
@@ -438,8 +703,8 @@ class YnabCategorizerService:
 
         logger.debug(
             (
-                "get_queue called mode=%s show_reconciled=%s "
-                "queue_limit_enabled=%s queue_limit_value=%s queue_limit_unit=%s"
+                "get_queue called mode=%s show_reconciled=%s queue_limit_enabled=%s "
+                "queue_limit_value=%s queue_limit_unit=%s"
             ),
             mode,
             show_reconciled,
@@ -448,24 +713,22 @@ class YnabCategorizerService:
             queue_limit_unit,
         )
         transactions = self.client.get_transactions_since(None)
-        starting_balance_skipped = sum(1 for tx in transactions if self._is_starting_balance(tx))
         logger.debug(
             "get_queue source transactions=%s starting_balance_skipped=%s",
             len(transactions),
-            starting_balance_skipped,
+            sum(1 for tx in transactions if self._is_starting_balance(tx)),
         )
         category_groups = self.client.get_categories()
         category_usage_counts = self.ctrl.get_ynab_category_usage_counts(self.budget_id)
-        categories = self._categories_payload(
-            category_groups,
-            usage_counts=category_usage_counts,
-        )
+        categories = self._categories_payload(category_groups, usage_counts=category_usage_counts)
         category_name_map = self._category_name_by_id(categories)
+        custom_rules = self._parse_custom_rules_json(cfg.custom_rules_json)
+        default_category_id = str(cfg.default_category_id or "").strip() or None
 
         filtered = [
             tx
             for tx in transactions
-            if self.should_include_for_queue(tx, mode)
+            if self.should_include_for_review(tx, mode)
             and self.should_include_reconciled(tx, show_reconciled)
             and self.should_include_by_limit(
                 tx,
@@ -492,18 +755,47 @@ class YnabCategorizerService:
         grouped: dict[str, dict[str, Any]] = {}
         for tx in filtered:
             payee_display = str(tx.get("payee_name") or "Unknown").strip() or "Unknown"
-            payee_norm = self.normalize_payee(payee_display)
-            if not payee_norm:
-                payee_norm = "UNKNOWN"
+            payee_norm = self.normalize_payee(payee_display) or "UNKNOWN"
+            needs_category = self._is_uncategorized(tx)
+            needs_approval = self._is_unapproved(tx)
+            suggestion = self._resolve_transaction_suggestion(
+                tx,
+                custom_rules=custom_rules,
+                payee_norm=payee_norm,
+                stats_by_payee=stats_by_payee,
+                category_name_map=category_name_map,
+                default_category_id=default_category_id,
+            )
+            resolved_category_id = (
+                str(suggestion.get("category_id") or "").strip() if suggestion else ""
+            )
+            resolved_source = str(suggestion.get("source") or "none") if suggestion else "none"
+            group_key = (
+                f"{payee_norm}::{resolved_category_id}::{resolved_source}"
+                if resolved_category_id
+                else payee_norm
+            )
 
             group = grouped.setdefault(
-                payee_norm,
+                group_key,
                 {
+                    "group_key": group_key,
                     "payee_normalized": payee_norm,
                     "payee_display": payee_display,
                     "transaction_ids": [],
                     "transactions": [],
                     "latest_date": None,
+                    "suggestion": suggestion,
+                    "resolved_source": resolved_source,
+                    "resolved_category_id": resolved_category_id or None,
+                    "resolved_category_name": (
+                        str(suggestion.get("category_name") or "") or None if suggestion else None
+                    ),
+                    "matched_rule_id": (
+                        str(suggestion.get("matched_rule_id") or "") or None if suggestion else None
+                    ),
+                    "needs_category_count": 0,
+                    "needs_approval_count": 0,
                 },
             )
 
@@ -515,34 +807,26 @@ class YnabCategorizerService:
                 current_latest = group["latest_date"]
                 if not current_latest or tx_date > current_latest:
                     group["latest_date"] = tx_date
-            group["transactions"].append(self._queue_transaction_payload(tx, payee_display))
+            group["needs_category_count"] += int(needs_category)
+            group["needs_approval_count"] += int(needs_approval)
+            group["transactions"].append(
+                self._queue_transaction_payload(
+                    tx,
+                    payee_display,
+                    needs_category=needs_category,
+                    needs_approval=needs_approval,
+                    resolved=suggestion,
+                )
+            )
 
         groups: list[dict[str, Any]] = []
-        default_category_id = str(cfg.default_category_id or "").strip() or None
-        for payee_norm, group in grouped.items():
-            stats = stats_by_payee.get(payee_norm, [])
-            suggestion = self._build_suggestion(stats, category_name_map)
-            if (
-                suggestion is None
-                and default_category_id
-                and default_category_id in category_name_map
-            ):
-                suggestion = {
-                    "category_id": default_category_id,
-                    "category_name": category_name_map.get(
-                        default_category_id, default_category_id
-                    ),
-                    "top_count": 0,
-                    "total_count": 0,
-                    "confidence": 0.0,
-                    "confidence_label": "Low",
-                    "source": "default",
-                }
+        for group in grouped.values():
+            suggestion = group.get("suggestion")
             confidence_label = suggestion.get("confidence_label") if suggestion else None
-
             groups.append(
                 {
-                    "payee_normalized": payee_norm,
+                    "group_key": group["group_key"],
+                    "payee_normalized": group["payee_normalized"],
                     "payee_display": group["payee_display"],
                     "transaction_ids": group["transaction_ids"],
                     "transaction_count": len(group["transaction_ids"]),
@@ -550,6 +834,12 @@ class YnabCategorizerService:
                     "transactions": group["transactions"],
                     "suggestion": suggestion,
                     "confidence_label": confidence_label,
+                    "resolved_source": group["resolved_source"],
+                    "resolved_category_id": group["resolved_category_id"],
+                    "resolved_category_name": group["resolved_category_name"],
+                    "matched_rule_id": group["matched_rule_id"],
+                    "needs_category_count": group["needs_category_count"],
+                    "needs_approval_count": group["needs_approval_count"],
                 }
             )
 
@@ -568,8 +858,11 @@ class YnabCategorizerService:
             "queue_limit_unit": queue_limit_unit,
             "quick_apply_include_medium": bool(cfg.quick_apply_include_medium),
             "default_category_id": default_category_id,
+            "custom_rules": custom_rules,
             "group_count": len(groups),
             "transaction_count": len(filtered),
+            "needs_category_count": sum(1 for tx in filtered if self._is_uncategorized(tx)),
+            "needs_approval_count": sum(1 for tx in filtered if self._is_unapproved(tx)),
             "categories": categories,
             "groups": groups,
         }
@@ -614,6 +907,9 @@ class YnabCategorizerService:
             self._queue_transaction_payload(
                 tx,
                 str(tx.get("payee_name") or "Unknown").strip() or "Unknown",
+                needs_category=self._is_uncategorized(tx),
+                needs_approval=True,
+                resolved=self._current_category_suggestion(tx),
             )
             for tx in filtered
         ]
@@ -651,7 +947,9 @@ class YnabCategorizerService:
         if not category_id:
             raise ValueError("category_id is required")
 
-        payload_items = [{"id": tx_id, "category_id": category_id} for tx_id in tx_ids]
+        payload_items = [
+            {"id": tx_id, "category_id": category_id, "approved": True} for tx_id in tx_ids
+        ]
         ynab_result = self.client.update_transactions_bulk(payload_items)
 
         all_transactions = self.client.get_transactions_since(None)
@@ -697,6 +995,7 @@ class YnabCategorizerService:
         )
         return {
             "transaction_count": len(tx_ids),
+            "approved_count": len(tx_ids),
             "inserted_events": inserted_events,
             "skipped_existing": skipped_existing,
             "ynab": ynab_result,
@@ -722,10 +1021,7 @@ class YnabCategorizerService:
 
         payload_items = [{"id": tx_id, "approved": True} for tx_id in tx_ids]
         ynab_result = self.client.update_transactions_bulk(payload_items)
-        logger.debug(
-            "approve_transactions completed transaction_count=%s",
-            len(tx_ids),
-        )
+        logger.debug("approve_transactions completed transaction_count=%s", len(tx_ids))
         return {
             "transaction_count": len(tx_ids),
             "approved_count": len(tx_ids),

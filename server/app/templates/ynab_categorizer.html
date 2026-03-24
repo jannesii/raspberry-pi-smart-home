@@ -3,7 +3,7 @@
 {% block title %}YNAB Categorizer{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/ynab_categorizer.css', v='20260324-1') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/ynab_categorizer.css', v='20260324-2') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/flash.css') }}">
 {% endblock %}
 
@@ -26,7 +26,7 @@
         <div class="ynab-header-copy">
           <p class="ynab-eyebrow">YNAB</p>
           <h2>Review workspace</h2>
-          <p class="ynab-subtitle">Batch through categorization and approvals without leaving the same surface.</p>
+          <p class="ynab-subtitle">Review categorization and approvals from one workspace without bouncing between tabs.</p>
         </div>
         <div class="ynab-header-actions">
           <button id="btnRefreshQueue" class="ynab-btn ynab-btn-secondary" type="button">Refresh</button>
@@ -36,36 +36,32 @@
 
       <div class="ynab-header-stats">
         <article class="ynab-stat-card">
-          <span class="ynab-stat-label">Categorize</span>
-          <strong id="headerCategorizeCount" class="ynab-stat-value">—</strong>
-          <span id="headerCategorizeMeta" class="ynab-stat-meta">Loading queue…</span>
+          <span class="ynab-stat-label">Needs Category</span>
+          <strong id="headerNeedsCategoryCount" class="ynab-stat-value">—</strong>
+          <span id="headerNeedsCategoryMeta" class="ynab-stat-meta">Loading queue…</span>
         </article>
         <article class="ynab-stat-card">
-          <span class="ynab-stat-label">Approve</span>
-          <strong id="headerApproveCount" class="ynab-stat-value">—</strong>
-          <span id="headerApproveMeta" class="ynab-stat-meta">Loading approvals…</span>
+          <span class="ynab-stat-label">Needs Approval</span>
+          <strong id="headerNeedsApprovalCount" class="ynab-stat-value">—</strong>
+          <span id="headerNeedsApprovalMeta" class="ynab-stat-meta">Loading queue…</span>
         </article>
       </div>
 
       <div class="ynab-mode-row">
-        <div class="ynab-segmented-control" role="tablist" aria-label="Workspace mode">
-          <button id="btnViewCategorizer" class="is-active" type="button" role="tab" aria-selected="true">Categorize</button>
-          <button id="btnViewApprovals" type="button" role="tab" aria-selected="false">Approve</button>
-        </div>
         <div id="workspaceSummary" class="ynab-summary">Loading…</div>
       </div>
     </header>
 
     <section class="ynab-toolbar">
       <div class="ynab-search">
-        <label class="ynab-search-label" for="workspaceFilterInput">Search current mode</label>
+        <label class="ynab-search-label" for="workspaceFilterInput">Search review queue</label>
         <input
           id="workspaceFilterInput"
           name="workspaceFilterInput"
           type="text"
           class="ynab-search-input"
           autocomplete="off"
-          placeholder="Filter payee, memo, date, amount"
+          placeholder="Filter payee, memo, date, amount, category"
         >
       </div>
       <div class="ynab-toolbar-actions">
@@ -80,11 +76,8 @@
     </section>
 
     <section class="ynab-workspace">
-      <div id="categorizerView" class="ynab-view is-active" aria-live="polite">
+      <div id="reviewView" class="ynab-view is-active" aria-live="polite">
         <div id="ynabGroups" class="ynab-groups"></div>
-      </div>
-      <div id="approvalsView" class="ynab-view" aria-live="polite">
-        <ul id="approvalList" class="ynab-tx-list ynab-approval-list"></ul>
       </div>
     </section>
 
@@ -111,7 +104,7 @@
         <section class="ynab-settings-section">
           <div class="ynab-settings-section-header">
             <h4>Queue rules</h4>
-            <span class="ynab-settings-hint">Applied to both modes</span>
+            <span class="ynab-settings-hint">Applied to the merged review queue</span>
           </div>
           <div class="ynab-settings-grid">
             <label class="ynab-field">
@@ -156,6 +149,19 @@
             <button id="btnSaveMode" class="ynab-btn ynab-btn-primary" type="button">Save settings</button>
           </div>
         </section>
+
+        <section class="ynab-settings-section">
+          <div class="ynab-settings-section-header">
+            <div>
+              <h4>Custom rules</h4>
+              <p class="ynab-settings-copy">Rules run top-to-bottom and use the existing canonical payee normalization. The first match wins.</p>
+            </div>
+          </div>
+          <div id="customRulesList" class="ynab-rule-list"></div>
+          <div class="ynab-settings-footer">
+            <button id="btnAddCustomRule" class="ynab-btn ynab-btn-secondary" type="button">Add rule</button>
+          </div>
+        </section>
       </aside>
     </div>
 
@@ -164,12 +170,12 @@
         <div class="ynab-floating-apply-top">
           <div>
             <span id="selectedTxCount" class="ynab-floating-count">0 selected</span>
-            <p id="floatingApplyHint" class="ynab-floating-hint">Choose a category, then apply.</p>
+            <p id="floatingApplyHint" class="ynab-floating-hint">Choose a category to apply, or approve selected categorized transactions as-is.</p>
           </div>
           <button id="btnTrayClearSelection" class="ynab-btn ynab-btn-secondary" type="button">Clear</button>
         </div>
 
-        <div id="categorizeTray" class="ynab-floating-mode">
+        <div id="reviewTray" class="ynab-floating-mode is-active">
           <label class="ynab-field ynab-field-grow" for="globalCategorySearch">
             <span>Category for selected</span>
             <input
@@ -185,14 +191,7 @@
             <select id="globalCategorySelect" name="globalCategorySelect"></select>
           </label>
           <button id="btnApplySelected" class="ynab-btn ynab-btn-primary" type="button">Apply category</button>
-        </div>
-
-        <div id="approveTray" class="ynab-floating-mode">
-          <div class="ynab-approve-copy">
-            <strong>Approve selected transactions</strong>
-            <span>Use the tray to confirm the current approval selection.</span>
-          </div>
-          <button id="btnApproveSelected" class="ynab-btn ynab-btn-primary" type="button">Approve selected</button>
+          <button id="btnApproveSelected" class="ynab-btn ynab-btn-secondary" type="button">Approve as-is</button>
         </div>
       </div>
 
@@ -208,5 +207,5 @@
   const YNAB_INITIAL_CONFIG = {{ ynab_initial_config | tojson | safe }};
   const YNAB_BOOTSTRAP_STATUS = {{ ynab_bootstrap_status | tojson | safe }};
 </script>
-<script src="{{ url_for('static', filename='js/ynab_categorizer.js', v='20260324-1') }}"></script>
+<script src="{{ url_for('static', filename='js/ynab_categorizer.js', v='20260324-2') }}"></script>
 {% endblock %}

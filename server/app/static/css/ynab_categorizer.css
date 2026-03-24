@@ -127,6 +127,14 @@ body {
   background: rgba(255, 255, 255, 0.07);
 }
 
+.ynab-btn:disabled,
+.ynab-icon-btn:disabled,
+.ynab-segmented-control button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .ynab-btn:active,
 .ynab-icon-btn:active,
 .ynab-segmented-control button:active {
@@ -428,6 +436,24 @@ body {
   color: #88e3a0;
 }
 
+.ynab-badge.rule {
+  border-color: rgba(10, 132, 255, 0.34);
+  background: rgba(10, 132, 255, 0.14);
+  color: #87c2ff;
+}
+
+.ynab-badge.current {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.07);
+  color: #f0f0f4;
+}
+
+.ynab-badge.default {
+  border-color: rgba(255, 159, 10, 0.28);
+  background: rgba(255, 159, 10, 0.1);
+  color: #ffd27f;
+}
+
 .ynab-badge.medium {
   border-color: rgba(255, 159, 10, 0.34);
   background: var(--ynab-warning-soft);
@@ -438,6 +464,12 @@ body {
   border-color: rgba(255, 255, 255, 0.14);
   background: rgba(255, 255, 255, 0.05);
   color: #c4c4ca;
+}
+
+.ynab-badge.neutral {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ynab-text-muted);
 }
 
 .ynab-group-inline-action {
@@ -661,6 +693,53 @@ body {
   gap: 14px;
 }
 
+.ynab-rule-list {
+  display: grid;
+  gap: 12px;
+}
+
+.ynab-rule-card {
+  padding: 14px;
+  border: 1px solid var(--ynab-border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.ynab-rule-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ynab-rule-row-top {
+  margin-bottom: 12px;
+}
+
+.ynab-rule-index {
+  color: var(--ynab-text);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ynab-rule-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ynab-rule-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ynab-rule-wide {
+  grid-column: 1 / -1;
+}
+
 .ynab-field {
   display: grid;
   gap: 8px;
@@ -798,6 +877,10 @@ body {
   .ynab-group-actions {
     grid-column: 1 / -1;
     justify-content: flex-start;
+  }
+
+  .ynab-rule-grid {
+    grid-template-columns: 1fr;
   }
 }
 

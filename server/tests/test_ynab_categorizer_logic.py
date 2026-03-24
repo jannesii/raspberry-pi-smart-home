@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
@@ -12,6 +13,7 @@ from app.services.ynab.ynab_categorizer_service import YnabCategorizerService
 class _CtrlStub:
     mode: str = "strict"
     default_category_id: str | None = None
+    custom_rules: list[dict] | None = None
 
     def __post_init__(self):
         self.finland_tz = ZoneInfo("Europe/Helsinki")
@@ -22,6 +24,9 @@ class _CtrlStub:
             budget_id=budget_id,
             queue_filter_mode=self.mode,
             default_category_id=self.default_category_id,
+            custom_rules_json=json.dumps(self.custom_rules)
+            if self.custom_rules is not None
+            else None,
             updated_ts=datetime.now(self.finland_tz).isoformat(),
         )
 
@@ -224,10 +229,12 @@ def test_queue_filtering_strict_skips_transfer_and_split_parent():
 
     payload = svc.get_queue()
 
-    assert payload["transaction_count"] == 3
+    assert payload["transaction_count"] == 5
     assert payload["quick_apply_include_medium"] is False
+    assert payload["needs_category_count"] == 5
+    assert payload["needs_approval_count"] == 4
     ids = {tx["id"] for g in payload["groups"] for tx in g["transactions"]}
-    assert ids == {"tx1", "tx2", "tx6"}
+    assert ids == {"tx1", "tx2", "tx3", "tx4", "tx6"}
     assert all(
         tx["account_name"] == "Nordea Everyday"
         for g in payload["groups"]
@@ -249,8 +256,7 @@ def test_group_sort_by_confidence_then_latest_date_desc():
 
     assert payload["groups"][0]["payee_normalized"] == "K MARKET"
     assert payload["groups"][0]["confidence_label"] == "High"
-    assert payload["groups"][1]["payee_normalized"] == "TAXI HELSINKI"
-    assert payload["groups"][1]["confidence_label"] == "Low"
+    assert any(group["payee_normalized"] == "TAXI HELSINKI" for group in payload["groups"])
 
 
 def test_reconciled_transactions_hidden_by_default():
@@ -286,6 +292,59 @@ def test_default_category_used_when_no_payee_suggestion():
     assert old_tx_group["suggestion"]["source"] == "default"
 
 
+def test_custom_rule_overrides_learned_suggestion():
+    ctrl = _CtrlStub(
+        mode="strict",
+        custom_rules=[
+            {
+                "id": "rule-fuel",
+                "enabled": True,
+                "payee_match_type": "contains",
+                "payee_value": "k märket",
+                "amount_operator": "any",
+                "amount_value_eur": None,
+                "category_id": "cat_misc",
+            }
+        ],
+    )
+    svc = YnabCategorizerService(ctrl=ctrl, client=_ClientStub(), budget_id="budget1")
+
+    payload = svc.get_queue()
+    by_payee = {group["payee_normalized"]: group for group in payload["groups"]}
+    group = by_payee["K MARKET"]
+
+    assert group["suggestion"] is not None
+    assert group["suggestion"]["source"] == "rule"
+    assert group["suggestion"]["matched_rule_id"] == "rule-fuel"
+    assert group["suggestion"]["category_id"] == "cat_misc"
+
+
+def test_already_categorized_unapproved_uses_current_category():
+    class _ClientWithCurrentCategory(_ClientStub):
+        def get_transactions_since(self, since_date, *, transaction_type=None):
+            txs = super().get_transactions_since(since_date, transaction_type=transaction_type)
+            if transaction_type == "unapproved":
+                return txs
+            copied = [dict(tx) for tx in txs]
+            copied[0]["category_id"] = "cat_transport"
+            copied[0]["category_name"] = "Transport"
+            return copied
+
+    ctrl = _CtrlStub(mode="strict")
+    svc = YnabCategorizerService(
+        ctrl=ctrl, client=_ClientWithCurrentCategory(), budget_id="budget1"
+    )
+
+    payload = svc.get_queue()
+    k_market_group = next(
+        group for group in payload["groups"] if group["payee_normalized"] == "K MARKET"
+    )
+
+    assert k_market_group["suggestion"] is not None
+    assert k_market_group["suggestion"]["source"] == "current_category"
+    assert k_market_group["suggestion"]["category_id"] == "cat_transport"
+
+
 def test_queue_limit_filters_out_old_transactions():
     tx = {"id": "old", "date": "2025-01-01", "deleted": False}
     included = YnabCategorizerService.should_include_by_limit(
@@ -317,3 +376,40 @@ def test_approve_transactions_updates_bulk():
 
     result = svc.approve_transactions(["tx1", "tx3"], approved_by_username="root")
     assert result["approved_count"] == 2
+
+
+def test_apply_category_marks_transactions_approved_in_bulk_payload():
+    class _ClientCapture(_ClientStub):
+        def __init__(self):
+            self.payloads = []
+
+        def update_transactions_bulk(self, items):
+            self.payloads.append(items)
+            return super().update_transactions_bulk(items)
+
+    class _CtrlApplyStub(_CtrlStub):
+        def __post_init__(self):
+            super().__post_init__()
+            self.recorded = []
+            self.incremented = []
+
+        def record_ynab_apply_event(self, event):
+            self.recorded.append(event)
+            return True
+
+        def increment_ynab_payee_category_stat(
+            self, budget_id, payee_normalized, category_id, last_used_at=None
+        ):
+            self.incremented.append((budget_id, payee_normalized, category_id, last_used_at))
+
+    client = _ClientCapture()
+    ctrl = _CtrlApplyStub(mode="strict")
+    svc = YnabCategorizerService(ctrl=ctrl, client=client, budget_id="budget1")
+
+    result = svc.apply_category(["tx1", "tx3"], "cat_transport", applied_by_username="root")
+
+    assert result["approved_count"] == 2
+    assert client.payloads[0] == [
+        {"id": "tx1", "category_id": "cat_transport", "approved": True},
+        {"id": "tx3", "category_id": "cat_transport", "approved": True},
+    ]

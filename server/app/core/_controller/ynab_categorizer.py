@@ -59,6 +59,7 @@ class YnabCategorizerMixin:
                 queue_limit_unit="days",
                 quick_apply_include_medium=False,
                 default_category_id=None,
+                custom_rules_json=None,
                 updated_ts=self._ynab_now_iso(),
             )
             logger.debug("get_ynab_categorizer_config returning default config=%s", cfg)
@@ -76,6 +77,9 @@ class YnabCategorizerMixin:
             default_category_id=(
                 str(row.get("default_category_id")) if row.get("default_category_id") else None
             ),
+            custom_rules_json=(
+                str(row.get("custom_rules_json")) if row.get("custom_rules_json") else None
+            ),
             updated_ts=str(row["updated_ts"]),
         )
         logger.debug("get_ynab_categorizer_config loaded config=%s", cfg)
@@ -92,13 +96,14 @@ class YnabCategorizerMixin:
         queue_limit_unit: str | None = None,
         quick_apply_include_medium: bool | None = None,
         default_category_id: str | None = None,
+        custom_rules_json: str | None = None,
     ) -> YnabCategorizerConfig:
         logger.debug(
             (
                 "save_ynab_categorizer_config called budget_id=%s queue_filter_mode=%s "
                 "show_reconciled_transactions=%s queue_limit_enabled=%s "
                 "queue_limit_value=%s queue_limit_unit=%s quick_apply_include_medium=%s "
-                "default_category_id=%s"
+                "default_category_id=%s custom_rules_json_set=%s"
             ),
             budget_id,
             queue_filter_mode,
@@ -108,6 +113,7 @@ class YnabCategorizerMixin:
             queue_limit_unit,
             quick_apply_include_medium,
             default_category_id,
+            custom_rules_json is not None,
         )
         mode = (queue_filter_mode or "").strip()
         if mode not in _VALID_QUEUE_MODES:
@@ -118,6 +124,7 @@ class YnabCategorizerMixin:
         limit_unit_value = str(queue_limit_unit or "days").strip().lower()
         quick_apply_include_medium_value = bool(quick_apply_include_medium)
         default_category_id_value = str(default_category_id or "").strip() or None
+        custom_rules_json_value = str(custom_rules_json).strip() if custom_rules_json else None
         if limit_value < 1:
             raise ValueError(f"Invalid queue_limit_value: {queue_limit_value}")
         if limit_unit_value not in _VALID_QUEUE_LIMIT_UNITS:
@@ -138,6 +145,7 @@ class YnabCategorizerMixin:
                 queue_limit_unit=limit_unit_value,
                 quick_apply_include_medium=quick_apply_include_medium_value,
                 default_category_id=default_category_id_value,
+                custom_rules_json=custom_rules_json_value,
                 updated_ts=now,
             )
             .on_conflict_do_update(
@@ -151,6 +159,7 @@ class YnabCategorizerMixin:
                     "queue_limit_unit": limit_unit_value,
                     "quick_apply_include_medium": quick_apply_include_medium_value,
                     "default_category_id": default_category_id_value,
+                    "custom_rules_json": custom_rules_json_value,
                     "updated_ts": now,
                 },
             )
@@ -168,6 +177,7 @@ class YnabCategorizerMixin:
                     queue_limit_unit=limit_unit_value,
                     quick_apply_include_medium=quick_apply_include_medium_value,
                     default_category_id=default_category_id_value,
+                    custom_rules_json=custom_rules_json_value,
                     updated_ts=now,
                 )
                 .on_conflict_do_update(
@@ -181,6 +191,7 @@ class YnabCategorizerMixin:
                         "queue_limit_unit": limit_unit_value,
                         "quick_apply_include_medium": quick_apply_include_medium_value,
                         "default_category_id": default_category_id_value,
+                        "custom_rules_json": custom_rules_json_value,
                         "updated_ts": now,
                     },
                 )
@@ -199,6 +210,7 @@ class YnabCategorizerMixin:
             queue_limit_unit=limit_unit_value,
             quick_apply_include_medium=quick_apply_include_medium_value,
             default_category_id=default_category_id_value,
+            custom_rules_json=custom_rules_json_value,
             updated_ts=now,
         )
         logger.debug("save_ynab_categorizer_config saved config=%s", cfg)

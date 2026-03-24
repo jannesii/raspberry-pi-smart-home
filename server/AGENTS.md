@@ -529,6 +529,12 @@ function update(data) {
 
 **YNAB approvals note**: Unapproved transactions are fetched via YNAB transactions endpoint with `type=unapproved` and approved in bulk via PATCH payloads using `{"id": "...", "approved": true}`. Keep Root-Admin guard and CSRF enforcement identical to categorize apply endpoints.
 
+**YNAB merged-review note**: The web page uses `/api/ynab-categorizer/queue` as the single review source for both uncategorized and categorized-but-unapproved transactions. Do not reintroduce the old two-tab page flow unless the queue payload is explicitly split again.
+
+**YNAB apply semantics note**: `/api/ynab-categorizer/apply` now sends both `category_id` and `approved: true` in the same YNAB bulk PATCH. Treat manual category apply as categorize-and-approve, and keep `/api/ynab-categorizer/approve` only for approve-as-is actions on already categorized items.
+
+**YNAB custom-rules note**: Custom categorization rules are persisted in `ynab_categorizer_config.custom_rules_json` via controller methods. Rules run top-to-bottom, first match wins, and payee comparisons must use the existing canonical `normalize_payee()` helper.
+
 **API CORS note**: Cross-origin access for `/api/*` is opt-in via `API_ALLOWED_ORIGINS`. Do not reintroduce wildcard CORS defaults; same-origin browser traffic does not need CORS headers.
 
 **API key transport note**: Query-string API keys are disabled by default. Use `Authorization: Bearer <token>` or `X-API-Key`, and only enable `ALLOW_API_KEY_QUERY_PARAM=1` for temporary backward compatibility.

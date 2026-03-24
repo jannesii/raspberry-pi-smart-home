@@ -36,6 +36,8 @@ class _ServiceStub:
     def get_queue(self, queue_filter_mode=None):
         return {
             "queue_filter_mode": queue_filter_mode or "strict",
+            "needs_category_count": 0,
+            "needs_approval_count": 0,
             "group_count": 0,
             "transaction_count": 0,
             "categories": [],
@@ -52,6 +54,7 @@ class _ServiceStub:
         )
         return {
             "transaction_count": len(transaction_ids),
+            "approved_count": len(transaction_ids),
             "inserted_events": len(transaction_ids),
             "skipped_existing": 0,
         }
@@ -102,6 +105,7 @@ class _ServiceStub:
             "queue_limit_unit": "days",
             "quick_apply_include_medium": False,
             "default_category_id": None,
+            "custom_rules": [],
             "updated_ts": "2026-03-09T10:00:00+02:00",
         }
 
@@ -115,6 +119,7 @@ class _ServiceStub:
         queue_limit_unit,
         quick_apply_include_medium,
         default_category_id,
+        custom_rules,
     ):
         self.config_payloads.append(
             {
@@ -125,6 +130,7 @@ class _ServiceStub:
                 "queue_limit_unit": queue_limit_unit,
                 "quick_apply_include_medium": quick_apply_include_medium,
                 "default_category_id": default_category_id,
+                "custom_rules": custom_rules,
             }
         )
         return {
@@ -135,6 +141,7 @@ class _ServiceStub:
             "queue_limit_unit": queue_limit_unit,
             "quick_apply_include_medium": quick_apply_include_medium,
             "default_category_id": default_category_id,
+            "custom_rules": custom_rules if custom_rules is not None else [],
             "updated_ts": "2026-03-09T10:00:00+02:00",
         }
 
@@ -202,6 +209,8 @@ def test_queue_root_admin_ok(client):
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["ok"] is True
+    assert payload["needs_category_count"] == 0
+    assert payload["needs_approval_count"] == 0
 
 
 def test_approvals_queue_requires_root_admin(client):
@@ -251,6 +260,7 @@ def test_apply_post_with_csrf_and_root_admin(client, app):
     payload = response.get_json()
     assert payload["ok"] is True
     assert payload["transaction_count"] == 2
+    assert payload["approved_count"] == 2
 
     svc = app.ynab_categorizer_service
     assert svc.apply_payloads[0]["transaction_ids"] == ["tx1", "tx2"]
@@ -302,6 +312,17 @@ def test_config_post_with_csrf_updates_all_fields(client, app):
             "queue_limit_unit": "days",
             "quick_apply_include_medium": True,
             "default_category_id": "cat_misc",
+            "custom_rules": [
+                {
+                    "id": "rule-1",
+                    "enabled": True,
+                    "payee_match_type": "contains",
+                    "payee_value": "abc",
+                    "amount_operator": "any",
+                    "amount_value_eur": None,
+                    "category_id": "cat_misc",
+                }
+            ],
         },
         headers={"X-CSRFToken": token},
     )
@@ -315,12 +336,14 @@ def test_config_post_with_csrf_updates_all_fields(client, app):
     assert payload["queue_limit_unit"] == "days"
     assert payload["quick_apply_include_medium"] is True
     assert payload["default_category_id"] == "cat_misc"
+    assert payload["custom_rules"][0]["id"] == "rule-1"
 
     svc = app.ynab_categorizer_service
     assert svc.config_payloads[0]["queue_filter_mode"] == "strict"
     assert svc.config_payloads[0]["show_reconciled_transactions"] is True
     assert svc.config_payloads[0]["quick_apply_include_medium"] is True
     assert svc.config_payloads[0]["default_category_id"] == "cat_misc"
+    assert svc.config_payloads[0]["custom_rules"][0]["category_id"] == "cat_misc"
 
 
 def test_config_post_rejects_invalid_int(client):
@@ -337,6 +360,7 @@ def test_config_post_rejects_invalid_int(client):
             "queue_limit_unit": "days",
             "quick_apply_include_medium": False,
             "default_category_id": None,
+            "custom_rules": "bad",
         },
         headers={"X-CSRFToken": token},
     )
