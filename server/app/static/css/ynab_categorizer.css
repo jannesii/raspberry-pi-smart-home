@@ -301,6 +301,17 @@ body {
   outline: none;
 }
 
+.ynab-field select,
+.ynab-tx-category-select {
+  color-scheme: dark;
+}
+
+.ynab-field select option,
+.ynab-tx-category-select option {
+  background: var(--ynab-surface);
+  color: var(--ynab-text);
+}
+
 .ynab-search-input:focus,
 .ynab-field input:focus,
 .ynab-field select:focus {

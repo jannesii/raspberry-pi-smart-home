@@ -66,7 +66,7 @@ A comprehensive home automation server for Raspberry Pi (or any Linux host). Rea
 - **Workspace settings drawer** keeps bootstrap, reconciled filtering, queue age limits, fallback-category controls, and custom rules out of the main review surface
 - **Persisted YNAB test mode** simulates apply/approve actions without writing to YNAB, so the same queue can be exercised repeatedly
 - **Default fallback category** can be configured for no-suggestion payees; category dropdowns prioritize top 10 locally most-used categories and hide hidden YNAB categories
-- **Review QoL**: inline ready/missing/edited states, sticky visible-queue submit rail, and keyboard shortcuts
+- **Review QoL**: inline ready/missing/edited states, sticky visible-queue submit rail, keyboard shortcuts, and readable dark-theme dropdown menus
 
 ### 📊 System Features
 - **Real-time WebSocket updates** – instant UI refresh without polling
