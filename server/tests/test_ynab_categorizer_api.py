@@ -28,6 +28,7 @@ class _ServiceStub:
     def __init__(self):
         self.apply_payloads = []
         self.approve_payloads = []
+        self.review_commit_payloads = []
         self.config_payloads = []
 
     def is_configured(self):
@@ -92,6 +93,22 @@ class _ServiceStub:
         return {
             "transaction_count": len(transaction_ids),
             "approved_count": len(transaction_ids),
+            "simulated": False,
+            "test_mode_enabled": False,
+        }
+
+    def review_commit(self, transactions, applied_by_username=None):
+        self.review_commit_payloads.append(
+            {
+                "transactions": transactions,
+                "applied_by_username": applied_by_username,
+            }
+        )
+        return {
+            "transaction_count": len(transactions),
+            "approved_count": len(transactions),
+            "categorized_count": 1,
+            "approval_only_count": max(0, len(transactions) - 1),
             "simulated": False,
             "test_mode_enabled": False,
         }
@@ -296,6 +313,60 @@ def test_approve_post_with_csrf_and_root_admin(client, app):
     svc = app.ynab_categorizer_service
     assert svc.approve_payloads[0]["transaction_ids"] == ["tx1", "tx2"]
     assert svc.approve_payloads[0]["approved_by_username"] == "root"
+
+
+def test_review_commit_post_requires_csrf(client):
+    _login(client, "root")
+    response = client.post(
+        "/api/ynab-categorizer/review-commit",
+        json={"transactions": [{"id": "tx1", "category_id": "cat1"}]},
+    )
+    assert response.status_code == 400
+
+
+def test_review_commit_post_with_csrf_and_root_admin(client, app):
+    _login(client, "root")
+    token = _csrf_token(client)
+
+    response = client.post(
+        "/api/ynab-categorizer/review-commit",
+        json={
+            "transactions": [
+                {"id": "tx1", "category_id": "cat1"},
+                {"id": "tx2", "category_id": "cat2"},
+            ]
+        },
+        headers={"X-CSRFToken": token},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["ok"] is True
+    assert payload["approved_count"] == 2
+    assert payload["categorized_count"] == 1
+    assert payload["approval_only_count"] == 1
+
+    svc = app.ynab_categorizer_service
+    assert svc.review_commit_payloads[0]["transactions"] == [
+        {"id": "tx1", "category_id": "cat1"},
+        {"id": "tx2", "category_id": "cat2"},
+    ]
+    assert svc.review_commit_payloads[0]["applied_by_username"] == "root"
+
+
+def test_review_commit_rejects_invalid_payload(client):
+    _login(client, "root")
+    token = _csrf_token(client)
+
+    response = client.post(
+        "/api/ynab-categorizer/review-commit",
+        json={"transactions": [{"id": "tx1", "category_id": ""}]},
+        headers={"X-CSRFToken": token},
+    )
+
+    assert response.status_code == 400
+    payload = response.get_json() or {}
+    assert payload.get("error") == "bad_request"
 
 
 def test_not_configured_returns_503(client, app):

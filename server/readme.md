@@ -58,15 +58,15 @@ A comprehensive home automation server for Raspberry Pi (or any Linux host). Rea
 - **Unified review workspace** for uncategorized and unapproved YNAB transactions
 - **Payee-based category suggestions** from local usage history
 - **Custom categorization rules** with ordered first-match wins logic for payee text plus optional absolute-euro amount thresholds
-- **Batch-first apply workflow** with grouped review cards, a shared search rail, and a bottom action tray
-- **Applying a category also approves the same transactions**, while already categorized items can still be approved as-is from the same queue
+- **Inline category editing on every review row** while keeping grouped payee review cards
+- **One batch submit for the visible filtered queue**, with mixed categorize-and-approve plus approve-only rows in the same action
 - **Bootstrap learning** from 24 months of categorized history
 - **Configurable queue filter mode** (`strict`, `skip_transfers`, `all_uncategorized`)
 - **Starting Balance transactions are always excluded** from categorization queue
 - **Workspace settings drawer** keeps bootstrap, reconciled filtering, queue age limits, fallback-category controls, and custom rules out of the main review surface
 - **Persisted YNAB test mode** simulates apply/approve actions without writing to YNAB, so the same queue can be exercised repeatedly
 - **Default fallback category** can be configured for no-suggestion payees; category dropdowns prioritize top 10 locally most-used categories and hide hidden YNAB categories
-- **QoL quick actions**: apply visible suggestions in bulk (High by default, optional Medium), select/clear visible, recent category chips, sticky counts, and keyboard shortcuts
+- **Review QoL**: inline ready/missing/edited states, sticky visible-queue submit rail, and keyboard shortcuts
 
 ### 📊 System Features
 - **Real-time WebSocket updates** – instant UI refresh without polling

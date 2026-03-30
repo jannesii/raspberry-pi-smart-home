@@ -108,6 +108,27 @@ def _parse_optional_rules(value: Any) -> list[dict[str, Any]] | None:
     return value
 
 
+def _parse_review_commit_transactions(value: Any) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        raise ValueError("transactions must be a list")
+    normalized: list[dict[str, str]] = []
+    seen_ids: set[str] = set()
+    for index, item in enumerate(value):
+        if not isinstance(item, dict):
+            raise ValueError(f"transactions[{index}] must be an object")
+        tx_id = str(item.get("id") or "").strip()
+        category_id = str(item.get("category_id") or "").strip()
+        if not tx_id:
+            raise ValueError(f"transactions[{index}].id is required")
+        if not category_id:
+            raise ValueError(f"transactions[{index}].category_id is required")
+        if tx_id in seen_ids:
+            raise ValueError(f"Duplicate transaction id: {tx_id}")
+        seen_ids.add(tx_id)
+        normalized.append({"id": tx_id, "category_id": category_id})
+    return normalized
+
+
 @ynab_categorizer_bp.route("/queue", methods=["GET"])
 @login_required
 def ynab_queue():
@@ -297,6 +318,45 @@ def ynab_approve():
         logger.exception("ynab_approve failed: %s", exc)
         return jsonify(
             {"ok": False, "error": "approve_failed", "message": "Failed to approve transactions"}
+        ), 500
+
+
+@ynab_categorizer_bp.route("/review-commit", methods=["POST"])
+@login_required
+def ynab_review_commit():
+    guard = require_root_admin_or_redirect("Root-Admin required", json=True)
+    if guard:
+        return guard
+
+    svc = _get_service()
+    if svc is None:
+        return _service_not_configured_response()
+
+    data = request.get_json(silent=True) or {}
+    try:
+        transactions = _parse_review_commit_transactions(data.get("transactions"))
+    except ValueError as exc:
+        logger.warning("ynab_review_commit bad request parse error: %s", exc)
+        return jsonify({"ok": False, "error": "bad_request", "message": str(exc)}), 400
+
+    logger.debug(
+        "ynab_review_commit called user=%s transaction_count=%s",
+        current_user.get_id(),
+        len(transactions),
+    )
+    try:
+        result = svc.review_commit(
+            transactions=transactions,
+            applied_by_username=current_user.get_id(),
+        )
+        return jsonify({"ok": True, **result})
+    except ValueError as exc:
+        logger.warning("ynab_review_commit bad request: %s", exc)
+        return jsonify({"ok": False, "error": "bad_request", "message": str(exc)}), 400
+    except Exception as exc:
+        logger.exception("ynab_review_commit failed: %s", exc)
+        return jsonify(
+            {"ok": False, "error": "review_commit_failed", "message": "Failed to submit review"}
         ), 500
 
 

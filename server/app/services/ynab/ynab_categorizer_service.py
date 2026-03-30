@@ -33,6 +33,7 @@ _VALID_QUEUE_MODES = {
 _VALID_QUEUE_LIMIT_UNITS = {"days", "months", "years"}
 _VALID_RULE_PAYEE_MATCH_TYPES = {"contains", "equals"}
 _VALID_RULE_AMOUNT_OPERATORS = {"any", "over", "under"}
+_YNAB_BULK_UPDATE_BATCH_SIZE = 200
 
 
 class YnabCategorizerService:
@@ -471,6 +472,117 @@ class YnabCategorizerService:
             return int(digits[:8])
         except ValueError:
             return 0
+
+    @staticmethod
+    def _chunk_items(
+        items: list[dict[str, Any]],
+        *,
+        chunk_size: int = _YNAB_BULK_UPDATE_BATCH_SIZE,
+    ) -> list[list[dict[str, Any]]]:
+        logger.debug("chunk_items called count=%s chunk_size=%s", len(items), chunk_size)
+        if chunk_size < 1:
+            raise ValueError("chunk_size must be positive")
+        return [items[i : i + chunk_size] for i in range(0, len(items), chunk_size)]
+
+    @staticmethod
+    def _normalize_review_commit_items(
+        transactions: list[dict[str, Any]],
+    ) -> list[dict[str, str]]:
+        logger.debug("normalize_review_commit_items called count=%s", len(transactions))
+        normalized: list[dict[str, str]] = []
+        seen_ids: set[str] = set()
+        for index, item in enumerate(transactions):
+            if not isinstance(item, dict):
+                raise ValueError(f"transactions[{index}] must be an object")
+            tx_id = str(item.get("id") or "").strip()
+            category_id = str(item.get("category_id") or "").strip()
+            if not tx_id:
+                raise ValueError(f"transactions[{index}].id is required")
+            if not category_id:
+                raise ValueError(f"transactions[{index}].category_id is required")
+            if tx_id in seen_ids:
+                raise ValueError(f"Duplicate transaction id: {tx_id}")
+            seen_ids.add(tx_id)
+            normalized.append({"id": tx_id, "category_id": category_id})
+        return normalized
+
+    def _record_category_learning(
+        self,
+        *,
+        tx_ids: list[str],
+        tx_items_by_id: dict[str, dict[str, str]],
+        tx_by_id: dict[str, dict[str, Any]],
+        applied_by_username: str | None,
+    ) -> tuple[int, int]:
+        logger.debug(
+            "record_category_learning called tx_count=%s applied_by=%s",
+            len(tx_ids),
+            applied_by_username,
+        )
+        applied_at = datetime.now(self.ctrl.finland_tz).isoformat()
+        inserted_events = 0
+        skipped_existing = 0
+
+        for tx_id in tx_ids:
+            tx = tx_by_id.get(tx_id, {})
+            tx_item = tx_items_by_id[tx_id]
+            category_id = tx_item["category_id"]
+            payee_normalized = self.normalize_payee(str(tx.get("payee_name") or "")) or "UNKNOWN"
+            inserted = self.ctrl.record_ynab_apply_event(
+                YnabApplyEvent(
+                    budget_id=self.budget_id,
+                    transaction_id=tx_id,
+                    payee_normalized=payee_normalized,
+                    category_id=category_id,
+                    applied_by_username=applied_by_username,
+                    applied_at=applied_at,
+                )
+            )
+            if inserted:
+                inserted_events += 1
+                self.ctrl.increment_ynab_payee_category_stat(
+                    self.budget_id,
+                    payee_normalized,
+                    category_id,
+                    last_used_at=str(tx.get("date") or applied_at),
+                )
+            else:
+                skipped_existing += 1
+
+        logger.debug(
+            "record_category_learning completed inserted_events=%s skipped_existing=%s",
+            inserted_events,
+            skipped_existing,
+        )
+        return inserted_events, skipped_existing
+
+    def _update_transactions_in_batches(
+        self,
+        items: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        logger.debug("update_transactions_in_batches called count=%s", len(items))
+        if not items:
+            return {"transaction_ids": []}
+
+        transaction_ids: list[str] = []
+        chunks = self._chunk_items(items)
+        for index, chunk in enumerate(chunks, start=1):
+            logger.debug(
+                "update_transactions_in_batches sending chunk=%s/%s chunk_size=%s",
+                index,
+                len(chunks),
+                len(chunk),
+            )
+            result = self.client.update_transactions_bulk(chunk)
+            chunk_ids = result.get("transaction_ids")
+            if isinstance(chunk_ids, list):
+                transaction_ids.extend(str(tx_id) for tx_id in chunk_ids)
+        logger.debug(
+            "update_transactions_in_batches completed chunk_count=%s updated=%s",
+            len(chunks),
+            len(transaction_ids),
+        )
+        return {"transaction_ids": transaction_ids}
 
     @staticmethod
     def _queue_transaction_payload(
@@ -1028,6 +1140,109 @@ class YnabCategorizerService:
         return {
             "transaction_count": len(tx_ids),
             "approved_count": len(tx_ids),
+            "inserted_events": inserted_events,
+            "skipped_existing": skipped_existing,
+            "simulated": False,
+            "test_mode_enabled": False,
+            "ynab": ynab_result,
+        }
+
+    def review_commit(
+        self,
+        transactions: list[dict[str, Any]],
+        *,
+        applied_by_username: str | None,
+    ) -> dict[str, Any]:
+        logger.debug(
+            "review_commit called transaction_count=%s applied_by=%s",
+            len(transactions),
+            applied_by_username,
+        )
+        tx_items = self._normalize_review_commit_items(transactions)
+        if not tx_items:
+            raise ValueError("transactions must not be empty")
+
+        tx_items_by_id = {item["id"]: item for item in tx_items}
+        all_transactions = self.client.get_transactions_since(None)
+        tx_by_id = {
+            str(tx.get("id")): tx
+            for tx in all_transactions
+            if isinstance(tx, dict) and tx.get("id") is not None
+        }
+
+        missing_ids = [tx_id for tx_id in tx_items_by_id if tx_id not in tx_by_id]
+        if missing_ids:
+            logger.warning("review_commit missing transaction ids count=%s", len(missing_ids))
+            raise ValueError(f"Unknown transaction id: {missing_ids[0]}")
+
+        categorized_ids: list[str] = []
+        approval_only_ids: list[str] = []
+        payload_items: list[dict[str, Any]] = []
+
+        for tx_id, item in tx_items_by_id.items():
+            tx = tx_by_id[tx_id]
+            current_category_id = str(tx.get("category_id") or "").strip()
+            category_id = item["category_id"]
+            changed_category = not current_category_id or current_category_id != category_id
+            if changed_category:
+                categorized_ids.append(tx_id)
+                payload_items.append({"id": tx_id, "category_id": category_id, "approved": True})
+            else:
+                approval_only_ids.append(tx_id)
+                payload_items.append({"id": tx_id, "approved": True})
+
+        logger.debug(
+            "review_commit split categorized=%s approval_only=%s",
+            len(categorized_ids),
+            len(approval_only_ids),
+        )
+
+        cfg = self.ctrl.get_ynab_categorizer_config(self.budget_id)
+        if bool(cfg.test_mode_enabled):
+            logger.debug(
+                "review_commit test mode simulated categorized=%s approval_only=%s",
+                len(categorized_ids),
+                len(approval_only_ids),
+            )
+            return {
+                "transaction_count": len(tx_items),
+                "approved_count": len(tx_items),
+                "categorized_count": len(categorized_ids),
+                "approval_only_count": len(approval_only_ids),
+                "inserted_events": 0,
+                "skipped_existing": 0,
+                "simulated": True,
+                "test_mode_enabled": True,
+                "ynab": {
+                    "transaction_ids": [item["id"] for item in tx_items],
+                    "simulated": True,
+                    "skipped_remote_write": True,
+                },
+            }
+
+        ynab_result = self._update_transactions_in_batches(payload_items)
+        inserted_events, skipped_existing = self._record_category_learning(
+            tx_ids=categorized_ids,
+            tx_items_by_id=tx_items_by_id,
+            tx_by_id=tx_by_id,
+            applied_by_username=applied_by_username,
+        )
+        logger.debug(
+            (
+                "review_commit completed transaction_count=%s categorized=%s approval_only=%s "
+                "inserted_events=%s skipped_existing=%s"
+            ),
+            len(tx_items),
+            len(categorized_ids),
+            len(approval_only_ids),
+            inserted_events,
+            skipped_existing,
+        )
+        return {
+            "transaction_count": len(tx_items),
+            "approved_count": len(tx_items),
+            "categorized_count": len(categorized_ids),
+            "approval_only_count": len(approval_only_ids),
             "inserted_events": inserted_events,
             "skipped_existing": skipped_existing,
             "simulated": False,

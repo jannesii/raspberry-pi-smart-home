@@ -3,7 +3,7 @@
 {% block title %}YNAB Categorizer{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/ynab_categorizer.css', v='20260330-1') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/ynab_categorizer.css', v='20260330-2') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/flash.css') }}">
 {% endblock %}
 
@@ -64,15 +64,6 @@
           autocomplete="off"
           placeholder="Filter payee, memo, date, amount, category"
         >
-      </div>
-      <div class="ynab-toolbar-actions">
-        <button id="btnToolbarPrimaryAction" class="ynab-btn ynab-btn-primary" type="button">Apply visible suggestions</button>
-        <label id="quickApplyIncludeMediumWrap" class="ynab-toggle-chip" for="quickApplyIncludeMedium">
-          <input id="quickApplyIncludeMedium" name="quickApplyIncludeMedium" type="checkbox">
-          <span>Include Medium</span>
-        </label>
-        <button id="btnToolbarSelectVisible" class="ynab-btn ynab-btn-secondary" type="button">Select visible</button>
-        <button id="btnToolbarClearSelection" class="ynab-btn ynab-btn-secondary" type="button">Clear selection</button>
       </div>
     </section>
 
@@ -171,37 +162,20 @@
       </aside>
     </div>
 
-    <section id="floatingApplyBar" class="ynab-floating-apply" aria-live="polite">
-      <div class="ynab-floating-apply-inner">
-        <div class="ynab-floating-apply-top">
+    <section id="reviewCommitRail" class="ynab-review-rail" aria-live="polite">
+      <div class="ynab-review-rail-inner">
+        <div class="ynab-review-rail-copy">
           <div>
-            <span id="selectedTxCount" class="ynab-floating-count">0 selected</span>
-            <p id="floatingApplyHint" class="ynab-floating-hint">Choose a category to apply, or approve selected categorized transactions as-is.</p>
+            <span id="reviewVisibleCount" class="ynab-review-count">0 visible</span>
+            <p id="reviewCommitHint" class="ynab-review-hint">Visible rows with a category can be approved in one batch.</p>
           </div>
-          <button id="btnTrayClearSelection" class="ynab-btn ynab-btn-secondary" type="button">Clear</button>
+          <div id="reviewCommitStats" class="ynab-review-stats">Ready: —</div>
         </div>
-
-        <div id="reviewTray" class="ynab-floating-mode is-active">
-          <label class="ynab-field ynab-field-grow" for="globalCategorySearch">
-            <span>Category for selected</span>
-            <input
-              id="globalCategorySearch"
-              name="globalCategorySearch"
-              type="text"
-              placeholder="Find category"
-              autocomplete="off"
-            >
-          </label>
-          <label class="ynab-field ynab-field-grow" for="globalCategorySelect">
-            <span>Category list</span>
-            <select id="globalCategorySelect" name="globalCategorySelect"></select>
-          </label>
-          <button id="btnApplySelected" class="ynab-btn ynab-btn-primary" type="button">Apply category</button>
-          <button id="btnApproveSelected" class="ynab-btn ynab-btn-secondary" type="button">Approve as-is</button>
+        <div class="ynab-review-rail-actions">
+          <button id="btnResetVisibleCategories" class="ynab-btn ynab-btn-secondary" type="button">Reset visible</button>
+          <button id="btnReviewCommit" class="ynab-btn ynab-btn-primary" type="button">Approve visible</button>
         </div>
       </div>
-
-      <div id="recentCategoryChips" class="ynab-recent-chips"></div>
     </section>
   {% endif %}
 </div>
@@ -213,5 +187,5 @@
   const YNAB_INITIAL_CONFIG = {{ ynab_initial_config | tojson | safe }};
   const YNAB_BOOTSTRAP_STATUS = {{ ynab_bootstrap_status | tojson | safe }};
 </script>
-<script src="{{ url_for('static', filename='js/ynab_categorizer.js', v='20260330-1') }}"></script>
+<script src="{{ url_for('static', filename='js/ynab_categorizer.js', v='20260330-2') }}"></script>
 {% endblock %}

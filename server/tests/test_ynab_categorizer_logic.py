@@ -485,3 +485,98 @@ def test_apply_category_marks_transactions_approved_in_bulk_payload():
         {"id": "tx1", "category_id": "cat_transport", "approved": True},
         {"id": "tx3", "category_id": "cat_transport", "approved": True},
     ]
+
+
+def test_review_commit_splits_changed_and_approval_only_rows():
+    class _ClientWithCurrentCategory(_ClientStub):
+        def get_transactions_since(self, since_date, *, transaction_type=None):
+            txs = super().get_transactions_since(since_date, transaction_type=transaction_type)
+            copied = [dict(tx) for tx in txs]
+            copied[0]["category_id"] = "cat_groceries"
+            copied[0]["category_name"] = "Groceries"
+            copied[0]["approved"] = False
+            copied[1]["category_id"] = "cat_transport"
+            copied[1]["category_name"] = "Transport"
+            copied[1]["approved"] = False
+            return copied
+
+    client = _ClientWithCurrentCategory()
+    ctrl = _CtrlStub(mode="strict")
+    svc = YnabCategorizerService(ctrl=ctrl, client=client, budget_id="budget1")
+
+    result = svc.review_commit(
+        transactions=[
+            {"id": "tx1", "category_id": "cat_misc"},
+            {"id": "tx2", "category_id": "cat_transport"},
+        ],
+        applied_by_username="root",
+    )
+
+    assert result["transaction_count"] == 2
+    assert result["approved_count"] == 2
+    assert result["categorized_count"] == 1
+    assert result["approval_only_count"] == 1
+    assert client.bulk_updates[0] == [
+        {"id": "tx1", "category_id": "cat_misc", "approved": True},
+        {"id": "tx2", "approved": True},
+    ]
+    assert ctrl.recorded_events == [("tx1", "cat_misc", "K MARKET")]
+    assert ctrl.incremented_stats == [("budget1", "K MARKET", "cat_misc", "2026-03-05")]
+
+
+def test_review_commit_in_test_mode_skips_remote_and_local_writes():
+    ctrl = _CtrlStub(test_mode_enabled=True)
+    client = _ClientStub()
+    svc = YnabCategorizerService(ctrl=ctrl, client=client, budget_id="budget1")
+
+    result = svc.review_commit(
+        transactions=[{"id": "tx1", "category_id": "cat_groceries"}],
+        applied_by_username="root",
+    )
+
+    assert result["simulated"] is True
+    assert result["categorized_count"] == 1
+    assert result["approval_only_count"] == 0
+    assert client.bulk_updates == []
+    assert ctrl.recorded_events == []
+    assert ctrl.incremented_stats == []
+
+
+def test_review_commit_chunks_bulk_updates_over_200_items():
+    class _ClientManyTransactions(_ClientStub):
+        def get_transactions_since(self, since_date, *, transaction_type=None):
+            transactions = []
+            for index in range(205):
+                transactions.append(
+                    {
+                        "id": f"tx{index}",
+                        "date": "2026-03-09",
+                        "payee_name": f"Store {index}",
+                        "account_name": "Nordea Everyday",
+                        "category_id": None,
+                        "deleted": False,
+                        "transfer_account_id": None,
+                        "subtransactions": [],
+                        "memo": "",
+                        "amount": -1000,
+                        "approved": False,
+                    }
+                )
+            if transaction_type == "unapproved":
+                return transactions
+            return transactions
+
+    client = _ClientManyTransactions()
+    ctrl = _CtrlStub(mode="strict")
+    svc = YnabCategorizerService(ctrl=ctrl, client=client, budget_id="budget1")
+
+    result = svc.review_commit(
+        transactions=[{"id": f"tx{index}", "category_id": "cat_misc"} for index in range(205)],
+        applied_by_username="root",
+    )
+
+    assert result["transaction_count"] == 205
+    assert result["categorized_count"] == 205
+    assert len(client.bulk_updates) == 2
+    assert len(client.bulk_updates[0]) == 200
+    assert len(client.bulk_updates[1]) == 5
