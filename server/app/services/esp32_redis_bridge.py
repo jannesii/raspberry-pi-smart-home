@@ -36,6 +36,9 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 REDIS_CHANNEL_STATUS = "esp32:status"
 REDIS_CHANNEL_ACTION_RESULTS = "esp32:action_results"
 STATUS_SUMMARY_INTERVAL_S = float(os.getenv("ESP32_REDIS_STATUS_LOG_INTERVAL_S", "30"))
+STATUS_SUMMARY_INFO_REPEAT_INTERVAL_S = float(
+    os.getenv("ESP32_REDIS_STATUS_INFO_REPEAT_INTERVAL_S", "0")
+)
 
 
 class ESP32RedisBridge:
@@ -212,22 +215,50 @@ class ESP32RedisBridge:
         """Emit a throttled status summary to prove Redis handoff is alive."""
         device_id = str(data.get("device_id") or "unknown")
         now_mono = monotonic()
-        state = self._status_log_state.get(device_id, {"count": 0, "last_log": 0.0})
+        state = self._status_log_state.get(
+            device_id,
+            {
+                "count": 0,
+                "last_debug_log": 0.0,
+                "last_info_log": 0.0,
+            },
+        )
         count = int(state.get("count", 0)) + 1
-        last_log = float(state.get("last_log", 0.0))
-        should_log = count == 1 or now_mono - last_log >= STATUS_SUMMARY_INTERVAL_S
+        last_debug_log = float(state.get("last_debug_log", 0.0))
+        last_info_log = float(state.get("last_info_log", 0.0))
+        info_repeat_enabled = STATUS_SUMMARY_INFO_REPEAT_INTERVAL_S > 0
+        should_log_info = count == 1 or (
+            info_repeat_enabled
+            and now_mono - last_info_log >= STATUS_SUMMARY_INFO_REPEAT_INTERVAL_S
+        )
+        should_log_debug = (
+            not should_log_info
+            and STATUS_SUMMARY_INTERVAL_S > 0
+            and now_mono - last_debug_log >= STATUS_SUMMARY_INTERVAL_S
+        )
         self._status_log_state[device_id] = {
             "count": count,
-            "last_log": now_mono if should_log else last_log,
+            "last_debug_log": now_mono if should_log_debug else last_debug_log,
+            "last_info_log": now_mono if should_log_info else last_info_log,
         }
-        if not should_log:
+        if not should_log_info and not should_log_debug:
             return
 
         ws_stats = data.get("ws_stats")
         if not isinstance(ws_stats, dict):
             ws_stats = {}
-        logger.info(
-            "ESP32RedisBridge status device=%s redis_statuses=%s payload_ts=%s temp=%s ws_sent=%s ws_received=%s ws_commands=%s",
+        log_fn = logger.info if should_log_info else logger.debug
+        log_level_name = "INFO" if should_log_info else "DEBUG"
+        logger.debug(
+            "ESP32RedisBridge summary decision device=%s count=%s info=%s debug=%s repeat_info_interval=%s",
+            device_id,
+            count,
+            should_log_info,
+            should_log_debug,
+            STATUS_SUMMARY_INFO_REPEAT_INTERVAL_S,
+        )
+        log_fn(
+            "ESP32RedisBridge status device=%s redis_statuses=%s payload_ts=%s temp=%s ws_sent=%s ws_received=%s ws_commands=%s log_level=%s",
             device_id,
             count,
             data.get("timestamp"),
@@ -235,6 +266,7 @@ class ESP32RedisBridge:
             ws_stats.get("messages_sent"),
             ws_stats.get("messages_received"),
             ws_stats.get("commands_executed"),
+            log_level_name,
         )
 
     def _build_logs_event_payload(

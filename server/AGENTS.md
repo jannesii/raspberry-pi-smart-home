@@ -551,6 +551,8 @@ function update(data) {
 
 **ESP32 WS reconnect note**: When replacing an existing device connection with the same `device_id`, stale socket cleanup must be identity-aware (`ws`/connection object), or the old socket's `finally` block can unregister the new replacement and make live status look like it came from an unknown device.
 
+**ESP32 Redis bridge logging note**: `ESP32RedisBridge` should log the first live status summary at `INFO`, but recurring heartbeat summaries should stay at `DEBUG` by default to avoid spamming Gunicorn logs. Only raise recurring info summaries by explicitly setting `ESP32_REDIS_STATUS_INFO_REPEAT_INTERVAL_S`.
+
 **Car heater WS payload note**: Browser `car_heater_status` handlers expect the normalized `CarHeaterStatus` payload shape (`is_heater_on`, `instant_power_w`, etc.), not the raw ESP JSON (`shelly`, `temperature`, `ws_stats`). When emitting heater status from Redis/WS paths, normalize to the HTTP status payload shape first.
 
 **Car heater source note**: The UI `status.source` field represents the transport path (`WS`/HTTP fallback), not Shelly's internal `source` value such as `HTTP_in`. For websocket-originated status, override the normalized payload source to `WS`.
@@ -855,4 +857,4 @@ YNAB_HTTP_RETRIES=2
 
 ---
 
-*Last updated: 2026-03-24*
+*Last updated: 2026-03-30*
