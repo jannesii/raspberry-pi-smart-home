@@ -3,7 +3,7 @@
 {% block title %}YNAB Categorizer{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/ynab_categorizer.css', v='20260324-2') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/ynab_categorizer.css', v='20260330-1') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/flash.css') }}">
 {% endblock %}
 
@@ -49,6 +49,7 @@
 
       <div class="ynab-mode-row">
         <div id="workspaceSummary" class="ynab-summary">Loading…</div>
+        <div id="workspaceModeBadge" class="ynab-mode-badge">Live mode</div>
       </div>
     </header>
 
@@ -119,6 +120,11 @@
             <label class="ynab-check-row" for="showReconciledTransactions">
               <input id="showReconciledTransactions" name="showReconciledTransactions" type="checkbox">
               <span>Show reconciled transactions</span>
+            </label>
+
+            <label class="ynab-check-row" for="testModeEnabled">
+              <input id="testModeEnabled" name="testModeEnabled" type="checkbox">
+              <span>Test mode (simulate apply/approve without writing to YNAB)</span>
             </label>
 
             <div class="ynab-field">
@@ -207,5 +213,5 @@
   const YNAB_INITIAL_CONFIG = {{ ynab_initial_config | tojson | safe }};
   const YNAB_BOOTSTRAP_STATUS = {{ ynab_bootstrap_status | tojson | safe }};
 </script>
-<script src="{{ url_for('static', filename='js/ynab_categorizer.js', v='20260324-2') }}"></script>
+<script src="{{ url_for('static', filename='js/ynab_categorizer.js', v='20260330-1') }}"></script>
 {% endblock %}

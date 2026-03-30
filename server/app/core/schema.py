@@ -359,6 +359,7 @@ ynab_categorizer_config = Table(
     Column("id", Integer, primary_key=True),
     Column("budget_id", Text, nullable=False),
     Column("queue_filter_mode", Text, nullable=False, server_default=text("'strict'")),
+    Column("test_mode_enabled", Boolean, nullable=False, server_default=text("false")),
     Column("show_reconciled_transactions", Boolean, nullable=False, server_default=text("false")),
     Column("queue_limit_enabled", Boolean, nullable=False, server_default=text("false")),
     Column("queue_limit_value", Integer, nullable=False, server_default=text("30")),

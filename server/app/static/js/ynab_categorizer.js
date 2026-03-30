@@ -12,6 +12,7 @@ let queueState = {
   categories: [],
   groups: [],
   queue_filter_mode: 'strict',
+  test_mode_enabled: false,
   show_reconciled_transactions: false,
   queue_limit_enabled: false,
   queue_limit_value: 30,
@@ -275,6 +276,31 @@ function setWorkspaceSummary(text) {
   }
 }
 
+function updateWorkspaceModeUi(source = null) {
+  const modeSource = source && typeof source === 'object' ? source : queueState;
+  const testModeEnabled = !!(modeSource && modeSource.test_mode_enabled);
+  const badgeEl = document.getElementById('workspaceModeBadge');
+  const toolbarPrimaryActionBtn = document.getElementById('btnToolbarPrimaryAction');
+  const applySelectedBtn = document.getElementById('btnApplySelected');
+  const approveSelectedBtn = document.getElementById('btnApproveSelected');
+
+  if (badgeEl instanceof HTMLElement) {
+    badgeEl.textContent = testModeEnabled ? 'Test mode: writes disabled' : 'Live mode';
+    badgeEl.classList.toggle('is-test', testModeEnabled);
+  }
+  if (toolbarPrimaryActionBtn instanceof HTMLButtonElement) {
+    toolbarPrimaryActionBtn.textContent = testModeEnabled
+      ? 'Simulate visible suggestions'
+      : 'Apply visible suggestions';
+  }
+  if (applySelectedBtn instanceof HTMLButtonElement) {
+    applySelectedBtn.textContent = testModeEnabled ? 'Simulate category' : 'Apply category';
+  }
+  if (approveSelectedBtn instanceof HTMLButtonElement) {
+    approveSelectedBtn.textContent = testModeEnabled ? 'Simulate approval' : 'Approve as-is';
+  }
+}
+
 function defaultGroupExpanded(group) {
   const txCount = Number(group && group.transaction_count) || 0;
   return !(window.innerWidth >= 980 && txCount > 4);
@@ -437,6 +463,7 @@ function renderCustomRulesEditor() {
 
 function applySettingsToUi(data) {
   const modeSelect = document.getElementById('queueFilterMode');
+  const testModeEnabled = document.getElementById('testModeEnabled');
   const showReconciled = document.getElementById('showReconciledTransactions');
   const queueLimitEnabled = document.getElementById('queueLimitEnabled');
   const queueLimitValue = document.getElementById('queueLimitValue');
@@ -446,6 +473,9 @@ function applySettingsToUi(data) {
 
   if (modeSelect instanceof HTMLSelectElement && data && data.queue_filter_mode) {
     modeSelect.value = data.queue_filter_mode;
+  }
+  if (testModeEnabled instanceof HTMLInputElement) {
+    testModeEnabled.checked = !!(data && data.test_mode_enabled);
   }
   if (showReconciled instanceof HTMLInputElement) {
     showReconciled.checked = !!(data && data.show_reconciled_transactions);
@@ -470,10 +500,12 @@ function applySettingsToUi(data) {
   customRulesState = cloneRules(data && Array.isArray(data.custom_rules) ? data.custom_rules : []);
   updateLimitControlsState();
   renderCustomRulesEditor();
+  updateWorkspaceModeUi(data);
 }
 
 function readSettingsFromUi() {
   const modeSelect = document.getElementById('queueFilterMode');
+  const testModeEnabled = document.getElementById('testModeEnabled');
   const showReconciled = document.getElementById('showReconciledTransactions');
   const queueLimitEnabled = document.getElementById('queueLimitEnabled');
   const queueLimitValue = document.getElementById('queueLimitValue');
@@ -549,6 +581,9 @@ function readSettingsFromUi() {
 
   return {
     queue_filter_mode: mode,
+    test_mode_enabled: testModeEnabled instanceof HTMLInputElement
+      ? testModeEnabled.checked
+      : false,
     show_reconciled_transactions: showReconciled instanceof HTMLInputElement
       ? showReconciled.checked
       : false,
@@ -825,6 +860,7 @@ function renderQueue(payload) {
 
   pruneSelectionState();
   queueState = queueStateRaw;
+  updateWorkspaceModeUi(queueState);
   renderGlobalCategorySelect();
   renderDefaultCategorySelect();
   renderCustomRulesEditor();
@@ -1037,7 +1073,10 @@ async function applyTransactions(txIds, categoryId, options = {}) {
     addRecentCategory(categoryId);
     txIds.forEach(id => selectedQueueIds.delete(id));
     if (opts.showStatus) {
-      showMessage(`Applied category and approved ${txIds.length} transaction(s)`, 'ok');
+      const statusText = data && data.simulated
+        ? `Test mode: simulated category apply for ${txIds.length} transaction(s)`
+        : `Applied category and approved ${txIds.length} transaction(s)`;
+      showMessage(statusText, 'ok');
     }
     if (opts.reloadQueue) {
       await loadQueue({ showStatus: false });
@@ -1081,7 +1120,10 @@ async function approveTransactions(txIds, options = {}) {
 
     txIds.forEach(id => selectedQueueIds.delete(id));
     if (opts.showStatus) {
-      showMessage(`Approved ${txIds.length} transaction(s)`, 'ok');
+      const statusText = data && data.simulated
+        ? `Test mode: simulated approval for ${txIds.length} transaction(s)`
+        : `Approved ${txIds.length} transaction(s)`;
+      showMessage(statusText, 'ok');
     }
     if (opts.reloadQueue) {
       await loadQueue({ showStatus: false });
@@ -1157,11 +1199,16 @@ async function applyResolvedFromVisibleGroups() {
   }
 
   await loadQueue({ showStatus: false });
+  const actionLabel = isTestModeEnabled() ? 'Visible simulation complete' : 'Visible apply complete';
   const summary = (
-    `Visible apply complete: ${appliedGroups} group(s), ` +
+    `${actionLabel}: ${appliedGroups} group(s), ` +
     `${appliedTransactions} transaction(s), ${failedGroups} failed`
   );
   showMessage(summary, failedGroups > 0 ? 'error' : 'ok');
+}
+
+function isTestModeEnabled() {
+  return !!(queueState && queueState.test_mode_enabled);
 }
 
 function isTypingTarget(target) {

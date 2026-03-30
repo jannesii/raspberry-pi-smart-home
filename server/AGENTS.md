@@ -535,6 +535,8 @@ function update(data) {
 
 **YNAB custom-rules note**: Custom categorization rules are persisted in `ynab_categorizer_config.custom_rules_json` via controller methods. Rules run top-to-bottom, first match wins, and payee comparisons must use the existing canonical `normalize_payee()` helper.
 
+**YNAB test-mode note**: `ynab_categorizer_config.test_mode_enabled` is a persisted workspace safety toggle. When enabled, `/api/ynab-categorizer/apply` and `/api/ynab-categorizer/approve` must simulate success without calling YNAB or mutating local learning stats, so the review queue stays reusable for repeated testing.
+
 **API CORS note**: Cross-origin access for `/api/*` is opt-in via `API_ALLOWED_ORIGINS`. Do not reintroduce wildcard CORS defaults; same-origin browser traffic does not need CORS headers.
 
 **API key transport note**: Query-string API keys are disabled by default. Use `Authorization: Bearer <token>` or `X-API-Key`, and only enable `ALLOW_API_KEY_QUERY_PARAM=1` for temporary backward compatibility.

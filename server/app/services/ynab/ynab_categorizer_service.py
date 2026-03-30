@@ -57,11 +57,12 @@ class YnabCategorizerService:
         custom_rules = self._parse_custom_rules_json(cfg.custom_rules_json)
         logger.debug(
             (
-                "get_config queue_filter_mode=%s show_reconciled_transactions=%s "
+                "get_config queue_filter_mode=%s test_mode_enabled=%s show_reconciled_transactions=%s "
                 "queue_limit_enabled=%s queue_limit_value=%s queue_limit_unit=%s "
                 "quick_apply_include_medium=%s default_category_id=%s custom_rules=%s"
             ),
             cfg.queue_filter_mode,
+            cfg.test_mode_enabled,
             cfg.show_reconciled_transactions,
             cfg.queue_limit_enabled,
             cfg.queue_limit_value,
@@ -72,6 +73,7 @@ class YnabCategorizerService:
         )
         return {
             "queue_filter_mode": cfg.queue_filter_mode,
+            "test_mode_enabled": bool(cfg.test_mode_enabled),
             "show_reconciled_transactions": bool(cfg.show_reconciled_transactions),
             "queue_limit_enabled": bool(cfg.queue_limit_enabled),
             "queue_limit_value": int(cfg.queue_limit_value),
@@ -87,6 +89,7 @@ class YnabCategorizerService:
         current = self.ctrl.get_ynab_categorizer_config(self.budget_id)
         return self.set_config(
             queue_filter_mode=queue_filter_mode,
+            test_mode_enabled=bool(current.test_mode_enabled),
             show_reconciled_transactions=bool(current.show_reconciled_transactions),
             queue_limit_enabled=bool(current.queue_limit_enabled),
             queue_limit_value=int(current.queue_limit_value),
@@ -100,6 +103,7 @@ class YnabCategorizerService:
         self,
         *,
         queue_filter_mode: str,
+        test_mode_enabled: bool,
         show_reconciled_transactions: bool,
         queue_limit_enabled: bool,
         queue_limit_value: int,
@@ -110,11 +114,12 @@ class YnabCategorizerService:
     ) -> dict[str, Any]:
         logger.debug(
             (
-                "set_config called mode=%s show_reconciled=%s limit_enabled=%s "
+                "set_config called mode=%s test_mode_enabled=%s show_reconciled=%s limit_enabled=%s "
                 "limit_value=%s limit_unit=%s quick_apply_include_medium=%s "
                 "default_category_id=%s custom_rules_supplied=%s"
             ),
             queue_filter_mode,
+            test_mode_enabled,
             show_reconciled_transactions,
             queue_limit_enabled,
             queue_limit_value,
@@ -143,6 +148,7 @@ class YnabCategorizerService:
         cfg = self.ctrl.save_ynab_categorizer_config(
             self.budget_id,
             mode,
+            test_mode_enabled=bool(test_mode_enabled),
             show_reconciled_transactions=bool(show_reconciled_transactions),
             queue_limit_enabled=bool(queue_limit_enabled),
             queue_limit_value=int(queue_limit_value),
@@ -153,6 +159,7 @@ class YnabCategorizerService:
         )
         return {
             "queue_filter_mode": cfg.queue_filter_mode,
+            "test_mode_enabled": bool(cfg.test_mode_enabled),
             "show_reconciled_transactions": bool(cfg.show_reconciled_transactions),
             "queue_limit_enabled": bool(cfg.queue_limit_enabled),
             "queue_limit_value": int(cfg.queue_limit_value),
@@ -703,10 +710,11 @@ class YnabCategorizerService:
 
         logger.debug(
             (
-                "get_queue called mode=%s show_reconciled=%s queue_limit_enabled=%s "
+                "get_queue called mode=%s test_mode_enabled=%s show_reconciled=%s queue_limit_enabled=%s "
                 "queue_limit_value=%s queue_limit_unit=%s"
             ),
             mode,
+            bool(cfg.test_mode_enabled),
             show_reconciled,
             queue_limit_enabled,
             queue_limit_value,
@@ -852,6 +860,7 @@ class YnabCategorizerService:
 
         return {
             "queue_filter_mode": mode,
+            "test_mode_enabled": bool(cfg.test_mode_enabled),
             "show_reconciled_transactions": show_reconciled,
             "queue_limit_enabled": queue_limit_enabled,
             "queue_limit_value": queue_limit_value,
@@ -880,9 +889,10 @@ class YnabCategorizerService:
 
         logger.debug(
             (
-                "get_approval_queue called show_reconciled=%s "
+                "get_approval_queue called test_mode_enabled=%s show_reconciled=%s "
                 "queue_limit_enabled=%s queue_limit_value=%s queue_limit_unit=%s"
             ),
+            bool(cfg.test_mode_enabled),
             show_reconciled,
             queue_limit_enabled,
             queue_limit_value,
@@ -919,6 +929,7 @@ class YnabCategorizerService:
             len(payload_items),
         )
         return {
+            "test_mode_enabled": bool(cfg.test_mode_enabled),
             "show_reconciled_transactions": show_reconciled,
             "queue_limit_enabled": queue_limit_enabled,
             "queue_limit_value": queue_limit_value,
@@ -946,6 +957,27 @@ class YnabCategorizerService:
             raise ValueError("transaction_ids must not be empty")
         if not category_id:
             raise ValueError("category_id is required")
+
+        cfg = self.ctrl.get_ynab_categorizer_config(self.budget_id)
+        if bool(cfg.test_mode_enabled):
+            logger.debug(
+                "apply_category test mode simulated tx_count=%s category_id=%s",
+                len(tx_ids),
+                category_id,
+            )
+            return {
+                "transaction_count": len(tx_ids),
+                "approved_count": len(tx_ids),
+                "inserted_events": 0,
+                "skipped_existing": 0,
+                "simulated": True,
+                "test_mode_enabled": True,
+                "ynab": {
+                    "transaction_ids": tx_ids,
+                    "simulated": True,
+                    "skipped_remote_write": True,
+                },
+            }
 
         payload_items = [
             {"id": tx_id, "category_id": category_id, "approved": True} for tx_id in tx_ids
@@ -998,6 +1030,8 @@ class YnabCategorizerService:
             "approved_count": len(tx_ids),
             "inserted_events": inserted_events,
             "skipped_existing": skipped_existing,
+            "simulated": False,
+            "test_mode_enabled": False,
             "ynab": ynab_result,
         }
 
@@ -1019,12 +1053,29 @@ class YnabCategorizerService:
         if len(tx_ids) > 200:
             raise ValueError("Max 200 transactions per approve")
 
+        cfg = self.ctrl.get_ynab_categorizer_config(self.budget_id)
+        if bool(cfg.test_mode_enabled):
+            logger.debug("approve_transactions test mode simulated tx_count=%s", len(tx_ids))
+            return {
+                "transaction_count": len(tx_ids),
+                "approved_count": len(tx_ids),
+                "simulated": True,
+                "test_mode_enabled": True,
+                "ynab": {
+                    "transaction_ids": tx_ids,
+                    "simulated": True,
+                    "skipped_remote_write": True,
+                },
+            }
+
         payload_items = [{"id": tx_id, "approved": True} for tx_id in tx_ids]
         ynab_result = self.client.update_transactions_bulk(payload_items)
         logger.debug("approve_transactions completed transaction_count=%s", len(tx_ids))
         return {
             "transaction_count": len(tx_ids),
             "approved_count": len(tx_ids),
+            "simulated": False,
+            "test_mode_enabled": False,
             "ynab": ynab_result,
         }
 

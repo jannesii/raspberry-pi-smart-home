@@ -12,17 +12,23 @@ from app.services.ynab.ynab_categorizer_service import YnabCategorizerService
 @dataclass
 class _CtrlStub:
     mode: str = "strict"
+    test_mode_enabled: bool = False
     default_category_id: str | None = None
     custom_rules: list[dict] | None = None
+    recorded_events: list[tuple[str, str, str]] | None = None
+    incremented_stats: list[tuple[str, str, str, str]] | None = None
 
     def __post_init__(self):
         self.finland_tz = ZoneInfo("Europe/Helsinki")
+        self.recorded_events = []
+        self.incremented_stats = []
 
     def get_ynab_categorizer_config(self, budget_id: str):
         return YnabCategorizerConfig(
             id=1,
             budget_id=budget_id,
             queue_filter_mode=self.mode,
+            test_mode_enabled=self.test_mode_enabled,
             default_category_id=self.default_category_id,
             custom_rules_json=json.dumps(self.custom_rules)
             if self.custom_rules is not None
@@ -85,8 +91,27 @@ class _CtrlStub:
             "cat_misc": 2,
         }
 
+    def record_ynab_apply_event(self, event):
+        self.recorded_events.append(
+            (event.transaction_id, event.category_id, event.payee_normalized)
+        )
+        return True
+
+    def increment_ynab_payee_category_stat(
+        self,
+        budget_id: str,
+        payee_normalized: str,
+        category_id: str,
+        *,
+        last_used_at: str,
+    ):
+        self.incremented_stats.append((budget_id, payee_normalized, category_id, last_used_at))
+
 
 class _ClientStub:
+    def __init__(self):
+        self.bulk_updates = []
+
     def get_transactions_since(self, since_date, *, transaction_type=None):
         transactions = [
             {
@@ -188,6 +213,7 @@ class _ClientStub:
         return transactions
 
     def update_transactions_bulk(self, items):
+        self.bulk_updates.append(items)
         return {"transaction_ids": [item.get("id") for item in items]}
 
     def get_categories(self):
@@ -230,6 +256,7 @@ def test_queue_filtering_strict_skips_transfer_and_split_parent():
     payload = svc.get_queue()
 
     assert payload["transaction_count"] == 5
+    assert payload["test_mode_enabled"] is False
     assert payload["quick_apply_include_medium"] is False
     assert payload["needs_category_count"] == 5
     assert payload["needs_approval_count"] == 4
@@ -257,6 +284,50 @@ def test_group_sort_by_confidence_then_latest_date_desc():
     assert payload["groups"][0]["payee_normalized"] == "K MARKET"
     assert payload["groups"][0]["confidence_label"] == "High"
     assert any(group["payee_normalized"] == "TAXI HELSINKI" for group in payload["groups"])
+
+
+def test_get_config_includes_test_mode_flag():
+    ctrl = _CtrlStub(mode="strict", test_mode_enabled=True)
+    svc = YnabCategorizerService(ctrl=ctrl, client=_ClientStub(), budget_id="budget1")
+
+    payload = svc.get_config()
+
+    assert payload["test_mode_enabled"] is True
+
+
+def test_apply_category_in_test_mode_skips_remote_and_local_writes():
+    ctrl = _CtrlStub(test_mode_enabled=True)
+    client = _ClientStub()
+    svc = YnabCategorizerService(ctrl=ctrl, client=client, budget_id="budget1")
+
+    result = svc.apply_category(
+        transaction_ids=["tx1", "tx2"],
+        category_id="cat_groceries",
+        applied_by_username="root",
+    )
+
+    assert result["simulated"] is True
+    assert result["test_mode_enabled"] is True
+    assert result["transaction_count"] == 2
+    assert client.bulk_updates == []
+    assert ctrl.recorded_events == []
+    assert ctrl.incremented_stats == []
+
+
+def test_approve_transactions_in_test_mode_skips_remote_write():
+    ctrl = _CtrlStub(test_mode_enabled=True)
+    client = _ClientStub()
+    svc = YnabCategorizerService(ctrl=ctrl, client=client, budget_id="budget1")
+
+    result = svc.approve_transactions(
+        transaction_ids=["tx1", "tx2"],
+        approved_by_username="root",
+    )
+
+    assert result["simulated"] is True
+    assert result["test_mode_enabled"] is True
+    assert result["approved_count"] == 2
+    assert client.bulk_updates == []
 
 
 def test_reconciled_transactions_hidden_by_default():
@@ -381,6 +452,7 @@ def test_approve_transactions_updates_bulk():
 def test_apply_category_marks_transactions_approved_in_bulk_payload():
     class _ClientCapture(_ClientStub):
         def __init__(self):
+            super().__init__()
             self.payloads = []
 
         def update_transactions_bulk(self, items):

@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
-from sqlalchemy import Boolean, Column, Integer, MetaData, Table, Text, create_engine, inspect
+from sqlalchemy import Column, Integer, MetaData, Table, Text, create_engine, inspect
 
 from app.core import Controller, YnabApplyEvent, YnabBootstrapState
 from app.core.schema import metadata
@@ -35,6 +35,7 @@ def controller(temp_db):
 def test_config_defaults_to_strict(controller: Controller):
     cfg = controller.get_ynab_categorizer_config("budget1")
     assert cfg.queue_filter_mode == "strict"
+    assert cfg.test_mode_enabled is False
     assert cfg.show_reconciled_transactions is False
     assert cfg.queue_limit_enabled is False
     assert cfg.queue_limit_value == 30
@@ -48,6 +49,7 @@ def test_config_save_and_read(controller: Controller):
     saved = controller.save_ynab_categorizer_config(
         "budget1",
         "skip_transfers",
+        test_mode_enabled=True,
         show_reconciled_transactions=True,
         queue_limit_enabled=True,
         queue_limit_value=14,
@@ -57,6 +59,7 @@ def test_config_save_and_read(controller: Controller):
         custom_rules_json='[{"id":"rule-1","enabled":true,"payee_match_type":"contains","payee_value":"abc","amount_operator":"any","amount_value_eur":null,"category_id":"cat_transport"}]',
     )
     assert saved.queue_filter_mode == "skip_transfers"
+    assert saved.test_mode_enabled is True
     assert saved.show_reconciled_transactions is True
     assert saved.queue_limit_enabled is True
     assert saved.queue_limit_value == 14
@@ -67,6 +70,7 @@ def test_config_save_and_read(controller: Controller):
 
     loaded = controller.get_ynab_categorizer_config("budget1")
     assert loaded.queue_filter_mode == "skip_transfers"
+    assert loaded.test_mode_enabled is True
     assert loaded.show_reconciled_transactions is True
     assert loaded.queue_limit_enabled is True
     assert loaded.queue_limit_value == 14
@@ -159,7 +163,7 @@ def test_bootstrap_state_roundtrip(controller: Controller):
     assert loaded.history_end_date == state.history_end_date
 
 
-def test_alembic_upgrade_adds_custom_rules_json_column(tmp_path):
+def test_alembic_upgrade_adds_test_mode_enabled_column(tmp_path):
     db_path = tmp_path / "alembic_test.db"
     db_url = f"sqlite:///{db_path}"
     engine = create_engine(db_url)
@@ -170,11 +174,6 @@ def test_alembic_upgrade_adds_custom_rules_json_column(tmp_path):
         Column("id", Integer, primary_key=True),
         Column("budget_id", Text, nullable=False),
         Column("queue_filter_mode", Text, nullable=False),
-        Column("show_reconciled_transactions", Boolean, nullable=False),
-        Column("queue_limit_enabled", Boolean, nullable=False),
-        Column("queue_limit_value", Integer, nullable=False),
-        Column("queue_limit_unit", Text, nullable=False),
-        Column("quick_apply_include_medium", Boolean, nullable=False),
         Column("default_category_id", Text),
         Column("updated_ts", Text, nullable=False),
     )
@@ -184,10 +183,10 @@ def test_alembic_upgrade_adds_custom_rules_json_column(tmp_path):
         columns_before = {
             col["name"] for col in inspect(engine).get_columns("ynab_categorizer_config")
         }
-        assert "custom_rules_json" not in columns_before
+        assert "test_mode_enabled" not in columns_before
 
         migration = importlib.import_module(
-            "migrations.versions.20260324_0007_ynab_categorizer_custom_rules"
+            "migrations.versions.20260330_0008_ynab_categorizer_test_mode"
         )
 
         with engine.begin() as conn:
@@ -203,6 +202,6 @@ def test_alembic_upgrade_adds_custom_rules_json_column(tmp_path):
         columns_after = {
             col["name"] for col in inspect(engine).get_columns("ynab_categorizer_config")
         }
-        assert "custom_rules_json" in columns_after
+        assert "test_mode_enabled" in columns_after
     finally:
         engine.dispose()

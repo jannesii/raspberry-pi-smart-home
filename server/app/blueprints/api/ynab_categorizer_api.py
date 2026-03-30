@@ -401,6 +401,7 @@ def ynab_set_config():
             400,
         )
     try:
+        test_mode_enabled = _parse_bool(data.get("test_mode_enabled"), default=False)
         show_reconciled_transactions = _parse_bool(
             data.get("show_reconciled_transactions"), default=False
         )
@@ -419,12 +420,14 @@ def ynab_set_config():
     logger.debug(
         (
             "ynab_set_config called user=%s queue_filter_mode=%s "
+            "test_mode_enabled=%s "
             "show_reconciled_transactions=%s queue_limit_enabled=%s "
             "queue_limit_value=%s queue_limit_unit=%s quick_apply_include_medium=%s "
             "default_category_id=%s custom_rules_supplied=%s"
         ),
         current_user.get_id(),
         queue_filter_mode,
+        test_mode_enabled,
         show_reconciled_transactions,
         queue_limit_enabled,
         queue_limit_value,
@@ -436,6 +439,7 @@ def ynab_set_config():
     try:
         result = svc.set_config(
             queue_filter_mode=queue_filter_mode,
+            test_mode_enabled=test_mode_enabled,
             show_reconciled_transactions=show_reconciled_transactions,
             queue_limit_enabled=queue_limit_enabled,
             queue_limit_value=queue_limit_value,

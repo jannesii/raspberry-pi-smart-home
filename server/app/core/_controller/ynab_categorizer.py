@@ -53,6 +53,7 @@ class YnabCategorizerMixin:
                 id=1,
                 budget_id=budget_id,
                 queue_filter_mode="strict",
+                test_mode_enabled=False,
                 show_reconciled_transactions=False,
                 queue_limit_enabled=False,
                 queue_limit_value=30,
@@ -69,6 +70,7 @@ class YnabCategorizerMixin:
             id=int(row["id"]),
             budget_id=str(row["budget_id"]),
             queue_filter_mode=str(row["queue_filter_mode"]),
+            test_mode_enabled=bool(row.get("test_mode_enabled")),
             show_reconciled_transactions=bool(row.get("show_reconciled_transactions")),
             queue_limit_enabled=bool(row.get("queue_limit_enabled")),
             queue_limit_value=int(row.get("queue_limit_value") or 30),
@@ -90,6 +92,7 @@ class YnabCategorizerMixin:
         budget_id: str,
         queue_filter_mode: str,
         *,
+        test_mode_enabled: bool | None = None,
         show_reconciled_transactions: bool | None = None,
         queue_limit_enabled: bool | None = None,
         queue_limit_value: int | None = None,
@@ -101,12 +104,13 @@ class YnabCategorizerMixin:
         logger.debug(
             (
                 "save_ynab_categorizer_config called budget_id=%s queue_filter_mode=%s "
-                "show_reconciled_transactions=%s queue_limit_enabled=%s "
+                "test_mode_enabled=%s show_reconciled_transactions=%s queue_limit_enabled=%s "
                 "queue_limit_value=%s queue_limit_unit=%s quick_apply_include_medium=%s "
                 "default_category_id=%s custom_rules_json_set=%s"
             ),
             budget_id,
             queue_filter_mode,
+            test_mode_enabled,
             show_reconciled_transactions,
             queue_limit_enabled,
             queue_limit_value,
@@ -118,6 +122,7 @@ class YnabCategorizerMixin:
         mode = (queue_filter_mode or "").strip()
         if mode not in _VALID_QUEUE_MODES:
             raise ValueError(f"Invalid queue_filter_mode: {queue_filter_mode}")
+        test_mode_enabled_value = bool(test_mode_enabled)
         show_reconciled = bool(show_reconciled_transactions)
         limit_enabled = bool(queue_limit_enabled)
         limit_value = int(queue_limit_value) if queue_limit_value is not None else 30
@@ -139,6 +144,7 @@ class YnabCategorizerMixin:
                 id=1,
                 budget_id=budget_id,
                 queue_filter_mode=mode,
+                test_mode_enabled=test_mode_enabled_value,
                 show_reconciled_transactions=show_reconciled,
                 queue_limit_enabled=limit_enabled,
                 queue_limit_value=limit_value,
@@ -153,6 +159,7 @@ class YnabCategorizerMixin:
                 set_={
                     "budget_id": budget_id,
                     "queue_filter_mode": mode,
+                    "test_mode_enabled": test_mode_enabled_value,
                     "show_reconciled_transactions": show_reconciled,
                     "queue_limit_enabled": limit_enabled,
                     "queue_limit_value": limit_value,
@@ -171,6 +178,7 @@ class YnabCategorizerMixin:
                     id=1,
                     budget_id=budget_id,
                     queue_filter_mode=mode,
+                    test_mode_enabled=test_mode_enabled_value,
                     show_reconciled_transactions=show_reconciled,
                     queue_limit_enabled=limit_enabled,
                     queue_limit_value=limit_value,
@@ -185,6 +193,7 @@ class YnabCategorizerMixin:
                     set_={
                         "budget_id": budget_id,
                         "queue_filter_mode": mode,
+                        "test_mode_enabled": test_mode_enabled_value,
                         "show_reconciled_transactions": show_reconciled,
                         "queue_limit_enabled": limit_enabled,
                         "queue_limit_value": limit_value,
@@ -204,6 +213,7 @@ class YnabCategorizerMixin:
             id=1,
             budget_id=budget_id,
             queue_filter_mode=mode,
+            test_mode_enabled=test_mode_enabled_value,
             show_reconciled_transactions=show_reconciled,
             queue_limit_enabled=limit_enabled,
             queue_limit_value=limit_value,

@@ -36,6 +36,7 @@ class _ServiceStub:
     def get_queue(self, queue_filter_mode=None):
         return {
             "queue_filter_mode": queue_filter_mode or "strict",
+            "test_mode_enabled": False,
             "needs_category_count": 0,
             "needs_approval_count": 0,
             "group_count": 0,
@@ -57,10 +58,13 @@ class _ServiceStub:
             "approved_count": len(transaction_ids),
             "inserted_events": len(transaction_ids),
             "skipped_existing": 0,
+            "simulated": False,
+            "test_mode_enabled": False,
         }
 
     def get_approval_queue(self):
         return {
+            "test_mode_enabled": False,
             "transaction_count": 1,
             "transactions": [
                 {
@@ -88,6 +92,8 @@ class _ServiceStub:
         return {
             "transaction_count": len(transaction_ids),
             "approved_count": len(transaction_ids),
+            "simulated": False,
+            "test_mode_enabled": False,
         }
 
     def bootstrap(self, force=False):
@@ -99,6 +105,7 @@ class _ServiceStub:
     def get_config(self):
         return {
             "queue_filter_mode": "strict",
+            "test_mode_enabled": False,
             "show_reconciled_transactions": False,
             "queue_limit_enabled": False,
             "queue_limit_value": 30,
@@ -113,6 +120,7 @@ class _ServiceStub:
         self,
         *,
         queue_filter_mode,
+        test_mode_enabled,
         show_reconciled_transactions,
         queue_limit_enabled,
         queue_limit_value,
@@ -124,6 +132,7 @@ class _ServiceStub:
         self.config_payloads.append(
             {
                 "queue_filter_mode": queue_filter_mode,
+                "test_mode_enabled": test_mode_enabled,
                 "show_reconciled_transactions": show_reconciled_transactions,
                 "queue_limit_enabled": queue_limit_enabled,
                 "queue_limit_value": queue_limit_value,
@@ -135,6 +144,7 @@ class _ServiceStub:
         )
         return {
             "queue_filter_mode": queue_filter_mode,
+            "test_mode_enabled": test_mode_enabled,
             "show_reconciled_transactions": show_reconciled_transactions,
             "queue_limit_enabled": queue_limit_enabled,
             "queue_limit_value": queue_limit_value,
@@ -306,6 +316,7 @@ def test_config_post_with_csrf_updates_all_fields(client, app):
         "/api/ynab-categorizer/config",
         json={
             "queue_filter_mode": "strict",
+            "test_mode_enabled": True,
             "show_reconciled_transactions": True,
             "queue_limit_enabled": True,
             "queue_limit_value": 14,
@@ -330,6 +341,7 @@ def test_config_post_with_csrf_updates_all_fields(client, app):
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["ok"] is True
+    assert payload["test_mode_enabled"] is True
     assert payload["show_reconciled_transactions"] is True
     assert payload["queue_limit_enabled"] is True
     assert payload["queue_limit_value"] == 14
@@ -340,6 +352,7 @@ def test_config_post_with_csrf_updates_all_fields(client, app):
 
     svc = app.ynab_categorizer_service
     assert svc.config_payloads[0]["queue_filter_mode"] == "strict"
+    assert svc.config_payloads[0]["test_mode_enabled"] is True
     assert svc.config_payloads[0]["show_reconciled_transactions"] is True
     assert svc.config_payloads[0]["quick_apply_include_medium"] is True
     assert svc.config_payloads[0]["default_category_id"] == "cat_misc"
@@ -378,6 +391,7 @@ def test_config_post_rejects_invalid_bool(client):
         "/api/ynab-categorizer/config",
         json={
             "queue_filter_mode": "strict",
+            "test_mode_enabled": "maybe",
             "show_reconciled_transactions": False,
             "queue_limit_enabled": True,
             "queue_limit_value": 30,

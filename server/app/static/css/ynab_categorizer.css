@@ -245,6 +245,27 @@ body {
   line-height: 1.4;
 }
 
+.ynab-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--ynab-border);
+  border-radius: 999px;
+  background: rgba(52, 199, 89, 0.12);
+  color: #b8f5c4;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ynab-mode-badge.is-test {
+  border-color: rgba(255, 159, 10, 0.45);
+  background: rgba(255, 159, 10, 0.16);
+  color: #ffd48b;
+}
+
 .ynab-toolbar {
   display: flex;
   flex-wrap: wrap;
