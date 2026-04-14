@@ -51,6 +51,7 @@ def init_services(app) -> dict[str, Any]:
     AC_DEVICE_ID = os.getenv("AC_DEV_ID")
     AC_IP = os.getenv("AC_IP")
     AC_LOCAL_KEY = os.getenv("AC_LOCAL_KEY")
+    WINTER_MODE = os.getenv("WINTER_MODE", "False").lower() in ("true", "1", "yes")
 
     try:
         if not all([AC_DEVICE_ID, AC_IP, AC_LOCAL_KEY]):
@@ -62,9 +63,8 @@ def init_services(app) -> dict[str, Any]:
 
         from .ac import ACController
 
-        winter = True
-        tinytuya_device = Device(AC_DEVICE_ID, AC_IP, AC_LOCAL_KEY) if not winter else None
-        ac_controller = ACController(tinytuya_device=tinytuya_device, winter=winter)
+        tinytuya_device = Device(AC_DEVICE_ID, AC_IP, AC_LOCAL_KEY) if not WINTER_MODE else None
+        ac_controller = ACController(tinytuya_device=tinytuya_device, winter=WINTER_MODE)
         thermostat_location = app.config.get("THERMOSTAT_LOCATION", "Tietokonepöytä")
         # Load thermostat configuration from DB (seed default if missing)
         try:
@@ -87,10 +87,10 @@ def init_services(app) -> dict[str, Any]:
             ctrl=app.ctrl,  # type: ignore[attr-defined]
             location=thermostat_location,
             notify=_make_notify(app.sio_handler),  # type: ignore[attr-defined]
-            winter=winter,
+            winter=WINTER_MODE,
         )
         app.ac_thermostat = ac_thermostat  # type: ignore[attr-defined]
-        if not winter:
+        if not WINTER_MODE:
             t = threading.Thread(target=ac_thermostat.run_forever, daemon=True)
             t.start()
             services["ac_thermostat"] = ac_thermostat
