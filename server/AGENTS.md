@@ -491,6 +491,8 @@ function update(data) {
 
 **Boolean parsing note**: Avoid `bool("false")` or `bool("0")` in backend handlers; parse booleans from strings explicitly to prevent unintended `True` values.
 
+**AC TinyTuya diagnostics note**: Initialize the AC TinyTuya device with env-driven `AC_TUYA_VERSION` (and timeout/persist knobs when needed) instead of relying on library defaults. When status/control fails, inspect the raw TinyTuya `Err` code in logs; `914` points to local key/version mismatch, while `901` can still occur even when the device IP answers ping if the local-control handshake cannot complete.
+
 **Multi-worker config note**: KFactor config changes are persisted in the DB. If multiple gunicorn workers are running, each worker must refresh config from DB (e.g., during tick/snapshot) to avoid stale `enabled` state.
 
 **KFactor config updates**: Use `KFactorCalibrator.update_config()` (not direct `_cfg` assignment) so submodules (`_physics`, `_session`, `_snapshot`) stay in sync.
@@ -857,4 +859,4 @@ YNAB_HTTP_RETRIES=2
 
 ---
 
-*Last updated: 2026-03-30*
+*Last updated: 2026-04-14*

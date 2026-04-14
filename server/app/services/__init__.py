@@ -15,6 +15,57 @@ Moves heavy wiring out of the app factory to keep it lean and testable.
 """
 
 
+def _env_float(name: str, default: float) -> float:
+    """Parse a float environment variable with a safe default."""
+    raw = os.getenv(name)
+    if raw in (None, ""):
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        logger.warning("Invalid %s=%r, using default=%s", name, raw, default)
+        return default
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    """Parse a bool environment variable with a safe default."""
+    raw = os.getenv(name)
+    if raw in (None, ""):
+        return default
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _build_tuya_ac_device(device_id: str, ip: str, local_key: str):
+    """Construct and configure the TinyTuya AC device from environment settings."""
+    from tinytuya import Device
+
+    tuya_version = _env_float("AC_TUYA_VERSION", 3.1)
+    timeout_s = _env_float("AC_TUYA_TIMEOUT_S", 5.0)
+    persist = _env_bool("AC_TUYA_PERSIST", False)
+    logger.debug(
+        "AC init TinyTuya config ip=%s version=%s timeout_s=%s persist=%s",
+        ip,
+        tuya_version,
+        timeout_s,
+        persist,
+    )
+    device = Device(
+        device_id,
+        ip,
+        local_key,
+        version=tuya_version,
+        connection_timeout=timeout_s,
+        persist=persist,
+    )
+    try:
+        device.set_version(tuya_version)
+        device.set_socketTimeout(timeout_s)
+        device.set_socketPersistent(persist)
+    except Exception:
+        logger.debug("AC init TinyTuya post-init socket tuning skipped", exc_info=True)
+    return device
+
+
 def _make_notify(handler) -> Any:
     """Create a notifier that emits events to browser views via SocketEventHandler."""
 
@@ -52,6 +103,13 @@ def init_services(app) -> dict[str, Any]:
     AC_IP = os.getenv("AC_IP")
     AC_LOCAL_KEY = os.getenv("AC_LOCAL_KEY")
     WINTER_MODE = os.getenv("WINTER_MODE", "False").lower() in ("true", "1", "yes")
+    logger.debug(
+        "AC init env device_id_set=%s ip=%s local_key_set=%s winter_mode=%s",
+        bool(AC_DEVICE_ID),
+        AC_IP,
+        bool(AC_LOCAL_KEY),
+        WINTER_MODE,
+    )
 
     try:
         if not all([AC_DEVICE_ID, AC_IP, AC_LOCAL_KEY]):
@@ -59,11 +117,11 @@ def init_services(app) -> dict[str, Any]:
                 "Missing one of AC_DEV_ID, AC_IP, or AC_LOCAL_KEY environment variables"
             )
 
-        from tinytuya import Device
-
         from .ac import ACController
 
-        tinytuya_device = Device(AC_DEVICE_ID, AC_IP, AC_LOCAL_KEY) if not WINTER_MODE else None
+        tinytuya_device = (
+            _build_tuya_ac_device(AC_DEVICE_ID, AC_IP, AC_LOCAL_KEY) if not WINTER_MODE else None
+        )
         ac_controller = ACController(tinytuya_device=tinytuya_device, winter=WINTER_MODE)
         thermostat_location = app.config.get("THERMOSTAT_LOCATION", "Tietokonepöytä")
         # Load thermostat configuration from DB (seed default if missing)

@@ -20,6 +20,22 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _parse_bool(value: Any, default: bool = False) -> bool:
+    """Parse booleans safely from socket payloads."""
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, int | float):
+        return bool(value)
+    value_s = str(value).strip().lower()
+    if value_s in {"1", "true", "yes", "on"}:
+        return True
+    if value_s in {"0", "false", "no", "off", ""}:
+        return False
+    return default
+
+
 def handle_ac_control(handler: SocketEventHandler, data: dict[str, Any]) -> None:
     """Handle AC thermostat control actions from the web UI."""
     if data is None or not isinstance(data, dict):
@@ -36,7 +52,7 @@ def handle_ac_control(handler: SocketEventHandler, data: dict[str, Any]) -> None
     ac_thermo: ACThermostat | None = getattr(current_app, "ac_thermostat", None)
     if ac_thermo is None:
         handler.flash("AC Thermostat service is not initialized.")
-        logger.exception("ac_control: thermostat missing")
+        logger.error("ac_control: thermostat missing")
         return
 
     try:
@@ -149,7 +165,7 @@ def handle_ac_control(handler: SocketEventHandler, data: dict[str, Any]) -> None
             _emit_ac_status(handler, ac_thermo)
             return
         if action == "set_sleep_enabled":
-            en = bool(data.get("value"))
+            en = _parse_bool(data.get("value"))
             ac_thermo.set_sleep_enabled(en)
             return
         if action == "set_sleep_times":
@@ -176,6 +192,10 @@ def handle_ac_control(handler: SocketEventHandler, data: dict[str, Any]) -> None
         handler.socketio.emit("error", {"message": f"Invalid AC control action: {action}"})
         logger.warning("Bad ac_control action: %s", action)
 
+    except RuntimeError as e:
+        logger.warning("ac_control runtime error action=%s error=%s payload=%s", action, e, data)
+        handler.flash(str(e), "error")
+        handler.socketio.emit("error", {"message": str(e)})
     except Exception as e:
         logger.exception("ac_control error: %s", e)
         handler.socketio.emit("error", {"message": "AC control error"})
