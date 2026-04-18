@@ -25,6 +25,7 @@ A comprehensive home automation server for Raspberry Pi (or any Linux host). Rea
 - **Tuya/Smart Life integration** – control AC via cloud API
 - **Local thermostat loop** – maintains target temperature automatically
 - **Sleep schedule** – automatic night mode with configurable times
+- **Weekly schedule QoL** – apply one sleep window to all days from the temperatures page
 - **Heating/cooling rate analytics** – tracks °C/h and estimated power consumption
 - **Mode control** – cold, dry, fan modes with fan speed adjustment
 

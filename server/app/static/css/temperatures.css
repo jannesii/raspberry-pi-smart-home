@@ -444,6 +444,18 @@
   line-height: 1.4;
 }
 
+.sleep-apply-all-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid var(--temps-divider);
+  background: rgba(130, 191, 255, 0.04);
+}
+
 .sleep-schedule-grid {
   display: grid;
   gap: 10px;
@@ -836,6 +848,7 @@
   .toolbar-row,
   .outside-strip-head,
   .sleep-override-row,
+  .sleep-apply-all-row,
   .sleep-day-row {
     flex-direction: column;
     align-items: start;

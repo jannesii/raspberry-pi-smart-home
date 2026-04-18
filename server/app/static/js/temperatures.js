@@ -983,6 +983,15 @@
     }, {});
   }
 
+  function applySleepWindowToAllDays(startValue, stopValue) {
+    DAYS.forEach(day => {
+      const start = document.getElementById(`sleep_${day}_start`);
+      const stop = document.getElementById(`sleep_${day}_stop`);
+      if (start) start.value = startValue || '';
+      if (stop) stop.value = stopValue || '';
+    });
+  }
+
   function debounce(fn, waitMs) {
     let timer = null;
     return (...args) => {
@@ -1107,6 +1116,15 @@
     const emitSleepSchedule = debounce(() => {
       emitSocketAction({ action: 'set_sleep_schedule', schedule: buildSleepSchedule() });
     }, 250);
+
+    if (dom.btnSleepApplyAll) {
+      dom.btnSleepApplyAll.addEventListener('click', () => {
+        const startValue = dom.sleepAllStart ? dom.sleepAllStart.value : '';
+        const stopValue = dom.sleepAllStop ? dom.sleepAllStop.value : '';
+        applySleepWindowToAllDays(startValue, stopValue);
+        emitSleepSchedule();
+      });
+    }
 
     DAYS.forEach(day => {
       const start = document.getElementById(`sleep_${day}_start`);
@@ -1257,6 +1275,9 @@
       btnSleepToggle: document.getElementById('btnSleepToggle'),
       sleepDisableMinutes: document.getElementById('sleepDisableMinutes'),
       btnSleepDisableFor: document.getElementById('btnSleepDisableFor'),
+      sleepAllStart: document.getElementById('sleepAllStart'),
+      sleepAllStop: document.getElementById('sleepAllStop'),
+      btnSleepApplyAll: document.getElementById('btnSleepApplyAll'),
     });
   }
 

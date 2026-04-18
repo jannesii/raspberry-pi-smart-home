@@ -172,6 +172,20 @@
 
           <div class="schedule-note">End applies to the morning of that day. Start applies to the evening of that day.</div>
 
+          <div class="sleep-apply-all-row">
+            <div class="sleep-day-copy">
+              <strong>All days</strong>
+              <span>Copy one window to every day below</span>
+            </div>
+            <div class="sleep-day-inputs">
+              <label for="sleepAllStop">End</label>
+              <input id="sleepAllStop" type="time">
+              <label for="sleepAllStart">Start</label>
+              <input id="sleepAllStart" type="time">
+            </div>
+            <button id="btnSleepApplyAll" class="action-button" type="button">Apply to all days</button>
+          </div>
+
           <div class="sleep-schedule-grid">
             {% for day_label, day_key in [('Monday','mon'), ('Tuesday','tue'), ('Wednesday','wed'), ('Thursday','thu'), ('Friday','fri'), ('Saturday','sat'), ('Sunday','sun')] %}
             <div class="sleep-day-row">
