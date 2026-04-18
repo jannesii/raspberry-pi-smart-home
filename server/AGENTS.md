@@ -501,6 +501,8 @@ function update(data) {
 
 **Car heater logs note**: ESP32 log snapshots are emitted in a dedicated `car_heater_logs` Socket.IO event. For compatibility, frontend can still read `status.logs` from `car_heater_status`, but should dedupe because both WS and HTTP paths may carry the same snapshot.
 
+**Temperatures page boot note**: `app/templates/temperatures.html` now boots the page with `window.TEMPERATURES_BOOTSTRAP` (`locations`, `outside_location_names`, `language`). Keep the temperatures workspace inline; do not reattach `settings_modal.html` or the shared chart modal to this page.
+
 **Static asset cache note**: When changing user-visible `app/static/js/car_heater.js` behavior in production, also bump the versioned script URL in `app/templates/car_heater.html` so browser cache does not mask the fix.
 
 **YNAB asset cache note**: When changing user-visible `app/static/js/ynab_categorizer.js` or `app/static/css/ynab_categorizer.css` behavior in production, also bump the versioned asset URLs in `app/templates/ynab_categorizer.html` so browser cache does not mask the fix.

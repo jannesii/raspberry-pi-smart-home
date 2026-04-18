@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 
-{% block title %}Home Temperatures{% endblock %}
+{% block title %}Temperatures{% endblock %}
 
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/temperatures.css') }}">
@@ -8,10 +8,10 @@
 {% endblock %}
 
 {% block content %}
-<div class="container">
+<main class="temperatures-page">
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
-    <div class="flash-container" style="max-width:800px; margin:0 auto 16px;">
+    <div class="flash-container temperatures-flash" aria-live="polite">
       {% for category, msg in messages %}
       <div class="flash {{ category }}">{{ msg }}</div>
       {% endfor %}
@@ -19,111 +19,322 @@
     {% endif %}
   {% endwith %}
 
-  <div class="page-grid">
-    <section class="card ac-card">
-      <div class="card-header">
-        <div>
-          <h3 style="margin-bottom:4px;">AC</h3>
-          <div class="status-row" aria-live="polite">
-            <span id="acStatusPill" class="ac-pill ac-unknown">Unknown</span>
-            <span id="thermoStatusPill" class="ac-pill ac-unknown">Thermostat —</span>
-            <span id="sleepStatusPill" class="ac-pill ac-unknown">Sleep —</span>
-          </div>
-        </div>
-        <div class="status-row rates" style="gap:6px; flex-wrap:wrap;">
-          <span id="avgCoolingPill" class="ac-pill">Cooling: —</span>
-          <span id="avgHeatingPill" class="ac-pill">Heat: —</span>
-        </div>
-      </div>
-      <div class="card-body">
-        <div class="ac-quick-grid">
-          <div class="field">
-            <label>Power</label>
-            <button id="btnAcPowerToggle" class="btn w-100">Toggle AC</button>
-          </div>
-          <div class="field">
-            <label>Target (°C)</label>
-            <div class="stepper">
-              <button id="btnSetpointDec" class="btn btn-step" aria-label="Decrease">−</button>
-              <input class="field-input" id="setpointC" type="number" step="0.1" min="5" max="35" />
-              <button id="btnSetpointInc" class="btn btn-step" aria-label="Increase">+</button>
-            </div>
-          </div>
-          <div class="field">
-            <label>Mode</label>
-            <div class="segmented" role="group" aria-label="AC mode">
-              <button id="modeCold" class="seg-btn" data-value="cold">Cold</button>
-              <button id="modeWet"  class="seg-btn" data-value="wet">Dry</button>
-              <button id="modeWind" class="seg-btn" data-value="wind">Fan</button>
-            </div>
-          </div>
-          <div class="field">
-            <label>Fan</label>
-            <div class="segmented" role="group" aria-label="Fan speed">
-              <button id="fanLow"  class="seg-btn" data-value="low">Low</button>
-              <button id="fanHigh" class="seg-btn" data-value="high">High</button>
-            </div>
-          </div>
-          <label>Thermostat & Sleep</label>
-        </div>
-        <div class="settings-buttons">
-          <button id="btnThermoToggle" class="btn">Toggle Thermostat</button>
-          <button id="btnSleepToggle-main" class="btn">Toggle Sleep</button>
-        </div>
+  <section class="page-intro temperatures-reveal">
+    <div>
+      <p class="page-kicker">Indoor climate</p>
+      <h1>Temperatures</h1>
+    </div>
+    <p class="page-summary">Live room climate, historical trends, and AC automation in one workspace.</p>
+  </section>
 
-        <div class="divider"></div>
-        <label>Settings</label>
-        <div class="settings-buttons">
-          <button id="openSleepSettings" class="btn">Sleep settings</button>
-          <button id="openThermoSettings" class="btn">Thermostat settings</button>
+  <section class="overview-ribbon temperatures-reveal" aria-label="Overview">
+    <article class="overview-stat">
+      <span class="overview-label">Indoor average</span>
+      <strong id="overviewIndoorAvg" class="overview-value">—</strong>
+    </article>
+    <article class="overview-stat">
+      <span class="overview-label">Warmest room</span>
+      <strong id="overviewWarmest" class="overview-value">—</strong>
+    </article>
+    <article class="overview-stat">
+      <span class="overview-label">Coolest room</span>
+      <strong id="overviewCoolest" class="overview-value">—</strong>
+    </article>
+    <article class="overview-stat">
+      <span class="overview-label">Stale sensors</span>
+      <strong id="overviewStale" class="overview-value">—</strong>
+    </article>
+    <article class="overview-stat">
+      <span class="overview-label">AC state</span>
+      <strong id="overviewAcState" class="overview-value">—</strong>
+    </article>
+    <article class="overview-stat">
+      <span class="overview-label">Outside snapshot</span>
+      <strong id="overviewOutside" class="overview-value">—</strong>
+    </article>
+  </section>
+
+  <div class="temperatures-layout temperatures-reveal">
+    <section class="climate-pane surface-panel" aria-labelledby="climatePaneTitle">
+      <div class="section-head">
+        <div>
+          <p class="section-kicker">Control</p>
+          <h2 id="climatePaneTitle">AC &amp; Automation</h2>
+        </div>
+        <p class="section-copy">Quick actions stay visible. Scheduling and tuning live below.</p>
+      </div>
+
+      <div class="status-pill-row" aria-live="polite">
+        <span id="acStatusPill" class="status-pill state-unknown">AC —</span>
+        <span id="thermoStatusPill" class="status-pill state-unknown">Thermostat —</span>
+        <span id="sleepStatusPill" class="status-pill state-unknown">Sleep —</span>
+      </div>
+
+      <div class="control-block">
+        <span class="control-label">Power</span>
+        <button id="btnAcPowerToggle" class="action-button action-button-primary" type="button">Toggle AC</button>
+      </div>
+
+      <div class="control-block">
+        <label class="control-label" for="setpointC">Target temperature</label>
+        <div class="stepper">
+          <button id="btnSetpointDec" class="stepper-button" type="button" aria-label="Decrease target temperature">−</button>
+          <input id="setpointC" class="stepper-input" type="number" step="0.5" min="5" max="35" inputmode="decimal">
+          <button id="btnSetpointInc" class="stepper-button" type="button" aria-label="Increase target temperature">+</button>
         </div>
       </div>
+
+      <div class="control-block">
+        <span class="control-label">Mode</span>
+        <div class="segmented" role="group" aria-label="AC mode">
+          <button id="modeCold" class="seg-btn" data-value="cold" type="button">Cool</button>
+          <button id="modeWet" class="seg-btn" data-value="wet" type="button">Dry</button>
+          <button id="modeWind" class="seg-btn" data-value="wind" type="button">Fan</button>
+        </div>
+      </div>
+
+      <div class="control-block">
+        <span class="control-label">Fan speed</span>
+        <div class="segmented" role="group" aria-label="Fan speed">
+          <button id="fanLow" class="seg-btn" data-value="low" type="button">Low</button>
+          <button id="fanHigh" class="seg-btn" data-value="high" type="button">High</button>
+        </div>
+      </div>
+
+      <div class="control-toggles">
+        <button id="btnThermoToggle" class="action-button" type="button">Toggle thermostat</button>
+        <button id="btnSleepToggle-main" class="action-button" type="button">Toggle sleep</button>
+      </div>
+
+      <div class="rate-pills" aria-live="polite">
+        <span id="avgCoolingPill" class="metric-pill">Cooling —</span>
+        <span id="avgHeatingPill" class="metric-pill">Heating —</span>
+      </div>
+
+      <details class="control-accordion">
+        <summary>Thermostat settings</summary>
+        <div class="accordion-body">
+          <div class="control-subgrid">
+            <div class="field-block field-block-wide">
+              <span class="control-label">Sensors</span>
+              <div id="ctrlLocContainer" class="sensor-chip-list"></div>
+            </div>
+
+            <label class="field-block" for="thermoHysteresisNeg">
+              <span class="control-label">Cooling hysteresis</span>
+              <input id="thermoHysteresisNeg" type="number" step="0.1" min="0.1" max="10">
+            </label>
+
+            <label class="field-block" for="thermoHysteresisPos">
+              <span class="control-label">Heating hysteresis</span>
+              <input id="thermoHysteresisPos" type="number" step="0.1" min="0.1" max="10">
+            </label>
+
+            <label class="field-block" for="thermoMinOnS">
+              <span class="control-label">Minimum on time</span>
+              <input id="thermoMinOnS" type="number" step="1" min="0">
+            </label>
+
+            <label class="field-block" for="thermoMinOffS">
+              <span class="control-label">Minimum off time</span>
+              <input id="thermoMinOffS" type="number" step="1" min="0">
+            </label>
+
+            <label class="field-block" for="thermoPollS">
+              <span class="control-label">Poll interval</span>
+              <input id="thermoPollS" type="number" step="1" min="1">
+            </label>
+
+            <label class="field-block" for="thermoSmoothWindow">
+              <span class="control-label">Smooth window</span>
+              <input id="thermoSmoothWindow" type="number" step="1" min="1">
+            </label>
+
+            <label class="field-block field-block-wide" for="thermoMaxStaleS">
+              <span class="control-label">Ignore stale readings after</span>
+              <input id="thermoMaxStaleS" type="number" step="1" min="0" placeholder="Leave blank to disable">
+            </label>
+          </div>
+        </div>
+      </details>
+
+      <details class="control-accordion">
+        <summary>Sleep schedule</summary>
+        <div class="accordion-body">
+          <div class="sleep-override-row">
+            <button id="btnSleepToggle" class="action-button" type="button">Enable sleep</button>
+            <div class="sleep-override-form">
+              <label class="control-label" for="sleepDisableMinutes">Disable for</label>
+              <input id="sleepDisableMinutes" type="number" step="5" min="1" value="30">
+              <button id="btnSleepDisableFor" class="action-button" type="button">Apply</button>
+            </div>
+          </div>
+
+          <div class="schedule-note">End applies to the morning of that day. Start applies to the evening of that day.</div>
+
+          <div class="sleep-schedule-grid">
+            {% for day_label, day_key in [('Monday','mon'), ('Tuesday','tue'), ('Wednesday','wed'), ('Thursday','thu'), ('Friday','fri'), ('Saturday','sat'), ('Sunday','sun')] %}
+            <div class="sleep-day-row">
+              <div class="sleep-day-copy">
+                <strong>{{ day_label }}</strong>
+                <span>Start / end window</span>
+              </div>
+              <div class="sleep-day-inputs">
+                <label for="sleep_{{ day_key }}_stop">End</label>
+                <input id="sleep_{{ day_key }}_stop" type="time">
+                <label for="sleep_{{ day_key }}_start">Start</label>
+                <input id="sleep_{{ day_key }}_start" type="time">
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </details>
     </section>
 
-    <section class="card readings-card">
-      <div class="card-header">
+    <section class="room-workspace surface-panel" aria-labelledby="roomWorkspaceTitle">
+      <div class="section-head room-workspace-head">
         <div>
-          <h3 style="margin-bottom:4px;">Temperature & Humidity</h3>
+          <p class="section-kicker">Rooms</p>
+          <h2 id="roomWorkspaceTitle">Sensor workspace</h2>
         </div>
-        <div class="status-row" style="gap:6px; flex-wrap:wrap;">
-          <span id="avgTempPill" class="stat-pill">AVG: —</span>
-          <span id="minTempPill" class="stat-pill">Min: —</span>
-          <span id="maxTempPill" class="stat-pill">Max: —</span>
-        </div>
+        <p id="roomCount" class="section-copy">—</p>
       </div>
-      <div class="card-body">
-        <div class="toolbar">
-          <input id="filterInput" class="search" type="text" placeholder="Suodata sijainteja..." aria-label="Suodata sijainteja">
-          <div class="sort">
-            <div class="segmented" role="group" aria-label="Järjestä">
-              <button id="sortName" class="seg-btn" data-key="name">Name</button>
-              <button id="sortTemp" class="seg-btn" data-key="temp">Temperature</button>
-              <button id="sortHum"  class="seg-btn" data-key="hum">Humidity</button>
-              <button id="sortUpdated" class="seg-btn" data-key="updated">Time</button>
+
+      <div class="workspace-toolbar">
+        <label class="search-field" for="roomSearchInput">
+          <span class="sr-only">Search rooms</span>
+          <input id="roomSearchInput" type="search" placeholder="Search rooms">
+        </label>
+
+        <div class="toolbar-row">
+          <div class="chip-group" role="group" aria-label="Room filter">
+            <button id="filterIndoor" class="chip-button" type="button" data-filter="indoor">Indoor</button>
+            <button id="filterOutdoor" class="chip-button" type="button" data-filter="outdoor">Outdoor</button>
+            <button id="filterStale" class="chip-button" type="button" data-filter="stale">Stale</button>
+          </div>
+
+          <div class="sort-group">
+            <div class="segmented" role="group" aria-label="Sort rooms">
+              <button id="sortName" class="seg-btn" data-key="name" type="button">Name</button>
+              <button id="sortTemp" class="seg-btn" data-key="temp" type="button">Temp</button>
+              <button id="sortHum" class="seg-btn" data-key="hum" type="button">Humidity</button>
+              <button id="sortUpdated" class="seg-btn" data-key="updated" type="button">Updated</button>
             </div>
-            <button id="sortDir" class="btn" title="Sort Direction" aria-label="Sort Direction">↑</button>
+            <button id="sortDir" class="sort-direction-button" type="button" aria-label="Toggle sort direction">↑</button>
           </div>
         </div>
-        <div id="locationsGrid" class="locations-grid"></div>
-
-        <div class="divider"></div>
-        <div class="section-title">Outside</div>
-        <div id="outsideStats" class="status-row" style="gap:6px; flex-wrap:wrap; margin-bottom:10px;">
-          <span id="outsideTempRange" class="stat-pill">Temp: —</span>
-          <span id="outsideHumRange" class="stat-pill">Hum: —</span>
-        </div>
-        <div id="outsideGrid" class="locations-grid"></div>
       </div>
+
+      <section id="outsideStripSection" class="outside-strip-block" aria-labelledby="outsideStripTitle">
+        <div class="outside-strip-head">
+          <div>
+            <p class="section-kicker">Outdoor</p>
+            <h3 id="outsideStripTitle">Outside sensors</h3>
+          </div>
+          <div class="outside-range-copy">
+            <span id="outsideTempRange">Temp —</span>
+            <span id="outsideHumRange">Humidity —</span>
+          </div>
+        </div>
+        <div id="outsideStrip" class="outside-strip"></div>
+      </section>
+
+      <div id="roomList" class="room-list" aria-live="polite"></div>
+      <div id="roomListEmpty" class="empty-state" hidden>No rooms match the current filter.</div>
     </section>
+
+    <aside id="detailPane" class="detail-pane surface-panel" aria-labelledby="detailRoomName">
+      <div class="detail-pane-header">
+        <div>
+          <p class="section-kicker">Detail</p>
+          <h2 id="detailRoomName">Select a room</h2>
+        </div>
+        <button id="detailClose" class="detail-close" type="button" aria-label="Close room details">Close</button>
+      </div>
+
+      <div class="detail-meta-row">
+        <span id="detailFreshness" class="detail-badge">—</span>
+        <span id="detailRoomMeta" class="detail-meta">Waiting for data</span>
+      </div>
+
+      <div class="detail-current-grid">
+        <article class="current-stat">
+          <span class="current-stat-label">Temperature</span>
+          <strong id="detailCurrentTemp" class="current-stat-value">—</strong>
+        </article>
+        <article class="current-stat">
+          <span class="current-stat-label">Humidity</span>
+          <strong id="detailCurrentHum" class="current-stat-value">—</strong>
+        </article>
+      </div>
+
+      <div class="detail-daily-grid">
+        <article class="daily-stat">
+          <span class="daily-stat-label">Temp avg</span>
+          <strong id="detailDailyTempAvg" class="daily-stat-value">—</strong>
+        </article>
+        <article class="daily-stat">
+          <span class="daily-stat-label">Temp min</span>
+          <strong id="detailDailyTempMin" class="daily-stat-value">—</strong>
+        </article>
+        <article class="daily-stat">
+          <span class="daily-stat-label">Temp max</span>
+          <strong id="detailDailyTempMax" class="daily-stat-value">—</strong>
+        </article>
+        <article class="daily-stat">
+          <span class="daily-stat-label">Humidity avg</span>
+          <strong id="detailDailyHumAvg" class="daily-stat-value">—</strong>
+        </article>
+        <article class="daily-stat">
+          <span class="daily-stat-label">Humidity min</span>
+          <strong id="detailDailyHumMin" class="daily-stat-value">—</strong>
+        </article>
+        <article class="daily-stat">
+          <span class="daily-stat-label">Humidity max</span>
+          <strong id="detailDailyHumMax" class="daily-stat-value">—</strong>
+        </article>
+      </div>
+
+      <div class="detail-date-nav">
+        <button id="detailPrevDay" class="nav-button" type="button">← Previous day</button>
+        <strong id="detailDateLabel">—</strong>
+        <button id="detailNextDay" class="nav-button" type="button">Next day →</button>
+      </div>
+
+      <div class="chart-stack">
+        <section class="chart-panel">
+          <div class="chart-panel-head">
+            <h3>Temperature</h3>
+            <span id="detailTempChartMeta" class="chart-meta">Daily trend</span>
+          </div>
+          <div class="chart-canvas-wrap">
+            <canvas id="detailChartTemp" width="640" height="260"></canvas>
+          </div>
+        </section>
+
+        <section class="chart-panel">
+          <div class="chart-panel-head">
+            <h3>Humidity</h3>
+            <span id="detailHumChartMeta" class="chart-meta">Daily trend</span>
+          </div>
+          <div class="chart-canvas-wrap">
+            <canvas id="detailChartHum" width="640" height="260"></canvas>
+          </div>
+        </section>
+      </div>
+
+      <div id="detailEmptyState" class="detail-empty-state" hidden>No history available for this day.</div>
+    </aside>
   </div>
-</div>
-{% include 'chart_modal.html' %}
-{% include 'settings_modal.html' %}
+
+  <div id="detailBackdrop" class="detail-backdrop" aria-hidden="true"></div>
+</main>
 {% endblock %}
 
 {% block scripts %}
 <script>
-  window.LOCATIONS = {{ locations | tojson }};
+  window.TEMPERATURES_BOOTSTRAP = {{ temperatures_bootstrap | tojson }};
 </script>
 <script src="{{ url_for('static', filename='js/init_sio.js') }}"></script>
 <script src="{{ url_for('static', filename='js/temperatures.js') }}"></script>

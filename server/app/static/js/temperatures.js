@@ -1,774 +1,1273 @@
-console.log('🧊 temperatures.js loaded');
+(() => {
+  console.log('🧊 temperatures.js loaded');
 
-const STALE_MINUTES = 10; // mark readings stale when older than this
-const STALE_MS = STALE_MINUTES * 60 * 1000;
-const OUTSIDE_LOCATION_NAMES = Array.isArray(window?.OUTSIDE_LOCATION_NAMES)
-  ? window.OUTSIDE_LOCATION_NAMES
-  : ['Rengonharju', 'Pelmaa']; // treated as outside sensors
+  const BOOTSTRAP = window.TEMPERATURES_BOOTSTRAP || {};
+  const STALE_MINUTES = 10;
+  const STALE_MS = STALE_MINUTES * 60 * 1000;
+  const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+  const DEFAULT_CHART_AVG_MINUTES = 10;
+  const OUTSIDE_LOCATION_NAMES = Array.isArray(BOOTSTRAP.outside_location_names)
+    ? BOOTSTRAP.outside_location_names
+    : ['Rengonharju', 'Pelmaa'];
+  const OUTSIDE_LOCATION_ALIASES = OUTSIDE_LOCATION_NAMES
+    .map(name => String(name || '').trim().toLowerCase())
+    .filter(Boolean);
 
-const state = {
-  items: [],  // { name, temp, hum, ts }
-  filter: '',
-  sortKey: 'name', // 'name' | 'temp' | 'hum' | 'updated'
-  sortDir: 'asc',  // 'asc' | 'desc'
-};
-
-function slugify(s){
-  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'');
-}
-
-function fmtTemp(v){
-  const n = Number(v);
-  return Number.isFinite(n) ? `${n.toFixed(1)} °C` : '-';
-}
-function fmtHum(v){
-  const n = Number(v);
-  return Number.isFinite(n) ? `${n.toFixed(0)} %` : '-';
-}
-
-function fmtTime(ts){
-  // Returns a readable local timestamp without a label
-  if (!ts) return '—';
-  try {
-    const d = ts instanceof Date ? ts : new Date(ts);
-    // Prefer a concise local string; include date + time
-    return d.toLocaleString(undefined, {
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', second: '2-digit'
-    });
-  } catch {
-    return '—';
-  }
-}
-
-function normalizeLocationName(name){
-  const normalized = String(name || '').trim().toLowerCase();
-  return normalized;
-}
-
-function isOutsideLocation(name){
-  const normalized = normalizeLocationName(name);
-  const aliases = OUTSIDE_LOCATION_NAMES.map(loc => normalizeLocationName(loc)).filter(Boolean);
-  const isOutside = Boolean(normalized) && aliases.some(alias => normalized === alias);
-  return isOutside;
-}
-
-function createTile(id, name, temp=null, hum=null, ts=null){
-  const tile = document.createElement('div');
-  tile.className = 'tile';
-  tile.id = id;
-  tile.innerHTML = `
-    <div class="loc"><span class="fresh-dot dot-stale" aria-hidden="true"></span><span class="loc-name"></span></div>
-    <div class="measures">
-      <span class="measure temp">-</span>
-      <span class="sep">·</span>
-      <span class="measure hum">-</span>
-    </div>
-    <div class="timestamp">—</div>
-  `;
-  tile.querySelector('.loc-name').textContent = name || '—';
-  tile.querySelector('.temp').textContent = fmtTemp(temp);
-  tile.querySelector('.hum').textContent  = fmtHum(hum);
-  const tsEl = tile.querySelector('.timestamp');
-  if (tsEl) tsEl.textContent = fmtTime(ts);
-
-  // Click handler opens charts for this location
-  tile.addEventListener('click', (e) => {
-    e.stopPropagation();
-    console.log(`🖱️ Tile clicked: ${name} (id=${id})`);
-    if (typeof openAndRender === 'function') {
-      openAndRender(name);
-    } else if (typeof window.openChartsForLocation === 'function') {
-      window.openChartsForLocation(name);
-    }
-  });
-
-  return tile;
-}
-
-function extractNameTempHum(entry){
-  // Supports both initial payload {location|name, temp, hum}
-  // and live events {location|name, temperature|temperature_c}, {humidity|humidity_pct}
-  if (entry == null) return { name: '—', temp: null, hum: null };
-
-  if (typeof entry === 'string') {
-    return { name: entry.trim(), temp: null, hum: null };
-  }
-
-  const name = String(entry.location || entry.name || '—').trim();
-
-  const temp = (
-    entry.temp ??
-    entry.temperature_c ??
-    entry.temperature ??
-    null
-  );
-
-  const hum = (
-    entry.hum ??
-    entry.humidity_pct ??
-    entry.humidity ??
-    null
-  );
-
-  const ts = (entry.timestamp ?? entry.ts ?? null);
-
-  return { name, temp, hum, ts };
-}
-
-
-function renderItems(locations){
-  const grid = document.getElementById('locationsGrid');
-  const outGrid = document.getElementById('outsideGrid');
-  if(!grid) return;
-
-  // allow passing either raw list or using state
-  const locs = Array.isArray(locations) ? locations : (state.items || []);
-  grid.innerHTML = '';
-  if (outGrid) outGrid.innerHTML = '';
-
-  // Apply filter
-  const f = (state.filter || '').trim().toLowerCase();
-  let list = locs.map(extractNameTempHum);
-  if (f) list = list.filter(x => (x.name || '').toLowerCase().includes(f));
-
-  // Apply sort
-  const key = state.sortKey;
-  const dir = state.sortDir === 'desc' ? -1 : 1;
-  list.sort((a,b) => {
-    const av = key === 'name' ? (a.name||'')
-               : key === 'temp' ? (Number(a.temp))
-               : key === 'hum' ? (Number(a.hum))
-               : Date.parse(a.ts || 0);
-    const bv = key === 'name' ? (b.name||'')
-               : key === 'temp' ? (Number(b.temp))
-               : key === 'hum' ? (Number(b.hum))
-               : Date.parse(b.ts || 0);
-    if (key === 'name') return av.localeCompare(bv) * dir;
-    const an = Number(av), bn = Number(bv);
-    if (!Number.isFinite(an) && !Number.isFinite(bn)) return 0;
-    if (!Number.isFinite(an)) return 1 * dir;
-    if (!Number.isFinite(bn)) return -1 * dir;
-    return (an - bn) * dir;
-  });
-
-  // Split into inside vs outside
-  const outsideList = list.filter(x => isOutsideLocation(x.name));
-  const insideList  = list.filter(x => !isOutsideLocation(x.name));
-
-  // Render inside tiles to main grid
-  for (const loc of insideList){
-    const { name, temp, hum, ts } = loc;
-    const id = 'loc-' + slugify(name || 'default');
-    const tile = createTile(id, name, temp, hum, ts);
-    applyFreshness(tile, ts);
-    grid.appendChild(tile);
-  }
-  // Render outside tiles (if any) to outside grid
-  if (outGrid){
-    for (const loc of outsideList){
-      const { name, temp, hum, ts } = loc;
-      const id = 'loc-' + slugify(name || 'default');
-      const tile = createTile(id, name, temp, hum, ts);
-      applyFreshness(tile, ts);
-      outGrid.appendChild(tile);
-    }
-  }
-}
-
-function ensureTile(name){
-  const id = 'loc-' + slugify(name || 'default');
-  let tile = document.getElementById(id);
-  if (!tile) {
-    const grid = document.getElementById('locationsGrid');
-    if (!grid) return null;
-    tile = createTile(id, name);
-    grid.appendChild(tile);
-  } else {
-    const le = tile.querySelector('.loc-name');
-    if (le) le.textContent = name || '—';
-  }
-  return tile;
-}
-
-function updateTile(data){
-  const { name, temp, hum, ts } = extractNameTempHum(data);
-  if (!name) return;
-  // Update state item
-  let found = false;
-  for (let i=0; i<state.items.length; i++){
-    const it = state.items[i];
-    const nm = String(it.location || it.name || '').trim();
-    if (nm === name){
-      state.items[i] = { name, temp, hum, ts: ts || new Date().toISOString() };
-      found = true;
-      break;
-    }
-  }
-  if (!found){
-    state.items.push({ name, temp, hum, ts: ts || new Date().toISOString() });
-  }
-  // Re-render grid and summary to respect sorting/filtering
-  renderItems(state.items);
-  updateSummary(state.items);
-  // If outside updated, refresh outside stats as well
-  if (isOutsideLocation(name)){
-    refreshOutsideStatsSoon();
-  }
-}
-
-function initSIO(){
-  socket.on('esp32_temphum', data => {
-    console.log('📡 Received esp32_temphum:', data);
-    updateTile(data);
-    // Optionally refresh averages on new data bursts
-    refreshAvgRatesSoon();
-  });
-  socket.on('ac_status', data => {
-    console.log('📡 Received ac_status:', data);
-    if (!data) return;
-    updateACIndicator(data.is_on);
-  });
-  socket.on('ac_state', data => {
-    console.log('📡 Received ac_state:', data);
-    if (!data) return;
-    if (data.mode) setModeUI(data.mode);
-    if (data.fan_speed) setFanUI(data.fan_speed);
-  });
-  socket.on('thermostat_status', data => {
-    console.log('📡 Received thermostat_status:', data);
-    if (!data) return;
-    const enabled = (data && 'thermo_active' in data)
-      ? !!data.thermo_active
-      : !!data.enabled;
-    updateThermoIndicator(enabled);
-  });
-  socket.on('sleep_status', data => {
-    console.log('📡 Received sleep_status:', data);
-    if (!data) return;
-    setSleepUI(data);
-  });
-  socket.on('thermo_config', data => {
-    console.log('📡 Received thermo_config:', data);
-    if (!data) return;
-    setThermoConfigUI(data);
-  });
-}
-
-async function fetchACStatus(){
-  try{
-    const resp = await fetch('/api/ac/status');
-    if(!resp.ok){
-      console.warn('AC status fetch failed:', resp.status);
-      updateACIndicator(null);
-      updateThermoIndicator(null);
-      return;
-    }
-    const data = await resp.json();
-    updateACIndicator(data && 'is_on' in data ? data.is_on : null);
-    // Prefer new DB-backed thermo_active, fallback to legacy thermostat_enabled
-    const thermoEn = (data && 'thermo_active' in data)
-      ? data.thermo_active
-      : (data && 'thermostat_enabled' in data ? data.thermostat_enabled : null);
-    updateThermoIndicator(thermoEn);
-    if (data && data.mode) setModeUI(data.mode);
-    if (data && data.fan_speed) setFanUI(data.fan_speed);
-    setSleepUI(data);
-    setThermoConfigUI(data);
-  }catch(err){
-    console.error('AC status error:', err);
-    updateACIndicator(null);
-    updateThermoIndicator(null);
-  }
-}
-
-function updateACIndicator(isOn){
-  const pill = document.getElementById('acStatusPill');
-  const btn  = document.getElementById('btnAcPowerToggle');
-  if(!pill) return;
-  pill.classList.remove('ac-on','ac-off','ac-unknown');
-  if(isOn === true){
-    pill.classList.add('ac-on');
-    pill.textContent = 'ON';
-    if (btn) btn.textContent = 'Turn AC Off';
-  } else if(isOn === false){
-    pill.classList.add('ac-off');
-    pill.textContent = 'OFF';
-    if (btn) btn.textContent = 'Turn AC On';
-  } else {
-    pill.classList.add('ac-unknown');
-    pill.textContent = 'Unknown';
-    if (btn) btn.textContent = 'Toggle AC';
-  }
-}
-
-function updateThermoIndicator(enabled){
-  const pill = document.getElementById('thermoStatusPill');
-  const btn  = document.getElementById('btnThermoToggle');
-  if(pill){
-    pill.classList.remove('ac-on','ac-off','ac-unknown');
-    if(enabled === true){
-      pill.classList.add('ac-on');
-      pill.textContent = 'Thermostat ON';
-    } else if(enabled === false){
-      pill.classList.add('ac-off');
-      pill.textContent = 'Thermostat OFF';
-    } else {
-      pill.classList.add('ac-unknown');
-      pill.textContent = 'Thermostat —';
-    }
-  }
-  if(btn){
-    btn.textContent = (enabled === true) ? 'Disable Thermostat' : 'Enable Thermostat';
-  }
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-  const locations = Array.isArray(window.LOCATIONS) ? window.LOCATIONS : [];
-  // normalize into state
-  state.items = locations.map(extractNameTempHum);
-  renderItems(state.items);
-  updateSummary(state.items);
-  initSIO();
-  fetchACStatus();
-  fetchAvgRates();
-  fetchOutsideToday();
-  // Periodic refresh every 5 minutes
-  setInterval(fetchAvgRates, 5 * 60 * 1000);
-  setInterval(fetchOutsideToday, 5 * 60 * 1000);
-
-  // Wire control buttons
-  const btnAc = document.getElementById('btnAcPowerToggle');
-  const btnTh = document.getElementById('btnThermoToggle');
-  if(btnAc){
-    btnAc.addEventListener('click', () => {
-      const pill = document.getElementById('acStatusPill');
-      const isOn = pill && pill.classList.contains('ac-on');
-      socket.emit('ac_control', { action: isOn ? 'power_off' : 'power_on' });
-    });
-  }
-  if(btnTh){
-    btnTh.addEventListener('click', () => {
-      const pill = document.getElementById('thermoStatusPill');
-      const enabled = pill && pill.classList.contains('ac-on');
-      socket.emit('ac_control', { action: enabled ? 'thermostat_disable' : 'thermostat_enable' });
-    });
-  }
-
-  // Wire segmented controls
-  const modeCold = document.getElementById('modeCold');
-  const modeWet  = document.getElementById('modeWet');
-  const modeWind = document.getElementById('modeWind');
-  const fanLow   = document.getElementById('fanLow');
-  const fanHigh  = document.getElementById('fanHigh');
-
-  // UI helpers defined at top-level
-
-  if (modeCold) modeCold.addEventListener('click', () => { socket.emit('ac_control', { action: 'set_mode', value: 'cold' }); setModeUI('cold'); });
-  if (modeWet)  modeWet.addEventListener('click',  () => { socket.emit('ac_control', { action: 'set_mode', value: 'wet'  }); setModeUI('wet');  });
-  if (modeWind) modeWind.addEventListener('click', () => { socket.emit('ac_control', { action: 'set_mode', value: 'wind' }); setModeUI('wind'); });
-  if (fanLow)   fanLow.addEventListener('click',   () => { socket.emit('ac_control', { action: 'set_fan_speed', value: 'low'  }); setFanUI('low');  });
-  if (fanHigh)  fanHigh.addEventListener('click',  () => { socket.emit('ac_control', { action: 'set_fan_speed', value: 'high' }); setFanUI('high'); });
-
-  // Filter & sort
-  const filterInput = document.getElementById('filterInput');
-  const sortNameBtn = document.getElementById('sortName');
-  const sortTempBtn = document.getElementById('sortTemp');
-  const sortHumBtn  = document.getElementById('sortHum');
-  const sortUpdBtn  = document.getElementById('sortUpdated');
-  const sortDirBtn  = document.getElementById('sortDir');
-
-  function setSortKey(key){
-    state.sortKey = key;
-    [sortNameBtn, sortTempBtn, sortHumBtn, sortUpdBtn].forEach(b => b && b.classList.toggle('active', b.dataset.key === key));
-    renderItems(state.items);
-  }
-  function toggleSortDir(){
-    state.sortDir = (state.sortDir === 'asc') ? 'desc' : 'asc';
-    sortDirBtn.textContent = (state.sortDir === 'asc') ? '↑' : '↓';
-    renderItems(state.items);
-  }
-  if (filterInput){
-    filterInput.addEventListener('input', () => { state.filter = filterInput.value || ''; renderItems(state.items); });
-  }
-  if (sortNameBtn) sortNameBtn.addEventListener('click', () => setSortKey('name'));
-  if (sortTempBtn) sortTempBtn.addEventListener('click', () => setSortKey('temp'));
-  if (sortHumBtn)  sortHumBtn.addEventListener('click', () => setSortKey('hum'));
-  if (sortUpdBtn)  sortUpdBtn.addEventListener('click', () => setSortKey('updated'));
-  if (sortDirBtn)  sortDirBtn.addEventListener('click', toggleSortDir);
-  // initialize sort UI
-  setSortKey(state.sortKey);
-  if (sortDirBtn) sortDirBtn.textContent = (state.sortDir === 'asc') ? '↑' : '↓';
-
-
-  const btnSleepToggle = document.getElementById('btnSleepToggle-main');
-  const sleepPill    = document.getElementById('sleepStatusPill');
-
-  if (btnSleepToggle){
-    btnSleepToggle.addEventListener('click', () => {
-      const enabled = /enable/i.test(btnSleepToggle.textContent || '');
-      socket.emit('ac_control', { action: 'set_sleep_enabled', value: enabled });
-      btnSleepToggle.textContent = enabled ? 'Disable Sleep' : 'Enable Sleep';
-    });
-  }
-
-
-
-  // Prefer modal fields when present
-  const sp = document.getElementById('modalSetpointC')
-  const spMain = document.getElementById('setpointC');
-  const hy = document.getElementById('hysteresis') || document.getElementById('modalHysteresis');
-  const hyPos = document.getElementById('modalHysteresisPos') || document.getElementById('hysteresisPos');
-  const hyNeg = document.getElementById('modalHysteresisNeg') || document.getElementById('hysteresisNeg');
-  const btnThermoSave = document.getElementById('btnThermoSave');
-  const btnSpDec = document.getElementById('btnSetpointDec');
-  const btnSpInc = document.getElementById('btnSetpointInc');
-  if (spMain) {
-    spMain.addEventListener('change', () => {
-      const v = parseFloat(spMain.value);
-      if (!Number.isNaN(v)) socket.emit('ac_control', { action: 'set_setpoint', value: v });
-    });
-
-  }
-  if (btnThermoSave && sp){
-    btnThermoSave.addEventListener('click', () => {
-      const setpoint = parseFloat(sp.value);
-      if (!Number.isNaN(setpoint)){
-        socket.emit('ac_control', { action: 'set_setpoint', value: setpoint });
-      }
-      const hasSplit = hyPos && hyNeg;
-      if (hasSplit){
-        const pos = parseFloat(hyPos.value);
-        const neg = parseFloat(hyNeg.value);
-        if (!Number.isNaN(pos) && !Number.isNaN(neg)){
-          socket.emit('ac_control', { action: 'set_hysteresis_split', pos, neg });
-        }
-      } else if (hy) {
-        const hyst = parseFloat(hy.value);
-        if (!Number.isNaN(hyst)){
-          socket.emit('ac_control', { action: 'set_hysteresis', value: hyst });
-        }
-      }
-    });
-  }
-  // Quick +/- for setpoint
-  function clamp(n, min, max){ return Math.min(max, Math.max(min, n)); }
-  function stepSetpoint(delta){
-    if (!sp) return;
-    const cur = parseFloat(sp.value);
-    const step = parseFloat(sp.step || '0.5') || 0.5;
-    const min = parseFloat(sp.min || '5') || 5;
-    const max = parseFloat(sp.max || '35') || 35;
-    const base = Number.isFinite(cur) ? cur : 22.0;
-    const next = clamp(base + delta*step, min, max);
-    sp.value = next.toFixed(1);
-    socket.emit('ac_control', { action: 'set_setpoint', value: next });
-  }
-  if (btnSpDec) btnSpDec.addEventListener('click', () => stepSetpoint(-1));
-  if (btnSpInc) btnSpInc.addEventListener('click', () => stepSetpoint(+1));
-
-});
-
-function setSelectValue(id, value){
-  const el = document.getElementById(id);
-  if(!el) return;
-  const val = String(value || '').toLowerCase();
-  for (const opt of el.options){
-    if (opt.value === val){ el.value = val; return; }
-  }
-}
-
-// Segmented control helpers (top-level so socket handlers can call them)
-function setActiveBtns(btns, val){
-  const v = String(val || '').toLowerCase();
-  (btns || []).forEach(b => {
-    if (!b) return;
-    const match = (String(b.dataset.value || '').toLowerCase() === v);
-    b.classList.toggle('active', match);
-  });
-}
-function setModeUI(mode){
-  const cold = document.getElementById('modeCold');
-  const wet  = document.getElementById('modeWet');
-  const wind = document.getElementById('modeWind');
-  setActiveBtns([cold, wet, wind], mode);
-}
-function setFanUI(fan){
-  const low  = document.getElementById('fanLow');
-  const high = document.getElementById('fanHigh');
-  setActiveBtns([low, high], fan);
-}
-
-function setSleepUI(data){
-  if (!data) return;
-  const pill = document.getElementById('sleepStatusPill');
-  if (!pill) return;
-  const enabled = ('sleep_enabled' in data) ? !!data.sleep_enabled : null;
-  const activeNow = ('sleep_time_active' in data) ? !!data.sleep_time_active : null;
-  const sleepOverrideUntil = ('sleep_override_until' in data) ? data.sleep_override_until : null;
-
-  const btnSleepToggleMain = document.getElementById('btnSleepToggle-main');
-  const btnSleepToggle = document.getElementById('btnSleepToggle');
-  if (btnSleepToggle) { btnSleepToggle.textContent = enabled ? 'Disable Sleep' : 'Enable Sleep'; }
-  if (btnSleepToggleMain) { btnSleepToggleMain.textContent = enabled ? 'Disable Sleep' : 'Enable Sleep'; }
-
-  pill.classList.remove('ac-on','ac-off','ac-unknown','ac-idle');
-
-  if (enabled === false){
-    // Disabled -> red
-    pill.classList.add('ac-off');
-    pill.textContent = 'Sleep OFF';
-    return;
-  }
-  if (enabled === true){
-    if (activeNow === true){
-      // Enabled and in window -> green
-      pill.classList.add('ac-on');
-      pill.textContent = 'Sleep NOW';
-    } else if (activeNow === false){
-      // Enabled but not in window -> yellow
-      pill.classList.add('ac-idle');
-      pill.textContent = 'Sleep Enabled' + (sleepOverrideUntil ? ` - ${asTimeValue(sleepOverrideUntil)}` : '');
-    } else {
-      pill.classList.add('ac-unknown');
-      pill.textContent = 'Sleep —';
-    }
-    return;
-  }
-  // Unknown state
-  pill.classList.add('ac-unknown');
-  pill.textContent = 'Sleep —';
-}
-
-function asTimeValue(s){
-  // Accept HH:MM, optional seconds; normalize to HH:MM
-  if (!s) return '';
-  try{
-    const m = String(s).match(/^(\d{1,2}):(\d{2})/);
-    if (!m) return '';
-    const hh = String(m[1]).padStart(2,'0');
-    const mm = String(m[2]).padStart(2,'0');
-    return `${hh}:${mm}`;
-  }catch{ return ''; }
-}
-
-function setThermoConfigUI(data){
-  const spMain = document.getElementById('setpointC');
-  const spModal = document.getElementById('modalSetpointC');
-  const hyPosMain = document.getElementById('hysteresisPos');
-  const hyNegMain = document.getElementById('hysteresisNeg');
-  const hyPosModal = document.getElementById('modalHysteresisPos');
-  const hyNegModal = document.getElementById('modalHysteresisNeg');
-  const minOnEl = document.getElementById('modalMinOnS');
-  const minOffEl= document.getElementById('modalMinOffS');
-  const pollEl  = document.getElementById('modalPollS');
-  const smoothEl= document.getElementById('modalSmoothWindow');
-  const staleEl = document.getElementById('modalMaxStaleS');
-  if ('setpoint_c' in data){
-    const v = parseFloat(data.setpoint_c);
-    if (!Number.isNaN(v)){
-      if (spMain) spMain.value = v.toFixed(1);
-      if (spModal) spModal.value = v.toFixed(1);
-    }
-  }
-  if ('pos_hysteresis' in data){
-    const v = parseFloat(data.pos_hysteresis);
-    if (!Number.isNaN(v)){
-      if (hyPosMain) hyPosMain.value = v.toFixed(1);
-      if (hyPosModal) hyPosModal.value = v.toFixed(1);
-    }
-  }
-  if ('neg_hysteresis' in data){
-    const v = parseFloat(data.neg_hysteresis);
-    if (!Number.isNaN(v)){
-      if (hyNegMain) hyNegMain.value = v.toFixed(1);
-      if (hyNegModal) hyNegModal.value = v.toFixed(1);
-    }
-  }
-  if ('min_on_s' in data && minOnEl) minOnEl.value = parseInt(data.min_on_s)||0;
-  if ('min_off_s' in data && minOffEl) minOffEl.value = parseInt(data.min_off_s)||0;
-  if ('poll_interval_s' in data && pollEl) pollEl.value = parseInt(data.poll_interval_s)||15;
-  if ('smooth_window' in data && smoothEl) smoothEl.value = parseInt(data.smooth_window)||1;
-  if ('max_stale_s' in data && staleEl) staleEl.value = (data.max_stale_s == null ? '' : parseInt(data.max_stale_s));
-}
-
-// --- Avg rates / power ---
-let _avgRatesTimer = null;
-function refreshAvgRatesSoon(){
-  if (_avgRatesTimer) return;
-  _avgRatesTimer = setTimeout(() => { _avgRatesTimer = null; fetchAvgRates(); }, 3000);
-}
-
-async function fetchAvgRates(){
-  try{
-    const resp = await fetch('/api/hvac/avg_rates_today');
-    if(!resp.ok){
-      console.warn('avg rates fetch failed:', resp.status);
-      setAvgPills(null);
-      return;
-    }
-    const data = await resp.json();
-    setAvgPills(data);
-  }catch(err){
-    console.error('avg rates error:', err);
-    setAvgPills(null);
-  }
-}
-
-function setAvgPills(data){
-  const coolEl = document.getElementById('avgCoolingPill');
-  const heatEl = document.getElementById('avgHeatingPill');
-  if(!coolEl || !heatEl) return;
-
-  if(!data){
-    coolEl.textContent = 'Cooling: —';
-    heatEl.textContent = 'Heat: —';
-    return;
-  }
-  const cr = data.cooling_rate_c_per_h;
-  const hr = data.heating_rate_c_per_h;
-  const cp = data.cooling_power_w;
-  const hp = data.heating_power_w;
-  const fmtRate = (v, sign='+/-') => {
-    if (v === null || v === undefined) return '—';
-    const n = Number(v);
-    if (!Number.isFinite(n)) return '—';
-    return `${n.toFixed(2)} °C/h`;
+  const state = {
+    rooms: new Map(),
+    search: '',
+    filterMode: 'indoor',
+    sortKey: 'name',
+    sortDir: 'asc',
+    selectedKey: null,
+    detailOpen: false,
+    currentDate: new Date(),
+    chartTemp: null,
+    chartHum: null,
+    chartRequestToken: 0,
+    controlLocations: [],
+    outsideSummary: null,
+    ac: {
+      isOn: null,
+      thermostatEnabled: null,
+      sleepEnabled: null,
+      sleepActive: null,
+      sleepOverrideUntil: null,
+      mode: null,
+      fanSpeed: null,
+    },
   };
-  const fmtPower = (w) => {
-    if (w === null || w === undefined) return '';
-    const n = Number(w);
+
+  const dom = {};
+
+  function normalizeText(value) {
+    return String(value || '').trim();
+  }
+
+  function normalizeKey(value) {
+    return normalizeText(value).toLowerCase();
+  }
+
+  function isOutsideLocation(name) {
+    const normalized = normalizeKey(name);
+    return Boolean(normalized) && OUTSIDE_LOCATION_ALIASES.some(alias => normalized === alias);
+  }
+
+  function isStaleTimestamp(ts) {
+    const time = ts ? new Date(ts).getTime() : NaN;
+    return !Number.isFinite(time) || (Date.now() - time) > STALE_MS;
+  }
+
+  function fmtTemp(value, digits = 1) {
+    const n = Number(value);
+    return Number.isFinite(n) ? `${n.toFixed(digits)} °C` : '—';
+  }
+
+  function fmtHum(value, digits = 0) {
+    const n = Number(value);
+    return Number.isFinite(n) ? `${n.toFixed(digits)} %` : '—';
+  }
+
+  function fmtCompactTemp(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? `${n.toFixed(1)}°C` : '—';
+  }
+
+  function fmtCompactHum(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? `${n.toFixed(0)}%` : '—';
+  }
+
+  function fmtTimestamp(ts) {
+    if (!ts) return '—';
+    try {
+      return new Date(ts).toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return '—';
+    }
+  }
+
+  function fmtDateLabel(date) {
+    try {
+      return date.toLocaleDateString(undefined, {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+      });
+    } catch {
+      return '—';
+    }
+  }
+
+  function fmtFreshness(ts) {
+    if (!ts) return 'No timestamp';
+    const time = new Date(ts).getTime();
+    if (!Number.isFinite(time)) return 'No timestamp';
+    const ageMs = Math.max(0, Date.now() - time);
+    const ageMin = Math.round(ageMs / 60000);
+    if (ageMs <= STALE_MS) {
+      return ageMin <= 1 ? 'Fresh now' : `Fresh · ${ageMin} min ago`;
+    }
+    return ageMin < 120 ? `Stale · ${ageMin} min old` : `Stale · ${Math.round(ageMin / 60)} h old`;
+  }
+
+  function getTempToneClass(value) {
+    const n = Number(value);
     if (!Number.isFinite(n)) return '';
-    return ` (${Math.round(n)} W)`;
-  };
-  // Cooling rate is typically negative; display absolute magnitude
-  const coolText = (cr == null ? '—' : `${Math.abs(cr).toFixed(2)} °C/h`) + (cp != null ? ` (${Math.round(cp)} W)` : '');
-  const heatText = fmtRate(hr) + fmtPower(hp);
-  coolEl.textContent = `Cooling: ${coolText}`;
-  heatEl.textContent = `Heat: ${heatText}`;
-}
-
-// --- Summary (Avg/Min/Max across tiles) ---
-function updateSummary(items){
-  const avgEl = document.getElementById('avgTempPill');
-  const minEl = document.getElementById('minTempPill');
-  const maxEl = document.getElementById('maxTempPill');
-  if (!avgEl || !minEl || !maxEl) return;
-
-  // Exclude outside sensor from summary
-  const inItems = (Array.isArray(items) ? items : []).filter(it => {
-    const n = String(it.name || it.location || '').trim();
-    return !isOutsideLocation(n);
-  });
-
-  const vals = inItems.map(x => Number(x.temp)).filter(Number.isFinite);
-  if (!vals.length){
-    avgEl.textContent = 'AVG: —';
-    minEl.textContent = 'Min: —';
-    maxEl.textContent = 'Max: —';
-    return;
+    if (n <= 19) return 'temp-cold';
+    if (n <= 24) return 'temp-good';
+    if (n <= 27) return 'temp-warm';
+    return 'temp-hot';
   }
-  const avg = vals.reduce((a,b)=>a+b,0) / vals.length;
-  let minV = Infinity, maxV = -Infinity, minN='—', maxN='—';
-  for (const it of inItems){
-    const t = Number(it.temp);
-    if (Number.isFinite(t)){
-      if (t < minV){ minV = t; minN = it.name || it.location || '—'; }
-      if (t > maxV){ maxV = t; maxN = it.name || it.location || '—'; }
+
+  function applyTempTone(el, value) {
+    if (!el) return;
+    el.classList.remove('temp-cold', 'temp-good', 'temp-warm', 'temp-hot');
+    const tone = getTempToneClass(value);
+    if (tone) el.classList.add(tone);
+  }
+
+  function normalizeRoom(entry) {
+    const name = normalizeText(entry && (entry.location || entry.name));
+    const temp = entry ? (entry.temp ?? entry.temperature_c ?? entry.temperature ?? null) : null;
+    const hum = entry ? (entry.hum ?? entry.humidity_pct ?? entry.humidity ?? null) : null;
+    const ts = entry ? (entry.timestamp ?? entry.ts ?? null) : null;
+    const key = normalizeKey(name);
+    return {
+      key,
+      name: name || '—',
+      temp,
+      hum,
+      ts,
+      isOutside: isOutsideLocation(name),
+    };
+  }
+
+  function setRoom(entry) {
+    const room = normalizeRoom(entry);
+    if (!room.key) return;
+    state.rooms.set(room.key, room);
+  }
+
+  function getRooms() {
+    return Array.from(state.rooms.values());
+  }
+
+  function getSelectedRoom() {
+    return state.selectedKey ? state.rooms.get(state.selectedKey) || null : null;
+  }
+
+  function getVisibleRooms() {
+    const search = normalizeKey(state.search);
+    return getRooms()
+      .filter(room => {
+        if (search && !normalizeKey(room.name).includes(search)) return false;
+        if (state.filterMode === 'indoor') return !room.isOutside;
+        if (state.filterMode === 'outdoor') return room.isOutside;
+        if (state.filterMode === 'stale') return isStaleTimestamp(room.ts);
+        return true;
+      })
+      .sort(compareRooms);
+  }
+
+  function compareRooms(a, b) {
+    const dir = state.sortDir === 'desc' ? -1 : 1;
+    if (state.sortKey === 'name') return a.name.localeCompare(b.name) * dir;
+
+    let av;
+    let bv;
+    if (state.sortKey === 'temp') {
+      av = Number(a.temp);
+      bv = Number(b.temp);
+    } else if (state.sortKey === 'hum') {
+      av = Number(a.hum);
+      bv = Number(b.hum);
+    } else {
+      av = Date.parse(a.ts || 0);
+      bv = Date.parse(b.ts || 0);
+    }
+
+    const aValid = Number.isFinite(av);
+    const bValid = Number.isFinite(bv);
+    if (!aValid && !bValid) return 0;
+    if (!aValid) return 1 * dir;
+    if (!bValid) return -1 * dir;
+    return (av - bv) * dir;
+  }
+
+  function getIndoorRooms() {
+    return getRooms().filter(room => !room.isOutside);
+  }
+
+  function getOutdoorRooms() {
+    return getRooms().filter(room => room.isOutside);
+  }
+
+  function chooseInitialRoom() {
+    const indoors = getIndoorRooms().sort((a, b) => a.name.localeCompare(b.name));
+    if (indoors.length) return indoors[0];
+    const all = getRooms().sort((a, b) => a.name.localeCompare(b.name));
+    return all.length ? all[0] : null;
+  }
+
+  function isMobileLayout() {
+    return window.innerWidth <= 900;
+  }
+
+  function setBodyScrollLock(locked) {
+    document.body.style.overflow = locked ? 'hidden' : '';
+  }
+
+  function updateDetailVisibility() {
+    if (!dom.detailPane || !dom.detailBackdrop) return;
+    const mobileOpen = isMobileLayout() && state.detailOpen;
+    dom.detailPane.classList.toggle('is-open', mobileOpen);
+    dom.detailBackdrop.classList.toggle('is-open', mobileOpen);
+    setBodyScrollLock(mobileOpen);
+  }
+
+  function openDetail() {
+    state.detailOpen = true;
+    updateDetailVisibility();
+  }
+
+  function closeDetail() {
+    state.detailOpen = false;
+    updateDetailVisibility();
+  }
+
+  function ensureSelectedRoom() {
+    if (state.selectedKey && state.rooms.has(state.selectedKey)) return;
+    const initial = chooseInitialRoom();
+    state.selectedKey = initial ? initial.key : null;
+  }
+
+  function setSelectedRoom(key, options = {}) {
+    if (!key || !state.rooms.has(key)) return;
+    const nextRoom = state.rooms.get(key);
+    const hasChanged = state.selectedKey !== key;
+    state.selectedKey = key;
+    if (hasChanged) state.currentDate = new Date();
+    if (options.openDetail) openDetail();
+    renderRoomList();
+    renderDetailShell(nextRoom);
+    if (hasChanged || options.force) {
+      fetchRoomHistory();
     }
   }
-  avgEl.textContent = `AVG: ${avg.toFixed(1)}°C`;
-  minEl.textContent = `Min: ${Number.isFinite(minV) ? minV.toFixed(1)+'°C' : '—'} (${minN})`;
-  maxEl.textContent = `Max: ${Number.isFinite(maxV) ? maxV.toFixed(1)+'°C' : '—'} (${maxN})`;
-}
 
-function applyFreshness(tile, ts){
-  try{
-    const dot = tile.querySelector('.fresh-dot');
-    const t = ts ? new Date(ts).getTime() : NaN;
-    const fresh = Number.isFinite(t) && (Date.now() - t) <= STALE_MS;
-    tile.classList.toggle('stale', !fresh);
-    if (dot){
-      dot.classList.remove('dot-fresh','dot-stale');
-      dot.classList.add(fresh ? 'dot-fresh' : 'dot-stale');
+  function renderOverview() {
+    const indoors = getIndoorRooms();
+    const outdoors = getOutdoorRooms();
+    const temps = indoors.map(room => Number(room.temp)).filter(Number.isFinite);
+    const staleCount = getRooms().filter(room => isStaleTimestamp(room.ts)).length;
+
+    const avg = temps.length ? temps.reduce((sum, temp) => sum + temp, 0) / temps.length : null;
+    const warmest = indoors
+      .filter(room => Number.isFinite(Number(room.temp)))
+      .sort((a, b) => Number(b.temp) - Number(a.temp))[0] || null;
+    const coolest = indoors
+      .filter(room => Number.isFinite(Number(room.temp)))
+      .sort((a, b) => Number(a.temp) - Number(b.temp))[0] || null;
+
+    dom.overviewIndoorAvg.textContent = avg == null ? '—' : fmtCompactTemp(avg);
+    dom.overviewWarmest.textContent = warmest ? `${warmest.name} · ${fmtCompactTemp(warmest.temp)}` : '—';
+    dom.overviewCoolest.textContent = coolest ? `${coolest.name} · ${fmtCompactTemp(coolest.temp)}` : '—';
+    dom.overviewStale.textContent = `${staleCount} sensor${staleCount === 1 ? '' : 's'}`;
+
+    applyTempTone(dom.overviewIndoorAvg, avg);
+    applyTempTone(dom.overviewWarmest, warmest ? warmest.temp : null);
+    applyTempTone(dom.overviewCoolest, coolest ? coolest.temp : null);
+
+    if (state.ac.isOn === true) {
+      dom.overviewAcState.textContent = 'Running';
+    } else if (state.ac.isOn === false) {
+      dom.overviewAcState.textContent = 'Stopped';
+    } else {
+      dom.overviewAcState.textContent = 'Unknown';
     }
-  }catch{}
-}
 
-function applyTempColor(el, temp){
-  if (!el) return;
-  const n = Number(temp);
-  el.classList.remove('temp-cold','temp-good','temp-warm','temp-hot');
-  if (!Number.isFinite(n)) return;
-  if (n <= 19) el.classList.add('temp-cold');
-  else if (n <= 24) el.classList.add('temp-good');
-  else if (n <= 27) el.classList.add('temp-warm');
-  else el.classList.add('temp-hot');
-}
+    if (outdoors.length) {
+      const outdoorTemps = outdoors.map(room => Number(room.temp)).filter(Number.isFinite);
+      if (outdoorTemps.length) {
+        const min = Math.min(...outdoorTemps);
+        const max = Math.max(...outdoorTemps);
+        dom.overviewOutside.textContent = `${outdoors.length} sensors · ${min.toFixed(1)} to ${max.toFixed(1)}°C`;
+      } else {
+        dom.overviewOutside.textContent = `${outdoors.length} sensors`;
+      }
+    } else {
+      dom.overviewOutside.textContent = '—';
+    }
+  }
 
-// --- Outside (Parveke) daily stats ---
-let _outsideTimer = null;
-function refreshOutsideStatsSoon(){
-  if (_outsideTimer) return;
-  _outsideTimer = setTimeout(() => { _outsideTimer = null; fetchOutsideToday(); }, 2000);
-}
+  function renderRoomCount(visibleCount) {
+    const label = state.filterMode === 'indoor'
+      ? 'indoor'
+      : state.filterMode === 'outdoor'
+        ? 'outdoor'
+        : 'stale';
+    dom.roomCount.textContent = `${visibleCount} ${label} room${visibleCount === 1 ? '' : 's'}`;
+  }
 
-async function fetchOutsideToday(){
-  try{
-    const names = OUTSIDE_LOCATION_NAMES.map(name => String(name || '').trim()).filter(Boolean);
-    if (!names.length) {
-      console.warn('outside stats fetch skipped: no outside locations configured');
-      setOutsideStats(null);
+  function createFreshDot(isFresh) {
+    const dot = document.createElement('span');
+    dot.className = `fresh-dot ${isFresh ? 'is-fresh' : 'is-stale'}`;
+    dot.setAttribute('aria-hidden', 'true');
+    return dot;
+  }
+
+  function createRoomButton(room) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'room-button';
+    button.dataset.roomKey = room.key;
+    button.classList.toggle('is-selected', state.selectedKey === room.key);
+    button.classList.toggle('is-stale', isStaleTimestamp(room.ts));
+    button.setAttribute('aria-pressed', state.selectedKey === room.key ? 'true' : 'false');
+
+    const header = document.createElement('div');
+    header.className = 'room-button-header';
+
+    const nameWrap = document.createElement('div');
+    nameWrap.className = 'room-name';
+    nameWrap.appendChild(createFreshDot(!isStaleTimestamp(room.ts)));
+
+    const nameText = document.createElement('span');
+    nameText.textContent = room.name;
+    nameWrap.appendChild(nameText);
+
+    const temp = document.createElement('strong');
+    temp.className = 'room-temp';
+    temp.textContent = fmtCompactTemp(room.temp);
+    applyTempTone(temp, room.temp);
+
+    const humidity = document.createElement('div');
+    humidity.className = 'room-humidity';
+    humidity.textContent = fmtCompactHum(room.hum);
+
+    const meta = document.createElement('div');
+    meta.className = 'room-meta';
+    meta.innerHTML = `
+      <span>${room.isOutside ? 'Outdoor sensor' : 'Indoor sensor'}</span>
+      <span>${fmtFreshness(room.ts)}</span>
+      <span>${fmtTimestamp(room.ts)}</span>
+    `;
+
+    const footer = document.createElement('div');
+    footer.className = 'room-button-footer';
+    footer.appendChild(humidity);
+    footer.appendChild(meta);
+
+    header.appendChild(nameWrap);
+    header.appendChild(temp);
+    button.appendChild(header);
+    button.appendChild(footer);
+
+    button.addEventListener('click', () => {
+      setSelectedRoom(room.key, { openDetail: isMobileLayout() });
+    });
+
+    return button;
+  }
+
+  function renderRoomList() {
+    const rooms = getVisibleRooms();
+    dom.roomList.innerHTML = '';
+    renderRoomCount(rooms.length);
+
+    if (!rooms.length) {
+      dom.roomListEmpty.hidden = false;
       return;
     }
-    const responses = await Promise.all(
-      names.map(name => fetch(`/api/esp32_temphum?location=${encodeURIComponent(name)}`))
+
+    dom.roomListEmpty.hidden = true;
+    rooms.forEach(room => {
+      dom.roomList.appendChild(createRoomButton(room));
+    });
+  }
+
+  function renderOutsideStrip() {
+    const rooms = getOutdoorRooms().sort((a, b) => a.name.localeCompare(b.name));
+    dom.outsideStrip.innerHTML = '';
+    dom.outsideStripSection.hidden = rooms.length === 0 || state.filterMode !== 'indoor';
+
+    rooms.forEach(room => {
+      const wrapper = document.createElement('article');
+      wrapper.className = 'outside-sensor';
+
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.addEventListener('click', () => {
+        setSelectedRoom(room.key, { openDetail: isMobileLayout() });
+      });
+
+      const name = document.createElement('div');
+      name.className = 'outside-name';
+      name.textContent = room.name;
+
+      const reading = document.createElement('div');
+      reading.className = 'outside-reading';
+
+      const temp = document.createElement('strong');
+      temp.textContent = fmtCompactTemp(room.temp);
+      applyTempTone(temp, room.temp);
+
+      const hum = document.createElement('span');
+      hum.textContent = fmtCompactHum(room.hum);
+      hum.className = 'outside-meta';
+
+      const meta = document.createElement('div');
+      meta.className = 'outside-meta';
+      meta.textContent = `${fmtFreshness(room.ts)} · ${fmtTimestamp(room.ts)}`;
+
+      reading.appendChild(temp);
+      reading.appendChild(hum);
+      button.appendChild(name);
+      button.appendChild(reading);
+      button.appendChild(meta);
+      wrapper.appendChild(button);
+      dom.outsideStrip.appendChild(wrapper);
+    });
+  }
+
+  function renderDetailShell(room) {
+    if (!room) {
+      dom.detailRoomName.textContent = 'Select a room';
+      dom.detailRoomMeta.textContent = 'Waiting for data';
+      dom.detailFreshness.textContent = '—';
+      dom.detailFreshness.classList.remove('state-on', 'state-off', 'state-idle', 'state-unknown');
+      dom.detailFreshness.classList.add('state-unknown');
+      dom.detailCurrentTemp.textContent = '—';
+      dom.detailCurrentHum.textContent = '—';
+      applyTempTone(dom.detailCurrentTemp, null);
+      return;
+    }
+
+    dom.detailRoomName.textContent = room.name;
+    dom.detailRoomMeta.textContent = `${room.isOutside ? 'Outdoor sensor' : 'Indoor sensor'} · Updated ${fmtTimestamp(room.ts)}`;
+    dom.detailFreshness.textContent = fmtFreshness(room.ts);
+    dom.detailFreshness.classList.remove('state-on', 'state-off', 'state-idle', 'state-unknown');
+    dom.detailFreshness.classList.add(isStaleTimestamp(room.ts) ? 'state-idle' : 'state-on');
+
+    dom.detailCurrentTemp.textContent = fmtTemp(room.temp);
+    dom.detailCurrentHum.textContent = fmtHum(room.hum);
+    applyTempTone(dom.detailCurrentTemp, room.temp);
+  }
+
+  function setDetailStat(el, value, formatter, toneValue) {
+    if (!el) return;
+    el.textContent = formatter(value);
+    applyTempTone(el, toneValue);
+  }
+
+  function setChartSummary(rows) {
+    const temps = rows.map(row => Number(row.temperature ?? row.temperature_c)).filter(Number.isFinite);
+    const hums = rows.map(row => Number(row.humidity ?? row.humidity_pct)).filter(Number.isFinite);
+
+    const avgTemp = temps.length ? temps.reduce((sum, value) => sum + value, 0) / temps.length : null;
+    const avgHum = hums.length ? hums.reduce((sum, value) => sum + value, 0) / hums.length : null;
+    const minTemp = temps.length ? Math.min(...temps) : null;
+    const maxTemp = temps.length ? Math.max(...temps) : null;
+    const minHum = hums.length ? Math.min(...hums) : null;
+    const maxHum = hums.length ? Math.max(...hums) : null;
+
+    setDetailStat(dom.detailDailyTempAvg, avgTemp, fmtCompactTemp, avgTemp);
+    setDetailStat(dom.detailDailyTempMin, minTemp, fmtCompactTemp, minTemp);
+    setDetailStat(dom.detailDailyTempMax, maxTemp, fmtCompactTemp, maxTemp);
+
+    dom.detailDailyHumAvg.textContent = fmtCompactHum(avgHum);
+    dom.detailDailyHumMin.textContent = fmtCompactHum(minHum);
+    dom.detailDailyHumMax.textContent = fmtCompactHum(maxHum);
+  }
+
+  function formatDateISO(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  function addDays(date, delta) {
+    const next = new Date(date);
+    next.setDate(next.getDate() + delta);
+    return next;
+  }
+
+  function aggregateByMinutes(rows, minutes) {
+    const size = Number(minutes);
+    if (!size || size <= 1) {
+      return {
+        labels: rows.map(row => String(row.timestamp || '').slice(11, 16)),
+        temps: rows.map(row => {
+          const value = Number(row.temperature ?? row.temperature_c);
+          return Number.isFinite(value) ? value : null;
+        }),
+        hums: rows.map(row => {
+          const value = Number(row.humidity ?? row.humidity_pct);
+          return Number.isFinite(value) ? value : null;
+        }),
+      };
+    }
+
+    const buckets = new Map();
+    rows.forEach(row => {
+      const time = new Date(row.timestamp);
+      if (Number.isNaN(time.getTime())) return;
+      const minute = time.getHours() * 60 + time.getMinutes();
+      const bucketKey = Math.floor(minute / size) * size;
+      const bucket = buckets.get(bucketKey) || { tempSum: 0, humSum: 0, tempCount: 0, humCount: 0 };
+      const temp = Number(row.temperature ?? row.temperature_c);
+      const hum = Number(row.humidity ?? row.humidity_pct);
+      if (Number.isFinite(temp)) {
+        bucket.tempSum += temp;
+        bucket.tempCount += 1;
+      }
+      if (Number.isFinite(hum)) {
+        bucket.humSum += hum;
+        bucket.humCount += 1;
+      }
+      buckets.set(bucketKey, bucket);
+    });
+
+    const labels = [];
+    const temps = [];
+    const hums = [];
+    Array.from(buckets.keys()).sort((a, b) => a - b).forEach(key => {
+      const bucket = buckets.get(key);
+      const hour = String(Math.floor(key / 60)).padStart(2, '0');
+      const minute = String(key % 60).padStart(2, '0');
+      labels.push(`${hour}:${minute}`);
+      temps.push(bucket.tempCount ? bucket.tempSum / bucket.tempCount : null);
+      hums.push(bucket.humCount ? bucket.humSum / bucket.humCount : null);
+    });
+    return { labels, temps, hums };
+  }
+
+  function getTempAxisConfig(room) {
+    if (room && room.isOutside) {
+      return { min: -30, max: 10, beginAtZero: false };
+    }
+    return { min: 18, max: 26, beginAtZero: false };
+  }
+
+  function createLineChart(ctx, label, color, yAxis) {
+    return new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label,
+          data: [],
+          borderColor: color,
+          backgroundColor: color,
+          pointRadius: 0,
+          pointHoverRadius: 3,
+          spanGaps: true,
+          borderWidth: 2,
+          tension: 0.28,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'nearest', intersect: false },
+        plugins: {
+          legend: { display: false },
+          decimation: {
+            enabled: true,
+            algorithm: 'min-max',
+            samples: 240,
+            threshold: 480,
+          },
+        },
+        scales: {
+          x: {
+            grid: { color: 'rgba(255, 255, 255, 0.06)' },
+            ticks: { color: '#96a4aa' },
+          },
+          y: {
+            ...yAxis,
+            grid: { color: 'rgba(255, 255, 255, 0.06)' },
+            ticks: { color: '#96a4aa' },
+          },
+        },
+      },
+    });
+  }
+
+  function updateCharts(room, rows) {
+    if (typeof Chart !== 'function') return;
+    const tempCtx = dom.detailChartTemp.getContext('2d');
+    const humCtx = dom.detailChartHum.getContext('2d');
+    const aggregated = aggregateByMinutes(rows, DEFAULT_CHART_AVG_MINUTES);
+    const tempAxis = getTempAxisConfig(room);
+
+    if (!state.chartTemp) {
+      state.chartTemp = createLineChart(tempCtx, 'Temperature', '#82bfff', tempAxis);
+    }
+    if (!state.chartHum) {
+      state.chartHum = createLineChart(humCtx, 'Humidity', '#6be2a8', { beginAtZero: false });
+    }
+
+    state.chartTemp.data.labels = aggregated.labels;
+    state.chartTemp.data.datasets[0].data = aggregated.temps;
+    state.chartTemp.options.scales.y = {
+      ...state.chartTemp.options.scales.y,
+      ...tempAxis,
+    };
+    state.chartTemp.update();
+
+    state.chartHum.data.labels = aggregated.labels;
+    state.chartHum.data.datasets[0].data = aggregated.hums;
+    state.chartHum.update();
+
+    dom.detailTempChartMeta.textContent = rows.length
+      ? `${DEFAULT_CHART_AVG_MINUTES}-minute average`
+      : 'No data';
+    dom.detailHumChartMeta.textContent = rows.length
+      ? `${DEFAULT_CHART_AVG_MINUTES}-minute average`
+      : 'No data';
+  }
+
+  async function fetchRoomHistory() {
+    const room = getSelectedRoom();
+    if (!room) return;
+
+    dom.detailDateLabel.textContent = fmtDateLabel(state.currentDate);
+    dom.detailNextDay.disabled = formatDateISO(state.currentDate) >= formatDateISO(new Date());
+
+    const requestToken = state.chartRequestToken + 1;
+    state.chartRequestToken = requestToken;
+    const url = `/api/esp32_temphum?date=${encodeURIComponent(formatDateISO(state.currentDate))}&location=${encodeURIComponent(room.name)}`;
+
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      });
+      const rows = response.ok ? await response.json() : [];
+      if (requestToken !== state.chartRequestToken) return;
+      console.log('📈 History loaded for', room.name, rows.length);
+      setChartSummary(Array.isArray(rows) ? rows : []);
+      updateCharts(room, Array.isArray(rows) ? rows : []);
+      dom.detailEmptyState.hidden = Array.isArray(rows) && rows.length > 0;
+    } catch (error) {
+      if (requestToken !== state.chartRequestToken) return;
+      console.error('❌ Failed to fetch room history:', error);
+      setChartSummary([]);
+      updateCharts(room, []);
+      dom.detailEmptyState.hidden = false;
+    }
+  }
+
+  function renderFilterState() {
+    [dom.filterIndoor, dom.filterOutdoor, dom.filterStale].forEach(button => {
+      if (!button) return;
+      button.classList.toggle('is-active', button.dataset.filter === state.filterMode);
+    });
+
+    [dom.sortName, dom.sortTemp, dom.sortHum, dom.sortUpdated].forEach(button => {
+      if (!button) return;
+      button.classList.toggle('active', button.dataset.key === state.sortKey);
+    });
+
+    dom.sortDir.textContent = state.sortDir === 'asc' ? '↑' : '↓';
+  }
+
+  function renderAll() {
+    ensureSelectedRoom();
+    renderFilterState();
+    renderOverview();
+    renderOutsideStrip();
+    renderRoomList();
+    renderDetailShell(getSelectedRoom());
+    updateDetailVisibility();
+    renderControlLocationButtons();
+  }
+
+  function syncSelectionToVisibleRooms() {
+    const visibleRooms = getVisibleRooms();
+    if (!visibleRooms.length) return;
+    if (!visibleRooms.some(room => room.key === state.selectedKey)) {
+      setSelectedRoom(visibleRooms[0].key, { force: true });
+    }
+  }
+
+  function renderControlLocationButtons() {
+    if (!dom.ctrlLocContainer) return;
+    const roomNames = getRooms().map(room => room.name).sort((a, b) => a.localeCompare(b));
+    dom.ctrlLocContainer.innerHTML = '';
+
+    roomNames.forEach(name => {
+      const key = normalizeKey(name);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'sensor-chip';
+      button.textContent = name;
+      button.dataset.location = name;
+      button.classList.toggle('is-active', state.controlLocations.includes(name));
+      button.addEventListener('click', () => {
+        const active = new Set(state.controlLocations);
+        if (active.has(name)) {
+          if (active.size <= 1) return;
+          active.delete(name);
+        } else {
+          active.add(name);
+        }
+        state.controlLocations = roomNames.filter(roomName => active.has(roomName));
+        renderControlLocationButtons();
+        emitSocketAction({ action: 'set_control_locations', locations: state.controlLocations });
+      });
+      dom.ctrlLocContainer.appendChild(button);
+    });
+  }
+
+  function setActiveButtons(buttons, value) {
+    const normalized = normalizeKey(value);
+    buttons.forEach(button => {
+      if (!button) return;
+      button.classList.toggle('active', normalizeKey(button.dataset.value) === normalized);
+    });
+  }
+
+  function setStatusPill(pill, text, stateClass) {
+    if (!pill) return;
+    pill.textContent = text;
+    pill.classList.remove('state-on', 'state-off', 'state-idle', 'state-unknown');
+    pill.classList.add(stateClass);
+  }
+
+  function setSleepScheduleFields(schedule, fallbackStart, fallbackStop) {
+    if (schedule && typeof schedule === 'object') {
+      DAYS.forEach(day => {
+        const row = schedule[day] || {};
+        const startInput = document.getElementById(`sleep_${day}_start`);
+        const stopInput = document.getElementById(`sleep_${day}_stop`);
+        if (startInput) startInput.value = row.start ? String(row.start).slice(0, 5) : '';
+        if (stopInput) stopInput.value = row.stop ? String(row.stop).slice(0, 5) : '';
+      });
+      return;
+    }
+
+    DAYS.forEach(day => {
+      const startInput = document.getElementById(`sleep_${day}_start`);
+      const stopInput = document.getElementById(`sleep_${day}_stop`);
+      if (startInput) startInput.value = fallbackStart || '';
+      if (stopInput) stopInput.value = fallbackStop || '';
+    });
+  }
+
+  function setAvgPills(data) {
+    if (!data) {
+      dom.avgCoolingPill.textContent = 'Cooling —';
+      dom.avgHeatingPill.textContent = 'Heating —';
+      return;
+    }
+
+    const coolingRate = Number(data.cooling_rate_c_per_h);
+    const heatingRate = Number(data.heating_rate_c_per_h);
+    const coolingPower = Number(data.cooling_power_w);
+    const heatingPower = Number(data.heating_power_w);
+
+    dom.avgCoolingPill.textContent = Number.isFinite(coolingRate)
+      ? `Cooling ${Math.abs(coolingRate).toFixed(2)} °C/h${Number.isFinite(coolingPower) ? ` · ${Math.round(coolingPower)} W` : ''}`
+      : 'Cooling —';
+    dom.avgHeatingPill.textContent = Number.isFinite(heatingRate)
+      ? `Heating ${heatingRate.toFixed(2)} °C/h${Number.isFinite(heatingPower) ? ` · ${Math.round(heatingPower)} W` : ''}`
+      : 'Heating —';
+  }
+
+  function syncAcStatus(data) {
+    if (!data) return;
+    state.ac.isOn = Object.prototype.hasOwnProperty.call(data, 'is_on') ? !!data.is_on : state.ac.isOn;
+    state.ac.thermostatEnabled = Object.prototype.hasOwnProperty.call(data, 'thermo_active')
+      ? !!data.thermo_active
+      : Object.prototype.hasOwnProperty.call(data, 'thermostat_enabled')
+        ? !!data.thermostat_enabled
+        : state.ac.thermostatEnabled;
+    state.ac.sleepEnabled = Object.prototype.hasOwnProperty.call(data, 'sleep_enabled')
+      ? !!data.sleep_enabled
+      : state.ac.sleepEnabled;
+    state.ac.sleepActive = Object.prototype.hasOwnProperty.call(data, 'sleep_time_active')
+      ? !!data.sleep_time_active
+      : state.ac.sleepActive;
+    state.ac.sleepOverrideUntil = Object.prototype.hasOwnProperty.call(data, 'sleep_override_until')
+      ? data.sleep_override_until
+      : state.ac.sleepOverrideUntil;
+    state.ac.mode = data.mode || state.ac.mode;
+    state.ac.fanSpeed = data.fan_speed || state.ac.fanSpeed;
+
+    if (state.ac.isOn === true) {
+      setStatusPill(dom.acStatusPill, 'AC on', 'state-on');
+      dom.btnAcPowerToggle.textContent = 'Turn AC off';
+    } else if (state.ac.isOn === false) {
+      setStatusPill(dom.acStatusPill, 'AC off', 'state-off');
+      dom.btnAcPowerToggle.textContent = 'Turn AC on';
+    } else {
+      setStatusPill(dom.acStatusPill, 'AC —', 'state-unknown');
+      dom.btnAcPowerToggle.textContent = 'Toggle AC';
+    }
+
+    if (state.ac.thermostatEnabled === true) {
+      setStatusPill(dom.thermoStatusPill, 'Thermostat on', 'state-on');
+      dom.btnThermoToggle.textContent = 'Disable thermostat';
+    } else if (state.ac.thermostatEnabled === false) {
+      setStatusPill(dom.thermoStatusPill, 'Thermostat off', 'state-off');
+      dom.btnThermoToggle.textContent = 'Enable thermostat';
+    } else {
+      setStatusPill(dom.thermoStatusPill, 'Thermostat —', 'state-unknown');
+      dom.btnThermoToggle.textContent = 'Toggle thermostat';
+    }
+
+    if (state.ac.sleepEnabled === true && state.ac.sleepActive === true) {
+      setStatusPill(dom.sleepStatusPill, 'Sleep now', 'state-on');
+    } else if (state.ac.sleepEnabled === true) {
+      const suffix = state.ac.sleepOverrideUntil ? ` · until ${String(state.ac.sleepOverrideUntil).slice(0, 5)}` : '';
+      setStatusPill(dom.sleepStatusPill, `Sleep enabled${suffix}`, 'state-idle');
+    } else if (state.ac.sleepEnabled === false) {
+      setStatusPill(dom.sleepStatusPill, 'Sleep off', 'state-off');
+    } else {
+      setStatusPill(dom.sleepStatusPill, 'Sleep —', 'state-unknown');
+    }
+
+    dom.btnSleepToggleMain.textContent = state.ac.sleepEnabled ? 'Disable sleep' : 'Enable sleep';
+    dom.btnSleepToggle.textContent = state.ac.sleepEnabled ? 'Disable sleep' : 'Enable sleep';
+
+    setActiveButtons([dom.modeCold, dom.modeWet, dom.modeWind], state.ac.mode);
+    setActiveButtons([dom.fanLow, dom.fanHigh], state.ac.fanSpeed);
+
+    if (Object.prototype.hasOwnProperty.call(data, 'setpoint_c')) {
+      const setpoint = Number(data.setpoint_c);
+      if (Number.isFinite(setpoint)) dom.setpointC.value = setpoint.toFixed(1);
+    }
+    if (Object.prototype.hasOwnProperty.call(data, 'neg_hysteresis')) {
+      const value = Number(data.neg_hysteresis);
+      if (Number.isFinite(value)) dom.thermoHysteresisNeg.value = value.toFixed(1);
+    }
+    if (Object.prototype.hasOwnProperty.call(data, 'pos_hysteresis')) {
+      const value = Number(data.pos_hysteresis);
+      if (Number.isFinite(value)) dom.thermoHysteresisPos.value = value.toFixed(1);
+    }
+    if (Object.prototype.hasOwnProperty.call(data, 'min_on_s')) dom.thermoMinOnS.value = parseInt(data.min_on_s, 10) || 0;
+    if (Object.prototype.hasOwnProperty.call(data, 'min_off_s')) dom.thermoMinOffS.value = parseInt(data.min_off_s, 10) || 0;
+    if (Object.prototype.hasOwnProperty.call(data, 'poll_interval_s')) dom.thermoPollS.value = parseInt(data.poll_interval_s, 10) || 15;
+    if (Object.prototype.hasOwnProperty.call(data, 'smooth_window')) dom.thermoSmoothWindow.value = parseInt(data.smooth_window, 10) || 1;
+    if (Object.prototype.hasOwnProperty.call(data, 'max_stale_s')) dom.thermoMaxStaleS.value = data.max_stale_s == null ? '' : parseInt(data.max_stale_s, 10);
+
+    let controlLocations = [];
+    try {
+      const raw = typeof data.control_locations === 'string'
+        ? JSON.parse(data.control_locations)
+        : data.control_locations;
+      if (Array.isArray(raw)) controlLocations = raw.map(value => String(value));
+    } catch {
+      controlLocations = [];
+    }
+    if (!controlLocations.length) {
+      const initialRoom = chooseInitialRoom();
+      controlLocations = initialRoom ? [initialRoom.name] : [];
+    }
+    state.controlLocations = controlLocations;
+    renderControlLocationButtons();
+
+    let sleepSchedule = data.sleep_schedule;
+    try {
+      if (typeof sleepSchedule === 'string') sleepSchedule = JSON.parse(sleepSchedule);
+    } catch {
+      sleepSchedule = null;
+    }
+    setSleepScheduleFields(
+      sleepSchedule,
+      data.sleep_start ? String(data.sleep_start).slice(0, 5) : '',
+      data.sleep_stop ? String(data.sleep_stop).slice(0, 5) : '',
     );
-    const rows = [];
-    for (let i = 0; i < responses.length; i += 1) {
-      const resp = responses[i];
-      if (!resp.ok){
-        console.warn('outside stats fetch failed:', resp.status, names[i]);
-        continue;
-      }
-      const data = await resp.json();
-      if (Array.isArray(data)) {
-        rows.push(...data);
-      }
-    }
-    setOutsideStats(rows);
-  }catch(err){
-    console.error('outside stats error:', err);
-    setOutsideStats(null);
-  }
-}
 
-function setOutsideStats(rows){
-  const tEl = document.getElementById('outsideTempRange');
-  const hEl = document.getElementById('outsideHumRange');
-  if (!tEl || !hEl) return;
+    renderOverview();
+  }
 
-  if (!Array.isArray(rows) || rows.length === 0){
-    tEl.textContent = 'Temp: —';
-    hEl.textContent = 'Hum: —';
-    return;
+  function emitSocketAction(payload) {
+    if (!window.socket) return;
+    window.socket.emit('ac_control', payload);
   }
-  let tMin = +Infinity, tMax = -Infinity;
-  let hMin = +Infinity, hMax = -Infinity;
-  for (const r of rows){
-    const t = Number(r && (r.temperature_c ?? r.temperature));
-    const h = Number(r && (r.humidity_pct ?? r.humidity));
-    if (Number.isFinite(t)){
-      if (t < tMin) tMin = t;
-      if (t > tMax) tMax = t;
-    }
-    if (Number.isFinite(h)){
-      if (h < hMin) hMin = h;
-      if (h > hMax) hMax = h;
+
+  async function fetchAcStatus() {
+    try {
+      const response = await fetch('/api/ac/status');
+      if (!response.ok) {
+        console.warn('AC status fetch failed:', response.status);
+        return;
+      }
+      const data = await response.json();
+      syncAcStatus(data);
+    } catch (error) {
+      console.error('❌ AC status fetch failed:', error);
     }
   }
-  const tOk = Number.isFinite(tMin) && Number.isFinite(tMax);
-  const hOk = Number.isFinite(hMin) && Number.isFinite(hMax);
-  tEl.textContent = tOk ? `Temp: ${tMin.toFixed(1)} - ${tMax.toFixed(1)}°C` : 'Temp: —';
-  hEl.textContent = hOk ? `Hum: ${Math.round(hMin)} - ${Math.round(hMax)}%` : 'Hum: —';
-}
+
+  async function fetchAvgRates() {
+    try {
+      const response = await fetch('/api/hvac/avg_rates_today');
+      if (!response.ok) {
+        console.warn('Average rates fetch failed:', response.status);
+        setAvgPills(null);
+        return;
+      }
+      const data = await response.json();
+      setAvgPills(data);
+    } catch (error) {
+      console.error('❌ Failed to fetch average rates:', error);
+      setAvgPills(null);
+    }
+  }
+
+  async function fetchOutsideToday() {
+    const names = OUTSIDE_LOCATION_NAMES.map(name => normalizeText(name)).filter(Boolean);
+    if (!names.length) {
+      dom.outsideTempRange.textContent = 'Temp —';
+      dom.outsideHumRange.textContent = 'Humidity —';
+      return;
+    }
+
+    try {
+      const responses = await Promise.all(
+        names.map(name => fetch(`/api/esp32_temphum?location=${encodeURIComponent(name)}`))
+      );
+      const rows = [];
+      for (const response of responses) {
+        if (!response.ok) continue;
+        const data = await response.json();
+        if (Array.isArray(data)) rows.push(...data);
+      }
+
+      const temps = rows.map(row => Number(row.temperature ?? row.temperature_c)).filter(Number.isFinite);
+      const hums = rows.map(row => Number(row.humidity ?? row.humidity_pct)).filter(Number.isFinite);
+
+      dom.outsideTempRange.textContent = temps.length
+        ? `Temp ${Math.min(...temps).toFixed(1)} to ${Math.max(...temps).toFixed(1)}°C`
+        : 'Temp —';
+      dom.outsideHumRange.textContent = hums.length
+        ? `Humidity ${Math.round(Math.min(...hums))} to ${Math.round(Math.max(...hums))}%`
+        : 'Humidity —';
+    } catch (error) {
+      console.error('❌ Failed to fetch outside stats:', error);
+      dom.outsideTempRange.textContent = 'Temp —';
+      dom.outsideHumRange.textContent = 'Humidity —';
+    }
+  }
+
+  function buildSleepSchedule() {
+    return DAYS.reduce((schedule, day) => {
+      const start = document.getElementById(`sleep_${day}_start`);
+      const stop = document.getElementById(`sleep_${day}_stop`);
+      schedule[day] = {
+        start: start && start.value ? start.value : null,
+        stop: stop && stop.value ? stop.value : null,
+      };
+      return schedule;
+    }, {});
+  }
+
+  function debounce(fn, waitMs) {
+    let timer = null;
+    return (...args) => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => fn(...args), waitMs);
+    };
+  }
+
+  function bindControls() {
+    dom.roomSearchInput.addEventListener('input', event => {
+      state.search = event.target.value || '';
+      syncSelectionToVisibleRooms();
+      renderRoomList();
+    });
+
+    [dom.filterIndoor, dom.filterOutdoor, dom.filterStale].forEach(button => {
+      button.addEventListener('click', () => {
+        state.filterMode = button.dataset.filter || 'indoor';
+        renderFilterState();
+        syncSelectionToVisibleRooms();
+        renderOutsideStrip();
+        renderRoomList();
+      });
+    });
+
+    [dom.sortName, dom.sortTemp, dom.sortHum, dom.sortUpdated].forEach(button => {
+      button.addEventListener('click', () => {
+        state.sortKey = button.dataset.key || 'name';
+        renderFilterState();
+        renderRoomList();
+      });
+    });
+
+    dom.sortDir.addEventListener('click', () => {
+      state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+      renderFilterState();
+      renderRoomList();
+    });
+
+    dom.btnAcPowerToggle.addEventListener('click', () => {
+      const action = state.ac.isOn ? 'power_off' : 'power_on';
+      emitSocketAction({ action });
+    });
+
+    dom.btnThermoToggle.addEventListener('click', () => {
+      const action = state.ac.thermostatEnabled ? 'thermostat_disable' : 'thermostat_enable';
+      emitSocketAction({ action });
+    });
+
+    dom.btnSleepToggleMain.addEventListener('click', () => {
+      emitSocketAction({ action: 'set_sleep_enabled', value: !state.ac.sleepEnabled });
+    });
+
+    dom.btnSleepToggle.addEventListener('click', () => {
+      emitSocketAction({ action: 'set_sleep_enabled', value: !state.ac.sleepEnabled });
+    });
+
+    dom.btnSetpointDec.addEventListener('click', () => {
+      const current = Number(dom.setpointC.value);
+      const base = Number.isFinite(current) ? current : 22;
+      const next = Math.max(5, Math.min(35, base - 0.5));
+      dom.setpointC.value = next.toFixed(1);
+      emitSocketAction({ action: 'set_setpoint', value: next });
+    });
+
+    dom.btnSetpointInc.addEventListener('click', () => {
+      const current = Number(dom.setpointC.value);
+      const base = Number.isFinite(current) ? current : 22;
+      const next = Math.max(5, Math.min(35, base + 0.5));
+      dom.setpointC.value = next.toFixed(1);
+      emitSocketAction({ action: 'set_setpoint', value: next });
+    });
+
+    dom.setpointC.addEventListener('change', () => {
+      const value = Number(dom.setpointC.value);
+      if (Number.isFinite(value)) emitSocketAction({ action: 'set_setpoint', value });
+    });
+
+    dom.modeCold.addEventListener('click', () => emitSocketAction({ action: 'set_mode', value: 'cold' }));
+    dom.modeWet.addEventListener('click', () => emitSocketAction({ action: 'set_mode', value: 'wet' }));
+    dom.modeWind.addEventListener('click', () => emitSocketAction({ action: 'set_mode', value: 'wind' }));
+    dom.fanLow.addEventListener('click', () => emitSocketAction({ action: 'set_fan_speed', value: 'low' }));
+    dom.fanHigh.addEventListener('click', () => emitSocketAction({ action: 'set_fan_speed', value: 'high' }));
+
+    const emitThermostatSplit = debounce(() => {
+      const pos = Number(dom.thermoHysteresisPos.value);
+      const neg = Number(dom.thermoHysteresisNeg.value);
+      if (Number.isFinite(pos) && Number.isFinite(neg)) {
+        emitSocketAction({ action: 'set_hysteresis_split', pos, neg });
+      }
+    }, 250);
+
+    dom.thermoHysteresisPos.addEventListener('input', emitThermostatSplit);
+    dom.thermoHysteresisNeg.addEventListener('input', emitThermostatSplit);
+    dom.thermoHysteresisPos.addEventListener('change', emitThermostatSplit);
+    dom.thermoHysteresisNeg.addEventListener('change', emitThermostatSplit);
+
+    const simpleNumberEmitters = [
+      [dom.thermoMinOnS, 'set_min_on_s', value => parseInt(value, 10)],
+      [dom.thermoMinOffS, 'set_min_off_s', value => parseInt(value, 10)],
+      [dom.thermoPollS, 'set_poll_interval_s', value => parseInt(value, 10)],
+      [dom.thermoSmoothWindow, 'set_smooth_window', value => parseInt(value, 10)],
+      [dom.thermoMaxStaleS, 'set_max_stale_s', value => (value === '' ? null : parseInt(value, 10))],
+    ];
+
+    simpleNumberEmitters.forEach(([input, action, parser]) => {
+      input.addEventListener('change', () => {
+        const value = parser(input.value);
+        if (value === null || Number.isFinite(value)) {
+          emitSocketAction({ action, value });
+        }
+      });
+    });
+
+    dom.btnSleepDisableFor.addEventListener('click', () => {
+      const minutes = parseInt(dom.sleepDisableMinutes.value, 10);
+      if (Number.isFinite(minutes) && minutes > 0) {
+        emitSocketAction({ action: 'disable_sleep_for', minutes });
+      }
+    });
+
+    const emitSleepSchedule = debounce(() => {
+      emitSocketAction({ action: 'set_sleep_schedule', schedule: buildSleepSchedule() });
+    }, 250);
+
+    DAYS.forEach(day => {
+      const start = document.getElementById(`sleep_${day}_start`);
+      const stop = document.getElementById(`sleep_${day}_stop`);
+      if (start) {
+        start.addEventListener('input', emitSleepSchedule);
+        start.addEventListener('change', emitSleepSchedule);
+      }
+      if (stop) {
+        stop.addEventListener('input', emitSleepSchedule);
+        stop.addEventListener('change', emitSleepSchedule);
+      }
+    });
+
+    dom.detailPrevDay.addEventListener('click', () => {
+      state.currentDate = addDays(state.currentDate, -1);
+      fetchRoomHistory();
+    });
+
+    dom.detailNextDay.addEventListener('click', () => {
+      state.currentDate = addDays(state.currentDate, 1);
+      fetchRoomHistory();
+    });
+
+    dom.detailClose.addEventListener('click', closeDetail);
+    dom.detailBackdrop.addEventListener('click', closeDetail);
+
+    window.addEventListener('resize', () => {
+      if (!isMobileLayout()) {
+        closeDetail();
+      } else {
+        updateDetailVisibility();
+      }
+    });
+  }
+
+  function initSocketHandlers() {
+    if (!window.socket) return;
+
+    window.socket.on('esp32_temphum', data => {
+      console.log('📡 esp32_temphum', data);
+      setRoom(data);
+      renderAll();
+      if (state.selectedKey === normalizeKey(data && (data.location || data.name))) {
+        renderDetailShell(getSelectedRoom());
+      }
+      if (isOutsideLocation(data && (data.location || data.name))) {
+        fetchOutsideToday();
+      }
+    });
+
+    window.socket.on('ac_status', data => {
+      console.log('📡 ac_status', data);
+      syncAcStatus(data);
+    });
+
+    window.socket.on('ac_state', data => {
+      console.log('📡 ac_state', data);
+      syncAcStatus(data);
+    });
+
+    window.socket.on('thermostat_status', data => {
+      console.log('📡 thermostat_status', data);
+      syncAcStatus(data);
+    });
+
+    window.socket.on('sleep_status', data => {
+      console.log('📡 sleep_status', data);
+      syncAcStatus(data);
+    });
+
+    window.socket.on('thermo_config', data => {
+      console.log('📡 thermo_config', data);
+      syncAcStatus(data);
+    });
+  }
+
+  function cacheDom() {
+    Object.assign(dom, {
+      overviewIndoorAvg: document.getElementById('overviewIndoorAvg'),
+      overviewWarmest: document.getElementById('overviewWarmest'),
+      overviewCoolest: document.getElementById('overviewCoolest'),
+      overviewStale: document.getElementById('overviewStale'),
+      overviewAcState: document.getElementById('overviewAcState'),
+      overviewOutside: document.getElementById('overviewOutside'),
+      roomCount: document.getElementById('roomCount'),
+      roomSearchInput: document.getElementById('roomSearchInput'),
+      filterIndoor: document.getElementById('filterIndoor'),
+      filterOutdoor: document.getElementById('filterOutdoor'),
+      filterStale: document.getElementById('filterStale'),
+      sortName: document.getElementById('sortName'),
+      sortTemp: document.getElementById('sortTemp'),
+      sortHum: document.getElementById('sortHum'),
+      sortUpdated: document.getElementById('sortUpdated'),
+      sortDir: document.getElementById('sortDir'),
+      roomList: document.getElementById('roomList'),
+      roomListEmpty: document.getElementById('roomListEmpty'),
+      outsideStripSection: document.getElementById('outsideStripSection'),
+      outsideStrip: document.getElementById('outsideStrip'),
+      outsideTempRange: document.getElementById('outsideTempRange'),
+      outsideHumRange: document.getElementById('outsideHumRange'),
+      detailPane: document.getElementById('detailPane'),
+      detailBackdrop: document.getElementById('detailBackdrop'),
+      detailClose: document.getElementById('detailClose'),
+      detailRoomName: document.getElementById('detailRoomName'),
+      detailRoomMeta: document.getElementById('detailRoomMeta'),
+      detailFreshness: document.getElementById('detailFreshness'),
+      detailCurrentTemp: document.getElementById('detailCurrentTemp'),
+      detailCurrentHum: document.getElementById('detailCurrentHum'),
+      detailDailyTempAvg: document.getElementById('detailDailyTempAvg'),
+      detailDailyTempMin: document.getElementById('detailDailyTempMin'),
+      detailDailyTempMax: document.getElementById('detailDailyTempMax'),
+      detailDailyHumAvg: document.getElementById('detailDailyHumAvg'),
+      detailDailyHumMin: document.getElementById('detailDailyHumMin'),
+      detailDailyHumMax: document.getElementById('detailDailyHumMax'),
+      detailPrevDay: document.getElementById('detailPrevDay'),
+      detailNextDay: document.getElementById('detailNextDay'),
+      detailDateLabel: document.getElementById('detailDateLabel'),
+      detailTempChartMeta: document.getElementById('detailTempChartMeta'),
+      detailHumChartMeta: document.getElementById('detailHumChartMeta'),
+      detailChartTemp: document.getElementById('detailChartTemp'),
+      detailChartHum: document.getElementById('detailChartHum'),
+      detailEmptyState: document.getElementById('detailEmptyState'),
+      acStatusPill: document.getElementById('acStatusPill'),
+      thermoStatusPill: document.getElementById('thermoStatusPill'),
+      sleepStatusPill: document.getElementById('sleepStatusPill'),
+      btnAcPowerToggle: document.getElementById('btnAcPowerToggle'),
+      btnSetpointDec: document.getElementById('btnSetpointDec'),
+      btnSetpointInc: document.getElementById('btnSetpointInc'),
+      setpointC: document.getElementById('setpointC'),
+      modeCold: document.getElementById('modeCold'),
+      modeWet: document.getElementById('modeWet'),
+      modeWind: document.getElementById('modeWind'),
+      fanLow: document.getElementById('fanLow'),
+      fanHigh: document.getElementById('fanHigh'),
+      btnThermoToggle: document.getElementById('btnThermoToggle'),
+      btnSleepToggleMain: document.getElementById('btnSleepToggle-main'),
+      avgCoolingPill: document.getElementById('avgCoolingPill'),
+      avgHeatingPill: document.getElementById('avgHeatingPill'),
+      ctrlLocContainer: document.getElementById('ctrlLocContainer'),
+      thermoHysteresisNeg: document.getElementById('thermoHysteresisNeg'),
+      thermoHysteresisPos: document.getElementById('thermoHysteresisPos'),
+      thermoMinOnS: document.getElementById('thermoMinOnS'),
+      thermoMinOffS: document.getElementById('thermoMinOffS'),
+      thermoPollS: document.getElementById('thermoPollS'),
+      thermoSmoothWindow: document.getElementById('thermoSmoothWindow'),
+      thermoMaxStaleS: document.getElementById('thermoMaxStaleS'),
+      btnSleepToggle: document.getElementById('btnSleepToggle'),
+      sleepDisableMinutes: document.getElementById('sleepDisableMinutes'),
+      btnSleepDisableFor: document.getElementById('btnSleepDisableFor'),
+    });
+  }
+
+  function bootstrapRooms() {
+    const locations = Array.isArray(BOOTSTRAP.locations) ? BOOTSTRAP.locations : [];
+    locations.forEach(setRoom);
+    const initial = chooseInitialRoom();
+    state.selectedKey = initial ? initial.key : null;
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    cacheDom();
+    bootstrapRooms();
+    renderAll();
+    bindControls();
+    initSocketHandlers();
+    fetchAcStatus();
+    fetchAvgRates();
+    fetchOutsideToday();
+    fetchRoomHistory();
+    setInterval(fetchAvgRates, 5 * 60 * 1000);
+    setInterval(fetchOutsideToday, 5 * 60 * 1000);
+  });
+})();

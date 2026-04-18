@@ -16,6 +16,17 @@ import tinytuya
 
 logger = logging.getLogger(__name__)
 
+"""
+.venv/bin/python scripts/fetch_tuya_local_key.py \
+  --api-region eu \
+  --api-key '<API_KEY>' \
+  --api-secret '<API_SECRET>' \
+  --api-device-id '<API_DEVICE_ID>' \
+  --write-env \
+  --verbose
+
+"""
+
 
 @dataclass
 class CloudLookupConfig:

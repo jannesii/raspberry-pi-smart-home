@@ -18,6 +18,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+TEMPERATURES_OUTSIDE_LOCATION_NAMES = ["Rengonharju", "Pelmaa"]
+
 
 @web_bp.route("/")
 @login_required
@@ -50,5 +52,15 @@ def get_3d_page():
 def get_temperatures_page():
     ctrl: Controller = get_ctrl()
     locations = ctrl.get_unique_locations()
+    bootstrap = {
+        "locations": locations,
+        "outside_location_names": TEMPERATURES_OUTSIDE_LOCATION_NAMES,
+        "language": "en",
+    }
     logger.info("Rendering temperatures page for %s", current_user.get_id())
-    return render_template("temperatures.html", locations=locations)
+    logger.debug(
+        "Temperatures bootstrap prepared with %d locations and outside aliases=%s",
+        len(locations),
+        TEMPERATURES_OUTSIDE_LOCATION_NAMES,
+    )
+    return render_template("temperatures.html", temperatures_bootstrap=bootstrap)

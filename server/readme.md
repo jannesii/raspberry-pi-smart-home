@@ -16,6 +16,7 @@ A comprehensive home automation server for Raspberry Pi (or any Linux host). Rea
 
 ### 🌡️ Temperature Monitoring
 - **Multi-room sensors** via ESP32 nodes (temperature + humidity)
+- **Responsive temperatures workspace** with inline room detail, daily charts, and AC automation controls
 - **BMP pressure sensor** support (barometric pressure, altitude)
 - **Historical charts** with date filtering
 - **Real-time updates** via WebSocket
