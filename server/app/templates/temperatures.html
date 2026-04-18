@@ -3,7 +3,7 @@
 {% block title %}Temperatures{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/temperatures.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/temperatures.css', v='20260418-1') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/flash.css') }}">
 {% endblock %}
 
@@ -34,11 +34,11 @@
     </article>
     <article class="overview-stat">
       <span class="overview-label">Warmest room</span>
-      <strong id="overviewWarmest" class="overview-value">—</strong>
+      <strong id="overviewWarmest" class="overview-value overview-value-dense">—</strong>
     </article>
     <article class="overview-stat">
       <span class="overview-label">Coolest room</span>
-      <strong id="overviewCoolest" class="overview-value">—</strong>
+      <strong id="overviewCoolest" class="overview-value overview-value-dense">—</strong>
     </article>
     <article class="overview-stat">
       <span class="overview-label">Stale sensors</span>
@@ -50,7 +50,7 @@
     </article>
     <article class="overview-stat">
       <span class="overview-label">Outside snapshot</span>
-      <strong id="overviewOutside" class="overview-value">—</strong>
+      <strong id="overviewOutside" class="overview-value overview-value-dense">—</strong>
     </article>
   </section>
 
@@ -164,8 +164,10 @@
           <div class="sleep-override-row">
             <button id="btnSleepToggle" class="action-button" type="button">Enable sleep</button>
             <div class="sleep-override-form">
-              <label class="control-label" for="sleepDisableMinutes">Disable for</label>
-              <input id="sleepDisableMinutes" type="number" step="5" min="1" value="30">
+              <label class="sleep-inline-field" for="sleepDisableMinutes">
+                <span class="control-label">Disable for</span>
+                <input id="sleepDisableMinutes" type="number" step="5" min="1" value="30">
+              </label>
               <button id="btnSleepDisableFor" class="action-button" type="button">Apply</button>
             </div>
           </div>
@@ -178,10 +180,14 @@
               <span>Copy one window to every day below</span>
             </div>
             <div class="sleep-day-inputs">
-              <label for="sleepAllStop">End</label>
-              <input id="sleepAllStop" type="time">
-              <label for="sleepAllStart">Start</label>
-              <input id="sleepAllStart" type="time">
+              <label class="sleep-time-field" for="sleepAllStop">
+                <span>End</span>
+                <input id="sleepAllStop" type="time">
+              </label>
+              <label class="sleep-time-field" for="sleepAllStart">
+                <span>Start</span>
+                <input id="sleepAllStart" type="time">
+              </label>
             </div>
             <button id="btnSleepApplyAll" class="action-button" type="button">Apply to all days</button>
           </div>
@@ -194,10 +200,14 @@
                 <span>Start / end window</span>
               </div>
               <div class="sleep-day-inputs">
-                <label for="sleep_{{ day_key }}_stop">End</label>
-                <input id="sleep_{{ day_key }}_stop" type="time">
-                <label for="sleep_{{ day_key }}_start">Start</label>
-                <input id="sleep_{{ day_key }}_start" type="time">
+                <label class="sleep-time-field" for="sleep_{{ day_key }}_stop">
+                  <span>End</span>
+                  <input id="sleep_{{ day_key }}_stop" type="time">
+                </label>
+                <label class="sleep-time-field" for="sleep_{{ day_key }}_start">
+                  <span>Start</span>
+                  <input id="sleep_{{ day_key }}_start" type="time">
+                </label>
               </div>
             </div>
             {% endfor %}
@@ -351,6 +361,6 @@
   window.TEMPERATURES_BOOTSTRAP = {{ temperatures_bootstrap | tojson }};
 </script>
 <script src="{{ url_for('static', filename='js/init_sio.js') }}"></script>
-<script src="{{ url_for('static', filename='js/temperatures.js') }}"></script>
+<script src="{{ url_for('static', filename='js/temperatures.js', v='20260418-1') }}"></script>
 <script src="{{ url_for('static', filename='js/flash.js') }}"></script>
 {% endblock %}

@@ -51,6 +51,13 @@
   margin-bottom: 18px;
 }
 
+.page-intro > *,
+.section-head > *,
+.detail-pane-header > *,
+.detail-meta-row > * {
+  min-width: 0;
+}
+
 .page-kicker,
 .section-kicker {
   margin: 0 0 8px;
@@ -131,6 +138,12 @@
 .overview-value {
   font-size: 1.2rem;
   line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.overview-value-dense {
+  font-size: 1.02rem;
+  line-height: 1.3;
 }
 
 .temperatures-layout {
@@ -173,14 +186,23 @@
 .status-pill-row,
 .rate-pills,
 .control-toggles,
-.toolbar-row,
 .sort-group,
-.outside-strip,
 .detail-meta-row,
-.detail-date-nav {
+.detail-date-nav,
+.outside-reading {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.control-toggles,
+.rate-pills {
+  margin-top: 14px;
+}
+
+.control-toggles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .status-pill,
@@ -422,21 +444,38 @@
 }
 
 .sleep-override-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
   gap: 12px;
 }
 
 .sleep-override-form {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px 12px;
+  align-items: end;
+}
+
+.sleep-override-row > .action-button,
+.sleep-override-form .action-button,
+.sleep-apply-all-row .action-button {
+  width: 100%;
 }
 
 .sleep-override-form input {
-  width: 88px;
+  width: 100%;
+}
+
+.sleep-inline-field,
+.sleep-time-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sleep-time-field span {
+  color: var(--temps-text-muted);
+  font-size: 0.78rem;
+  line-height: 1.2;
 }
 
 .schedule-note {
@@ -445,9 +484,7 @@
 }
 
 .sleep-apply-all-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
   gap: 12px;
   margin-top: 14px;
   padding: 12px;
@@ -463,9 +500,7 @@
 }
 
 .sleep-day-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
   gap: 12px;
   padding: 12px;
   border-radius: 18px;
@@ -479,11 +514,15 @@
   gap: 2px;
 }
 
+.sleep-day-copy strong {
+  font-size: 0.98rem;
+}
+
 .sleep-day-inputs {
   display: grid;
-  grid-template-columns: auto minmax(110px, 1fr) auto minmax(110px, 1fr);
-  gap: 8px;
-  align-items: center;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
 }
 
 .workspace-toolbar {
@@ -496,8 +535,10 @@
 }
 
 .toolbar-row {
-  justify-content: space-between;
-  align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
 }
 
 .chip-group {
@@ -508,6 +549,11 @@
 
 .sort-group {
   align-items: center;
+  min-width: 0;
+}
+
+.sort-group .segmented {
+  min-width: 0;
 }
 
 .sort-direction-button {
@@ -543,12 +589,12 @@
 }
 
 .outside-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 12px;
 }
 
 .outside-sensor {
-  flex: 1 1 180px;
-  min-width: 180px;
   padding: 14px;
   border-radius: 18px;
   display: grid;
@@ -560,15 +606,17 @@
   cursor: pointer;
   display: grid;
   gap: 8px;
+  width: 100%;
+  min-width: 0;
 }
 
 .outside-name {
   font-size: 1rem;
   font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .outside-reading {
-  display: flex;
   gap: 10px;
   align-items: baseline;
 }
@@ -590,6 +638,7 @@
   text-align: left;
   display: grid;
   gap: 12px;
+  min-width: 0;
 }
 
 .room-button.is-selected {
@@ -604,8 +653,21 @@
 }
 
 .room-button-header,
-.room-button-footer,
-.outside-reading,
+.room-button-footer {
+  display: grid;
+  gap: 12px;
+}
+
+.room-button-header {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.room-button-footer {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+}
+
 .current-stat {
   display: flex;
   justify-content: space-between;
@@ -615,10 +677,16 @@
 
 .room-name {
   display: flex;
-  align-items: center;
+  align-items: start;
   gap: 8px;
   font-size: 1.05rem;
   font-weight: 700;
+  min-width: 0;
+}
+
+.room-name span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .fresh-dot {
@@ -641,6 +709,8 @@
 .room-temp {
   font-size: 1.8rem;
   font-weight: 700;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .room-temp.temp-cold,
@@ -674,6 +744,7 @@
 .room-humidity {
   font-size: 1rem;
   color: var(--temps-text-soft);
+  white-space: nowrap;
 }
 
 .room-meta {
@@ -682,6 +753,14 @@
   gap: 12px;
   color: var(--temps-text-muted);
   font-size: 0.88rem;
+  min-width: 0;
+  row-gap: 6px;
+}
+
+.room-meta span,
+.detail-meta,
+#detailRoomName {
+  overflow-wrap: anywhere;
 }
 
 .empty-state,
@@ -711,6 +790,9 @@
 
 .detail-meta-row {
   align-items: center;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
 }
 
 .detail-current-grid,
@@ -747,12 +829,14 @@
 }
 
 .detail-date-nav {
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
 }
 
 .detail-date-nav strong {
   font-size: 1rem;
+  text-align: center;
 }
 
 .chart-stack {
@@ -845,11 +929,7 @@
 
   .page-intro,
   .section-head,
-  .toolbar-row,
-  .outside-strip-head,
-  .sleep-override-row,
-  .sleep-apply-all-row,
-  .sleep-day-row {
+  .outside-strip-head {
     flex-direction: column;
     align-items: start;
   }
@@ -904,14 +984,15 @@
     pointer-events: auto;
   }
 
-  .sleep-day-inputs {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    width: 100%;
+  .toolbar-row,
+  .sleep-override-form,
+  .control-toggles,
+  .detail-date-nav {
+    grid-template-columns: 1fr;
   }
 
-  .sleep-day-inputs label {
-    font-size: 0.78rem;
-    color: var(--temps-text-muted);
+  .detail-date-nav strong {
+    text-align: left;
   }
 }
 
@@ -930,6 +1011,18 @@
   .surface-panel,
   .overview-stat {
     border-radius: 20px;
+  }
+
+  .room-button-header,
+  .room-button-footer,
+  .detail-meta-row,
+  .sleep-day-inputs {
+    grid-template-columns: 1fr;
+  }
+
+  .room-temp,
+  .room-humidity {
+    text-align: left;
   }
 
   .chart-canvas-wrap {

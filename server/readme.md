@@ -158,6 +158,7 @@ Browse to http://127.0.0.1:5555 and log in.
 - Car heater cabin temperature now renders with two decimals, and the main page version-busts `car_heater.js` so timestamp/format fixes are not hidden behind browser cache.
 - Car heater settings helpers no longer override the main page formatter globals, so the live card keeps second-precision timestamps and two-decimal cabin temperatures while websocket-originated live status shows `source=WS`.
 - Car heater settings and logs views now use explicit Finnish locale time formatting (`fi-FI`) instead of browser-default locale formatting.
+- Temperatures workspace now keeps sleep scheduling controls stacked for the narrow side panel, and long room/detail labels wrap cleanly instead of overflowing cards.
 
 ---
 
