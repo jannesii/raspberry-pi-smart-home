@@ -151,7 +151,17 @@
   function setRoom(entry) {
     const room = normalizeRoom(entry);
     if (!room.key) return;
-    state.rooms.set(room.key, room);
+    const current = state.rooms.get(room.key);
+    const merged = {
+      ...current,
+      ...room,
+      temp: room.temp ?? current?.temp ?? null,
+      hum: room.hum ?? current?.hum ?? null,
+      // Live esp32_temphum events do not include timestamp. Treat the event
+      // arrival as the freshest known reading so the UI does not regress to stale.
+      ts: room.ts ?? new Date().toISOString(),
+    };
+    state.rooms.set(room.key, merged);
   }
 
   function getRooms() {
