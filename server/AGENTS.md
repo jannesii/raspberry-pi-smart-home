@@ -573,6 +573,8 @@ When changing user-visible JS or CSS in production, bump the versioned asset URL
 
 **Temperatures boot**: `app/templates/temperatures.html` boots the page with `window.TEMPERATURES_BOOTSTRAP` (`locations`, `outside_location_names`, `language`). Keep the temperatures workspace inline; do not reattach `settings_modal.html` or the shared chart modal to this page.
 
+**Mobile overlays**: Do not place fixed-position mobile sheets inside ancestors with persistent `transform` styles, including reveal animations that use `animation-fill-mode: both`. Mobile browsers can anchor the sheet to the transformed layout instead of the viewport.
+
 ### 6.8 API Security
 
 **CORS**: Cross-origin access for `/api/*` is opt-in via `API_ALLOWED_ORIGINS`. Do not reintroduce wildcard CORS defaults; same-origin browser traffic does not need CORS headers.

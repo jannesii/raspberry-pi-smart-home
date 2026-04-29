@@ -3,7 +3,7 @@
 {% block title %}Temperatures{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/temperatures.css', v='20260418-1') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/temperatures.css', v='20260429-1') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/flash.css') }}">
 {% endblock %}
 
@@ -361,6 +361,6 @@
   window.TEMPERATURES_BOOTSTRAP = {{ temperatures_bootstrap | tojson }};
 </script>
 <script src="{{ url_for('static', filename='js/init_sio.js') }}"></script>
-<script src="{{ url_for('static', filename='js/temperatures.js', v='20260418-1') }}"></script>
+<script src="{{ url_for('static', filename='js/temperatures.js', v='20260429-1') }}"></script>
 <script src="{{ url_for('static', filename='js/flash.js') }}"></script>
 {% endblock %}
