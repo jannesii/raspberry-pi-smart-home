@@ -4,6 +4,19 @@
 
 #include "config.h"
 
+#ifndef WS_PATH
+#define WS_PATH "/ws"
+#endif
+#ifndef WS_PORT
+#define WS_PORT 443
+#endif
+#ifndef WS_USE_TLS
+#define WS_USE_TLS 1
+#endif
+#ifndef WS_API_KEY
+#define WS_API_KEY API_KEY
+#endif
+
 namespace
 {
   constexpr const char kPrefsNamespace[] = "appcfg";
@@ -15,10 +28,8 @@ namespace
   constexpr const char kKeyServerHost[] = "server_host";
   constexpr const char kKeyServerPath[] = "server_path";
   constexpr const char kKeyApiKey[] = "api_key";
-  constexpr const char kKeyHttpApiKey[] = "http_api_key";
   constexpr const char kKeyServerPort[] = "server_port";
   constexpr const char kKeyUseTls[] = "use_tls";
-  constexpr const char kKeyHttpsInsecure[] = "https_insecure";
   constexpr const char kKeyPostInterval[] = "post_interval";
   constexpr const char kKeyAlignMinute[] = "align_minute";
   constexpr const char kKeyWifiStaticIpEnabled[] = "wifi_st_en";
@@ -70,24 +81,14 @@ void AppConfig::loadDefaultsLocked()
 #else
   mdnsHostname_ = "";
 #endif
-  serverHost_ = HTTP_SERVER_HOST;
-  serverPath_ = HTTP_SERVER_PATH;
-  apiKey_ = API_KEY;
-#ifdef HTTP_API_KEY
-  httpApiKey_ = HTTP_API_KEY;
-#else
-  httpApiKey_ = apiKey_;
-#endif
-  serverPort_ = HTTP_SERVER_PORT;
-#ifdef HTTP_USE_TLS
-  useTls_ = (HTTP_USE_TLS != 0);
+  serverHost_ = WS_HOST;
+  serverPath_ = WS_PATH;
+  apiKey_ = WS_API_KEY;
+  serverPort_ = WS_PORT;
+#ifdef WS_USE_TLS
+  useTls_ = (WS_USE_TLS != 0);
 #else
   useTls_ = true;
-#endif
-#ifdef HTTPS_INSECURE
-  httpsInsecure_ = (HTTPS_INSECURE != 0);
-#else
-  httpsInsecure_ = false;
 #endif
 #ifdef POST_INTERVAL_SECONDS
   postIntervalSeconds_ = POST_INTERVAL_SECONDS;
@@ -205,13 +206,6 @@ String AppConfig::getApiKey()
   xSemaphoreGive(mutex_);
   return v;
 }
-String AppConfig::getHttpApiKey()
-{
-  xSemaphoreTake(mutex_, portMAX_DELAY);
-  String v = httpApiKey_;
-  xSemaphoreGive(mutex_);
-  return v;
-}
 uint16_t AppConfig::getServerPort()
 {
   xSemaphoreTake(mutex_, portMAX_DELAY);
@@ -226,12 +220,30 @@ bool AppConfig::getUseTls()
   xSemaphoreGive(mutex_);
   return v;
 }
-bool AppConfig::getHttpsInsecure()
+
+String AppConfig::getWsHost()
 {
-  xSemaphoreTake(mutex_, portMAX_DELAY);
-  auto v = httpsInsecure_;
-  xSemaphoreGive(mutex_);
-  return v;
+  return getServerHost();
+}
+
+String AppConfig::getWsPath()
+{
+  return getServerPath();
+}
+
+String AppConfig::getWsApiKey()
+{
+  return getApiKey();
+}
+
+uint16_t AppConfig::getWsPort()
+{
+  return getServerPort();
+}
+
+bool AppConfig::getWsUseTls()
+{
+  return getUseTls();
 }
 uint32_t AppConfig::getPostIntervalSeconds()
 {
@@ -346,12 +358,6 @@ void AppConfig::setApiKey(const String &v)
   apiKey_ = v;
   xSemaphoreGive(mutex_);
 }
-void AppConfig::setHttpApiKey(const String &v)
-{
-  xSemaphoreTake(mutex_, portMAX_DELAY);
-  httpApiKey_ = v;
-  xSemaphoreGive(mutex_);
-}
 void AppConfig::setServerPort(uint16_t p)
 {
   xSemaphoreTake(mutex_, portMAX_DELAY);
@@ -362,12 +368,6 @@ void AppConfig::setUseTls(bool b)
 {
   xSemaphoreTake(mutex_, portMAX_DELAY);
   useTls_ = b;
-  xSemaphoreGive(mutex_);
-}
-void AppConfig::setHttpsInsecure(bool b)
-{
-  xSemaphoreTake(mutex_, portMAX_DELAY);
-  httpsInsecure_ = b;
   xSemaphoreGive(mutex_);
 }
 void AppConfig::setPostIntervalSeconds(uint32_t s)
@@ -442,7 +442,6 @@ bool AppConfig::loadFromNvsLocked()
   if (!prefsReady_)
     return false;
   bool loaded = false;
-  bool hadHttpKey = false;
 
   if (prefs_.isKey(kKeyDeviceLocation))
   {
@@ -484,12 +483,6 @@ bool AppConfig::loadFromNvsLocked()
     apiKey_ = prefs_.getString(kKeyApiKey, apiKey_);
     loaded = true;
   }
-  if (prefs_.isKey(kKeyHttpApiKey))
-  {
-    httpApiKey_ = prefs_.getString(kKeyHttpApiKey, httpApiKey_);
-    loaded = true;
-    hadHttpKey = true;
-  }
   if (prefs_.isKey(kKeyServerPort))
   {
     serverPort_ = prefs_.getUShort(kKeyServerPort, serverPort_);
@@ -498,11 +491,6 @@ bool AppConfig::loadFromNvsLocked()
   if (prefs_.isKey(kKeyUseTls))
   {
     useTls_ = prefs_.getBool(kKeyUseTls, useTls_);
-    loaded = true;
-  }
-  if (prefs_.isKey(kKeyHttpsInsecure))
-  {
-    httpsInsecure_ = prefs_.getBool(kKeyHttpsInsecure, httpsInsecure_);
     loaded = true;
   }
   if (prefs_.isKey(kKeyPostInterval))
@@ -558,14 +546,6 @@ bool AppConfig::loadFromNvsLocked()
     loaded = true;
   }
 
-  if (!hadHttpKey)
-  {
-#ifndef HTTP_API_KEY
-    // Backward compatibility: when no dedicated HTTP key is configured, mirror the upstream API key.
-    httpApiKey_ = apiKey_;
-#endif
-  }
-
   return loaded;
 }
 
@@ -599,10 +579,8 @@ bool AppConfig::saveToNvs()
   String serverHost;
   String serverPath;
   String apiKey;
-  String httpApiKey;
   uint16_t serverPort;
   bool useTls;
-  bool httpsInsecure;
   uint32_t postInterval;
   bool alignMinute;
   bool wifiStaticEnabled;
@@ -622,10 +600,8 @@ bool AppConfig::saveToNvs()
   serverHost = serverHost_;
   serverPath = serverPath_;
   apiKey = apiKey_;
-  httpApiKey = httpApiKey_;
   serverPort = serverPort_;
   useTls = useTls_;
-  httpsInsecure = httpsInsecure_;
   postInterval = postIntervalSeconds_;
   if (postInterval == 0)
     postInterval = 1;
@@ -647,10 +623,8 @@ bool AppConfig::saveToNvs()
   prefs_.putString(kKeyServerHost, serverHost);
   prefs_.putString(kKeyServerPath, serverPath);
   prefs_.putString(kKeyApiKey, apiKey);
-  prefs_.putString(kKeyHttpApiKey, httpApiKey);
   prefs_.putUShort(kKeyServerPort, serverPort);
   prefs_.putBool(kKeyUseTls, useTls);
-  prefs_.putBool(kKeyHttpsInsecure, httpsInsecure);
   prefs_.putUInt(kKeyPostInterval, postInterval);
   prefs_.putBool(kKeyAlignMinute, alignMinute);
   prefs_.putBool(kKeyWifiStaticIpEnabled, wifiStaticEnabled);
@@ -676,10 +650,8 @@ bool AppConfig::hasPersistedConfig()
          prefs_.isKey(kKeyServerHost) ||
          prefs_.isKey(kKeyServerPath) ||
          prefs_.isKey(kKeyApiKey) ||
-         prefs_.isKey(kKeyHttpApiKey) ||
          prefs_.isKey(kKeyServerPort) ||
          prefs_.isKey(kKeyUseTls) ||
-         prefs_.isKey(kKeyHttpsInsecure) ||
          prefs_.isKey(kKeyPostInterval) ||
          prefs_.isKey(kKeyAlignMinute) ||
          prefs_.isKey(kKeyWifiStaticIpEnabled) ||

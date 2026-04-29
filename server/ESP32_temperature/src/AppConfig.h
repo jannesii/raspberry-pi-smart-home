@@ -25,10 +25,13 @@ public:
   String getServerHost();
   String getServerPath();
   String getApiKey();
-  String getHttpApiKey();
   uint16_t getServerPort();
   bool getUseTls();
-  bool getHttpsInsecure();
+  String getWsHost();
+  String getWsPath();
+  String getWsApiKey();
+  uint16_t getWsPort();
+  bool getWsUseTls();
   uint32_t getPostIntervalSeconds();
   bool getAlignPostsToMinute();
   bool getWifiStaticIpEnabled();
@@ -48,10 +51,8 @@ public:
   void setServerHost(const String &v);
   void setServerPath(const String &v);
   void setApiKey(const String &v);
-  void setHttpApiKey(const String &v);
   void setServerPort(uint16_t p);
   void setUseTls(bool b);
-  void setHttpsInsecure(bool b);
   void setPostIntervalSeconds(uint32_t s);
   void setAlignPostsToMinute(bool b);
   void setWifiStaticIpEnabled(bool b);
@@ -72,13 +73,11 @@ public:
     doc["wifi_password"] = wifiPassword_;
     doc["wifi_hostname"] = wifiHostname_;
     doc["mdns_hostname"] = mdnsHostname_;
-    doc["server_host"] = serverHost_;
-    doc["server_path"] = serverPath_;
-    doc["server_port"] = serverPort_;
-    doc["use_tls"] = useTls_;
-    doc["https_insecure"] = httpsInsecure_;
-    doc["api_key"] = apiKey_;
-    doc["http_api_key"] = httpApiKey_;
+    doc["ws_host"] = serverHost_;
+    doc["ws_path"] = serverPath_;
+    doc["ws_port"] = serverPort_;
+    doc["ws_use_tls"] = useTls_;
+    doc["ws_api_key"] = apiKey_;
     doc["post_interval_sec"] = postIntervalSeconds_;
     doc["align_to_minute"] = alignPostsToMinute_;
     doc["wifi_static_ip_enabled"] = wifiStaticIpEnabled_;
@@ -118,27 +117,21 @@ public:
     if (doc["mdns_hostname"].template is<const char *>())
       mdnsHostname_ = doc["mdns_hostname"].template as<String>();
 
-    if (doc["server_host"].template is<const char *>())
-      serverHost_ = doc["server_host"].template as<String>();
+    if (doc["ws_host"].template is<const char *>())
+      serverHost_ = doc["ws_host"].template as<String>();
 
-    if (doc["server_path"].template is<const char *>())
-      serverPath_ = doc["server_path"].template as<String>();
+    if (doc["ws_path"].template is<const char *>())
+      serverPath_ = doc["ws_path"].template as<String>();
 
     // Numbers / bools
-    if (doc["server_port"].template is<uint16_t>())
-      serverPort_ = doc["server_port"].template as<uint16_t>();
+    if (doc["ws_port"].template is<uint16_t>())
+      serverPort_ = doc["ws_port"].template as<uint16_t>();
 
-    if (doc["use_tls"].template is<bool>())
-      useTls_ = doc["use_tls"].template as<bool>();
+    if (doc["ws_use_tls"].template is<bool>())
+      useTls_ = doc["ws_use_tls"].template as<bool>();
 
-    if (doc["https_insecure"].template is<bool>())
-      httpsInsecure_ = doc["https_insecure"].template as<bool>();
-
-    if (doc["api_key"].template is<const char *>())
-      apiKey_ = doc["api_key"].template as<String>();
-
-    if (doc["http_api_key"].template is<const char *>())
-      httpApiKey_ = doc["http_api_key"].template as<String>();
+    if (doc["ws_api_key"].template is<const char *>())
+      apiKey_ = doc["ws_api_key"].template as<String>();
 
     if (!doc["post_interval_sec"].isNull())
     {
@@ -231,10 +224,8 @@ private:
   String serverHost_;
   String serverPath_;
   String apiKey_;
-  String httpApiKey_;
   uint16_t serverPort_;
   bool useTls_;
-  bool httpsInsecure_;
   uint32_t postIntervalSeconds_;
   bool alignPostsToMinute_;
   bool wifiStaticIpEnabled_;

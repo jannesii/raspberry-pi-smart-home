@@ -2,11 +2,11 @@
 
 #include <Arduino.h>
 
-class Poster;
+class WebSocketTask;
 
-// Starts the sensor reading + posting task.
-// Pass a pointer to a global/static Poster instance.
-void startSensorTask(Poster* poster);
+// Starts the sensor reading task.
+// Pass a pointer to a global/static WebSocketTask instance.
+void startSensorTask(WebSocketTask *webSocketTask);
 
 // Expose handle/control for server
 extern "C" {

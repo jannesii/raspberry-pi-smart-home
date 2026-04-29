@@ -1,251 +1,182 @@
-ESP32 Temperature & Humidity Poster (FreeRTOS + HTTP Control)
-=============================================================
+ESP32 Temperature & Humidity WebSocket Sensor
+============================================
 
-This project runs on ESP32 (Arduino framework) and periodically reads a DHT sensor, then posts measurements as JSON to an upstream HTTP/HTTPS endpoint. It uses FreeRTOS tasks for concurrency and exposes a lightweight HTTP API for runtime configuration and task control.
-
+This firmware runs on ESP32-C3 with the Arduino framework. It reads a DHT
+temperature/humidity sensor on a fixed cadence and sends readings to the shared
+`esp32_ws` WebSocket service. The device no longer exposes a local HTTP API and
+does not POST readings over HTTP.
 
 Features
 --------
 
-- DHT sensor readouts (temperature, humidity) using Adafruit DHT + Unified Sensor
-- Configurable posting cadence (interval + optional epoch alignment) with deterministic `vTaskDelayUntil` scheduling and NTP-aware fallback
-- Bearer-token protection for every embedded HTTP endpoint with a dedicated HTTP API key (defaults to the upstream key)
-- Prometheus-style `/metrics` endpoint with posting/sensor counters and system gauges
-- Structured logging with adjustable verbosity, ring buffer retention, `/logs` JSON endpoint, and serial mirroring
-- TLS (HTTPS) posting with configurable Root CA or insecure mode for development
-- Runtime configuration via HTTP API (Wi‑Fi credentials, upstream host/path/port, TLS flags, API keys, device location)
-- Wi‑Fi manager with exponential reconnect backoff, optional static IP configuration, and mDNS hostname advertisement
-- Task watchdog with per-task heartbeats that restart stalled Sensor/HTTP tasks and log the reset reason at boot
-- Task status endpoint and task control (suspend, resume, restart)
-- NVS-backed configuration persistence with HTTP save/discard endpoints and optional factory-reset button
-
+- DHT temperature and humidity readings using Adafruit DHT + Unified Sensor
+- WebSocket-only upstream transport through `esp32_ws`
+- API-key authentication on the WebSocket handshake
+- Server-routed RPC commands for status, reads, config, logs, metrics, and task control
+- Runtime configuration backed by NVS persistence
+- Structured log ring buffer with serial mirroring
+- Wi-Fi reconnect manager with optional static IP and mDNS hostname
+- Task watchdog for the sensor and WebSocket tasks
 
 Architecture
 ------------
 
-- `src/AppConfig.*` — Thread-safe, runtime configuration store
-  - Loads defaults from `include/config.h` macros at boot
-  - Exposes getters/setters with a mutex and JSON (de)serialization helpers
-- `src/Poster.*` — Upstream HTTP(S) client
-  - Builds JSON body and posts to configured host/path/port
-  - Respects `use_tls` and `https_insecure`; uses `kHttpsRootCA` when validating
-- `src/StructuredLog.*` — Lightweight structured logger
-  - Maintains a fixed-size ring buffer of recent log entries with millisecond timestamps
-  - Streams log lines to the serial console and exposes level control + retrieval helpers
-- `src/SensorTask.*` — FreeRTOS task for reading DHT and posting
-  - Immediate read on boot, then cadence defined by `post_interval_sec` and `align_to_minute`
-  - Uses wall-clock alignment when time is available; otherwise falls back to interval-based scheduling
-  - Gentle recovery on DHT failures (re-init sensor) and posts error JSON
-- `src/HttpServerTask.*` - HTTP server (port 80) exposing JSON endpoints
-  - `/status` (GET): runtime status and task metrics
-  - `/read` (GET): take an immediate DHT reading and return it
-  - `/config` (GET/POST): view/update configuration
-  - `/task` (POST): control tasks (suspend/resume/restart)
-- `src/main.cpp` — Minimal bootstrap
-  - Serial, Wi‑Fi manager init (exponential reconnect, optional static IP/mDNS), NTP setup
-  - Logs the last reset reason and starts the task watchdog monitor
-  - Starts HTTP server and sensor tasks
+- `src/WebSocketTask.*` - WebSocket connection, auth, telemetry, and RPC handling
+- `src/SensorTask.*` - DHT cadence and sensor read lifecycle
+- `src/AppConfig.*` - thread-safe configuration with JSON serialization and NVS
+- `src/Metrics.*` - counters/gauges included in telemetry and RPC responses
+- `src/StructuredLog.*` - ring-buffer logs returned through RPC
+- `src/main.cpp` - boot, Wi-Fi, NTP, watchdog, WebSocket task, and sensor task startup
 
+The legacy `Poster.*` and `HttpServerTask.*` sources have been removed; the
+active firmware has one server transport path.
 
 Configuration
 -------------
 
-Default configuration is defined in `include/config.h`. A template is provided at `include/config.h.example` — copy it to `include/config.h` and fill your values. The file `include/config.h` is intentionally `.gitignore`d to avoid committing secrets. At boot, `AppConfig` loads these defaults and then overlays any values previously saved in NVS (non-volatile storage).
+Copy `include/config.h.example` to `include/config.h` and set secrets locally.
+Do not commit `include/config.h`.
 
-Runtime changes made through the HTTP API remain in RAM until persisted. To keep changes across reboots:
+Key macros:
 
-- `POST /config/save` — write the current in-memory configuration to NVS.
-- `POST /config/discard` — throw away unsaved edits and reload the last persisted configuration (or defaults if nothing has been saved yet).
-- `POST /config/factory_reset` — clear NVS and reload compile-time defaults; the response includes the fresh defaults and recommends a reboot.
+- `DEVICE_LOCATION` - logical room/location name used by the server
+- `DHTPIN`, `DHTTYPE` - DHT sensor wiring and model
+- `WIFI_SSID`, `WIFI_PASSWORD`, `WIFI_HOSTNAME`, `MDNS_HOSTNAME`
+- `WIFI_STATIC_IP_ENABLED` plus static IP/gateway/netmask/DNS fields when needed
+- `WS_HOST`, `WS_PORT`, `WS_PATH`, `WS_USE_TLS` - WebSocket upstream
+- `WS_API_KEY` - device authentication key for `esp32_ws`
+- `POST_INTERVAL_SECONDS`, `ALIGN_POSTS_TO_MINUTE` - measurement cadence
+- `DEFAULT_LOG_LEVEL` - optional boot log level
+- `FACTORY_RESET_PIN` options - optional hardware NVS reset on boot
 
-`GET /config` now includes a `persisted` flag so clients can tell whether values originate from NVS or only from compile-time defaults. Note that pressing the module’s reset/boot buttons only restarts the MCU—it does **not** erase NVS. Use the HTTP factory-reset endpoint (or wire the optional hardware pin) whenever you need to clear stored credentials. You can opt into the hardware-assisted flow by defining `FACTORY_RESET_PIN` (and optional level/mode/hold macros) in `config.h`; holding that pin in the active state for `FACTORY_RESET_HOLD_MS` during boot clears NVS and restarts the device.
+Runtime config changes arrive as WebSocket RPC `update_config` commands. Save
+them across reboot with `save_config`, discard them with `discard_config`, or
+clear NVS with `factory_reset`.
 
-Key macros (examples):
+WebSocket Protocol
+------------------
 
-- Device metadata
-  - `DEVICE_LOCATION` — Logical location string (e.g., "kitchen")
-- DHT sensor
-  - `DHTPIN` — GPIO pin for the DHT sensor
-  - `DHTTYPE` — DHT model (e.g., `DHT22`)
-- Wi‑Fi
-  - `WIFI_SSID`, `WIFI_PASSWORD`
-  - `WIFI_HOSTNAME` — station/DHCP hostname advertised to the network (defaults to `DEVICE_LOCATION`)
-  - `MDNS_HOSTNAME` — override for `.local` mDNS name (leave blank to reuse `WIFI_HOSTNAME`)
-  - `WIFI_STATIC_IP_ENABLED` (0/1) plus `WIFI_STATIC_IP`, `WIFI_STATIC_GATEWAY`, `WIFI_STATIC_NETMASK`, `WIFI_STATIC_DNS1`, `WIFI_STATIC_DNS2` for optional static network configuration
-- Upstream server
-  - `HTTP_SERVER_HOST` — Hostname only (no scheme)
-  - `HTTP_SERVER_PORT` — Usually 80 (HTTP) or 443 (HTTPS)
-  - `HTTP_SERVER_PATH` — API path (e.g., "/api/esp32_temphum")
-  - `HTTP_USE_TLS` — 1 to use TLS; 0 for plain HTTP
-  - `HTTPS_INSECURE` — 1 to disable certificate validation (development only)
-  - `kHttpsRootCA` — PEM-encoded Root CA used for TLS validation when not insecure
-- API keys
-  - `API_KEY` — Sent as `Authorization: Bearer <API_KEY>` when posting upstream
-  - `HTTP_API_KEY` — Optional override for the embedded HTTP API; defaults to `API_KEY` if unset
-- Posting cadence
-  - `POST_INTERVAL_SECONDS` — Interval between automatic posts (seconds)
-  - `ALIGN_POSTS_TO_MINUTE` — 1 to align to epoch boundaries (cron-like), 0 for relative timing
-- Logging
-  - `DEFAULT_LOG_LEVEL` — Optional compile-time default for the structured logger (`"error"`, `"warn"`, `"info"`, or `"debug"`). Runtime changes are exposed via the `log_level` field in `/config`.
+The first message from the device authenticates it:
 
-Runtime updates via the HTTP API override the in-memory config until reboot. Persist them with `POST /config/save` if you need them to survive power cycles.
+```json
+{
+  "auth": "<WS_API_KEY>",
+  "device_id": "temperature_kitchen",
+  "device_type": "temperature",
+  "location": "Keittiö",
+  "firmware_version": "temperature-ws-v1"
+}
+```
 
+Successful authentication response:
 
-HTTP API
---------
+```json
+{
+  "status": "authenticated",
+  "device_id": "temperature_kitchen",
+  "device_type": "temperature"
+}
+```
 
-All endpoints are on port 80 (plain HTTP) and return JSON unless otherwise stated.
+Reading telemetry:
 
-> **Authentication:** every request must include `Authorization: Bearer <HTTP_API_KEY>`. A missing or incorrect key results in `401 Unauthorized`.
+```json
+{
+  "type": "temperature_reading",
+  "device_type": "temperature",
+  "device_id": "temperature_kitchen",
+  "location": "Keittiö",
+  "temperature_c": 22.34,
+  "humidity_pct": 45.67,
+  "timestamp_ms": 123456,
+  "metrics": {},
+  "ws_stats": {}
+}
+```
 
-- GET `/status`
-  - Returns Wi-Fi state, IP, heap usage, uptime, and task list with state/stack watermark/priority.
+Sensor-error telemetry:
 
-- GET `/read`
-  - Takes a fresh DHT reading and returns JSON like:
-    { "ok": true, "location": "...", "temperature_c": 22.34, "humidity_pct": 45.67 }
-  - On failure:
-    { "ok": false, "location": "...", "error": "DHT read failed: temp" }
+```json
+{
+  "type": "temperature_error",
+  "device_type": "temperature",
+  "device_id": "temperature_kitchen",
+  "location": "Keittiö",
+  "error": "DHT read failed: temp",
+  "timestamp_ms": 123456
+}
+```
 
-- GET `/config`
-  - Returns current runtime configuration plus `persisted` flag indicating whether NVS has data. Includes the active `log_level`. Sensitive fields (Wi‑Fi password, API keys) are included for full visibility — protect network access accordingly.
+RPC request from the server:
 
-- GET `/metrics`
-  - Exposes Prometheus text-format metrics (`text/plain; version=0.0.4`) covering sensor read success/failure counts, posting counters, Wi‑Fi link health (RSSI, connection attempts, backoff, session duration), last readings, and heap usage/uptime.
-- GET `/logs`
-  - Returns the most recent structured log entries as JSON along with the current log level. Useful for remote debugging without serial access.
-- POST `/logs`
-  - Currently limited to clearing the in-memory log buffer. Send `{ "action": "clear" }` to wipe recent entries. Change the log level through `/config` instead.
+```json
+{
+  "type": "rpc_request",
+  "request_id": "req-123",
+  "action": "read_now",
+  "params": {}
+}
+```
 
-- POST `/config`
-  - Updates any subset of configuration. Body: JSON object. Example:
-    {
-      "device_location": "kitchen",
-      "server_host": "example.com",
-      "server_port": 443,
-      "server_path": "/api/esp32_temphum",
-      "use_tls": true,
-      "https_insecure": false,
-      "api_key": "sk_abc",
-      "http_api_key": "sk_local",
-      "wifi_ssid": "MyWiFi",
-      "wifi_password": "secret",
-      "wifi_hostname": "kitchen-sensor",
-      "mdns_hostname": "kitchen-sensor",
-      "wifi_static_ip_enabled": true,
-      "wifi_static_ip": "192.168.10.123",
-      "wifi_static_gateway": "192.168.10.1",
-      "wifi_static_netmask": "255.255.255.0",
-      "wifi_static_dns1": "1.1.1.1",
-      "post_interval_sec": 300,
-      "align_to_minute": true
-    }
-  - Wi‑Fi changes (SSID/password, hostname, mDNS name, or static IP parameters) trigger the Wi‑Fi manager to reapply settings with exponential backoff.
+RPC response from the device:
 
-- POST `/task`
-  - Controls tasks. Body: { "name": "SensorPostTask" | "HttpServerTask", "action": "suspend" | "resume" | "restart" }
-  - Example:
-    { "name": "SensorPostTask", "action": "restart" }
-  - Warning: Suspending `HttpServerTask` makes the API unreachable until it is resumed by other means.
+```json
+{
+  "type": "rpc_response",
+  "request_id": "req-123",
+  "device_type": "temperature",
+  "device_id": "temperature_kitchen",
+  "ok": true,
+  "data": {}
+}
+```
 
-- POST `/config/save`
-  - Persists the current configuration to NVS. Response includes the active configuration snapshot.
+Supported RPC actions:
 
-- POST `/config/discard`
-  - Restores the last saved configuration (or compile-time defaults if nothing has been saved). Wi-Fi credentials reload immediately if they change.
+- `get_status`
+- `read_now`
+- `get_config`
+- `update_config`
+- `save_config`
+- `discard_config`
+- `factory_reset`
+- `task_control`
+- `get_metrics`
+- `get_logs`
+- `clear_logs`
+- `restart_esp`
 
-- POST `/config/factory_reset`
-  - Clears all persisted values and restores defaults. Useful for onboarding a new network or wiping secrets. A reboot is recommended afterward.
-  - Reminder: the on-board reset/boot buttons **do not** erase NVS. If you lose HTTP access, you can either trigger the configured factory-reset pin (if wired) or erase flash from the host (`pio run -t erase`) before reflashing.
+JSON Rule
+---------
 
-
-Posting Format
---------------
-
-- Endpoint: `http(s)://<server_host>:<server_port><server_path>`
-- Headers: `Content-Type: application/json`, optional `Authorization: Bearer <API_KEY>`
-- Body (example):
-  { "location": "kitchen", "temperature_c": 22.34, "humidity_pct": 45.67 }
-- Error posts:
-  { "location": "kitchen", "error": "DHT read failed: temp" }
-
+All active firmware JSON must use `#include <ArduinoJson.h>`, `JsonDocument`,
+and `serializeJson()`/`deserializeJson()`. Do not add hand-concatenated JSON
+strings to active firmware paths.
 
 Build & Flash
 -------------
 
-- Requires PlatformIO
-- Board: `adafruit_qtpy_esp32c3`
+Requires PlatformIO.
 
-Commands:
+```bash
+pio run -e adafruit_qtpy_esp32c3
+pio run -e adafruit_qtpy_esp32c3 -t upload
+pio device monitor -b 115200
+```
 
-- Build: `pio run -e adafruit_qtpy_esp32c3`
-- Upload: `pio run -e adafruit_qtpy_esp32c3 -t upload`
-- Monitor: `pio device monitor -b 115200`
-
-
-Usage Flow
+RPC Tester
 ----------
 
-1. Set defaults in `include/config.h` (Wi‑Fi, upstream server, TLS, API key, device location, DHT pin/type).
-2. Build and flash the firmware.
-3. Check the serial monitor for the assigned IP address.
-4. Query API:
-  - `GET http://<esp-ip>/status`
-  - `GET http://<esp-ip>/read`
-  - `GET http://<esp-ip>/config`
-  - `POST http://<esp-ip>/config` (update runtime config)
-  - `POST http://<esp-ip>/task` (control tasks)
-  - Include `Authorization: Bearer <HTTP_API_KEY>` with every request.
-5. The device posts a reading immediately on boot, then according to the configured cadence (default: 60s, aligned to wall-clock minutes once time is synced).
+Use `esp_api_tester.py` from a machine that can reach Redis:
 
-Optional polling-only mode: suspend the posting task and poll via HTTP
-- Suspend auto-posting: `POST /task` with `{ "name": "SensorPostTask", "action": "suspend" }`
-- Periodically fetch readings from your server using `GET /read`
+```bash
+python ESP32_temperature/esp_api_tester.py \
+  --device-id temperature_kitchen read_now
 
+python ESP32_temperature/esp_api_tester.py \
+  --device-id temperature_kitchen update_config \
+  --params-json '{"post_interval_sec":120}'
+```
 
-Security Notes
---------------
-
-- The embedded HTTP API is plain HTTP (no TLS) but protected with a bearer token.
-  - Do not expose the device to untrusted networks without additional controls.
-  - The `/config` endpoint includes sensitive fields; treat the HTTP API key like a secret.
-  - Keep a recovery plan handy: if you lose the HTTP key, use the hardware factory-reset pin (if wired) or perform a host-side flash erase before reflashing firmware.
-- Persisting secrets to NVS makes them survive reboots; remember to factory reset (`POST /config/factory_reset` or the hardware button, if configured) before decommissioning a device.
-- `use_tls` / `https_insecure` only affect upstream POSTs. They do not secure the embedded HTTP server.
-- For stronger protection, consider:
-  - Placing the device on a trusted VLAN
-  - Adding simple token-based auth to the endpoints
-  - Switching to a TLS-capable embedded server (not provided here)
-
-
-Extending
---------
-
-- Add new tasks following the `SensorTask` pattern; export task handles for status/control.
-- Extend `/status` to include additional metrics.
-- Add NVS persistence to `AppConfig` for runtime changes to survive reboots.
-- Enhance `/task` with priority changes or stack diagnostics if needed.
-
-
-Libraries
----------
-
-- Adafruit DHT sensor library
-- Adafruit Unified Sensor
-- ArduinoJson (for HTTP API payloads)
-- WebServer (embedded HTTP)
-- WiFi / WiFiClientSecure (ESP32)
-
-Dependencies are declared in `platformio.ini` and fetched automatically by PlatformIO.
-
-
-Maintenance
------------
-
-Whenever the code changes in ways that affect behavior, configuration, endpoints, or usage, update this README to keep it authoritative. This repository is maintained with the principle: documentation is part of the code.
-
-
-Roadmap / Ideas
----------------
-
-See IDEAS.md for a prioritized list of potential features, improvements, and future work.
+The helper publishes to `esp32:temperature:commands` and waits for
+`esp32:temperature:rpc_results`.
