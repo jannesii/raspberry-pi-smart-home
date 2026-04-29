@@ -412,7 +412,6 @@ namespace
         {
             if (MDNS.begin(mdnsSanitized.c_str()))
             {
-                MDNS.addService("http", "tcp", 80);
                 gAppliedMdnsHostname = mdnsSanitized;
                 gMdnsStarted = true;
                 String msg = F("[mDNS] Advertised as ");

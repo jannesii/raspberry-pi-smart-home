@@ -4,13 +4,12 @@
 #include <esp_system.h>
 
 #include "config.h"
-#include "Poster.h"
 #include "SensorTask.h"
-#include "HttpServerTask.h"
 #include "AppConfig.h"
 #include "WifiManager.h"
 #include "StructuredLog.h"
 #include "TaskWatchdog.h"
+#include "WebSocketTask.h"
 
 // WiFi credentials come from AppConfig defaults, but can be updated at runtime
 
@@ -60,8 +59,8 @@ static const char *ntp1 = "pool.ntp.org";
 static const char *ntp2 = "time.nist.gov";
 static const char *ntp3 = "time.google.com";
 
-// Global poster instance
-static Poster gPoster;
+// Global WebSocket transport
+static WebSocketTask gWebSocketTask;
 
 static const char *resetReasonLabel(esp_reset_reason_t reason)
 {
@@ -135,9 +134,9 @@ void setup()
   // Configure NTP (UTC). Time sync attempts will be handled by tasks.
   configTime(0 /*gmtOffset*/, 0 /*dstOffset*/, ntp1, ntp2, ntp3);
 
-  // Start tasks
-  startHttpServerTask();
-  startSensorTask(&gPoster);
+  // Start tasks. All device/server traffic uses WebSocket.
+  gWebSocketTask.start();
+  startSensorTask(&gWebSocketTask);
 }
 
 void loop()

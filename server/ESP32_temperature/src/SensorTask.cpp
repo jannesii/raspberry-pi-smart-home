@@ -7,17 +7,17 @@
 #include <time.h>
 #include <sys/time.h>
 
-#include "Poster.h"
 #include "config.h"
 #include "AppConfig.h"
 #include "Metrics.h"
 #include "StructuredLog.h"
 #include "TaskWatchdog.h"
+#include "WebSocketTask.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-static Poster *gPoster = nullptr;
+static WebSocketTask *gWebSocketTask = nullptr;
 static TaskHandle_t gSensorTaskHandle = nullptr;
 static SemaphoreHandle_t gDhtMutex = nullptr;
 
@@ -81,8 +81,8 @@ static bool readAndPost()
   bool ok = takeReading(t, h, err);
   if (!ok)
   {
-    if (gPoster)
-      (void)gPoster->postError(err);
+    if (gWebSocketTask)
+      gWebSocketTask->queueError(err);
     return false;
   }
 
@@ -95,8 +95,11 @@ static bool readAndPost()
     LOG_INFO(msg);
   }
 
-  if (gPoster)
-    return gPoster->postReading(t, h);
+  if (gWebSocketTask)
+  {
+    gWebSocketTask->queueReading(t, h);
+    return true;
+  }
   return false;
 }
 
@@ -271,9 +274,9 @@ static void SensorTask(void *pv)
   }
 }
 
-void startSensorTask(Poster *poster)
+void startSensorTask(WebSocketTask *webSocketTask)
 {
-  gPoster = poster;
+  gWebSocketTask = webSocketTask;
   xTaskCreate(
       SensorTask,
       "SensorPostTask",
@@ -297,7 +300,7 @@ extern "C"
       vTaskDelete(h);
       vTaskDelay(pdMS_TO_TICKS(10));
     }
-    startSensorTask(gPoster);
+    startSensorTask(gWebSocketTask);
   }
 }
 

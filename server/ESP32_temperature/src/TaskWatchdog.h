@@ -7,7 +7,7 @@ namespace TaskWatchdog
     enum class TaskId : uint8_t
     {
         Sensor = 0,
-        HttpServer = 1,
+        WebSocket = 1,
         Count
     };
 
