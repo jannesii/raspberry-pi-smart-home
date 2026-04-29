@@ -533,6 +533,10 @@ When changing user-visible JS or CSS in production, bump the versioned asset URL
 
 **Redis bridge logging**: `ESP32RedisBridge` should log the first live status summary at `INFO`, but recurring heartbeat summaries should stay at `DEBUG` by default. Only raise recurring summaries to `INFO` by explicitly setting `ESP32_REDIS_STATUS_INFO_REPEAT_INTERVAL_S`.
 
+**Temperature ESP WebSocket path**: Temperature ESP firmware uses `esp32_ws` as its device transport. Temperature telemetry and RPC responses must use the dedicated Redis channels (`esp32:temperature:telemetry`, `esp32:temperature:rpc_results`, `esp32:temperature:commands`) and should still flow through the main app's `esp32_temphum` persistence/broadcast helper so thermostat/weather side effects stay consistent with the legacy HTTP POST path.
+
+**ESP firmware JSON**: Active ESP firmware JSON payloads should be built with ArduinoJson `JsonDocument` and `serializeJson()`/`deserializeJson()`. Do not add hand-concatenated JSON to active firmware paths.
+
 ### 6.6 YNAB Categorizer
 
 **Queue filtering**: Default queue mode is `strict` (skip transfers + split parents). Keep this as the default for both initial page data and API fallback.

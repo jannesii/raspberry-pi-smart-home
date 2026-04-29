@@ -60,6 +60,9 @@ HOST = os.getenv("ESP32_WS_HOST", "0.0.0.0")
 CHANNEL_COMMANDS = "esp32:commands"
 CHANNEL_STATUS = "esp32:status"
 CHANNEL_ACTION_RESULTS = "esp32:action_results"
+CHANNEL_TEMPERATURE_TELEMETRY = "esp32:temperature:telemetry"
+CHANNEL_TEMPERATURE_RPC_RESULTS = "esp32:temperature:rpc_results"
+CHANNEL_TEMPERATURE_COMMANDS = "esp32:temperature:commands"
 STATUS_SUMMARY_INTERVAL_S = float(os.getenv("ESP32_WS_STATUS_LOG_INTERVAL_S", "30"))
 
 app = Flask(__name__)
@@ -153,6 +156,7 @@ class ESP32Connection:
 
     ws: Any  # WebSocket connection
     device_id: str
+    device_type: str = "car_heater"
     connected_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     last_message_at: datetime | None = None
     message_count: int = 0
@@ -214,10 +218,12 @@ class ESP32WebSocketManager:
                     conn.ws.close()
             self._connections.clear()
 
-    def register_connection(self, device_id: str, ws: Any) -> ESP32Connection:
+    def register_connection(
+        self, device_id: str, ws: Any, device_type: str = "car_heater"
+    ) -> ESP32Connection:
         """Register a new ESP32 connection."""
-        logger.debug("Registering ESP32 connection device=%s", device_id)
-        conn = ESP32Connection(ws=ws, device_id=device_id)
+        logger.debug("Registering ESP32 connection device=%s type=%s", device_id, device_type)
+        conn = ESP32Connection(ws=ws, device_id=device_id, device_type=device_type)
         with self._lock:
             # Close existing connection for same device
             if device_id in self._connections:
@@ -226,7 +232,7 @@ class ESP32WebSocketManager:
                     self._connections[device_id].ws.close()
             self._connections[device_id] = conn
 
-        logger.info("ESP32 device registered: %s", device_id)
+        logger.info("ESP32 device registered: %s type=%s", device_id, device_type)
         return conn
 
     def unregister_connection(self, device_id: str, ws: Any | None = None) -> None:
@@ -288,6 +294,42 @@ class ESP32WebSocketManager:
             )
         except Exception as e:
             logger.warning("Failed to publish action result: %s", e)
+
+    def publish_temperature_telemetry(self, telemetry: dict[str, Any]) -> None:
+        """Publish temperature ESP telemetry to Redis for main app."""
+        if self._redis is None:
+            logger.debug(
+                "Skipping temperature telemetry publish device=%s because redis is unavailable",
+                telemetry.get("device_id"),
+            )
+            return
+        try:
+            self._redis.publish(CHANNEL_TEMPERATURE_TELEMETRY, json.dumps(telemetry))
+            logger.debug(
+                "Published temperature telemetry to Redis device=%s type=%s",
+                telemetry.get("device_id"),
+                telemetry.get("type"),
+            )
+        except Exception as e:
+            logger.warning("Failed to publish temperature telemetry: %s", e)
+
+    def publish_temperature_rpc_result(self, result: dict[str, Any]) -> None:
+        """Publish temperature ESP RPC response to Redis for main app."""
+        if self._redis is None:
+            logger.debug(
+                "Skipping temperature RPC result publish device=%s because redis is unavailable",
+                result.get("device_id"),
+            )
+            return
+        try:
+            self._redis.publish(CHANNEL_TEMPERATURE_RPC_RESULTS, json.dumps(result))
+            logger.debug(
+                "Published temperature RPC result to Redis device=%s request_id=%s",
+                result.get("device_id"),
+                result.get("request_id"),
+            )
+        except Exception as e:
+            logger.warning("Failed to publish temperature RPC result: %s", e)
 
     def note_transport_event(self, ws: Any, event_type: str) -> None:
         """Record and log low-level WebSocket control-frame traffic."""
@@ -364,8 +406,12 @@ class ESP32WebSocketManager:
 
         try:
             pubsub = self._redis.pubsub()
-            pubsub.subscribe(CHANNEL_COMMANDS)
-            logger.info("Subscribed to Redis channel: %s", CHANNEL_COMMANDS)
+            pubsub.subscribe(CHANNEL_COMMANDS, CHANNEL_TEMPERATURE_COMMANDS)
+            logger.info(
+                "Subscribed to Redis channels: %s, %s",
+                CHANNEL_COMMANDS,
+                CHANNEL_TEMPERATURE_COMMANDS,
+            )
 
             while not self._stop_event.is_set():
                 msg = pubsub.get_message(timeout=1.0)
@@ -377,7 +423,10 @@ class ESP32WebSocketManager:
 
                 try:
                     command = json.loads(msg["data"])
-                    self._forward_command_to_esp32(command)
+                    if msg["channel"] == CHANNEL_TEMPERATURE_COMMANDS:
+                        self._forward_command_to_temperature_esp32(command)
+                    else:
+                        self._forward_command_to_esp32(command)
                 except json.JSONDecodeError:
                     logger.warning("Invalid JSON from Redis: %r", msg["data"])
                 except Exception as e:
@@ -408,6 +457,35 @@ class ESP32WebSocketManager:
                 )
             except Exception as e:
                 logger.warning("Failed to send to ESP32 %s: %s", conn.device_id, e)
+
+    def _forward_command_to_temperature_esp32(self, command: dict[str, Any]) -> None:
+        """Forward a temperature RPC command to one or more temperature ESP32 devices."""
+        target_device_id = command.get("device_id") or command.get("target_device_id")
+        connections = [
+            c
+            for c in self.get_all_connections()
+            if c.device_type == "temperature"
+            and (not target_device_id or c.device_id == str(target_device_id))
+        ]
+        if not connections:
+            logger.warning("No temperature ESP32 devices connected, command dropped: %r", command)
+            return
+
+        payload = dict(command)
+        payload.pop("target_device_id", None)
+        payload.pop("device_id", None)
+        payload.setdefault("type", "rpc_request")
+        message = json.dumps(payload)
+        for conn in connections:
+            try:
+                conn.ws.send(message)
+                logger.info(
+                    "Forwarded temperature RPC to ESP32 %s: %s",
+                    conn.device_id,
+                    payload.get("action"),
+                )
+            except Exception as e:
+                logger.warning("Failed to send to temperature ESP32 %s: %s", conn.device_id, e)
 
 
 # Global manager instance
@@ -456,12 +534,25 @@ def esp32_websocket(ws):
             return
 
         device_id = auth_data.get("device_id", f"esp32_{secrets.token_hex(4)}")
+        device_type = str(auth_data.get("device_type") or "car_heater").strip().lower()
+        if device_type not in {"car_heater", "temperature"}:
+            logger.warning("Unknown ESP32 device_type=%s, defaulting to car_heater", device_type)
+            device_type = "car_heater"
 
         # Register connection
-        conn = manager.register_connection(device_id, ws)
+        conn = manager.register_connection(device_id, ws, device_type=device_type)
         ws.device_id = device_id
-        ws.send(json.dumps({"status": "authenticated", "device_id": device_id}))
-        logger.info("ESP32 %s authenticated successfully", device_id)
+        ws.device_type = device_type
+        ws.send(
+            json.dumps(
+                {
+                    "status": "authenticated",
+                    "device_id": device_id,
+                    "device_type": device_type,
+                }
+            )
+        )
+        logger.info("ESP32 %s authenticated successfully type=%s", device_id, device_type)
 
         # Main message loop
         while True:
@@ -479,7 +570,30 @@ def esp32_websocket(ws):
                 logger.warning("Invalid JSON from ESP32 %s: %r", device_id, data)
                 continue
 
-            # Handle different message types
+            if device_type == "temperature":
+                message["device_id"] = device_id
+                message["device_type"] = "temperature"
+                message["received_at"] = datetime.now(UTC).isoformat()
+                msg_type = message.get("type")
+                if msg_type == "rpc_response":
+                    manager.publish_temperature_rpc_result(message)
+                elif msg_type in {"temperature_reading", "temperature_error", "heartbeat"}:
+                    if msg_type != "heartbeat":
+                        manager.publish_temperature_telemetry(message)
+                    logger.debug(
+                        "Temperature ESP32 message device=%s type=%s",
+                        device_id,
+                        msg_type,
+                    )
+                else:
+                    logger.warning(
+                        "Unknown temperature ESP32 message type device=%s type=%s",
+                        device_id,
+                        msg_type,
+                    )
+                continue
+
+            # Handle different car-heater message types
             if "status" in message or "shelly" in message:
                 # Status update from ESP32
                 message["device_id"] = device_id
@@ -515,6 +629,7 @@ def health():
         "devices": [
             {
                 "device_id": c.device_id,
+                "device_type": c.device_type,
                 "connected_at": c.connected_at.isoformat(),
                 "last_message_at": c.last_message_at.isoformat() if c.last_message_at else None,
                 "message_count": c.message_count,

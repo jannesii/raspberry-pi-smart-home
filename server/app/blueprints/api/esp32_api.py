@@ -70,6 +70,15 @@ ac_check_flag = True
 @csrf.exempt
 def post_esp32_temphum():
     data = request.get_json(silent=True) or {}
+    payload, status_code = process_esp32_temphum_payload(data, source="http")
+    return jsonify(payload), status_code
+
+
+def process_esp32_temphum_payload(
+    data: dict[str, Any], *, source: str = "http"
+) -> tuple[dict[str, Any], int]:
+    """Validate, persist, and broadcast one ESP32 temperature/humidity payload."""
+    logger.debug("process_esp32_temphum_payload source=%s data=%s", source, data)
     location, temp, hum, error = (
         data.get("location"),
         data.get("temperature_c"),
@@ -79,23 +88,19 @@ def post_esp32_temphum():
 
     if error:
         logger.warning(f"ESP32 ERROR: {error} | Location: {location}")
-        return jsonify(
-            {
-                "ok": False,
-                "error": "device_error",
-                "message": str(error),
-            }
-        ), 400
+        return {
+            "ok": False,
+            "error": "device_error",
+            "message": str(error),
+        }, 400
 
     if location is None or temp is None or hum is None:
         logger.warning("Bad esp32 temphum payload: %s", data)
-        return jsonify(
-            {
-                "ok": False,
-                "error": "invalid_payload",
-                "message": "location, temperature_c, humidity_pct required",
-            }
-        ), 400
+        return {
+            "ok": False,
+            "error": "invalid_payload",
+            "message": "location, temperature_c, humidity_pct required",
+        }, 400
 
     valid_locations = [
         "Keittiö",
@@ -109,18 +114,17 @@ def post_esp32_temphum():
     ]
     if location not in valid_locations:
         logger.warning(f"Invalid esp32 location: {location}")
-        return jsonify(
-            {
-                "ok": False,
-                "error": "invalid_payload",
-                "message": "Invalid location",
-            }
-        ), 400
+        return {
+            "ok": False,
+            "error": "invalid_payload",
+            "message": "Invalid location",
+        }, 400
 
     ctrl: Controller = current_app.ctrl
     # Derive current AC state if available
+    ac_thermo: ACThermostat | None = None
     try:
-        ac_thermo: ACThermostat | None = getattr(current_app, "ac_thermostat", None)  # type: ignore
+        ac_thermo = getattr(current_app, "ac_thermostat", None)  # type: ignore
         ac_on_val: bool | None = bool(ac_thermo.is_on) if ac_thermo is not None else None
         if ac_on_val is None:
             # Fallback to persisted DB flag if thermostat not in memory
@@ -131,15 +135,17 @@ def post_esp32_temphum():
         ac_on_val = None
 
     saved = ctrl.record_esp32_temphum(location, temp, hum, ac_on=ac_on_val)
-    current_app.sio_handler.emit_to_views(
-        "esp32_temphum",
-        {
-            "location": saved.location,
-            "temperature": saved.temperature,
-            "humidity": saved.humidity,
-            "ac_on": saved.ac_on,
-        },
-    )
+    sio_handler = getattr(current_app, "sio_handler", None)
+    if sio_handler is not None:
+        sio_handler.emit_to_views(
+            "esp32_temphum",
+            {
+                "location": saved.location,
+                "temperature": saved.temperature,
+                "humidity": saved.humidity,
+                "ac_on": saved.ac_on,
+            },
+        )
 
     logger.debug(
         "Recorded ESP32 temphum: loc=%s temp=%.2f hum=%.2f",
@@ -240,22 +246,21 @@ def post_esp32_temphum():
     if ac_check_flag:
         ac_check_flag = False
         # Wait a second to make sure all sensors have reported
-        threading.Timer(1, ac_thermo.step_on_off_check).start() if ac_thermo._enabled else None
+        if ac_thermo is not None and getattr(ac_thermo, "_enabled", False):
+            threading.Timer(1, ac_thermo.step_on_off_check).start()
         # Also fetch and log outside weather from FMI
         fetch_and_log_outside_weather()
         # Reset flag after 10 seconds
         threading.Timer(10, reset_flag).start()
 
-    return jsonify(
-        {
-            "ok": True,
-            "received": {
-                "location": saved.location,
-                "temp": saved.temperature,
-                "hum": saved.humidity,
-            },
-        }
-    )
+    return {
+        "ok": True,
+        "received": {
+            "location": saved.location,
+            "temp": saved.temperature,
+            "hum": saved.humidity,
+        },
+    }, 200
 
 
 @esp32_bp.route("/esp32_test", methods=["GET", "POST"])

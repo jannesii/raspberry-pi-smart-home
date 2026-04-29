@@ -156,6 +156,8 @@ Browse to http://127.0.0.1:5555 and log in.
 - Car heater command events now distinguish `queued` vs ESP `executed` results, and the ESP sends an immediate follow-up status frame after websocket command execution so the UI updates without waiting for the next periodic status tick.
 - WebSocket-delivered car heater status now runs the same backend runtime logic as the legacy HTTP status path, so Keep at Temperature, Ready by Time, Battery Charge Mode, alerts, and kFactor ticks keep working in websocket-primary mode.
 - ESP32 Redis bridge status summaries now log the first live status at `INFO`; recurring heartbeat summaries are downgraded to `DEBUG` unless `ESP32_REDIS_STATUS_INFO_REPEAT_INTERVAL_S` is explicitly enabled.
+- Temperature ESP firmware now uses WebSocket-only telemetry/RPC through `esp32_ws`; the main app consumes `esp32:temperature:*` Redis channels and persists readings through the existing `esp32_temphum` path.
+- Temperature ESP firmware JSON is built with ArduinoJson `JsonDocument`; the legacy embedded HTTP server and HTTP poster are excluded from the active PlatformIO build.
 - Car heater cabin temperature now renders with two decimals, and the main page version-busts `car_heater.js` so timestamp/format fixes are not hidden behind browser cache.
 - Car heater settings helpers no longer override the main page formatter globals, so the live card keeps second-precision timestamps and two-decimal cabin temperatures while websocket-originated live status shows `source=WS`.
 - Car heater settings and logs views now use explicit Finnish locale time formatting (`fi-FI`) instead of browser-default locale formatting.

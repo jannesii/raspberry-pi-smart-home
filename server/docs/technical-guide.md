@@ -274,6 +274,21 @@ All routes require authentication (session cookie or API key).
 
 ---
 
+## ESP32 WebSocket Bridge
+
+Temperature ESPs and the car-heater ESP connect to the standalone `esp32_ws`
+service at `/ws`. Car-heater traffic uses `esp32:status`,
+`esp32:action_results`, and `esp32:commands`. Temperature ESPs authenticate
+with `device_type=temperature`; telemetry and RPC flow through
+`esp32:temperature:telemetry`, `esp32:temperature:rpc_results`, and
+`esp32:temperature:commands`.
+
+Temperature telemetry is persisted by the main app through the same
+`esp32_temphum` helper used by the legacy HTTP POST path, so browser broadcasts
+and thermostat/weather side effects remain consistent.
+
+---
+
 ## Database Schema
 
 Runtime database access goes through SQLAlchemy Core. Production uses

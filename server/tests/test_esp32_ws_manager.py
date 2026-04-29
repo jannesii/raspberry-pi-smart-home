@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 import threading
 from pathlib import Path
@@ -14,8 +15,14 @@ ESP32_WS_MAIN = ROOT / "esp32_ws" / "main.py"
 
 
 class _FakeRedis:
+    def __init__(self) -> None:
+        self.published: list[tuple[str, str]] = []
+
     def ping(self) -> None:
         return None
+
+    def publish(self, channel: str, payload: str) -> None:
+        self.published.append((channel, payload))
 
 
 class _FakeThread:
@@ -35,9 +42,13 @@ class _FakeThread:
 class _DummyWS:
     def __init__(self) -> None:
         self.closed = 0
+        self.sent: list[str] = []
 
     def close(self) -> None:
         self.closed += 1
+
+    def send(self, payload: str) -> None:
+        self.sent.append(payload)
 
 
 def _load_esp32_ws_main(monkeypatch):
@@ -77,3 +88,53 @@ def test_stale_unregister_does_not_drop_replacement_connection(monkeypatch) -> N
     manager.unregister_connection("car_heater_esp32", ws=second_ws)
 
     assert manager.get_connection("car_heater_esp32") is None
+
+
+def test_temperature_connection_and_rpc_command_routing(monkeypatch) -> None:
+    module = _load_esp32_ws_main(monkeypatch)
+    manager = module.ESP32WebSocketManager()
+
+    temp_ws = _DummyWS()
+    manager.register_connection("temperature_kitchen", temp_ws, device_type="temperature")
+    heater_ws = _DummyWS()
+    manager.register_connection("car_heater_esp32", heater_ws, device_type="car_heater")
+
+    manager._forward_command_to_temperature_esp32(
+        {
+            "device_id": "temperature_kitchen",
+            "request_id": "req1",
+            "action": "read_now",
+        }
+    )
+
+    assert len(temp_ws.sent) == 1
+    sent_payload = json.loads(temp_ws.sent[0])
+    assert sent_payload["type"] == "rpc_request"
+    assert sent_payload["action"] == "read_now"
+    assert heater_ws.sent == []
+
+
+def test_temperature_messages_publish_to_dedicated_channels(monkeypatch) -> None:
+    module = _load_esp32_ws_main(monkeypatch)
+    manager = module.ESP32WebSocketManager()
+    fake_redis = _FakeRedis()
+    manager._redis = fake_redis
+
+    telemetry = {
+        "type": "temperature_reading",
+        "device_id": "temperature_kitchen",
+        "temperature_c": 21.5,
+        "humidity_pct": 41.0,
+    }
+    rpc_result = {
+        "type": "rpc_response",
+        "device_id": "temperature_kitchen",
+        "request_id": "req1",
+        "ok": True,
+    }
+
+    manager.publish_temperature_telemetry(telemetry)
+    manager.publish_temperature_rpc_result(rpc_result)
+
+    assert fake_redis.published[0][0] == module.CHANNEL_TEMPERATURE_TELEMETRY
+    assert fake_redis.published[1][0] == module.CHANNEL_TEMPERATURE_RPC_RESULTS

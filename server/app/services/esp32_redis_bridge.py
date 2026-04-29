@@ -35,6 +35,8 @@ logger.setLevel(logging.INFO)
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 REDIS_CHANNEL_STATUS = "esp32:status"
 REDIS_CHANNEL_ACTION_RESULTS = "esp32:action_results"
+REDIS_CHANNEL_TEMPERATURE_TELEMETRY = "esp32:temperature:telemetry"
+REDIS_CHANNEL_TEMPERATURE_RPC_RESULTS = "esp32:temperature:rpc_results"
 STATUS_SUMMARY_INTERVAL_S = float(os.getenv("ESP32_REDIS_STATUS_LOG_INTERVAL_S", "30"))
 STATUS_SUMMARY_INFO_REPEAT_INTERVAL_S = float(
     os.getenv("ESP32_REDIS_STATUS_INFO_REPEAT_INTERVAL_S", "0")
@@ -101,11 +103,18 @@ class ESP32RedisBridge:
 
         try:
             pubsub = self._redis.pubsub()
-            pubsub.subscribe(REDIS_CHANNEL_STATUS, REDIS_CHANNEL_ACTION_RESULTS)
-            logger.info(
-                "ESP32RedisBridge subscribed to channels: %s, %s",
+            pubsub.subscribe(
                 REDIS_CHANNEL_STATUS,
                 REDIS_CHANNEL_ACTION_RESULTS,
+                REDIS_CHANNEL_TEMPERATURE_TELEMETRY,
+                REDIS_CHANNEL_TEMPERATURE_RPC_RESULTS,
+            )
+            logger.info(
+                "ESP32RedisBridge subscribed to channels: %s, %s, %s, %s",
+                REDIS_CHANNEL_STATUS,
+                REDIS_CHANNEL_ACTION_RESULTS,
+                REDIS_CHANNEL_TEMPERATURE_TELEMETRY,
+                REDIS_CHANNEL_TEMPERATURE_RPC_RESULTS,
             )
 
             while not self._stop_event.is_set():
@@ -142,6 +151,10 @@ class ESP32RedisBridge:
             self._emit_status(data)
         elif channel == REDIS_CHANNEL_ACTION_RESULTS:
             self._emit_action_result(data)
+        elif channel == REDIS_CHANNEL_TEMPERATURE_TELEMETRY:
+            self._handle_temperature_telemetry(data)
+        elif channel == REDIS_CHANNEL_TEMPERATURE_RPC_RESULTS:
+            self._emit_temperature_rpc_result(data)
 
     def _emit_status(self, data: dict[str, Any]) -> None:
         """Emit ESP32 status update to browser views."""
@@ -339,6 +352,47 @@ class ESP32RedisBridge:
             logger.debug("ESP32RedisBridge emitted car_heater_action_result")
         except Exception as e:
             logger.warning("ESP32RedisBridge failed to emit action result: %s", e)
+
+    def _handle_temperature_telemetry(self, data: dict[str, Any]) -> None:
+        """Persist and broadcast temperature ESP telemetry from Redis."""
+        try:
+            logger.debug(
+                "ESP32RedisBridge processing temperature telemetry device=%s type=%s location=%s",
+                data.get("device_id"),
+                data.get("type"),
+                data.get("location"),
+            )
+            with self._app.app_context():
+                from ..blueprints.api.esp32_api import process_esp32_temphum_payload
+
+                payload, status_code = process_esp32_temphum_payload(data, source="ws")
+                if status_code >= 400:
+                    logger.warning(
+                        "Temperature telemetry rejected status=%s payload=%s",
+                        status_code,
+                        payload,
+                    )
+                else:
+                    logger.debug("Temperature telemetry accepted payload=%s", payload)
+        except Exception as e:
+            logger.warning("ESP32RedisBridge failed to handle temperature telemetry: %s", e)
+
+    def _emit_temperature_rpc_result(self, data: dict[str, Any]) -> None:
+        """Emit temperature ESP RPC results to browser views for diagnostics."""
+        try:
+            payload = dict(data)
+            if self._sio_handler is not None:
+                self._sio_handler.emit_to_views("esp32_temperature_rpc_result", payload)
+            else:
+                self._socketio.emit("esp32_temperature_rpc_result", payload)
+            logger.debug(
+                "ESP32RedisBridge emitted temperature RPC result device=%s request_id=%s ok=%s",
+                payload.get("device_id"),
+                payload.get("request_id"),
+                payload.get("ok"),
+            )
+        except Exception as e:
+            logger.warning("ESP32RedisBridge failed to emit temperature RPC result: %s", e)
 
 
 def init_esp32_redis_bridge(app: Flask) -> ESP32RedisBridge | None:
