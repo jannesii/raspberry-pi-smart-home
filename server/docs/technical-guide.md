@@ -33,7 +33,8 @@ server/
 │   │   └── ynab/            # YNAB categorizer client + suggestion service
 │   ├── core/
 │   │   ├── controller.py    # Business logic + DB gateway
-│   │   ├── database.py      # Thread‑safe SQLite wrapper
+│   │   ├── schema.py        # SQLAlchemy Core table definitions
+│   │   ├── database.py      # Legacy SQLite wrapper for bootstrap/imports
 │   │   └── models.py        # Dataclass DTOs and config models
 │   ├── utils.py             # Web helpers, flashes, validation
 │   ├── static/              # CSS & JS assets
@@ -69,8 +70,13 @@ All settings are read from environment variables (see `app/config.py`).
 
 ```bash
 export SECRET_KEY="$(openssl rand -hex 32)"
-export DB_PATH="/path/to/database.db"
+export DATABASE_URL="postgresql+psycopg://user:pass@localhost/jannenkoti"
+export DB_PATH="/path/to/legacy-or-dev.sqlite"
 ```
+
+`DATABASE_URL` is the production database connection. `DB_PATH` is still
+required during app startup because the legacy SQLite manager is instantiated,
+but production runtime data should live in PostgreSQL.
 
 ### Optional Variables
 
@@ -118,6 +124,8 @@ source .venv/bin/activate
 export SECRET_KEY=dev
 export WEB_USERNAME=admin WEB_PASSWORD=admin
 export DB_PATH=/tmp/jannenkoti.db
+# Optional for local PostgreSQL instead of SQLite fallback:
+# export DATABASE_URL=postgresql+psycopg://user:pass@localhost/jannenkoti
 python run.py
 ```
 
@@ -268,7 +276,9 @@ All routes require authentication (session cookie or API key).
 
 ## Database Schema
 
-SQLite file path is controlled by `DB_PATH`. Tables include:
+Runtime database access goes through SQLAlchemy Core. Production uses
+PostgreSQL via `DATABASE_URL`; SQLite remains for tests, local fallback, and
+legacy import sources. Core tables include:
 
 ### Authentication
 - `users` — accounts (admin/root-admin flags; temporary expiry)

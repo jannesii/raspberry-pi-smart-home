@@ -91,7 +91,8 @@ pip install -r requirements.txt
 
 # Configure (minimum required)
 export SECRET_KEY="$(openssl rand -hex 32)"
-export DB_PATH="/tmp/jannenkoti.db"
+export DATABASE_URL="postgresql+psycopg://user:pass@localhost/jannenkoti"
+export DB_PATH="/tmp/jannenkoti-legacy.db"  # required bootstrap value; not production data
 export WEB_USERNAME=admin
 export WEB_PASSWORD=changeme
 
@@ -127,14 +128,14 @@ Browse to http://127.0.0.1:5555 and log in.
 - Logging control now logs handler level updates when applied.
 - kFactor session rejection logs now include specific rejection reasons and thresholds.
 - kFactor autonomous sessions use separate minimum duration and informativeness thresholds.
-- Logs can be mirrored to Postgres by setting `USE_SQLA_LOG_WRITES=1` (requires `DATABASE_URL`).
-- Added a controller helper to delete duplicate log rows in Postgres (`delete_duplicate_logs_postgres`).
+- Runtime database access uses SQLAlchemy Core; production should set `DATABASE_URL` for PostgreSQL.
+- `DB_PATH` is still required at startup for legacy bootstrap/import paths, but production data should live in PostgreSQL.
+- Added a controller helper to delete duplicate log rows in PostgreSQL (`delete_duplicate_logs_postgres`).
 - Chart modal outdoor temperature range selection now supports multiple location aliases (case-insensitive, substring match).
 - Temperature tiles now support multiple outside locations for grouping and outside-range stats.
-- SQLAlchemy Core schema + engine are wired in parallel (phase-in for Alembic).
-- Alembic migrations are staged (baseline + kFactor result FK) and now target Postgres (SQLite-specific logic removed).
+- SQLAlchemy Core schema + engine are the runtime database path.
+- Alembic migrations are staged (baseline + kFactor result FK) and target PostgreSQL.
 - SQLite connections (sqlite3 + SQLAlchemy/Alembic) enable the foreign_keys PRAGMA.
-- Logs reads can be served via SQLAlchemy when `USE_SQLA_READS=1` (Postgres) while writes remain on SQLite.
 - Security headers (CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy) are applied by default, with CDN allowlist for Chart.js/HLS/Socket.IO.
 - API CORS is now opt-in via `API_ALLOWED_ORIGINS`; same-origin browser use works without it, and cross-origin API use should be explicitly allowlisted.
 - API key query-string auth is disabled by default; use `Authorization: Bearer ...` or `X-API-Key`, and only set `ALLOW_API_KEY_QUERY_PARAM=1` for legacy compatibility.
@@ -166,7 +167,7 @@ Browse to http://127.0.0.1:5555 and log in.
 
 - [Technical Guide](docs/technical-guide.md) – deployment, configuration, API reference
 - [Guide](docs/guide.md) – operational commands, migrations, backups
-- [DB Next Steps](docs/db_next_steps.md) – remaining work for the Postgres transition
+- [DB Next Steps](docs/db_next_steps.md) – PostgreSQL hardening and legacy SQLite cleanup
 - [AGENTS.md](AGENTS.md) – AI development guidelines
 
 ---
@@ -176,7 +177,7 @@ Browse to http://127.0.0.1:5555 and log in.
 | Layer | Technology |
 |-------|------------|
 | Backend | Python 3.11, Flask, Flask-SocketIO, Eventlet |
-| Database | SQLite (auto-migrated) |
+| Database | PostgreSQL via SQLAlchemy Core; SQLite for tests/local legacy imports |
 | Frontend | Vanilla JS (ES6+), CSS3 Grid/Flexbox |
 | Real-time | Socket.IO |
 | Auth | Flask-Login, session cookies, CSRF |
