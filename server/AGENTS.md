@@ -3,7 +3,7 @@
 ## Quick Reference
 
 ```
-STACK: Python 3.11 | Flask | Flask-SocketIO | Eventlet | SQLAlchemy Core | PostgreSQL (prod) / SQLite (tests) | Alembic | Jinja2
+STACK: Python 3.11 | Flask | Flask-SocketIO | Eventlet | SQLAlchemy Core | PostgreSQL | SQLite (tests only) | Alembic | Jinja2
 FRONTEND: Vanilla JS (ES6+) | CSS3 Grid/Flexbox | No build tools
 REALTIME: Socket.IO (views/clients/esp32 roles)
 AUTH: Flask-Login + session cookies | CSRF protection
@@ -467,7 +467,7 @@ if (window.socket) {
 
 ## 6. Common Pitfalls
 
-### 6.1 Field Name Mismatches
+### 6.1 Field Names & Data Types
 
 **CRITICAL**: Backend Python field names MUST match frontend JS expectations.
 
@@ -487,91 +487,107 @@ function update(data) {
 }
 ```
 
-**kFactor note**: The UI toggle expects `autonomous_enabled` in status payloads. Include this key (and keep it boolean) in both initial page data and Socket.IO status to avoid the toggle snapping back to `true`.
+**kFactor toggle**: The UI toggle expects `autonomous_enabled` in status payloads. Include this key (keep it boolean) in both initial page data and Socket.IO status to avoid the toggle snapping back to `true`.
 
-**Boolean parsing note**: Avoid `bool("false")` or `bool("0")` in backend handlers; parse booleans from strings explicitly to prevent unintended `True` values.
+**Boolean parsing**: Avoid `bool("false")` or `bool("0")` in backend handlers; parse booleans from strings explicitly to prevent unintended `True` values.
 
-**AC TinyTuya diagnostics note**: Initialize the AC TinyTuya device with env-driven `AC_TUYA_VERSION` (and timeout/persist knobs when needed) instead of relying on library defaults. When status/control fails, inspect the raw TinyTuya `Err` code in logs; `914` points to local key/version mismatch, while `901` can still occur even when the device IP answers ping if the local-control handshake cannot complete.
+### 6.2 Static Asset Caching
 
-**Multi-worker config note**: KFactor config changes are persisted in the DB. If multiple gunicorn workers are running, each worker must refresh config from DB (e.g., during tick/snapshot) to avoid stale `enabled` state.
+When changing user-visible JS or CSS in production, bump the versioned asset URLs in the corresponding template so the browser cache does not mask the fix:
+
+- `car_heater.js` → bump version in `templates/car_heater.html`
+- `temperatures.js` / `temperatures.css` → bump version in `templates/temperatures.html`
+- `ynab_categorizer.js` / `ynab_categorizer.css` → bump version in `templates/ynab_categorizer.html`
+
+### 6.3 Car Heater & KFactor
+
+**Logs**: ESP32 log snapshots are emitted in a dedicated `car_heater_logs` Socket.IO event. Frontend can still read `status.logs` from `car_heater_status` for compatibility, but should dedupe because both WS and HTTP paths may carry the same snapshot.
+
+**JS helper scope**: `car_heater.js` and `car_heater_settings_*.js` share the same page. Do not leave generic helper names like `fmtTs` or `fmtNum` in the global scope in settings modules — they will override the main page formatters at runtime.
+
+**WS payload shape**: Browser `car_heater_status` handlers expect the normalized `CarHeaterStatus` payload shape (`is_heater_on`, `instant_power_w`, etc.), not the raw ESP JSON (`shelly`, `temperature`, `ws_stats`). Normalize before emitting from Redis/WS paths.
+
+**Source field**: The UI `status.source` field represents the transport path (`WS`/HTTP fallback), not Shelly's internal `source` value such as `HTTP_in`. For websocket-originated status, override the normalized payload source to `WS`.
+
+**Action-result stages**: `car_heater_action_result` is two-stage: the web handler emits a local `stage=queued` ack immediately, while the Redis bridge emits `stage=executed` when the ESP reports success/failure. Keep these distinct so the UI does not treat queue ack as command completion.
+
+**WS runtime side effects**: Websocket-originated status must run the same runtime side effects as HTTP `/api/car_heater/status` (charge-mode state updates, keep-at-temp tick, ready-by tick, kFactor tick, alerts, DB persistence), otherwise automation silently breaks in websocket-primary mode.
+
+**KFactor multi-worker**: KFactor config changes are persisted in the DB. If multiple Gunicorn workers are running, each worker must refresh config from DB (e.g., during tick/snapshot) to avoid stale `enabled` state.
 
 **KFactor config updates**: Use `KFactorCalibrator.update_config()` (not direct `_cfg` assignment) so submodules (`_physics`, `_session`, `_snapshot`) stay in sync.
 
-**PostgreSQL sequence drift note**: If rows are imported with explicit `id` values, the serial sequence may lag behind `MAX(id)` and cause duplicate PK errors on inserts. For kFactor insert paths, use controller-level sequence realignment (`pg_get_serial_sequence` + `setval`) and retry once.
+### 6.4 AC / TinyTuya
 
-**Car heater logs note**: ESP32 log snapshots are emitted in a dedicated `car_heater_logs` Socket.IO event. For compatibility, frontend can still read `status.logs` from `car_heater_status`, but should dedupe because both WS and HTTP paths may carry the same snapshot.
+**Diagnostics**: Initialize the AC TinyTuya device with env-driven `AC_TUYA_VERSION` (and timeout/persist knobs when needed) instead of relying on library defaults. When status/control fails, inspect the raw TinyTuya `Err` code in logs; `914` points to local key/version mismatch, `901` can occur even when the device IP answers ping if the local-control handshake cannot complete.
 
-**Temperatures page boot note**: `app/templates/temperatures.html` now boots the page with `window.TEMPERATURES_BOOTSTRAP` (`locations`, `outside_location_names`, `language`). Keep the temperatures workspace inline; do not reattach `settings_modal.html` or the shared chart modal to this page.
+### 6.5 ESP32 WebSocket Service
 
-**Temperatures asset cache note**: When changing user-visible `app/static/js/temperatures.js` or `app/static/css/temperatures.css` behavior in production, also bump the versioned asset URLs in `app/templates/temperatures.html` so browser cache does not mask the fix.
+**Restart**: `esp32_ws.service` runs Gunicorn with long-lived WebSocket requests. Keep the systemd stop path hard-kill based (`KillSignal=SIGKILL`, short `TimeoutStopSec`) so restarts do not block on stuck Gunicorn shutdown.
 
-**Static asset cache note**: When changing user-visible `app/static/js/car_heater.js` behavior in production, also bump the versioned script URL in `app/templates/car_heater.html` so browser cache does not mask the fix.
+**Diagnostics**: Flask-Sock/simple-websocket handles WS control frames below the route handler. If you need to verify device heartbeat pings in server logs, keep the custom server shim in `esp32_ws/main.py`; route-level JSON logging alone will not show protocol `PING` frames.
 
-**YNAB asset cache note**: When changing user-visible `app/static/js/ynab_categorizer.js` or `app/static/css/ynab_categorizer.css` behavior in production, also bump the versioned asset URLs in `app/templates/ynab_categorizer.html` so browser cache does not mask the fix.
+**Gunicorn bootstrap**: `esp32_ws.service` runs `gunicorn main:app`, so bootstrap that must exist in production cannot live only under `if __name__ == "__main__":`. Keep Redis/WebSocket manager startup reachable from module import or another Gunicorn-executed path.
 
-**Car heater JS helper note**: `app/static/js/car_heater.js` and `app/static/js/car_heater_settings_*.js` share the same page. Do not leave generic helper names like `fmtTs` or `fmtNum` in the global scope in settings modules, or they will override the main page formatters at runtime.
+**Reconnect identity**: When replacing an existing device connection with the same `device_id`, stale socket cleanup must be identity-aware (`ws`/connection object), or the old socket's `finally` block can unregister the new replacement and make live status look like it came from an unknown device.
 
-**Hue controller availability note**: `app.hue_ctrl` is optional at runtime. Guard Hue API routes with `getattr(..., "hue_ctrl", None)` and return a 503-style error when Hue env/config is missing.
+**Redis bridge logging**: `ESP32RedisBridge` should log the first live status summary at `INFO`, but recurring heartbeat summaries should stay at `DEBUG` by default. Only raise recurring summaries to `INFO` by explicitly setting `ESP32_REDIS_STATUS_INFO_REPEAT_INTERVAL_S`.
 
-**YNAB queue filtering note**: Default queue mode is `strict` (skip transfers + split parents). Keep this as the default for both initial page data and API fallback to avoid applying categories to unsupported transaction types.
+### 6.6 YNAB Categorizer
 
-**YNAB config persistence note**: Queue filtering mode is persisted in `ynab_categorizer_config` (singleton `id=1`, budget-aware row). Update/read config via controller methods, not direct table writes in routes.
+**Queue filtering**: Default queue mode is `strict` (skip transfers + split parents). Keep this as the default for both initial page data and API fallback.
 
-**YNAB CSRF note**: Internal browser-driven YNAB mutation endpoints (`/api/ynab-categorizer/*` POST) keep CSRF enabled. Frontend must include CSRF token (`X-CSRFToken` or `X-CSRF-Token`) for JSON POSTs.
+**Config persistence**: Queue filtering mode is persisted in `ynab_categorizer_config` (singleton `id=1`, budget-aware row). Update/read config via controller methods, not direct table writes in routes.
 
-**YNAB reconciled filter note**: Treat transactions as reconciled when `tx["cleared"] == "reconciled"` (case-insensitive). Default queue behavior hides reconciled items unless explicitly enabled in config.
+**CSRF**: Internal browser-driven YNAB mutation endpoints (`/api/ynab-categorizer/*` POST) keep CSRF enabled. Frontend must include CSRF token (`X-CSRFToken` or `X-CSRF-Token`) for JSON POSTs.
 
-**YNAB queue-limit note**: Queue limiting is config-driven (`queue_limit_enabled`, `queue_limit_value`, `queue_limit_unit`) and should be applied on transaction date (`YYYY-MM-DD`) with supported units `days|months|years`.
+**Reconciled filter**: Treat transactions as reconciled when `tx["cleared"] == "reconciled"` (case-insensitive). Default queue behavior hides reconciled items unless explicitly enabled in config.
 
-**YNAB quick-apply preference note**: `quick_apply_include_medium` is persisted in `ynab_categorizer_config` and defaults to `false`; keep High-confidence-only bulk suggestion apply as the safe default unless explicitly enabled.
+**Queue limit**: Queue limiting is config-driven (`queue_limit_enabled`, `queue_limit_value`, `queue_limit_unit`) and should be applied on transaction date (`YYYY-MM-DD`) with supported units `days|months|years`.
 
-**YNAB starting-balance note**: Exclude "Starting Balance" transactions from categorization queue, even if uncategorized. Match by normalized `payee_name` (`STARTING BALANCE`) and fallback `payee_id` values (`starting_balance`, `starting-balance`).
+**Quick-apply**: `quick_apply_include_medium` is persisted in `ynab_categorizer_config` and defaults to `false`; keep High-confidence-only bulk suggestion apply as the safe default unless explicitly enabled.
 
-**YNAB row-display note**: Do not surface raw transaction UUIDs in queue rows. Prefer actionable context (`From/To account`) plus memo/date/amount while keeping UUIDs only as hidden checkbox values for apply actions.
+**Starting Balance**: Exclude "Starting Balance" transactions from the categorization queue, even if uncategorized. Match by normalized `payee_name` (`STARTING BALANCE`) and fallback `payee_id` values (`starting_balance`, `starting-balance`).
 
-**YNAB default-suggestion note**: Persist `default_category_id` in `ynab_categorizer_config`. When payee stats yield no suggestion, use this category as fallback suggestion only if it exists in the visible category set.
+**Row display**: Do not surface raw transaction UUIDs in queue rows. Prefer actionable context (`From/To account`) plus memo/date/amount while keeping UUIDs only as hidden checkbox values for apply actions.
 
-**YNAB category-list note**: Queue category lists should exclude `deleted` and `hidden` categories. Order categories with top 10 locally most-used (from `ynab_payee_category_stats` aggregate counts) first, then remaining categories alphabetically.
+**Default suggestion**: Persist `default_category_id` in `ynab_categorizer_config`. When payee stats yield no suggestion, use this category as fallback only if it exists in the visible category set.
 
-**YNAB approvals note**: Unapproved transactions are fetched via YNAB transactions endpoint with `type=unapproved` and approved in bulk via PATCH payloads using `{"id": "...", "approved": true}`. Keep Root-Admin guard and CSRF enforcement identical to categorize apply endpoints.
+**Category list**: Queue category lists should exclude `deleted` and `hidden` categories. Order with top 10 locally most-used (from `ynab_payee_category_stats` aggregate counts) first, then remaining categories alphabetically.
 
-**YNAB merged-review note**: The web page uses `/api/ynab-categorizer/queue` as the single review source for both uncategorized and categorized-but-unapproved transactions. Do not reintroduce the old two-tab page flow unless the queue payload is explicitly split again.
+**Approvals**: Unapproved transactions are fetched via YNAB transactions endpoint with `type=unapproved` and approved in bulk via PATCH payloads `{"id": "...", "approved": true}`. Keep Root-Admin guard and CSRF enforcement identical to categorize apply endpoints.
 
-**YNAB apply semantics note**: `/api/ynab-categorizer/apply` now sends both `category_id` and `approved: true` in the same YNAB bulk PATCH. Treat manual category apply as categorize-and-approve, and keep `/api/ynab-categorizer/approve` only for approve-as-is actions on already categorized items.
+**Merged review**: The web page uses `/api/ynab-categorizer/queue` as the single review source for both uncategorized and categorized-but-unapproved transactions. Do not reintroduce the old two-tab page flow unless the queue payload is explicitly split again.
 
-**YNAB custom-rules note**: Custom categorization rules are persisted in `ynab_categorizer_config.custom_rules_json` via controller methods. Rules run top-to-bottom, first match wins, and payee comparisons must use the existing canonical `normalize_payee()` helper.
+**Apply semantics**: `/api/ynab-categorizer/apply` sends both `category_id` and `approved: true` in the same YNAB bulk PATCH. Treat manual category apply as categorize-and-approve, and keep `/api/ynab-categorizer/approve` only for approve-as-is on already categorized items.
 
-**YNAB test-mode note**: `ynab_categorizer_config.test_mode_enabled` is a persisted workspace safety toggle. When enabled, `/api/ynab-categorizer/apply` and `/api/ynab-categorizer/approve` must simulate success without calling YNAB or mutating local learning stats, so the review queue stays reusable for repeated testing.
+**Custom rules**: Custom categorization rules are persisted in `ynab_categorizer_config.custom_rules_json` via controller methods. Rules run top-to-bottom, first match wins, and payee comparisons must use the existing canonical `normalize_payee()` helper.
 
-**API CORS note**: Cross-origin access for `/api/*` is opt-in via `API_ALLOWED_ORIGINS`. Do not reintroduce wildcard CORS defaults; same-origin browser traffic does not need CORS headers.
+**Test mode**: `ynab_categorizer_config.test_mode_enabled` is a persisted workspace safety toggle. When enabled, `/api/ynab-categorizer/apply` and `/api/ynab-categorizer/approve` must simulate success without calling YNAB or mutating local learning stats, so the review queue stays reusable for repeated testing.
 
-**API key transport note**: Query-string API keys are disabled by default. Use `Authorization: Bearer <token>` or `X-API-Key`, and only enable `ALLOW_API_KEY_QUERY_PARAM=1` for temporary backward compatibility.
+### 6.7 Hue & Temperatures
 
-**Hue timeout note**: Hue bridge HTTP calls should always use an explicit timeout. Configure via `HUE_HTTP_TIMEOUT_S` and preserve timeout usage in new Hue controller methods.
+**Hue availability**: `app.hue_ctrl` is optional at runtime. Guard Hue API routes with `getattr(..., "hue_ctrl", None)` and return a 503-style error when Hue env/config is missing.
 
-**ESP32 WS restart note**: `esp32_ws.service` runs Gunicorn with long-lived WebSocket requests. Keep the systemd stop path hard-kill based (`KillSignal=SIGKILL`, short `TimeoutStopSec`) so restarts do not block on stuck Gunicorn shutdown.
+**Hue timeout**: Hue bridge HTTP calls should always use an explicit timeout. Configure via `HUE_HTTP_TIMEOUT_S` and preserve timeout usage in new Hue controller methods.
 
-**ESP32 WS diagnostics note**: Flask-Sock/simple-websocket handles WS control frames below the route handler. If you need to verify device heartbeat pings in server logs, keep the custom server shim in `esp32_ws/main.py`; route-level JSON logging alone will not show protocol `PING` frames.
+**Temperatures boot**: `app/templates/temperatures.html` boots the page with `window.TEMPERATURES_BOOTSTRAP` (`locations`, `outside_location_names`, `language`). Keep the temperatures workspace inline; do not reattach `settings_modal.html` or the shared chart modal to this page.
 
-**ESP32 WS Gunicorn note**: `esp32_ws.service` runs `gunicorn main:app`, so bootstrap that must exist in production cannot live only under `if __name__ == "__main__":`. Keep Redis/WebSocket manager startup reachable from module import or another Gunicorn-executed path.
+### 6.8 API Security
 
-**ESP32 WS reconnect note**: When replacing an existing device connection with the same `device_id`, stale socket cleanup must be identity-aware (`ws`/connection object), or the old socket's `finally` block can unregister the new replacement and make live status look like it came from an unknown device.
+**CORS**: Cross-origin access for `/api/*` is opt-in via `API_ALLOWED_ORIGINS`. Do not reintroduce wildcard CORS defaults; same-origin browser traffic does not need CORS headers.
 
-**ESP32 Redis bridge logging note**: `ESP32RedisBridge` should log the first live status summary at `INFO`, but recurring heartbeat summaries should stay at `DEBUG` by default to avoid spamming Gunicorn logs. Only raise recurring info summaries by explicitly setting `ESP32_REDIS_STATUS_INFO_REPEAT_INTERVAL_S`.
+**API key transport**: Query-string API keys are disabled by default. Use `Authorization: Bearer <token>` or `X-API-Key`, and only enable `ALLOW_API_KEY_QUERY_PARAM=1` for temporary backward compatibility.
 
-**Car heater WS payload note**: Browser `car_heater_status` handlers expect the normalized `CarHeaterStatus` payload shape (`is_heater_on`, `instant_power_w`, etc.), not the raw ESP JSON (`shelly`, `temperature`, `ws_stats`). When emitting heater status from Redis/WS paths, normalize to the HTTP status payload shape first.
+### 6.9 Database & Migrations
 
-**Car heater source note**: The UI `status.source` field represents the transport path (`WS`/HTTP fallback), not Shelly's internal `source` value such as `HTTP_in`. For websocket-originated status, override the normalized payload source to `WS`.
+**PostgreSQL sequence drift**: If rows are imported with explicit `id` values, the serial sequence may lag behind `MAX(id)` and cause duplicate PK errors on inserts. For kFactor insert paths, use controller-level sequence realignment (`pg_get_serial_sequence` + `setval`) and retry once.
 
-**Car heater action-result note**: `car_heater_action_result` is two-stage: the web handler emits a local `stage=queued` ack immediately, while the Redis bridge emits `stage=executed` when the ESP reports success/failure. Keep these distinct so the UI does not treat queue ack as command completion.
+**Migration helpers**: Controller-level legacy migration helpers (`migrate_3d_to_pg`, `migrate_auth_to_pg`, `migrate_ac_to_pg`, `migrate_car_heater_to_pg`, `migrate_ready_by_to_pg`) use `DB_PATH` as the SQLite source and `_sa_engine` as the SQLAlchemy target. Keep them idempotent.
 
-**Car heater WS runtime note**: Do not treat Redis/WS heater status as UI-only. Websocket-originated status must run the same runtime side effects as HTTP `/api/car_heater/status` (charge-mode state updates, keep-at-temp tick, ready-by tick, kFactor tick, alerts, and DB persistence where applicable), otherwise automation silently breaks in websocket-primary mode.
+**Pytest bootstrap**: Repo-root test runs should work without manually exporting `PYTHONPATH`; keep root import bootstrap intact for `.venv/bin/pytest -q`.
 
-**Migration helper note**: Controller-level legacy migration helpers (`migrate_3d_to_pg`, `migrate_auth_to_pg`, `migrate_ac_to_pg`, `migrate_car_heater_to_pg`, `migrate_ready_by_to_pg`) use `DB_PATH` as the SQLite source and `_sa_engine` as the SQLAlchemy target. Keep them idempotent.
-
-**Pytest bootstrap note**: Repo-root test runs should work without manually exporting `PYTHONPATH`; keep root import bootstrap intact for `.venv/bin/pytest -q`.
-
-### 6.2 Null Safety
+### 6.10 Null Safety
 
 ```javascript
 // ✓ CORRECT - Check all levels
@@ -583,7 +599,7 @@ if (data && data.nested && data.nested.value != null) {
 element.textContent = data.nested.value;  // Throws if null
 ```
 
-### 6.3 Socket Event Data Structure
+### 6.11 Socket Event Data Structure
 
 ```python
 # Server emits nested structure
@@ -599,7 +615,7 @@ socket.on('event', data => {
 });
 ```
 
-### 6.4 CSS Grid Column Count
+### 6.12 CSS Grid Column Count
 
 When adding/removing hero stats, update grid columns:
 
@@ -654,7 +670,7 @@ window.socket.onAny((event, ...args) => {
 **Testing**: SQLite in-memory via `sqlite:///:memory:`  
 **All operations**: SQLAlchemy Core (no ORM)
 
-**Runtime hybrid note**: Current app startup still requires `DB_PATH`, and many runtime paths still use the legacy SQLite-backed `DatabaseManager`. `DATABASE_URL` + `USE_SQLA_READS=1` enables SQLAlchemy/PostgreSQL paths where implemented. Treat DB behavior as hybrid unless a feature is explicitly fully migrated.
+**DB_PATH note**: `DB_PATH` is still required at startup because `DatabaseManager` is instantiated in `ControllerBase.__init__`, but `DatabaseManager` is dormant — no runtime path calls it. All actual reads/writes go through `self._sa_engine`. `DB_PATH` can be any valid path; it is never read at runtime.
 
 ### 8.2 Core Tables
 
@@ -792,7 +808,7 @@ class BackgroundService:
 
 ### 10.4 New Database Table Checklist
 
-1. [ ] Add table definition in `database.py`
+1. [ ] Add table definition in `app/core/schema.py`
 2. [ ] Add dataclass in `models.py`
 3. [ ] Add CRUD in `controller.py`
 4. [ ] Export in `core/__init__.py`
@@ -808,7 +824,7 @@ SECRET_KEY=...           # Flask secret
 DATABASE_URL=postgresql+psycopg://user:pass@localhost/dbname  # PostgreSQL connection (Alembic + SQLA paths)
 
 # Required at runtime (current app factory)
-DB_PATH=/path/to/db.sqlite  # SQLite path used by legacy runtime paths
+DB_PATH=/path/to/db.sqlite  # Required at startup (legacy DatabaseManager instantiation); never read at runtime
 
 # Optional
 WEB_USERNAME=admin       # Initial admin user
