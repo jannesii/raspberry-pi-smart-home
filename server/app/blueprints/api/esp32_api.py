@@ -62,6 +62,20 @@ def get_esp32_temphum():
     )
 
 
+@esp32_bp.route("/esp32_temphum/latest", methods=["GET"])
+@login_required
+def get_latest_esp32_temphum():
+    """Return the latest temperature/humidity reading for each location."""
+    ctrl: Controller = current_app.ctrl  # type: ignore
+    locations = ctrl.get_unique_locations()
+    logger.debug(
+        "API /esp32_temphum/latest returned %d locations for %s",
+        len(locations),
+        current_user.get_id(),
+    )
+    return jsonify(locations)
+
+
 ac_check_flag = True
 
 

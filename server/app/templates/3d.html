@@ -123,7 +123,7 @@
   // Convenience flag: when false (inactive or unknown), prefer static image
   window.preferImage = !(window.initialStatus && typeof window.initialStatus.status === 'string' && window.initialStatus.status.toLowerCase() === 'active');
 </script>
-<script src="{{ url_for('static', filename='js/init_sio.js') }}"></script>
+<script src="{{ url_for('static', filename='js/init_sio.js', v='20260504-1') }}"></script>
 <script src="{{ url_for('static', filename='js/3d.js') }}"></script>
 <script src="{{ url_for('static', filename='js/flash.js') }}"></script>
 {% endblock %}

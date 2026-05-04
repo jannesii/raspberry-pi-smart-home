@@ -25,6 +25,7 @@
     chartTemp: null,
     chartHum: null,
     chartRequestToken: 0,
+    latestRoomsRequestToken: 0,
     controlLocations: [],
     outsideSummary: null,
     ac: {
@@ -676,6 +677,38 @@
     }
   }
 
+  async function fetchLatestRooms(reason = 'manual') {
+    const requestToken = state.latestRoomsRequestToken + 1;
+    state.latestRoomsRequestToken = requestToken;
+
+    try {
+      const response = await fetch('/api/esp32_temphum/latest', {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      });
+      if (!response.ok) {
+        console.warn('Latest temperature snapshot fetch failed:', response.status);
+        return;
+      }
+
+      const rows = await response.json();
+      if (requestToken !== state.latestRoomsRequestToken) return;
+      if (!Array.isArray(rows)) return;
+
+      rows.forEach(setRoom);
+      console.log('🔄 Latest temperature snapshot loaded:', rows.length, reason);
+      renderAll();
+
+      if (state.selectedKey && formatDateISO(state.currentDate) === formatDateISO(new Date())) {
+        fetchRoomHistory();
+      }
+      fetchOutsideToday();
+    } catch (error) {
+      if (requestToken !== state.latestRoomsRequestToken) return;
+      console.error('❌ Failed to fetch latest temperature snapshot:', error);
+    }
+  }
+
   function renderFilterState() {
     [dom.filterIndoor, dom.filterOutdoor, dom.filterStale].forEach(button => {
       if (!button) return;
@@ -1163,6 +1196,16 @@
 
   function initSocketHandlers() {
     if (!window.socket) return;
+
+    window.socket.on('connect', () => {
+      console.log('📡 temperatures socket connected');
+      fetchLatestRooms('socket_connect');
+      fetchAcStatus();
+    });
+
+    window.socket.on('disconnect', reason => {
+      console.warn('📡 temperatures socket disconnected:', reason);
+    });
 
     window.socket.on('esp32_temphum', data => {
       console.log('📡 esp32_temphum', data);

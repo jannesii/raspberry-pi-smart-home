@@ -418,6 +418,11 @@ if (window.socket) {
 }
 ```
 
+**Reconnect behavior**: Do not call `window.socket.disconnect()` for recoverable
+server restarts or shutdown notices. Socket.IO treats client disconnects as
+intentional and stops automatic reconnection; close the underlying engine or let
+the transport drop so the shared client can reconnect.
+
 ### 4.3 Event Naming
 
 | Event | Direction | Purpose |
