@@ -144,6 +144,7 @@ Browse to http://127.0.0.1:5555 and log in.
 - `scripts/restart.sh` retries `pre-commit run --all-files` once before aborting.
 - AC controller methods migrated to SQLAlchemy Core (AC event logging, thermostat configuration).
 - AC TinyTuya bootstrap now honors `AC_TUYA_VERSION`, `AC_TUYA_TIMEOUT_S`, and optional `AC_TUYA_PERSIST`; AC status/control logs include raw Tuya `Err` codes to separate reachability issues from key/version mismatches.
+- AC control operations emit concise debug logs before TinyTuya commands are sent.
 - Hue exposes an API key protected `POST /hue/set_current_color` endpoint to apply the current time-slot color immediately.
 - Hue service initialization now fails safe when `HUE_BRIDGE_IP` or `HUE_USERNAME` is missing.
 - Test bootstrap now works from the repo root without manually exporting `PYTHONPATH`.

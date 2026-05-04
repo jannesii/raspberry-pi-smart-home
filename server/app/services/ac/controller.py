@@ -130,23 +130,28 @@ class ACController:
     # -------------------------
 
     def turn_on(self) -> dict[str, Any]:
+        logger.debug("AC CONTROLLER: control turn_on requested")
         return self._send_commands(self.POWER, True)
 
     def turn_off(self) -> dict[str, Any]:
+        logger.debug("AC CONTROLLER: control turn_off requested")
         return self._send_commands(self.POWER, False)
 
     def set_mode(self, mode: str) -> dict[str, Any]:
         mode_l = mode.strip().lower()
         self._validate_mode(mode_l)
+        logger.debug("AC CONTROLLER: control set_mode requested mode=%s", mode_l)
         return self._send_commands(self.MODE, mode_l)
 
     def set_fan_speed(self, speed: str) -> dict[str, Any]:
         speed_l = speed.strip().lower()
         self._validate_fan_speed(speed_l)
+        logger.debug("AC CONTROLLER: control set_fan_speed requested speed=%s", speed_l)
         return self._send_commands(self.FAN, speed_l)
 
     def set_temperature(self, celsius: int) -> dict[str, Any]:
         self._validate_temperature(celsius)
+        logger.debug("AC CONTROLLER: control set_temperature requested celsius=%s", celsius)
         return self._send_commands(self.TEMP_SET, celsius)
 
     def get_status(self) -> dict[str, Any]:

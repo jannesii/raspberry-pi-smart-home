@@ -96,3 +96,29 @@ def test_turn_on_raises_runtime_error_for_device_error():
         controller.turn_on()
 
     assert device.commands == [(controller.POWER, True)]
+
+
+def test_control_operations_emit_debug_logs(caplog: pytest.LogCaptureFixture):
+    """Each public control operation should log a concise debug entry."""
+    device = DummyDevice(command_response={"ok": True})
+    controller = ACController(tinytuya_device=device)
+
+    with caplog.at_level(logging.DEBUG, logger="app.services.ac.controller"):
+        controller.turn_on()
+        controller.turn_off()
+        controller.set_mode(" COLD ")
+        controller.set_fan_speed(" HIGH ")
+        controller.set_temperature(23)
+
+    assert device.commands == [
+        (controller.POWER, True),
+        (controller.POWER, False),
+        (controller.MODE, "cold"),
+        (controller.FAN, "high"),
+        (controller.TEMP_SET, 23),
+    ]
+    assert "control turn_on requested" in caplog.text
+    assert "control turn_off requested" in caplog.text
+    assert "control set_mode requested mode=cold" in caplog.text
+    assert "control set_fan_speed requested speed=high" in caplog.text
+    assert "control set_temperature requested celsius=23" in caplog.text
