@@ -70,6 +70,13 @@ A comprehensive home automation server for Raspberry Pi (or any Linux host). Rea
 - **Default fallback category** can be configured for no-suggestion payees; category dropdowns prioritize top 10 locally most-used categories and hide hidden YNAB categories
 - **Review QoL**: inline ready/missing/edited states, sticky visible-queue submit rail, keyboard shortcuts, and readable dark-theme dropdown menus
 
+### 💊 Medicine Calculator
+- **Root-Admin-only Settings tool** for tracking medicine purchase snapshots
+- **Multiple medicines** with a history-backed dropdown and add-new flow
+- **Exact pieces bought** instead of bottle assumptions
+- **Per-purchase dosing schedule snapshots** with custom dosing weekdays and a single dose amount per dosing day
+- **Finnish reimbursement timing** using calendar-day flex windows from the latest purchase per medicine
+
 ### 📊 System Features
 - **Real-time WebSocket updates** – instant UI refresh without polling
 - **Application logging** – error logs stored in database, viewable in UI
@@ -107,6 +114,7 @@ Browse to http://127.0.0.1:5555 and log in.
 ## Development Notes
 
 - `scripts/restart.sh` activates `.venv` and runs `pre-commit run --all-files`; the service restarts only if checks pass.
+- Medicine calculator is Root-Admin only under Settings and stores exact purchase pieces plus per-purchase dosing schedule snapshots.
 - YNAB categorizer is Root-Admin only and configured via `YNAB_API_KEY` + `YNAB_BUDGET_ID`.
 - YNAB HTTP behavior can be tuned with `YNAB_HTTP_TIMEOUT_S` and `YNAB_HTTP_RETRIES`.
 - KFactor cooldown persistence uses a dedicated `car_heater_kfactor_cooldown` table.

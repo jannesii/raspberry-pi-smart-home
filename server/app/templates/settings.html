@@ -28,6 +28,9 @@
   <a class="tile" href="{{ url_for('web.logs') }}">Lokitiedot</a>
   <a class="tile" href="{{ url_for('web.logging_settings') }}">Logging control</a>
   <a class="tile" href="{{ url_for('web.get_ynab_categorizer_page') }}">YNAB Categorizer</a>
+  {% if is_root_admin %}
+  <a class="tile" href="{{ url_for('web.medicine_calculator_page') }}">Medicine Calculator</a>
+  {% endif %}
   <a class="tile" href="{{ url_for('web.change_password') }}">Vaihda salasana</a>
   <a class="tile" href="{{ url_for('web.api_keys') }}">API-avaimet</a>
   <a class="tile" href="{{ url_for('web.novpn_settings') }}">VPN/DNS ohitus</a>

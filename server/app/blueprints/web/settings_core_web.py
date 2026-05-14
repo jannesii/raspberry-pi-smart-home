@@ -27,8 +27,12 @@ logger.setLevel(logging.INFO)
 @web_bp.route("/settings")
 @login_required
 def get_settings_page():
+    ctrl: Controller = get_ctrl()
+    me = ctrl.get_user_by_username(current_user.get_id(), include_pw=False)
+    is_root_admin = bool(me and getattr(me, "is_root_admin", False))
     logger.info("Rendering settings for %s", current_user.get_id())
-    return render_template("settings.html")
+    logger.debug("Settings root-admin visibility for %s: %s", current_user.get_id(), is_root_admin)
+    return render_template("settings.html", is_root_admin=is_root_admin)
 
 
 @web_bp.route("/settings/change_password", methods=["GET", "POST"])

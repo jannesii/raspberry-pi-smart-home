@@ -13,6 +13,7 @@ web_bp = Blueprint("web", __name__)
 # These imports are intentional for side effects.
 from . import (
     car_heater_web,
+    medicine_calculator_web,
     pages_web,
     settings_core_web,
     settings_logging_web,

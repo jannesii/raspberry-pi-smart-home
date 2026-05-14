@@ -284,3 +284,27 @@ class YnabCategorizerConfig:
     default_category_id: str | None = None
     custom_rules_json: str | None = None
     updated_ts: str = ""
+
+
+@dataclass
+class MedicinePurchase:
+    id: int | None = None
+    medicine_name: str = ""
+    medicine_key: str = ""
+    purchase_date: str = ""
+    pieces_bought: int = 0
+    dose_per_dosing_day: int = 1
+    dosing_weekdays_json: str = "[]"
+    created_at: str = ""
+    updated_at: str = ""
+
+
+@dataclass
+class MedicineRefillCalculation:
+    purchase_date: str
+    run_out_date: str
+    next_purchase_date: str
+    flex_days: int
+    treatment_days: float
+    dosing_days_covered: int
+    dosing_weekdays: list[int]

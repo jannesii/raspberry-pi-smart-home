@@ -638,6 +638,14 @@ grid-template-columns: repeat(3, 1fr);
 grid-template-columns: repeat(4, 1fr);
 ```
 
+### 6.13 Medicine Calculator
+
+**Scope**: Medicine calculator is Root-Admin only and reachable only from Settings. Keep both the page and `/api/medicine-calculator/*` guarded with `require_root_admin_or_redirect`.
+
+**Purchase model**: Store exact `pieces_bought`; do not reintroduce bottle-count assumptions. Each purchase stores a snapshot of `dose_per_dosing_day` and selected dosing weekdays, so later schedule changes must not recalculate old rows unless that row is edited.
+
+**Calculation semantics**: Use the latest purchase per normalized medicine name for the primary next-date calculation. Older purchases are history only; do not carry over stock unless explicitly requested. Purchase date + 1 is day one, only selected weekdays consume stock, and Finnish `joustoaika` is subtracted as calendar days from the run-out date.
+
 ---
 
 ## 7. Testing & Debugging

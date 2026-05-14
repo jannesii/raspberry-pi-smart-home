@@ -6,6 +6,7 @@ from .car_heater_kfactor import CarHeaterKFactorMixin
 from .car_heater_ready_by import CarHeaterReadyByMixin
 from .logging_control import LoggingControlMixin
 from .logs import LogsMixin
+from .medicine_calculator import MedicineCalculatorMixin
 from .migrations import MigrationMixin
 from .sensors import SensorsMixin
 from .ThreeD import ThreeDMixin
@@ -20,6 +21,7 @@ __all__ = [
     "ControllerBase",
     "LoggingControlMixin",
     "LogsMixin",
+    "MedicineCalculatorMixin",
     "MigrationMixin",
     "SensorsMixin",
     "ThreeDMixin",

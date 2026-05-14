@@ -377,6 +377,22 @@ ynab_categorizer_config = Table(
     ),
 )
 
+medicine_purchases = Table(
+    "medicine_purchases",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("medicine_name", Text, nullable=False),
+    Column("medicine_key", Text, nullable=False),
+    Column("purchase_date", Text, nullable=False),
+    Column("pieces_bought", Integer, nullable=False),
+    Column("dose_per_dosing_day", Integer, nullable=False),
+    Column("dosing_weekdays_json", Text, nullable=False),
+    Column("created_at", Text, nullable=False),
+    Column("updated_at", Text, nullable=False),
+    CheckConstraint("pieces_bought >= 1", name="ck_medicine_pieces_bought_positive"),
+    CheckConstraint("dose_per_dosing_day >= 1", name="ck_medicine_dose_positive"),
+)
+
 Index(
     "idx_esp32_temphum_loc_ts_id",
     esp32_temphum.c.location,
@@ -399,4 +415,10 @@ Index(
     "idx_ynab_stats_budget_category",
     ynab_payee_category_stats.c.budget_id,
     ynab_payee_category_stats.c.category_id,
+)
+Index(
+    "idx_medicine_purchases_key_date",
+    medicine_purchases.c.medicine_key,
+    desc(medicine_purchases.c.purchase_date),
+    desc(medicine_purchases.c.id),
 )

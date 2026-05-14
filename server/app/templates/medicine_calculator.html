@@ -1,0 +1,113 @@
+{% extends 'base.html' %}
+
+{% block title %}Medicine Calculator{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/medicine_calculator.css', v='20260514-1') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/flash.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="medicine-page">
+  <input type="hidden" id="csrfToken" value="{{ csrf_token() }}">
+  <div id="medicineMessage" class="medicine-message" role="status" aria-live="polite"></div>
+
+  <header class="medicine-header">
+    <div>
+      <p class="medicine-eyebrow">Settings</p>
+      <h1>Medicine Calculator</h1>
+      <p class="medicine-subtitle">Track purchase snapshots and the next compensated purchase date.</p>
+    </div>
+    <a class="medicine-back-link" href="{{ url_for('web.get_settings_page') }}">Back to settings</a>
+  </header>
+
+  <section class="medicine-summary" aria-labelledby="medicineSummaryTitle">
+    <div class="medicine-section-heading">
+      <h2 id="medicineSummaryTitle">Current dates</h2>
+      <span id="medicineSummaryCount">0 medicines</span>
+    </div>
+    <div id="medicineSummaryList" class="medicine-summary-list"></div>
+  </section>
+
+  <section class="medicine-workspace">
+    <form id="medicineForm" class="medicine-editor">
+      <div class="medicine-section-heading">
+        <h2 id="medicineFormTitle">Add purchase</h2>
+        <span id="medicineFormMode">New snapshot</span>
+      </div>
+
+      <label class="medicine-field" for="medicineSelect">
+        <span>Medicine</span>
+        <select id="medicineSelect" name="medicineSelect"></select>
+      </label>
+
+      <label id="newMedicineField" class="medicine-field" for="newMedicineName">
+        <span>New medicine name</span>
+        <input id="newMedicineName" name="newMedicineName" type="text" autocomplete="off">
+      </label>
+
+      <div class="medicine-grid">
+        <label class="medicine-field" for="purchaseDateInput">
+          <span>Purchase date</span>
+          <input id="purchaseDateInput" name="purchaseDateInput" type="date" required>
+        </label>
+
+        <label class="medicine-field" for="piecesBoughtInput">
+          <span>Pieces bought</span>
+          <input id="piecesBoughtInput" name="piecesBoughtInput" type="number" min="1" step="1" required>
+        </label>
+
+        <label class="medicine-field" for="doseInput">
+          <span>Pieces per dosing day</span>
+          <input id="doseInput" name="doseInput" type="number" min="1" step="1" required>
+        </label>
+      </div>
+
+      <fieldset class="medicine-weekdays">
+        <legend>Dosing days</legend>
+        <div id="weekdayGrid" class="medicine-weekday-grid">
+          <label><input type="checkbox" name="dosingWeekday" value="0"> Mon</label>
+          <label><input type="checkbox" name="dosingWeekday" value="1"> Tue</label>
+          <label><input type="checkbox" name="dosingWeekday" value="2"> Wed</label>
+          <label><input type="checkbox" name="dosingWeekday" value="3"> Thu</label>
+          <label><input type="checkbox" name="dosingWeekday" value="4"> Fri</label>
+          <label><input type="checkbox" name="dosingWeekday" value="5"> Sat</label>
+          <label><input type="checkbox" name="dosingWeekday" value="6"> Sun</label>
+        </div>
+      </fieldset>
+
+      <div class="medicine-actions">
+        <button id="btnCancelEdit" class="medicine-btn medicine-btn-secondary" type="button">Cancel edit</button>
+        <button id="btnSavePurchase" class="medicine-btn medicine-btn-primary" type="submit">Save purchase</button>
+      </div>
+    </form>
+
+    <section class="medicine-history" aria-labelledby="medicineHistoryTitle">
+      <div class="medicine-section-heading">
+        <h2 id="medicineHistoryTitle">Purchase history</h2>
+        <span id="medicineHistoryCount">0 rows</span>
+      </div>
+      <div class="medicine-table-wrap">
+        <table class="medicine-table">
+          <thead>
+            <tr>
+              <th>Medicine</th>
+              <th>Purchase</th>
+              <th>Pieces</th>
+              <th>Dose</th>
+              <th>Days</th>
+              <th>Next date</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="medicineHistoryBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/medicine_calculator.js', v='20260514-1') }}"></script>
+{% endblock %}
