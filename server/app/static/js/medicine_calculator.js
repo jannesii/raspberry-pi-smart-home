@@ -225,16 +225,16 @@
       const calc = purchase.calculation || {};
       return `
         <tr>
-          <td class="medicine-row-name">${escapeHtml(purchase.medicine_name || '—')}</td>
-          <td>${fmtDate(purchase.purchase_date)}</td>
-          <td>${escapeHtml(purchase.pieces_bought ?? '—')}</td>
-          <td>${escapeHtml(purchase.dose_per_dosing_day ?? '—')}</td>
-          <td>${escapeHtml(fmtWeekdays(purchase.dosing_weekdays))}</td>
-          <td>
+          <td class="medicine-row-name" data-label="Medicine">${escapeHtml(purchase.medicine_name || '—')}</td>
+          <td data-label="Purchase">${fmtDate(purchase.purchase_date)}</td>
+          <td data-label="Pieces">${escapeHtml(purchase.pieces_bought ?? '—')}</td>
+          <td data-label="Dose">${escapeHtml(purchase.dose_per_dosing_day ?? '—')}</td>
+          <td data-label="Days">${escapeHtml(fmtWeekdays(purchase.dosing_weekdays))}</td>
+          <td data-label="Next date">
             ${fmtDate(calc.next_purchase_date)}
             <span class="medicine-muted">(${fmtTreatmentDays(calc.treatment_days)} days)</span>
           </td>
-          <td>
+          <td data-label="Actions">
             <div class="medicine-row-actions">
               <button class="medicine-btn medicine-btn-secondary" type="button" data-action="edit" data-id="${escapeHtml(purchase.id)}">Edit</button>
               <button class="medicine-btn medicine-danger" type="button" data-action="delete" data-id="${escapeHtml(purchase.id)}">Delete</button>

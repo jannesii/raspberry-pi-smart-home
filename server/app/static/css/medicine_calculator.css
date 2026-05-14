@@ -1,5 +1,5 @@
 .medicine-page {
-  width: min(1120px, calc(100vw - 32px));
+  width: min(1440px, calc(100vw - 32px));
   margin: 28px auto 56px;
 }
 
@@ -142,7 +142,7 @@
 
 .medicine-workspace {
   display: grid;
-  grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
   gap: 18px;
   margin-top: 18px;
   align-items: start;
@@ -157,6 +157,7 @@
   display: grid;
   gap: 7px;
   margin-bottom: 14px;
+  min-width: 0;
 }
 
 .medicine-field span,
@@ -168,7 +169,14 @@
 
 .medicine-field input,
 .medicine-field select {
+  display: block;
+  box-sizing: border-box;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  inline-size: 100%;
+  max-inline-size: 100%;
+  min-inline-size: 0;
   min-height: 42px;
   border: 1px solid #3a424b;
   border-radius: 8px;
@@ -176,6 +184,22 @@
   color: #f5f8fb;
   padding: 10px 12px;
   font: inherit;
+}
+
+.medicine-field input[type="date"] {
+  -webkit-appearance: none;
+  appearance: none;
+  overflow: hidden;
+}
+
+.medicine-field input[type="date"]::-webkit-date-and-time-value {
+  min-width: 0;
+  text-align: left;
+}
+
+.medicine-field input[type="date"]::-webkit-calendar-picker-indicator {
+  margin: 0;
+  padding: 0;
 }
 
 .medicine-field input:focus,
@@ -188,6 +212,7 @@
   display: grid;
   grid-template-columns: 1fr;
   gap: 0;
+  min-width: 0;
 }
 
 .medicine-weekdays {
@@ -269,7 +294,8 @@
 .medicine-table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 760px;
+  min-width: 720px;
+  table-layout: auto;
 }
 
 .medicine-table th,
@@ -342,9 +368,117 @@
   }
 }
 
+@media (max-width: 720px) {
+  .medicine-page {
+    width: calc(100vw - 20px);
+    margin: 16px auto 36px;
+  }
+
+  .medicine-header {
+    gap: 12px;
+    padding-bottom: 16px;
+  }
+
+  .medicine-header h1 {
+    font-size: 2rem;
+    line-height: 1;
+  }
+
+  .medicine-subtitle {
+    font-size: 0.95rem;
+  }
+
+  .medicine-back-link {
+    width: 100%;
+    text-align: center;
+  }
+
+  .medicine-summary,
+  .medicine-editor,
+  .medicine-history {
+    padding: 14px;
+  }
+
+  .medicine-section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .medicine-table-wrap {
+    overflow-x: visible;
+  }
+
+  .medicine-table,
+  .medicine-table tbody,
+  .medicine-table tr,
+  .medicine-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .medicine-table {
+    min-width: 0;
+  }
+
+  .medicine-table thead {
+    display: none;
+  }
+
+  .medicine-table tr {
+    border-top: 1px solid #252b31;
+    padding: 12px 0;
+  }
+
+  .medicine-table tr:first-child {
+    border-top: 0;
+    padding-top: 0;
+  }
+
+  .medicine-table td {
+    display: grid;
+    grid-template-columns: minmax(82px, 34%) minmax(0, 1fr);
+    gap: 10px;
+    border-top: 0;
+    padding: 7px 0;
+  }
+
+  .medicine-table td::before {
+    content: attr(data-label);
+    color: #8e9aa6;
+    font-size: 0.74rem;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .medicine-table td.medicine-row-name {
+    display: block;
+    padding-top: 0;
+    font-size: 1rem;
+  }
+
+  .medicine-table td.medicine-row-name::before {
+    content: none;
+  }
+
+  .medicine-table td[data-label="Actions"] {
+    display: block;
+    padding-top: 12px;
+  }
+
+  .medicine-table td[data-label="Actions"]::before {
+    content: none;
+  }
+
+  .medicine-muted {
+    display: block;
+    margin-top: 2px;
+  }
+}
+
 @media (max-width: 560px) {
   .medicine-page {
-    width: min(100vw - 20px, 1120px);
+    width: calc(100vw - 16px);
     margin-top: 16px;
   }
 
