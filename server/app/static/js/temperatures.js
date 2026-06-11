@@ -32,6 +32,7 @@
       isOn: null,
       thermostatEnabled: null,
       sleepEnabled: null,
+      earlySleepEnabled: null,
       sleepActive: null,
       sleepOverrideUntil: null,
       mode: null,
@@ -837,6 +838,9 @@
     state.ac.sleepEnabled = Object.prototype.hasOwnProperty.call(data, 'sleep_enabled')
       ? !!data.sleep_enabled
       : state.ac.sleepEnabled;
+    state.ac.earlySleepEnabled = Object.prototype.hasOwnProperty.call(data, 'early_sleep_enabled')
+      ? !!data.early_sleep_enabled
+      : state.ac.earlySleepEnabled;
     state.ac.sleepActive = Object.prototype.hasOwnProperty.call(data, 'sleep_time_active')
       ? !!data.sleep_time_active
       : state.ac.sleepActive;
@@ -881,6 +885,7 @@
 
     dom.btnSleepToggleMain.textContent = state.ac.sleepEnabled ? 'Disable sleep' : 'Enable sleep';
     dom.btnSleepToggle.textContent = state.ac.sleepEnabled ? 'Disable sleep' : 'Enable sleep';
+    dom.btnEarlySleepToggle.textContent = state.ac.earlySleepEnabled ? 'Disable early sleep' : 'Enable early sleep';
 
     setActiveButtons([dom.modeCold, dom.modeWet, dom.modeWind], state.ac.mode);
     setActiveButtons([dom.fanLow, dom.fanHigh], state.ac.fanSpeed);
@@ -1080,6 +1085,10 @@
 
     dom.btnSleepToggle.addEventListener('click', () => {
       emitSocketAction({ action: 'set_sleep_enabled', value: !state.ac.sleepEnabled });
+    });
+
+    dom.btnEarlySleepToggle.addEventListener('click', () => {
+      emitSocketAction({ action: 'set_early_sleep_enabled', value: !state.ac.earlySleepEnabled });
     });
 
     dom.btnSetpointDec.addEventListener('click', () => {
@@ -1316,6 +1325,7 @@
       thermoSmoothWindow: document.getElementById('thermoSmoothWindow'),
       thermoMaxStaleS: document.getElementById('thermoMaxStaleS'),
       btnSleepToggle: document.getElementById('btnSleepToggle'),
+      btnEarlySleepToggle: document.getElementById('btnEarlySleepToggle'),
       sleepDisableMinutes: document.getElementById('sleepDisableMinutes'),
       btnSleepDisableFor: document.getElementById('btnSleepDisableFor'),
       sleepAllStart: document.getElementById('sleepAllStart'),

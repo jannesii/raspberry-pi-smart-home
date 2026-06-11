@@ -47,7 +47,7 @@ def get_esp32_temphum():
     finland_tz = pytz.timezone("Europe/Helsinki")
     date_str = request.args.get("date", datetime.now(finland_tz).date().isoformat())
     location = request.args.get("location", "default").strip()
-    logger.info("API /esp32_temphum for %s by %s", date_str, current_user.get_id())
+    logger.debug("API /esp32_temphum for %s by %s", date_str, current_user.get_id())
     data = ctrl.get_esp32_temphum_for_date(date_str, location)
     return jsonify(
         [

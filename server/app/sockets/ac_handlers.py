@@ -168,6 +168,10 @@ def handle_ac_control(handler: SocketEventHandler, data: dict[str, Any]) -> None
             en = _parse_bool(data.get("value"))
             ac_thermo.set_sleep_enabled(en)
             return
+        if action == "set_early_sleep_enabled":
+            en = _parse_bool(data.get("value"))
+            ac_thermo.set_early_sleep_enabled(en)
+            return
         if action == "set_sleep_times":
             start = (data.get("start") or "").strip() or None
             stop = (data.get("stop") or "").strip() or None
@@ -228,7 +232,8 @@ def _emit_ac_status(handler: SocketEventHandler, ac_thermo: ACThermostat) -> Non
         "sleep_enabled": bool(getattr(ac_thermo.cfg, "sleep_active", True)),
         "sleep_start": getattr(ac_thermo.cfg, "sleep_start", None),
         "sleep_stop": getattr(ac_thermo.cfg, "sleep_stop", None),
-        "sleep_time_active": bool(ac_thermo._is_sleep_time_window_now),
+        "sleep_time_active": bool(ac_thermo.is_sleep_window_now),
+        "early_sleep_enabled": bool(ac_thermo._sleep.early_sleep_enabled),
     }
     with contextlib.suppress(Exception):
         payload["sleep_schedule"] = getattr(ac_thermo.cfg, "sleep_weekly", None)

@@ -64,7 +64,7 @@ class ACThermostat:
         self._phase_started_at_iso: str | None = getattr(cfg, "phase_started_at", None)
 
         # Initialize submodules
-        self._sleep = SleepManager(cfg, self.tz)
+        self._sleep = SleepManager(cfg, self.tz, self._emit_sleep_status)
         self._sleep.is_sleep_time = self._sleep.is_sleep_window_now()
         self._temp_reader = TemperatureReader(ctrl, cfg, location, self.tz)
         self._emitter = NotificationEmitter(notify, cfg)
@@ -259,6 +259,12 @@ class ACThermostat:
         """Set sleep mode enabled state."""
         self._sleep.set_enabled(enabled)
         self._persist_conf()
+        self._emit_sleep_status()
+        self.step_sleep_check()
+
+    def set_early_sleep_enabled(self, enabled: bool) -> None:
+        """Set sleep mode enabled state."""
+        self._sleep.early_sleep_enabled = enabled
         self._emit_sleep_status()
         self.step_sleep_check()
 

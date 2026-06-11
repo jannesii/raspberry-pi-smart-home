@@ -2,15 +2,19 @@
 Test suite for AC (thermostat) controller operations using SQLAlchemy Core.
 """
 
+import json
 import os
 import sqlite3
 import tempfile
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 
 from app.core.controller import Controller
+from app.services.ac.thermostat import sleep_manager as sleep_manager_module
+from app.services.ac.thermostat.sleep_manager import SleepManager
 
 
 @pytest.fixture
@@ -319,6 +323,52 @@ class TestThermostatSeeding:
         # Should use defaults for missing values
         assert conf.pos_hysteresis == 0.5
         assert conf.neg_hysteresis == 0.5
+
+
+class TestSleepManagerEarlySleep:
+    """Test transient early-sleep behavior for weekly sleep schedules."""
+
+    def _weekly_sleep_cfg(self):
+        keys = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+        return SimpleNamespace(
+            sleep_active=True,
+            sleep_start=None,
+            sleep_stop=None,
+            sleep_weekly=json.dumps({key: {"start": "22:00", "stop": "07:00"} for key in keys}),
+        )
+
+    def test_early_sleep_makes_weekly_schedule_active(self, monkeypatch):
+        """Early sleep should act like sleep time before the scheduled window starts."""
+        cfg = self._weekly_sleep_cfg()
+        emitted: list[str] = []
+        manager = SleepManager(cfg, None, lambda: emitted.append("sleep_status"))
+
+        monkeypatch.setattr(sleep_manager_module, "now_minutes_local", lambda: 12 * 60)
+
+        assert manager.is_sleep_window_now() is False
+
+        manager.early_sleep_enabled = True
+
+        assert manager.is_sleep_window_now() is True
+        assert manager.get_status_payload()["sleep_time_active"] is True
+        assert manager.get_status_payload()["early_sleep_enabled"] is True
+        assert emitted == []
+
+    def test_early_sleep_clears_when_real_weekly_window_starts(self, monkeypatch):
+        """Early sleep is transient and resets once the scheduled sleep window begins."""
+        cfg = self._weekly_sleep_cfg()
+        emitted: list[str] = []
+        manager = SleepManager(cfg, None, lambda: emitted.append("sleep_status"))
+        manager.early_sleep_enabled = True
+
+        monkeypatch.setattr(sleep_manager_module, "now_minutes_local", lambda: 23 * 60)
+
+        assert manager.is_sleep_window_now() is True
+        assert manager.early_sleep_enabled is False
+        assert emitted == ["sleep_status"]
+
+        assert manager.is_sleep_window_now() is True
+        assert emitted == ["sleep_status"]
 
 
 class TestACMigration:

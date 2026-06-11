@@ -25,6 +25,7 @@ A comprehensive home automation server for Raspberry Pi (or any Linux host). Rea
 - **Tuya/Smart Life integration** – control AC via cloud API
 - **Local thermostat loop** – maintains target temperature automatically
 - **Sleep schedule** – automatic night mode with configurable times
+- **Early sleep** – manually enter sleep behavior before the scheduled window
 - **Weekly schedule QoL** – apply one sleep window to all days from the temperatures page
 - **Heating/cooling rate analytics** – tracks °C/h and estimated power consumption
 - **Mode control** – cold, dry, fan modes with fan speed adjustment
@@ -172,6 +173,7 @@ Browse to http://127.0.0.1:5555 and log in.
 - Car heater settings helpers no longer override the main page formatter globals, so the live card keeps second-precision timestamps and two-decimal cabin temperatures while websocket-originated live status shows `source=WS`.
 - Car heater settings and logs views now use explicit Finnish locale time formatting (`fi-FI`) instead of browser-default locale formatting.
 - Temperatures workspace now keeps sleep scheduling controls stacked for the narrow side panel, and long room/detail labels wrap cleanly instead of overflowing cards.
+- AC sleep controls now include a transient early-sleep toggle that enters sleep behavior until the scheduled window takes over.
 
 ---
 

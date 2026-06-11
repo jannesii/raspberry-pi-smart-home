@@ -10,9 +10,14 @@ import json
 import logging
 import time
 from datetime import datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .time_utils import epoch_to_hhmm, now_minutes_local, parse_hhmm_to_minutes
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from app.core import ThermostatConf
 
 logger = logging.getLogger(__name__)
 
@@ -20,11 +25,13 @@ logger = logging.getLogger(__name__)
 class SleepManager:
     """Manages sleep window state and configuration."""
 
-    def __init__(self, cfg: Any, tz: Any) -> None:
-        self._cfg = cfg
+    def __init__(self, cfg, tz, emit_sleep_status_callback) -> None:
+        self._cfg: ThermostatConf = cfg
         self._tz = tz
         self._is_sleep_time: bool = False
+        self._is_early_sleep_time: bool = False
         self._sleep_override_until: float | None = None
+        self._emit_sleep_status: Callable[[], None] = emit_sleep_status_callback
 
     @property
     def is_sleep_time(self) -> bool:
@@ -33,6 +40,15 @@ class SleepManager:
     @is_sleep_time.setter
     def is_sleep_time(self, value: bool) -> None:
         self._is_sleep_time = value
+
+    @property
+    def early_sleep_enabled(self) -> bool:
+        return self._is_early_sleep_time
+
+    @early_sleep_enabled.setter
+    def early_sleep_enabled(self, value: bool) -> None:
+        logger.info("is_early_sleep_time set to: %s", str(value))
+        self._is_early_sleep_time = value
 
     @property
     def override_until(self) -> float | None:
@@ -78,10 +94,25 @@ class SleepManager:
                     now_m = now_minutes_local()
                     if start_m == stop_m:
                         return False
+
+                    is_sleep_time: bool = False
                     if start_m < stop_m:
-                        return start_m <= now_m < stop_m
-                    # Wraps past midnight
-                    return (now_m >= start_m) or (now_m < stop_m)
+                        is_sleep_time = start_m <= now_m < stop_m
+                    else:
+                        is_sleep_time = (now_m >= start_m) or (now_m < stop_m)
+
+                    early_sleep_enabled: bool = self.early_sleep_enabled
+
+                    # Reset early sleep when actual sleep window starts
+                    if is_sleep_time and early_sleep_enabled:
+                        self.early_sleep_enabled = False
+                        self._emit_sleep_status()
+
+                    # Act like in sleep window when early sleep enabled
+                    if not is_sleep_time and early_sleep_enabled:
+                        is_sleep_time = True
+
+                    return is_sleep_time
         except Exception as e:
             logger.debug("thermo: failed weekly sleep parse: %s", e)
 
@@ -162,6 +193,7 @@ class SleepManager:
             "sleep_start": getattr(self._cfg, "sleep_start", None),
             "sleep_stop": getattr(self._cfg, "sleep_stop", None),
             "sleep_time_active": bool(self.is_sleep_window_now()),
+            "early_sleep_enabled": self.early_sleep_enabled,
         }
 
         # Attach weekly schedule (as dict) if present

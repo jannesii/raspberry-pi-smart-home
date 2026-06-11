@@ -3,6 +3,8 @@ import os
 import threading
 from typing import Any
 
+from app.sockets._handlers import SocketEventHandler
+
 from ..extensions import socketio
 
 logger = logging.getLogger(__name__)
@@ -66,7 +68,7 @@ def _build_tuya_ac_device(device_id: str, ip: str, local_key: str):
     return device
 
 
-def _make_notify(handler) -> Any:
+def _make_notify(handler: SocketEventHandler) -> Any:
     """Create a notifier that emits events to browser views via SocketEventHandler."""
 
     def _notify(event: str, payload: dict[str, Any]):
