@@ -6,7 +6,7 @@ from dataclasses import asdict
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Engine, delete, insert, select, update
+from sqlalchemy import Engine, delete, func, insert, select, update
 
 from ..medicine_calculator import (
     calculate_medicine_refill,
@@ -98,6 +98,33 @@ class MedicineCalculatorMixin:
             rows = conn.execute(stmt).mappings().all()
         purchases = [self._medicine_purchase_from_row(row) for row in rows]
         logger.debug("list_medicine_purchases returning count=%s", len(purchases))
+        return purchases
+
+    def list_latest_medicine_purchases(self) -> list[MedicinePurchase]:
+        """Return the latest purchase snapshot for each normalized medicine."""
+        logger.debug("list_latest_medicine_purchases called")
+        sa_engine = self._medicine_require_sa_engine()
+        ranked_purchases = select(
+            *medicine_purchases.c,
+            func.row_number()
+            .over(
+                partition_by=medicine_purchases.c.medicine_key,
+                order_by=(
+                    medicine_purchases.c.purchase_date.desc(),
+                    medicine_purchases.c.id.desc(),
+                ),
+            )
+            .label("medicine_purchase_rank"),
+        ).subquery()
+        stmt = (
+            select(*(ranked_purchases.c[column.name] for column in medicine_purchases.c))
+            .where(ranked_purchases.c.medicine_purchase_rank == 1)
+            .order_by(ranked_purchases.c.medicine_key.asc())
+        )
+        with sa_engine.connect() as conn:
+            rows = conn.execute(stmt).mappings().all()
+        purchases = [self._medicine_purchase_from_row(row) for row in rows]
+        logger.debug("list_latest_medicine_purchases returning count=%s", len(purchases))
         return purchases
 
     def get_medicine_purchase(self, purchase_id: int) -> MedicinePurchase | None:

@@ -180,6 +180,47 @@ def test_controller_crud_groups_by_normalized_medicine(controller: Controller):
     assert controller.get_medicine_purchase(updated.id) is None
 
 
+def test_controller_lists_latest_purchase_per_normalized_medicine(controller: Controller):
+    controller.create_medicine_purchase(
+        medicine_name="Medicine B",
+        purchase_date="2026-05-01",
+        pieces_bought=30,
+        dose_per_dosing_day=1,
+        dosing_weekdays=[0, 1, 2, 3, 4],
+    )
+    older_a = controller.create_medicine_purchase(
+        medicine_name="Medicine A",
+        purchase_date="2026-05-15",
+        pieces_bought=30,
+        dose_per_dosing_day=1,
+        dosing_weekdays=[0, 1, 2, 3, 4],
+    )
+    same_day_a = controller.create_medicine_purchase(
+        medicine_name=" medicine   a ",
+        purchase_date="2026-06-01",
+        pieces_bought=60,
+        dose_per_dosing_day=1,
+        dosing_weekdays=[0, 1, 2, 3, 4],
+    )
+    latest_a = controller.create_medicine_purchase(
+        medicine_name="Medicine A",
+        purchase_date="2026-06-01",
+        pieces_bought=90,
+        dose_per_dosing_day=1,
+        dosing_weekdays=[0, 1, 2, 3, 4],
+    )
+
+    latest_purchases = controller.list_latest_medicine_purchases()
+
+    assert [purchase.medicine_key for purchase in latest_purchases] == [
+        "medicine a",
+        "medicine b",
+    ]
+    assert latest_purchases[0].id == latest_a.id
+    assert latest_purchases[0].id not in {older_a.id, same_day_a.id}
+    assert latest_purchases[0].pieces_bought == 90
+
+
 def test_alembic_upgrade_adds_medicine_purchases_table(tmp_path):
     db_path = tmp_path / "medicine_migration.db"
     engine = create_engine(f"sqlite:///{db_path}")

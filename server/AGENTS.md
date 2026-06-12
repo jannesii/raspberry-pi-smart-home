@@ -648,6 +648,8 @@ grid-template-columns: repeat(4, 1fr);
 
 **Calculation semantics**: Use the latest purchase per normalized medicine name for the primary next-date calculation. Older purchases are history only; do not carry over stock unless explicitly requested. Purchase date + 1 is day one, only selected weekdays consume stock, and Finnish `joustoaika` is subtracted as calendar days from the run-out date.
 
+**Alert retries**: Daily medicine webhook alerts use the latest purchase per normalized medicine. Mark successful and no-eligible dates complete, separate failed delivery batches with a cooldown, and enforce a per-date batch limit so polling cannot create an unbounded retry loop.
+
 ---
 
 ## 7. Testing & Debugging

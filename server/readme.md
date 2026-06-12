@@ -76,7 +76,8 @@ A comprehensive home automation server for Raspberry Pi (or any Linux host). Rea
 - **Multiple medicines** with a history-backed dropdown and add-new flow
 - **Exact pieces bought** instead of bottle assumptions
 - **Per-purchase dosing schedule snapshots** with custom dosing weekdays and a single dose amount per dosing day
-- **Finnish reimbursement timing** using calendar-day flex windows from the latest purchase per medicine
+- **Latest-purchase selection per medicine** with Finnish calendar-day reimbursement timing
+- **Daily noon webhook alerts** with cooldowns and a bounded daily retry limit
 
 ### 📊 System Features
 - **Real-time WebSocket updates** – instant UI refresh without polling
@@ -115,7 +116,7 @@ Browse to http://127.0.0.1:5555 and log in.
 ## Development Notes
 
 - `scripts/restart.sh` activates `.venv` and runs `pre-commit run --all-files`; the service restarts only if checks pass.
-- Medicine calculator is Root-Admin only under Settings and stores exact purchase pieces plus per-purchase dosing schedule snapshots.
+- Medicine calculator is Root-Admin only under Settings, stores per-purchase dosing snapshots, and starts a daily eligibility alert routine.
 - YNAB categorizer is Root-Admin only and configured via `YNAB_API_KEY` + `YNAB_BUDGET_ID`.
 - YNAB HTTP behavior can be tuned with `YNAB_HTTP_TIMEOUT_S` and `YNAB_HTTP_RETRIES`.
 - KFactor cooldown persistence uses a dedicated `car_heater_kfactor_cooldown` table.

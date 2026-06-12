@@ -3,6 +3,8 @@ import os
 import threading
 from typing import Any
 
+from flask import Flask
+
 from app.sockets._handlers import SocketEventHandler
 
 from ..extensions import socketio
@@ -83,7 +85,7 @@ def _make_notify(handler: SocketEventHandler) -> Any:
     return _notify
 
 
-def init_services(app) -> dict[str, Any]:
+def init_services(app: Flask) -> dict[str, Any]:
     """Initialize AC thermostat, Hue controller, car heater, and Socket events.
 
     Returns a dictionary of created service instances.
@@ -344,5 +346,17 @@ def init_services(app) -> dict[str, Any]:
             logger.info("YNAB categorizer service initialized for budget=%s", ynab_budget_id)
     except Exception as e:
         logger.exception("Failed to initialize YNAB categorizer service: %s", e)
+
+    # Medicine calculator
+    try:
+        from .medicine import MedicineAlertService
+
+        medicine_service = MedicineAlertService(app.ctrl)
+        medicine_service.start_routine()
+        app.medicine_service = medicine_service
+        services["medicine_service"] = medicine_service
+        logger.info("Medicine service initialized.")
+    except Exception as e:
+        logger.exception("Failed to initialize medicine calculator service: %s", e)
 
     return services
