@@ -3,7 +3,7 @@ from __future__ import annotations
 from flask import Blueprint, Flask
 from flask_login import LoginManager, UserMixin
 
-from app.blueprints.api.esp32_api import esp32_bp
+from app.blueprints.api.esp32_api import esp32_bp, process_esp32_temphum_payload
 
 
 class _User(UserMixin):
@@ -59,3 +59,21 @@ def test_latest_esp32_temphum_returns_latest_location_snapshot():
 
     assert response.status_code == 200
     assert response.get_json() == app.ctrl.locations
+
+
+def test_invalid_temphum_logs_only_none_field_names(caplog):
+    app = _create_app()
+    data = {
+        "location": "WC",
+        "temperature_c": None,
+        "humidity_pct": None,
+        "large_payload_value": "must-not-be-logged",
+    }
+
+    with app.app_context(), caplog.at_level("WARNING"):
+        payload, status_code = process_esp32_temphum_payload(data, source="ws")
+
+    assert status_code == 400
+    assert payload["error"] == "invalid_payload"
+    assert "Bad esp32 temphum payload; None fields: temperature_c, humidity_pct" in caplog.text
+    assert "must-not-be-logged" not in caplog.text
