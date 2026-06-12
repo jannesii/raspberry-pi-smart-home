@@ -285,8 +285,9 @@ def start_sodexo_webhook_thread(
 
 def main() -> int:
     # Prefer WEBHOOK_URL env so you don't commit secrets
+    return 0
     _post_today_menu(
-        webhook_url="https://canary.discord.com/api/webhooks/1434958256668938431/8ZMosz0dbxKcNJGw7NNbEaejzTnayiuCoeJH_ZUwuvSAaz8yXBYCbXY85u9zhhR5r_Ql",
+        webhook_url=os.getenv("SODEXO_WEBHOOK_URL"),
         restaurant_name="Testi Ravintola",
     )
     return 0
