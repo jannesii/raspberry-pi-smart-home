@@ -1,212 +1,273 @@
-# Jannenkoti – Smart Home Dashboard
+# Jannenkoti Smart Home Server
 
-A comprehensive home automation server for Raspberry Pi (or any Linux host). Real-time dashboard, API, and WebSocket gateway for monitoring and controlling your home devices.
+Jannenkoti is a personal home automation server for Linux and Raspberry Pi
+deployments. It combines authenticated browser dashboards, Flask APIs,
+Socket.IO updates, PostgreSQL persistence, and a separate Redis-backed
+WebSocket gateway for ESP32 devices.
 
----
+The repository is tailored to one home environment and its devices. Optional
+integrations stay disabled when their credentials or host-side services are not
+available.
 
-## Features
+## Current Features
 
-### 🚗 Car Heater Control
-- **Remote control** of Shelly-based car block heater
-- **Ready-by scheduling** – set when you need the car warm, system calculates optimal start time
-- **Keep-at-temperature mode** – maintain cabin temperature automatically
-- **kFactor calibration** – learns your car's thermal characteristics for accurate predictions
-- **Real-time power monitoring** – voltage, current, energy consumption
-- **Weather integration** – displays outside temperature and wind from FMI (Finnish Meteorological Institute)
+### Climate monitoring and AC automation
 
-### 🌡️ Temperature Monitoring
-- **Multi-room sensors** via ESP32 nodes (temperature + humidity)
-- **Responsive temperatures workspace** with inline room detail, daily charts, and AC automation controls
-- **BMP pressure sensor** support (barometric pressure, altitude)
-- **Historical charts** with date filtering
-- **Real-time updates** via WebSocket with automatic reconnect and snapshot refresh
+- Multi-location ESP32 temperature and humidity telemetry
+- Live room workspace with search, sorting, outside-sensor grouping, and
+  per-day temperature and humidity charts
+- FMI outside weather observations without an API key
+- Local TinyTuya AC control using device ID, LAN IP, and local key
+- Thermostat target, hysteresis, minimum cycle, stale-reading, and sensor
+  selection controls
+- Weekly sleep schedules, apply-to-all scheduling, temporary sleep overrides,
+  and early-sleep mode
+- Heating and cooling rate estimates based on sensor and AC event history
+- BMP pressure, altitude, and temperature persistence/read APIs; the legacy
+  BMP polling service is not started by the application bootstrap
 
-### ❄️ Smart AC / Thermostat
-- **Tuya/Smart Life integration** – control AC via cloud API
-- **Local thermostat loop** – maintains target temperature automatically
-- **Sleep schedule** – automatic night mode with configurable times
-- **Early sleep** – manually enter sleep behavior before the scheduled window
-- **Weekly schedule QoL** – apply one sleep window to all days from the temperatures page
-- **Heating/cooling rate analytics** – tracks °C/h and estimated power consumption
-- **Mode control** – cold, dry, fan modes with fan speed adjustment
+### Car heater
 
-### 🖨️ 3D Printer Integration
-- **Live camera feed** via HLS streaming
-- **Print progress tracking** – layer info, time remaining, print speed
-- **Printer controls** – pause, resume, stop, home
-- **Timelapse capture** – automated frame capture during prints
-- **G-code queue management**
+- Shelly-backed heater control through the car-heater ESP32
+- Live status, power, voltage, current, energy, cabin temperature, and FMI
+  weather data
+- Ready-by scheduling with learned start-time prediction
+- Keep-at-temperature and battery charge modes
+- kFactor passive and autonomous calibration with persisted sessions,
+  parameters, cooldowns, and prediction outcomes
+- Historical charts, command state, and ESP log snapshots
+- WebSocket-first device commands and telemetry with authenticated HTTP
+  fallback endpoints
 
-### 💡 Philips Hue Lights
-- **Time-based routines** – automatic light schedules
-- **Bridge integration** via local API
+### 3D printer dashboard
 
-### 🍽️ Sodexo Lunch Menu
-- **Daily menu scraping** from Sodexo Frami restaurant
-- **Discord webhook** – automatic daily posts to Discord channel
+- HLS live video with captured-image fallback
+- Printer temperatures, state, layer progress, remaining time, speed, and
+  timelapse status
+- Timelapse configuration and G-code history/autocomplete
 
-### 🌐 NoVPN Device Bypass
-- **Network configuration** for devices that need direct internet access
-- **MAC-based device management**
-- **DNS bypass options**
+Printer actions such as pause, resume, stop, home, and direct G-code execution
+are currently disabled in the server handler.
 
-### 🔐 Authentication & Security
-- **Multi-user support** with admin/root-admin roles
-- **Temporary users** with expiration dates
-- **API key management** for external integrations
-- **Rate limiting** with Redis backend
-- **CSRF protection** on all forms
+### Administration and integrations
 
-### 💳 YNAB Categorizer
-- **Unified review workspace** for uncategorized and unapproved YNAB transactions
-- **Payee-based category suggestions** from local usage history
-- **Custom categorization rules** with ordered first-match wins logic for payee text plus optional absolute-euro amount thresholds
-- **Inline category editing on every review row** while keeping grouped payee review cards
-- **One batch submit for the visible filtered queue**, with mixed categorize-and-approve plus approve-only rows in the same action
-- **Bootstrap learning** from 24 months of categorized history
-- **Configurable queue filter mode** (`strict`, `skip_transfers`, `all_uncategorized`)
-- **Starting Balance transactions are always excluded** from categorization queue
-- **Workspace settings drawer** keeps bootstrap, reconciled filtering, queue age limits, fallback-category controls, and custom rules out of the main review surface
-- **Persisted YNAB test mode** simulates apply/approve actions without writing to YNAB, so the same queue can be exercised repeatedly
-- **Default fallback category** can be configured for no-suggestion payees; category dropdowns prioritize top 10 locally most-used categories and hide hidden YNAB categories
-- **Review QoL**: inline ready/missing/edited states, sticky visible-queue submit rail, keyboard shortcuts, and readable dark-theme dropdown menus
+- Session authentication with regular, admin, and Root-Admin roles
+- Temporary users with expiration times
+- API key creation, one-time token display, verification, and revocation
+- Database-backed application errors plus admin log browsing and live journal
+  streaming
+- Runtime logging-level controls
+- Philips Hue local bridge routines and manual color application
+- Scheduled Sodexo Frami menu posts to Discord
+- MAC-based VPN and DNS bypass management for the host's `novpn-master`
+  service
+- Batched alert webhooks for car-heater and medicine notifications
 
-### 💊 Medicine Calculator
-- **Root-Admin-only Settings tool** for tracking medicine purchase snapshots
-- **Multiple medicines** with a history-backed dropdown and add-new flow
-- **Exact pieces bought** instead of bottle assumptions
-- **Per-purchase dosing schedule snapshots** with custom dosing weekdays and a single dose amount per dosing day
-- **Latest-purchase selection per medicine** with Finnish calendar-day reimbursement timing
-- **Daily noon webhook alerts** with cooldowns and a bounded daily retry limit
+### Root-Admin tools
 
-### 📊 System Features
-- **Real-time WebSocket updates** – instant UI refresh without polling
-- **Application logging** – error logs stored in database, viewable in UI
-- **Mobile-friendly UI** – responsive design for all screen sizes
-- **REST API** – full programmatic access to all features
+- YNAB transaction review with local payee learning, ordered custom rules,
+  queue filters, fallback categories, bulk categorize/approve operations, and
+  a persisted test mode
+- Medicine purchase tracking with per-purchase dosing snapshots, refill-date
+  calculations, and bounded daily webhook alerts
+- Network VPN/DNS bypass management
 
----
+## Architecture
+
+```text
+Browser
+  | HTTP + authenticated Socket.IO
+  v
+Main Flask app :5555 ---- SQLAlchemy Core ---- PostgreSQL
+  |       |
+  |       +---- Redis pub/sub ---- esp32_ws :5556 ---- ESP32 devices
+  |
+  +---- optional local/cloud APIs: TinyTuya, Hue, FMI, YNAB, Discord
+
+Printer/timelapse client ---- authenticated Socket.IO ---- Main Flask app
+```
+
+The two real-time paths have different responsibilities:
+
+- The main Flask-SocketIO server handles authenticated browser views and the
+  printer/timelapse client.
+- Temperature and car-heater ESP32 devices authenticate to the standalone
+  `esp32_ws` service. Redis carries commands, telemetry, and command results
+  between that service and the main app.
+- API-key-protected HTTP endpoints remain available only where implemented as
+  device or integration fallbacks.
+
+## Requirements
+
+- Python 3.11 or newer
+- Redis at `redis://localhost:6379` for the default Socket.IO queue, rate-limit
+  storage, and ESP32 bridge
+- PostgreSQL for production
+- SQLite for tests and lightweight local development
+- A Linux host for systemd, journal streaming, HLS paths, and network-bypass
+  integration
 
 ## Quick Start
 
 ```bash
-# Clone and setup
 git clone https://github.com/jannesii/raspberry-pi-smart-home.git
 cd raspberry-pi-smart-home
 
-# Create virtual environment
-python -m venv .venv && source .venv/bin/activate
+python3.11 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 
-# Configure (minimum required)
-export SECRET_KEY="$(openssl rand -hex 32)"
-export DATABASE_URL="postgresql+psycopg://user:pass@localhost/jannenkoti"
-export DB_PATH="/tmp/jannenkoti-legacy.db"  # required bootstrap value; not production data
-export WEB_USERNAME=admin
-export WEB_PASSWORD=changeme
+# Ensure Redis is running before using real-time features.
+redis-cli ping
 
-# Run
+# Minimal local development configuration. Omitting DATABASE_URL uses SQLite.
+export SECRET_KEY="$(openssl rand -hex 32)"
+export DB_PATH="/tmp/jannenkoti-dev.db"
+export WEB_USERNAME="admin"
+export WEB_PASSWORD="change-this-password"
+
 python run.py
 ```
 
-Browse to http://127.0.0.1:5555 and log in.
+Open `http://127.0.0.1:5555`.
 
----
+`run.py` also loads `jannenkoti.env` from the repository root. The file is
+ignored by Git and can be used instead of shell exports.
 
-## Development Notes
+Session cookies are always marked `Secure`. Use HTTPS for normal deployments;
+browser behavior for secure cookies on plain HTTP localhost can vary.
 
-- `scripts/restart.sh` activates `.venv` and runs `pre-commit run --all-files`; the service restarts only if checks pass.
-- Medicine calculator is Root-Admin only under Settings, stores per-purchase dosing snapshots, and starts a daily eligibility alert routine.
-- YNAB categorizer is Root-Admin only and configured via `YNAB_API_KEY` + `YNAB_BUDGET_ID`.
-- YNAB HTTP behavior can be tuned with `YNAB_HTTP_TIMEOUT_S` and `YNAB_HTTP_RETRIES`.
-- KFactor cooldown persistence uses a dedicated `car_heater_kfactor_cooldown` table.
-- KFactor calibrator weather parsing reads `WeatherValue.value` for t2m and ws_10min.
-- Car heater settings modules export UI helpers via `window.CarHeaterSettings` inside IIFEs.
-- KFactor snapshots load the last session summary from the database on startup.
-- KFactor calibrator restores passive recording alongside autonomous mode, grace-sample debouncing, overnight windows, and power fallback.
-- KFactor active params selection now honors bucketed parameters with any-wind fallback and bucket coverage gating.
-- KFactor snapshots now include legacy UI fields: live_session, recent_sessions, bucket_coverage, statistics, and expanded constants.
-- KFactor uses separate autonomous/passive cooldowns and records prediction outcomes in the DB.
-- kFactor auto-calibration toggle now reads a consistent `autonomous_enabled` flag in initial and Socket.IO status payloads.
-- kFactor socket control parses boolean values explicitly to avoid `"false"` becoming `True`.
-- kFactor calibrator refreshes config from DB during tick/snapshot to keep multi-worker state in sync.
-- Disabling kFactor autonomous mode now cancels active autonomous state and syncs config updates across submodules.
-- kFactor controller auto-recovers from PostgreSQL sequence drift on insert (realigns `id` sequence and retries once).
-- Car heater "Get Logs" now streams ESP32 log snapshots to a floating UI window via `car_heater_logs` (WS + HTTP fallback).
-- Car heater settings include a kFactor cooldown reset button.
-- Live kFactor session panel updates asynchronously via Socket.IO status events.
-- Logging control now logs handler level updates when applied.
-- kFactor session rejection logs now include specific rejection reasons and thresholds.
-- kFactor autonomous sessions use separate minimum duration and informativeness thresholds.
-- Runtime database access uses SQLAlchemy Core; production should set `DATABASE_URL` for PostgreSQL.
-- `DB_PATH` is still required at startup for legacy bootstrap/import paths, but production data should live in PostgreSQL.
-- Added a controller helper to delete duplicate log rows in PostgreSQL (`delete_duplicate_logs_postgres`).
-- Chart modal outdoor temperature range selection now supports multiple location aliases (case-insensitive, substring match).
-- Temperature tiles now support multiple outside locations for grouping and outside-range stats.
-- SQLAlchemy Core schema + engine are the runtime database path.
-- Runtime PostgreSQL connections use a bounded reusable pool to avoid per-query
-  socket churn under Eventlet; SQLite test engines continue to use `NullPool`.
-- Alembic migrations are staged (baseline + kFactor result FK) and target PostgreSQL.
-- SQLite connections (sqlite3 + SQLAlchemy/Alembic) enable the foreign_keys PRAGMA.
-- Security headers (CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy) are applied by default, with CDN allowlist for Chart.js/HLS/Socket.IO.
-- API CORS is now opt-in via `API_ALLOWED_ORIGINS`; same-origin browser use works without it, and cross-origin API use should be explicitly allowlisted.
-- API key query-string auth is disabled by default; use `Authorization: Bearer ...` or `X-API-Key`, and only set `ALLOW_API_KEY_QUERY_PARAM=1` for legacy compatibility.
-- Login and user-management redirects accept local application paths only.
-- Existing `WEB_USERNAME` accounts are promoted to Root-Admin during startup, and root-only guards deny access when the user lookup fails.
-- Hue bridge HTTP calls now honor `HUE_HTTP_TIMEOUT_S` (default `5.0`) to avoid hanging worker threads on slow bridge responses.
-- Legacy-to-SQLAlchemy controller migration helpers are available for 3D, auth, AC, car heater, and ready-by data (`migrate_*_to_pg`).
-- `scripts/restart.sh` retries `pre-commit run --all-files` once before aborting.
-- AC controller methods migrated to SQLAlchemy Core (AC event logging, thermostat configuration).
-- AC TinyTuya bootstrap now honors `AC_TUYA_VERSION`, `AC_TUYA_TIMEOUT_S`, and optional `AC_TUYA_PERSIST`; AC status/control logs include raw Tuya `Err` codes to separate reachability issues from key/version mismatches.
-- AC control operations emit concise debug logs before TinyTuya commands are sent.
-- Hue exposes an API key protected `POST /hue/set_current_color` endpoint to apply the current time-slot color immediately.
-- Hue service initialization now fails safe when `HUE_BRIDGE_IP` or `HUE_USERNAME` is missing.
-- Test bootstrap now works from the repo root without manually exporting `PYTHONPATH`.
-- `esp32_ws.service` uses `KillSignal=SIGKILL` with a 1 second stop timeout so Gunicorn-backed WebSocket restarts are immediate instead of waiting on long-lived connections.
-- ESP32 WebSocket ingress now logs throttled status summaries in `esp32_ws` and matching Redis-bridge summaries in `jannenkoti`, plus low-level WS ping receipts in `esp32_ws`, to verify live device traffic.
-- `esp32_ws` now initializes its Redis manager at module import so Gunicorn `main:app` runs the Redis publish/subscribe bridge instead of only the `__main__` code path.
-- ESP32 reconnects now preserve the newest same-device websocket session; stale disconnect cleanup no longer unregisters the replacement connection.
-- Car heater UI now consumes normalized live status over Socket.IO from the Redis bridge, with `GET /api/car_heater/status` as an HTTP fallback returning the same payload shape.
-- Car heater Details now show websocket-originated status with `source=WS`, and live timestamps render with seconds in 24-hour format.
-- Car heater command events now distinguish `queued` vs ESP `executed` results, and the ESP sends an immediate follow-up status frame after websocket command execution so the UI updates without waiting for the next periodic status tick.
-- WebSocket-delivered car heater status now runs the same backend runtime logic as the legacy HTTP status path, so Keep at Temperature, Ready by Time, Battery Charge Mode, alerts, and kFactor ticks keep working in websocket-primary mode.
-- ESP32 Redis bridge status summaries now log the first live status at `INFO`; recurring heartbeat summaries are downgraded to `DEBUG` unless `ESP32_REDIS_STATUS_INFO_REPEAT_INTERVAL_S` is explicitly enabled.
-- Temperature ESP firmware now uses WebSocket-only telemetry/RPC through `esp32_ws`; the main app consumes `esp32:temperature:*` Redis channels and persists readings through the existing `esp32_temphum` path.
-- ESP device telemetry is no longer accepted through the main app's Socket.IO server; `esp32_ws` and Redis are the device ingress path, while the car-heater HTTP endpoint remains an authenticated fallback.
-- Temperature telemetry rejects non-finite or implausible values (`-50..80°C`, `0..100%`), and FMI/thermostat refresh work runs outside the ingestion request.
-- `esp32_ws` filters temperature-device reconnect status frames before Redis so they are not misvalidated as empty sensor readings after service restarts.
-- Temperatures page Socket.IO reconnects now refresh the latest reading snapshot automatically, so readings catch up after server restarts without a manual page refresh.
-- Temperature ESP firmware JSON is built with ArduinoJson `JsonDocument`; the legacy embedded HTTP server and HTTP poster are excluded from the active PlatformIO build.
-- Car heater cabin temperature now renders with two decimals, and the main page version-busts `car_heater.js` so timestamp/format fixes are not hidden behind browser cache.
-- Car heater settings helpers no longer override the main page formatter globals, so the live card keeps second-precision timestamps and two-decimal cabin temperatures while websocket-originated live status shows `source=WS`.
-- Ready-by completion enables Keep at Temperature and returns before any new heater-on command can be queued.
-- Car heater settings and logs views now use explicit Finnish locale time formatting (`fi-FI`) instead of browser-default locale formatting.
-- Temperatures workspace now keeps sleep scheduling controls stacked for the narrow side panel, and long room/detail labels wrap cleanly instead of overflowing cards.
-- AC sleep controls now include a transient early-sleep toggle that enters sleep behavior until the scheduled window takes over.
+## PostgreSQL Setup
 
----
+Production runtime data should use `DATABASE_URL`. `DB_PATH` remains required
+because the legacy SQLite manager is instantiated during startup, but it is not
+the production runtime database when `DATABASE_URL` is set.
+
+```bash
+cp alembic.ini.example alembic.ini
+
+export DATABASE_URL="postgresql+psycopg://user:password@localhost/jannenkoti"
+export DB_PATH="/tmp/jannenkoti-legacy.db"
+
+alembic upgrade head
+python run.py
+```
+
+`alembic.ini` is intentionally ignored so local credentials cannot be
+committed. Keep the database URL in the environment; the migration environment
+prefers `DATABASE_URL` over the example URL.
+
+`WEB_USERNAME` and `WEB_PASSWORD` are required at every startup. The configured
+username is created as Root-Admin when absent and promoted to Root-Admin if it
+already exists.
+
+## Configuration
+
+Environment values may be exported by the process manager or placed in
+`jannenkoti.env`.
+
+### Core
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `SECRET_KEY` | required | Flask session and CSRF signing key |
+| `WEB_USERNAME` | required | Startup Root-Admin username |
+| `WEB_PASSWORD` | required | Startup Root-Admin password when creating the user |
+| `DB_PATH` | required | Legacy bootstrap path and SQLite development database |
+| `DATABASE_URL` | SQLite from `DB_PATH` | PostgreSQL SQLAlchemy URL |
+| `PORT` | `5555` | Local development server port |
+| `ALLOWED_WS_ORIGINS` | `["http://127.0.0.1:5555"]` | JSON Socket.IO origin allowlist |
+| `API_ALLOWED_ORIGINS` | `[]` | JSON CORS allowlist for `/api/*` |
+| `RATE_LIMIT_STORAGE_URI` | `redis://localhost:6379` | Flask-Limiter storage |
+| `RATE_LIMIT_WHITELIST` | `[]` | JSON list of exact IPs, wildcards, or CIDRs |
+| `ALLOW_API_KEY_QUERY_PARAM` | `false` | Legacy query-string API key support |
+
+`REDIS_URL` configures the ESP32 bridge and car-heater command publisher. The
+main Socket.IO message queue currently uses local Redis directly.
+
+### Optional integrations
+
+| Integration | Variables |
+|---|---|
+| AC / TinyTuya | `AC_DEV_ID`, `AC_IP`, `AC_LOCAL_KEY`, `AC_TUYA_VERSION`, `AC_TUYA_TIMEOUT_S`, `AC_TUYA_PERSIST`, `WINTER_MODE` |
+| Thermostat | `THERMOSTAT_LOCATION`, `ROOM_THERMAL_CAPACITY_J_PER_K` |
+| Philips Hue | `HUE_BRIDGE_IP`, `HUE_USERNAME`, `HUE_HTTP_TIMEOUT_S` |
+| YNAB | `YNAB_API_KEY`, `YNAB_BUDGET_ID`, `YNAB_HTTP_TIMEOUT_S`, `YNAB_HTTP_RETRIES` |
+| Sodexo Discord post | `SODEXO_WEBHOOK_URL`, `SODEXO_POST_HOUR`, `SODEXO_POST_MINUTE` |
+| Shared alerts | `ALERT_WEBHOOK_URL`, `ALERT_WEBHOOK_BATCH_SECONDS` |
+| ESP32 bridge | `REDIS_URL`, `ESP32_WS_API_KEY`, `ESP32_WS_HOST`, `ESP32_WS_PORT` |
+| Network bypass | `LEASES_FILE`, `STATIC_LEASES_CACHE`, `NOVPN_RESTART_TIMEOUT_S` |
+
+The standalone ESP32 service uses its own environment file and process. See
+[esp32_ws/README.md](esp32_ws/README.md).
+
+## Access and API Security
+
+- Browser pages and browser-oriented APIs use Flask-Login session cookies.
+- Admin pages cover users, logs, logging controls, API keys, and timelapse
+  configuration.
+- Root-Admin guards protect YNAB, medicine, and network-bypass operations.
+- External device endpoints use `Authorization: Bearer <token>` or
+  `X-API-Key: <token>`.
+- API-key query parameters are rejected unless
+  `ALLOW_API_KEY_QUERY_PARAM=1`.
+- CSRF protects normal browser mutations. API-key device ingress and selected
+  legacy routes are explicitly exempt.
+- Cross-origin `/api/*` access is disabled unless the origin is listed in
+  `API_ALLOWED_ORIGINS`.
+- Security headers are applied to all responses.
+
+The HTTP API is feature-specific rather than a complete public API for every
+dashboard capability. Route definitions under `app/blueprints/api/` are the
+authoritative endpoint inventory.
+
+## Development
+
+```bash
+# Tests
+.venv/bin/pytest -q
+
+# Lint and formatting checks
+.venv/bin/ruff check app tests run.py esp32_ws
+.venv/bin/ruff format --check app tests run.py esp32_ws
+
+# Repository hooks
+.venv/bin/pre-commit run --all-files
+```
+
+Tests use SQLite through the same SQLAlchemy Core interfaces used with
+PostgreSQL in production.
+
+For production, run the main app with one Eventlet Gunicorn worker behind an
+HTTPS reverse proxy. Long-lived background services and in-process singleton
+state are not designed for multiple main-app workers. Run `esp32_ws` as its
+separate Gunicorn/systemd service.
+
+## Repository Layout
+
+```text
+app/
+  blueprints/       HTML, API, auth, and Villenkoti routes
+  core/             Controller mixins, dataclasses, schema, database engines
+  services/         AC, car heater, Hue, weather, YNAB, alerts, Redis bridge
+  sockets/          Browser/printer Socket.IO handlers
+  static/           Vanilla JavaScript and CSS
+  templates/        Jinja2 templates
+esp32_ws/           Standalone ESP32 WebSocket-to-Redis service
+ESP32_temperature/  PlatformIO temperature-sensor firmware
+migrations/         Alembic migrations
+tests/              Pytest suite
+```
 
 ## Documentation
 
-- [Technical Guide](docs/technical-guide.md) – deployment, configuration, API reference
-- [Guide](docs/guide.md) – operational commands, migrations, backups
-- [DB Next Steps](docs/db_next_steps.md) – PostgreSQL hardening and legacy SQLite cleanup
-- [AGENTS.md](AGENTS.md) – AI development guidelines
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|------------|
-| Backend | Python 3.11, Flask, Flask-SocketIO, Eventlet |
-| Database | PostgreSQL via SQLAlchemy Core; SQLite for tests/local legacy imports |
-| Frontend | Vanilla JS (ES6+), CSS3 Grid/Flexbox |
-| Real-time | Socket.IO |
-| Auth | Flask-Login, session cookies, CSRF |
-
----
+- [Technical Guide](docs/technical-guide.md)
+- [ESP32 WebSocket Service](esp32_ws/README.md)
+- [Temperature ESP32 Firmware](ESP32_temperature/README.md)
+- [YNAB Categorizer](docs/ynab_categorizer.md)
+- [Database Next Steps](docs/db_next_steps.md)
+- [Development Guidelines](AGENTS.md)
 
 ## License
 
-MIT License – © 2025–2026 Janne Siirtola
+MIT License - Copyright 2025-2026 Janne Siirtola

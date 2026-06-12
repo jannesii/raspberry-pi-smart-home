@@ -610,6 +610,11 @@ When changing user-visible JS or CSS in production, bump the versioned asset URL
 
 **Migration helpers**: Controller-level legacy migration helpers (`migrate_3d_to_pg`, `migrate_auth_to_pg`, `migrate_ac_to_pg`, `migrate_car_heater_to_pg`, `migrate_ready_by_to_pg`) use `DB_PATH` as the SQLite source and `_sa_engine` as the SQLAlchemy target. Keep them idempotent.
 
+**Alembic configuration**: The real `alembic.ini` is intentionally ignored
+because local copies may contain credentials. Keep `alembic.ini.example`
+tracked and credential-free, copy it for local use, and supply the actual
+connection through `DATABASE_URL`.
+
 **Pytest bootstrap**: Repo-root test runs should work without manually exporting `PYTHONPATH`; keep root import bootstrap intact for `.venv/bin/pytest -q`.
 
 ### 6.10 Null Safety
