@@ -92,7 +92,11 @@ def process_esp32_temphum_payload(
     data: dict[str, Any], *, source: str = "http"
 ) -> tuple[dict[str, Any], int]:
     """Validate, persist, and broadcast one ESP32 temperature/humidity payload."""
-    logger.debug("process_esp32_temphum_payload source=%s data=%s", source, data)
+    logger.debug(
+        "process_esp32_temphum_payload source=%s fields=%s",
+        source,
+        sorted(data),
+    )
     location, temp, hum, error = (
         data.get("location"),
         data.get("temperature_c"),
@@ -109,11 +113,22 @@ def process_esp32_temphum_payload(
         }, 400
 
     if location is None or temp is None or hum is None:
-        logger.warning("Bad esp32 temphum payload: %s", data)
+        missing_fields = [
+            field_name
+            for field_name, value in (
+                ("location", location),
+                ("temperature_c", temp),
+                ("humidity_pct", hum),
+            )
+            if value is None
+        ]
+
+        message = "Bad esp32 temphum payload; None fields: " + ", ".join(missing_fields)
+
         return {
             "ok": False,
             "error": "invalid_payload",
-            "message": "location, temperature_c, humidity_pct required",
+            "message": message,
         }, 400
 
     valid_locations = [
