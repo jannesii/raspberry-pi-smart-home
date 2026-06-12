@@ -124,7 +124,7 @@ def process_esp32_temphum_payload(
         ]
 
         message = "Bad esp32 temphum payload; None fields: " + ", ".join(missing_fields)
-
+        logger.warning("%s source=%s", message, source)
         return {
             "ok": False,
             "error": "invalid_payload",

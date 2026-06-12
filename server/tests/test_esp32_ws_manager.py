@@ -138,3 +138,39 @@ def test_temperature_messages_publish_to_dedicated_channels(monkeypatch) -> None
 
     assert fake_redis.published[0][0] == module.CHANNEL_TEMPERATURE_TELEMETRY
     assert fake_redis.published[1][0] == module.CHANNEL_TEMPERATURE_RPC_RESULTS
+
+
+def test_temperature_reconnect_status_frame_is_not_published(monkeypatch) -> None:
+    module = _load_esp32_ws_main(monkeypatch)
+    manager = module.ESP32WebSocketManager()
+    fake_redis = _FakeRedis()
+    manager._redis = fake_redis
+
+    manager.publish_temperature_telemetry(
+        {
+            "type": "temperature_reading",
+            "device_id": "temperature_wc",
+            "location": "WC",
+            "metrics": {"sensor_read_total": 10},
+            "ws_stats": {"authenticated": True},
+        }
+    )
+
+    assert fake_redis.published == []
+
+
+def test_malformed_temperature_reading_still_reaches_validation(monkeypatch) -> None:
+    module = _load_esp32_ws_main(monkeypatch)
+    manager = module.ESP32WebSocketManager()
+    fake_redis = _FakeRedis()
+    manager._redis = fake_redis
+
+    manager.publish_temperature_telemetry(
+        {
+            "type": "temperature_reading",
+            "device_id": "temperature_wc",
+            "location": "WC",
+        }
+    )
+
+    assert fake_redis.published[0][0] == module.CHANNEL_TEMPERATURE_TELEMETRY

@@ -297,6 +297,20 @@ class ESP32WebSocketManager:
 
     def publish_temperature_telemetry(self, telemetry: dict[str, Any]) -> None:
         """Publish temperature ESP telemetry to Redis for main app."""
+        if (
+            telemetry.get("type") == "temperature_reading"
+            and "temperature_c" not in telemetry
+            and "humidity_pct" not in telemetry
+            and isinstance(telemetry.get("metrics"), dict)
+            and isinstance(telemetry.get("ws_stats"), dict)
+        ):
+            logger.debug(
+                "Skipping temperature reconnect status frame device=%s location=%s",
+                telemetry.get("device_id"),
+                telemetry.get("location"),
+            )
+            return
+
         if self._redis is None:
             logger.debug(
                 "Skipping temperature telemetry publish device=%s because redis is unavailable",

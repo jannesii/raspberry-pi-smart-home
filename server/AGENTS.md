@@ -540,6 +540,8 @@ When changing user-visible JS or CSS in production, bump the versioned asset URL
 
 **Temperature ESP WebSocket path**: Temperature ESP firmware uses `esp32_ws` as its device transport. Temperature telemetry and RPC responses must use the dedicated Redis channels (`esp32:temperature:telemetry`, `esp32:temperature:rpc_results`, `esp32:temperature:commands`) and should still flow through the main app's `esp32_temphum` persistence/broadcast helper so thermostat/weather side effects stay consistent with the legacy HTTP POST path.
 
+**Temperature reconnect frames**: Current temperature firmware sends a status-only frame labeled `temperature_reading` after WebSocket authentication. Keep the `esp32_ws` publication guard that identifies the frame by absent measurement keys plus `metrics`/`ws_stats`; do not suppress other malformed readings that should reach API validation.
+
 **ESP firmware JSON**: Active ESP firmware JSON payloads should be built with ArduinoJson `JsonDocument` and `serializeJson()`/`deserializeJson()`. Do not add hand-concatenated JSON to active firmware paths.
 
 ### 6.6 YNAB Categorizer
