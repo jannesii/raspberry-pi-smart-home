@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from flask import current_app, request
+from flask import request
 from flask_login import current_user
 
 # Import feature handlers
@@ -43,7 +43,6 @@ if TYPE_CHECKING:
     from flask_socketio import SocketIO
 
     from ..core import Controller
-    from ..services.ac import ACThermostat
     from ..services.car_heater import KFactorCalibrator
 
 
@@ -51,7 +50,7 @@ class SocketEventHandler:
     """
     Singleton Socket.IO event handler.
 
-    Manages connection tracking by role (view, client, esp32) and
+    Manages connection tracking by role (view and timelapse client) and
     routes events to feature-specific handlers.
     """
 
@@ -73,7 +72,6 @@ class SocketEventHandler:
         # Track currently connected sids by role
         self.view_sids: set[str] = set()
         self.client_sids: set[str] = set()
-        self.esp32_sids: set[str] = set()
 
         # Log stream state
         self._log_stream_sids: set[str] = set()
@@ -90,7 +88,6 @@ class SocketEventHandler:
 
         # Simple events (kept inline)
         socketio.on_event("image", self.handle_image)
-        socketio.on_event("esp32_temphum", self.handle_esp32_temphum)
         socketio.on_event("status", self.handle_status)
         socketio.on_event("printerAction", self.handle_printer_action)
 
@@ -133,15 +130,6 @@ class SocketEventHandler:
             except Exception:
                 self.client_sids.discard(sid)
                 self.logger.debug("Removed stale client sid: %s", sid)
-
-    def emit_to_esp32(self, event: str, payload: Any = None) -> None:
-        """Emit event only to esp32_server connections."""
-        for sid in list(self.esp32_sids):
-            try:
-                self.socketio.emit(event, payload, to=sid)
-            except Exception:
-                self.esp32_sids.discard(sid)
-                self.logger.debug("Removed stale esp32 sid: %s", sid)
 
     def flash(self, message: str, category: str = "info") -> None:
         """Emit a flash message to browser views."""
@@ -189,9 +177,6 @@ class SocketEventHandler:
             elif role == "client":
                 self.client_sids.add(sid)
                 self.logger.info("Client connected: %s (tracked)", sid)
-            elif role == "esp32":
-                self.esp32_sids.add(sid)
-                self.logger.info("ESP32 server connected: %s (tracked)", sid)
             else:
                 self.logger.info("Client connected (unclassified): %s", sid)
         return None
@@ -218,8 +203,6 @@ class SocketEventHandler:
             return "view"
         elif role_l in {"client", "raspi", "pi", "printer", "timelapse"}:
             return "client"
-        elif role_l == "esp32":
-            return "esp32"
         return None
 
     def handle_disconnect(self, *args) -> None:
@@ -235,11 +218,6 @@ class SocketEventHandler:
             self.client_sids.discard(sid)
             removed = True
             self.logger.info("Client disconnected: %s (untracked)", sid)
-        if sid in self.esp32_sids:
-            self.esp32_sids.discard(sid)
-            removed = True
-            self.logger.info("ESP32 server disconnected: %s (untracked)", sid)
-
         # Clean up log stream subscription
         if sid in self._log_stream_sids:
             self._log_stream_sids.discard(sid)
@@ -257,46 +235,6 @@ class SocketEventHandler:
         """Broadcast image event to views."""
         self.emit_to_views("image")
         self.logger.debug("Emitted 'image' event")
-
-    def handle_esp32_temphum(self, data: dict[str, Any]) -> None:
-        """Handle ESP32 temperature/humidity data."""
-        location = data.get("location")
-        temp = data.get("temperature_c")
-        hum = data.get("humidity_pct")
-
-        if location is None or temp is None or hum is None:
-            self.socketio.emit("error", {"message": "Invalid location/temperature/humidity data"})
-            self.logger.warning("Bad esp32 temphum payload: %s", data)
-            return
-
-        # Derive current AC state if available
-        ac_on_val = self._get_ac_state()
-
-        saved = self.ctrl.record_esp32_temphum(location, temp, hum, ac_on=ac_on_val)
-        self.emit_to_views(
-            "esp32_temphum",
-            {
-                "location": saved.location,
-                "temperature": saved.temperature,
-                "humidity": saved.humidity,
-                "ac_on": saved.ac_on,
-            },
-        )
-        self.logger.debug("Broadcasted esp32 temphum: %s", data)
-
-    def _get_ac_state(self) -> bool | None:
-        """Get current AC on/off state from thermostat or DB."""
-        try:
-            ac_thermo: ACThermostat | None = getattr(current_app, "ac_thermostat", None)
-            if ac_thermo is not None:
-                return bool(ac_thermo.is_on)
-            # Fallback to persisted DB flag
-            conf = self.ctrl.get_thermostat_conf()
-            if conf and conf.current_phase in ("on", "off"):
-                return conf.current_phase == "on"
-        except Exception:
-            pass
-        return None
 
     def handle_status(self, data: dict[str, Any]) -> None:
         """Broadcast status data to views."""

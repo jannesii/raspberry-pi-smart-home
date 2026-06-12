@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime
+from urllib.parse import urlsplit
 
 import pytz
 from flask import current_app, flash, jsonify, redirect, url_for
@@ -67,13 +68,34 @@ def require_root_admin_or_redirect(
     """
     ctrl: Controller = get_ctrl()
     me = ctrl.get_user_by_username(current_user.get_id(), include_pw=False)
-    if me and not getattr(me, "is_root_admin", False):
+    if not me or not getattr(me, "is_root_admin", False):
         flash(message, "error")
         logger.warning("Non-root-admin user %s blocked: %s", current_user.get_id(), message)
         if json:
             return jsonify({"ok": False, "error": "forbidden", "message": message}), 403
         return redirect(url_for(redirect_endpoint))
+    logger.debug("Root-admin user %s authorized", current_user.get_id())
     return None
+
+
+def safe_local_redirect_target(target: str | None, fallback: str) -> str:
+    """Return a local absolute-path redirect target or the supplied fallback."""
+    if not target:
+        return fallback
+
+    candidate = target.strip()
+    parsed = urlsplit(candidate)
+    if (
+        not candidate.startswith("/")
+        or candidate.startswith("//")
+        or parsed.scheme
+        or parsed.netloc
+        or "\\" in candidate
+        or any(ord(char) < 32 for char in candidate)
+    ):
+        logger.debug("Rejected non-local redirect target: %r", target)
+        return fallback
+    return candidate
 
 
 def combine_local_date_time(date_str: str, time_str: str, tz_name: str = "Europe/Helsinki") -> str:

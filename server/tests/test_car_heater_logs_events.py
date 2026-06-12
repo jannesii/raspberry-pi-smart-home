@@ -173,7 +173,10 @@ def test_esp32_redis_bridge_persists_temperature_telemetry(monkeypatch) -> None:
     socketio = _DummySocketIO()
     bridge = ESP32RedisBridge(app=app, socketio=socketio, sio_handler=app.sio_handler)
 
-    monkeypatch.setattr("app.blueprints.api.esp32_api.ac_check_flag", False)
+    monkeypatch.setattr(
+        "app.blueprints.api.esp32_api._schedule_sensor_side_effects",
+        lambda **_kwargs: None,
+    )
 
     bridge._handle_temperature_telemetry(
         {

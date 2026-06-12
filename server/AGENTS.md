@@ -5,7 +5,7 @@
 ```
 STACK: Python 3.11 | Flask | Flask-SocketIO | Eventlet | SQLAlchemy Core | PostgreSQL | SQLite (tests only) | Alembic | Jinja2
 FRONTEND: Vanilla JS (ES6+) | CSS3 Grid/Flexbox | No build tools
-REALTIME: Socket.IO (views/clients/esp32 roles)
+REALTIME: Socket.IO (browser views/timelapse clients) | ESP32 via esp32_ws + Redis
 AUTH: Flask-Login + session cookies | CSRF protection
 PATTERNS: Singleton services | Dataclass DTOs | Blueprint organization
 ```
@@ -518,6 +518,8 @@ When changing user-visible JS or CSS in production, bump the versioned asset URL
 
 **WS runtime side effects**: Websocket-originated status must run the same runtime side effects as HTTP `/api/car_heater/status` (charge-mode state updates, keep-at-temp tick, ready-by tick, kFactor tick, alerts, DB persistence), otherwise automation silently breaks in websocket-primary mode.
 
+**Ready-by completion**: Reaching the target is a terminal transition for the current tick. Enable Keep at Temperature, persist `completed`, and return before start-time logic can overwrite the state or queue another `turn_on`.
+
 **KFactor multi-worker**: KFactor config changes are persisted in the DB. If multiple Gunicorn workers are running, each worker must refresh config from DB (e.g., during tick/snapshot) to avoid stale `enabled` state.
 
 **KFactor config updates**: Use `KFactorCalibrator.update_config()` (not direct `_cfg` assignment) so submodules (`_physics`, `_session`, `_snapshot`) stay in sync.
@@ -539,6 +541,10 @@ When changing user-visible JS or CSS in production, bump the versioned asset URL
 **Redis bridge logging**: `ESP32RedisBridge` should log the first live status summary at `INFO`, but recurring heartbeat summaries should stay at `DEBUG` by default. Only raise recurring summaries to `INFO` by explicitly setting `ESP32_REDIS_STATUS_INFO_REPEAT_INTERVAL_S`.
 
 **Temperature ESP WebSocket path**: Temperature ESP firmware uses `esp32_ws` as its device transport. Temperature telemetry and RPC responses must use the dedicated Redis channels (`esp32:temperature:telemetry`, `esp32:temperature:rpc_results`, `esp32:temperature:commands`) and should still flow through the main app's `esp32_temphum` persistence/broadcast helper so thermostat/weather side effects stay consistent with the legacy HTTP POST path.
+
+**Main-app Socket.IO is not ESP ingress**: Do not register ESP telemetry events such as `esp32_temphum` on `SocketEventHandler`. Active ESP firmware authenticates to `esp32_ws`; the main app receives device data through Redis, with authenticated HTTP retained only where explicitly documented as a fallback.
+
+**Temperature validation**: Normalize readings to finite floats before persistence. Accept only `-50..80°C` and `0..100%` humidity, and keep FMI/thermostat refresh work off the telemetry request/Redis subscriber path.
 
 **Temperature reconnect frames**: Current temperature firmware sends a status-only frame labeled `temperature_reading` after WebSocket authentication. Keep the `esp32_ws` publication guard that identifies the frame by absent measurement keys plus `metrics`/`ws_stats`; do not suppress other malformed readings that should reach API validation.
 
@@ -591,6 +597,10 @@ When changing user-visible JS or CSS in production, bump the versioned asset URL
 **CORS**: Cross-origin access for `/api/*` is opt-in via `API_ALLOWED_ORIGINS`. Do not reintroduce wildcard CORS defaults; same-origin browser traffic does not need CORS headers.
 
 **API key transport**: Query-string API keys are disabled by default. Use `Authorization: Bearer <token>` or `X-API-Key`, and only enable `ALLOW_API_KEY_QUERY_PARAM=1` for temporary backward compatibility.
+
+**Root authorization**: Root-Admin guards must fail closed when the current user cannot be loaded. Startup seeding must promote an existing `WEB_USERNAME` row to both `is_admin` and `is_root_admin`.
+
+**Redirect targets**: Login and authorization redirects derived from request parameters must be local absolute paths. Reject schemes, network locations, protocol-relative paths, backslashes, and control characters.
 
 ### 6.9 Database & Migrations
 

@@ -23,6 +23,7 @@ from flask_login import (
 )
 
 from ...extensions import csrf, limiter
+from ...utils import safe_local_redirect_target
 from . import auth_bp
 
 if TYPE_CHECKING:
@@ -116,7 +117,13 @@ def login():
             )
             logger.info("User %s authenticated, is admin: %s", username, user_obj.is_admin)
 
-            next_page = request.args.get("next") or url_for("web.get_home_page")
+            requested_next = request.args.get("next")
+            next_page = safe_local_redirect_target(
+                requested_next,
+                url_for("web.get_home_page"),
+            )
+            if requested_next and next_page != requested_next:
+                logger.warning("Rejected external login redirect target: %r", requested_next)
             response = redirect(next_page)
             logger.debug(
                 "Rate-limit headers — remaining: %s, reset: %s",

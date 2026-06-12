@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import asdict
 from typing import TYPE_CHECKING
 
-from flask import current_app, flash, redirect, render_template, request, url_for
+from flask import flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from ...utils import (
@@ -18,6 +17,7 @@ from ...utils import (
     get_ctrl,
     get_new_password_pair,
     require_admin_or_redirect,
+    safe_local_redirect_target,
     validate_password_pair,
 )
 from . import web_bp
@@ -70,48 +70,6 @@ def add_user():
     return render_template("add_user.html")
 
 
-@web_bp.route("/settings/delete_user", methods=["GET", "POST"])
-@login_required
-def delete_user():
-    ctrl: Controller = current_app.ctrl  # type: ignore
-    users = ctrl.get_all_users(exclude_admin=True, exclude_current=True)
-    if not current_user.is_admin:
-        flash("Sinulla ei ole oikeuksia poistaa käyttäjiä.", "error")
-        logger.warning("Non-admin user %s attempted to delete user.", current_user.get_id())
-        return redirect(url_for("web.get_settings_page"))
-    if request.method == "POST":
-        if "delete_temp_users" in request.form:
-            try:
-                ctrl.delete_temporary_users()
-                flash("Kaikki väliaikaiset käyttäjät poistettu.", "success")
-            except Exception as e:
-                flash(f"Väliaikaisten käyttäjien poisto epäonnistui: {e}", "error")
-                return render_template("delete_user.html", users=users)
-        else:
-            u = request.form.get("username")
-            if not u:
-                flash("Valitse ensin käyttäjä.", "error")
-                logger.warning("No user selected for deletion")
-                return redirect(url_for("web.get_settings_page"))
-            if u == current_user.get_id():
-                flash("Et voi poistaa omaa tiliäsi.", "error")
-                logger.warning("Self-deletion attempt by %s", u)
-            else:
-                try:
-                    ctrl.delete_user(u)
-                    flash(f"Käyttäjä «{u}» poistettu.", "success")
-                    logger.info("User %s deleted by %s", u, current_user.get_id())
-                except Exception as e:
-                    flash(f"Poisto epäonnistui: {e}", "error")
-                    logger.error("Error deleting user %s: %s", u, e)
-                    return render_template("delete_user.html", users=users)
-        return redirect(url_for("web.get_settings_page"))
-
-    for user in users:
-        logger.info("User %s: %s", user.username, asdict(user))
-    return render_template("delete_user.html", users=users)
-
-
 @web_bp.route("/settings/users", methods=["GET", "POST"])
 @login_required
 def user_list():
@@ -152,7 +110,10 @@ def edit_user(username):
         logger.warning(
             "Non-admin user %s attempted to edit user %s", current_user.get_id(), username
         )
-        next_url = request.args.get("next") or url_for("web.user_list")
+        requested_next = request.args.get("next")
+        next_url = safe_local_redirect_target(requested_next, url_for("web.user_list"))
+        if requested_next and next_url != requested_next:
+            logger.warning("Rejected external edit-user redirect target: %r", requested_next)
         return redirect(next_url)
     if not user:
         flash_error("Käyttäjää ei löytynyt.")

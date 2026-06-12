@@ -8,7 +8,9 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
+from flask import Flask
 
+from app import _seed_admin_user
 from app.core.controller import Controller
 
 
@@ -160,6 +162,33 @@ class TestUserOperations:
 
         user = controller.get_user_by_username("testuser")
         assert user.is_admin
+
+    def test_set_user_admin_flags_promotes_root_admin(self, controller):
+        controller.register_user("testuser", password="testpass123")
+
+        controller.set_user_admin_flags(
+            "testuser",
+            is_admin=True,
+            is_root_admin=True,
+        )
+
+        user = controller.get_user_by_username("testuser")
+        assert user.is_admin
+        assert user.is_root_admin
+
+    def test_seed_admin_promotes_existing_user_to_root_admin(self, controller):
+        controller.register_user("admin", password="existing-password")
+        app = Flask(__name__)
+        app.config.update(
+            WEB_USERNAME="admin",
+            WEB_PASSWORD="configured-password",
+        )
+
+        _seed_admin_user(app, controller)
+
+        user = controller.get_user_by_username("admin")
+        assert user.is_admin
+        assert user.is_root_admin
 
     def test_delete_user(self, controller):
         """Test deleting a user."""

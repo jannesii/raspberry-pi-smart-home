@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+import pytest
 from flask import Blueprint, Flask
 from flask_login import LoginManager, UserMixin
 
+from app.blueprints.api import esp32_api
 from app.blueprints.api.esp32_api import esp32_bp, process_esp32_temphum_payload
 
 
@@ -24,6 +28,17 @@ class _CtrlStub:
 
     def get_unique_locations(self):
         return self.locations
+
+    def record_esp32_temphum(self, location, temperature, humidity, ac_on=None):
+        return SimpleNamespace(
+            location=location,
+            temperature=temperature,
+            humidity=humidity,
+            ac_on=ac_on,
+        )
+
+    def verify_api_key_token(self, token):
+        return {"key_id": "test"} if token == "valid-token" else None
 
 
 def _create_app():
@@ -77,3 +92,56 @@ def test_invalid_temphum_logs_only_none_field_names(caplog):
     assert payload["error"] == "invalid_payload"
     assert "Bad esp32 temphum payload; None fields: temperature_c, humidity_pct" in caplog.text
     assert "must-not-be-logged" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("temperature", "humidity", "message"),
+    [
+        ("not-a-number", 50, "must be numeric"),
+        (float("nan"), 50, "must be finite"),
+        (-50.1, 50, "between -50 and 80"),
+        (80.1, 50, "between -50 and 80"),
+        (20, -0.1, "between 0 and 100"),
+        (20, 100.1, "between 0 and 100"),
+    ],
+)
+def test_temphum_rejects_invalid_numeric_values(temperature, humidity, message):
+    app = _create_app()
+    data = {
+        "location": "WC",
+        "temperature_c": temperature,
+        "humidity_pct": humidity,
+    }
+
+    with app.app_context():
+        payload, status_code = process_esp32_temphum_payload(data, source="ws")
+
+    assert status_code == 400
+    assert message in payload["message"]
+
+
+def test_temphum_normalizes_numeric_strings(monkeypatch):
+    app = _create_app()
+    monkeypatch.setattr(esp32_api, "_schedule_sensor_side_effects", lambda **_kwargs: None)
+
+    with app.app_context():
+        payload, status_code = process_esp32_temphum_payload(
+            {
+                "location": "WC",
+                "temperature_c": "21.5",
+                "humidity_pct": "42",
+            },
+            source="ws",
+        )
+
+    assert status_code == 200
+    assert payload["received"] == {"location": "WC", "temp": 21.5, "hum": 42.0}
+
+
+def test_esp32_test_requires_api_key():
+    app = _create_app()
+    client = app.test_client()
+
+    response = client.get("/api/esp32_test?format=json")
+
+    assert response.status_code == 401

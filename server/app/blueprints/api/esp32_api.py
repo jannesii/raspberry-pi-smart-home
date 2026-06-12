@@ -8,8 +8,10 @@ Endpoints:
 from __future__ import annotations
 
 import logging
+import math
 import threading
 from datetime import UTC, datetime
+from time import monotonic
 from typing import TYPE_CHECKING, Any
 
 import pytz
@@ -38,6 +40,24 @@ _esp32_test_last: dict[str, Any] = {
     "remote_addr": None,  # str | None
     "data": None,  # original payload
 }
+
+_VALID_TEMPHUM_LOCATIONS = {
+    "Keittiö",
+    "Makuuhuone",
+    "Tietokonepöytä",
+    "WC",
+    "Parveke",
+    "Rengonharju",
+    "Pelmaa",
+    "test",
+}
+_TEMPERATURE_MIN_C = -50.0
+_TEMPERATURE_MAX_C = 80.0
+_HUMIDITY_MIN_PCT = 0.0
+_HUMIDITY_MAX_PCT = 100.0
+_SENSOR_SIDE_EFFECT_INTERVAL_S = 60.0
+_sensor_side_effect_lock = threading.Lock()
+_last_sensor_side_effect_started = 0.0
 
 
 @esp32_bp.route("/esp32_temphum", methods=["GET"])
@@ -76,9 +96,6 @@ def get_latest_esp32_temphum():
     return jsonify(locations)
 
 
-ac_check_flag = True
-
-
 @esp32_bp.route("/esp32_temphum", methods=["POST"])
 @require_api_key
 @csrf.exempt
@@ -92,6 +109,14 @@ def process_esp32_temphum_payload(
     data: dict[str, Any], *, source: str = "http"
 ) -> tuple[dict[str, Any], int]:
     """Validate, persist, and broadcast one ESP32 temperature/humidity payload."""
+    if not isinstance(data, dict):
+        logger.warning("Invalid ESP32 temphum payload type source=%s", source)
+        return {
+            "ok": False,
+            "error": "invalid_payload",
+            "message": "JSON payload must be an object",
+        }, 400
+
     logger.debug(
         "process_esp32_temphum_payload source=%s fields=%s",
         source,
@@ -105,7 +130,7 @@ def process_esp32_temphum_payload(
     )
 
     if error:
-        logger.warning(f"ESP32 ERROR: {error} | Location: {location}")
+        logger.warning("ESP32 error source=%s location=%s error=%s", source, location, error)
         return {
             "ok": False,
             "error": "device_error",
@@ -131,22 +156,65 @@ def process_esp32_temphum_payload(
             "message": message,
         }, 400
 
-    valid_locations = [
-        "Keittiö",
-        "Makuuhuone",
-        "Tietokonepöytä",
-        "WC",
-        "Parveke",
-        "Rengonharju",
-        "Pelmaa",
-        "test",
-    ]
-    if location not in valid_locations:
-        logger.warning(f"Invalid esp32 location: {location}")
+    if not isinstance(location, str) or location not in _VALID_TEMPHUM_LOCATIONS:
+        logger.warning("Invalid ESP32 location source=%s location=%r", source, location)
         return {
             "ok": False,
             "error": "invalid_payload",
             "message": "Invalid location",
+        }, 400
+
+    try:
+        temp_value = float(temp)
+        hum_value = float(hum)
+    except (TypeError, ValueError):
+        logger.warning(
+            "Non-numeric ESP32 reading source=%s location=%s",
+            source,
+            location,
+        )
+        return {
+            "ok": False,
+            "error": "invalid_payload",
+            "message": "Temperature and humidity must be numeric",
+        }, 400
+
+    if not math.isfinite(temp_value) or not math.isfinite(hum_value):
+        logger.warning(
+            "Non-finite ESP32 reading source=%s location=%s",
+            source,
+            location,
+        )
+        return {
+            "ok": False,
+            "error": "invalid_payload",
+            "message": "Temperature and humidity must be finite",
+        }, 400
+
+    if not _TEMPERATURE_MIN_C <= temp_value <= _TEMPERATURE_MAX_C:
+        logger.warning(
+            "Out-of-range ESP32 temperature source=%s location=%s value=%s",
+            source,
+            location,
+            temp_value,
+        )
+        return {
+            "ok": False,
+            "error": "invalid_payload",
+            "message": "Temperature must be between -50 and 80 °C",
+        }, 400
+
+    if not _HUMIDITY_MIN_PCT <= hum_value <= _HUMIDITY_MAX_PCT:
+        logger.warning(
+            "Out-of-range ESP32 humidity source=%s location=%s value=%s",
+            source,
+            location,
+            hum_value,
+        )
+        return {
+            "ok": False,
+            "error": "invalid_payload",
+            "message": "Humidity must be between 0 and 100 percent",
         }, 400
 
     ctrl: Controller = current_app.ctrl
@@ -163,7 +231,7 @@ def process_esp32_temphum_payload(
     except Exception:
         ac_on_val = None
 
-    saved = ctrl.record_esp32_temphum(location, temp, hum, ac_on=ac_on_val)
+    saved = ctrl.record_esp32_temphum(location, temp_value, hum_value, ac_on=ac_on_val)
     sio_handler = getattr(current_app, "sio_handler", None)
     if sio_handler is not None:
         sio_handler.emit_to_views(
@@ -183,104 +251,13 @@ def process_esp32_temphum_payload(
         saved.humidity,
     )
 
-    def reset_flag():
-        global ac_check_flag
-        ac_check_flag = True
-
-    def fetch_and_log_outside_weather():
-        """Fetch FMI weather data and log as 'Outside' sensor reading."""
-        logger.debug("fetch_and_log_outside_weather called")
-        try:
-            weather_svc_pelmaa: WeatherService | None = getattr(
-                current_app, "weather_service", None
-            )
-            weather_svc_renko: WeatherService = WeatherService(fmisid=RENKO_ID)
-            if weather_svc_pelmaa is None or weather_svc_renko is None:
-                logger.debug("No weather_service available for Outside reading")
-                return
-
-            weather_data_pelmaa = weather_svc_pelmaa.get_latest()
-            weather_data_renko = weather_svc_renko.get_latest()
-            logger.debug(
-                "FMI weather data Pelmaa: t2m=%s, rh=%s",
-                weather_data_pelmaa.t2m,
-                weather_data_pelmaa.rh,
-            )
-            logger.debug(
-                "FMI weather data Rengonharju: t2m=%s, rh=%s",
-                weather_data_renko.t2m,
-                weather_data_renko.rh,
-            )
-
-            if (
-                weather_data_pelmaa.t2m is None
-                or weather_data_pelmaa.t2m.value is None
-                or weather_data_renko.t2m is None
-                or weather_data_renko.t2m.value is None
-            ):
-                logger.debug("No t2m value from FMI, skipping Outside reading")
-                return
-
-            outside_temp_pelmaa = weather_data_pelmaa.t2m.value
-            outside_hum_pelmaa = weather_data_pelmaa.rh.value if weather_data_pelmaa.rh else None
-
-            outside_temp_renko = weather_data_renko.t2m.value
-            outside_hum_renko = weather_data_renko.rh.value if weather_data_renko.rh else None
-
-            # Use 0.0 humidity if not available (FMI sometimes doesn't report rh)
-            if outside_hum_pelmaa is None:
-                outside_hum_pelmaa = 0.0
-
-            if outside_hum_renko is None:
-                outside_hum_renko = 0.0
-
-            # Record to DB as "Outside" location
-            outside_saved_pelmaaa = ctrl.record_esp32_temphum(
-                "Pelmaa", outside_temp_pelmaa, outside_hum_pelmaa, ac_on=None
-            )
-            outside_saved_renko = ctrl.record_esp32_temphum(
-                "Rengonharju", outside_temp_renko, outside_hum_renko, ac_on=None
-            )
-
-            # Broadcast to views
-            current_app.sio_handler.emit_to_views(
-                "esp32_temphum",
-                {
-                    "location": outside_saved_pelmaaa.location,
-                    "temperature": outside_saved_pelmaaa.temperature,
-                    "humidity": outside_saved_pelmaaa.humidity,
-                    "ac_on": None,
-                },
-            )
-            current_app.sio_handler.emit_to_views(
-                "esp32_temphum",
-                {
-                    "location": outside_saved_renko.location,
-                    "temperature": outside_saved_renko.temperature,
-                    "humidity": outside_saved_renko.humidity,
-                    "ac_on": None,
-                },
-            )
-
-            logger.debug(
-                "Recorded Outside weather: temp=%.1f°C hum=%.0f%%",
-                outside_saved_pelmaaa.temperature,
-                outside_saved_pelmaaa.humidity,
-            )
-        except Exception as e:
-            logger.exception("Failed to fetch/log Outside weather: %s", e)
-
-    # Trigger immediate thermostat check once per minute at most
-    global ac_check_flag
-    if ac_check_flag:
-        ac_check_flag = False
-        # Wait a second to make sure all sensors have reported
-        if ac_thermo is not None and getattr(ac_thermo, "_enabled", False):
-            threading.Timer(1, ac_thermo.step_on_off_check).start()
-        # Also fetch and log outside weather from FMI
-        fetch_and_log_outside_weather()
-        # Reset flag after 10 seconds
-        threading.Timer(10, reset_flag).start()
+    _schedule_sensor_side_effects(
+        app=current_app._get_current_object(),
+        ctrl=ctrl,
+        sio_handler=sio_handler,
+        ac_thermo=ac_thermo,
+        weather_svc_pelmaa=getattr(current_app, "weather_service", None),
+    )
 
     return {
         "ok": True,
@@ -292,8 +269,100 @@ def process_esp32_temphum_payload(
     }, 200
 
 
+def _schedule_sensor_side_effects(
+    *,
+    app,
+    ctrl: Controller,
+    sio_handler,
+    ac_thermo: ACThermostat | None,
+    weather_svc_pelmaa: WeatherService | None,
+) -> None:
+    """Run thermostat and FMI refresh work off the telemetry request path."""
+    global _last_sensor_side_effect_started
+
+    now = monotonic()
+    with _sensor_side_effect_lock:
+        elapsed = now - _last_sensor_side_effect_started
+        if elapsed < _SENSOR_SIDE_EFFECT_INTERVAL_S:
+            logger.debug("Sensor side effects throttled elapsed_s=%.1f", elapsed)
+            return
+        _last_sensor_side_effect_started = now
+
+    def _run() -> None:
+        logger.debug("Running sensor side effects in background")
+        with app.app_context():
+            if ac_thermo is not None and getattr(ac_thermo, "_enabled", False):
+                try:
+                    ac_thermo.step_on_off_check()
+                except Exception:
+                    logger.exception("Background thermostat check failed")
+            _fetch_and_log_outside_weather(
+                ctrl=ctrl,
+                sio_handler=sio_handler,
+                weather_svc_pelmaa=weather_svc_pelmaa,
+            )
+
+    timer = threading.Timer(1.0, _run)
+    timer.daemon = True
+    timer.start()
+    logger.debug("Scheduled sensor side effects")
+
+
+def _fetch_and_log_outside_weather(
+    *,
+    ctrl: Controller,
+    sio_handler,
+    weather_svc_pelmaa: WeatherService | None,
+) -> None:
+    """Fetch FMI observations and persist them as outside sensor readings."""
+    logger.debug("Fetching outside weather for sensor snapshots")
+    if weather_svc_pelmaa is None:
+        logger.debug("No Pelmaa weather service available")
+        return
+
+    try:
+        weather_data_pelmaa = weather_svc_pelmaa.get_latest()
+        weather_data_renko = WeatherService(fmisid=RENKO_ID).get_latest()
+        observations = (
+            ("Pelmaa", weather_data_pelmaa),
+            ("Rengonharju", weather_data_renko),
+        )
+
+        for location, weather_data in observations:
+            if weather_data.t2m is None or weather_data.t2m.value is None:
+                logger.debug("No outside temperature available location=%s", location)
+                continue
+
+            humidity = weather_data.rh.value if weather_data.rh else 0.0
+            saved = ctrl.record_esp32_temphum(
+                location,
+                float(weather_data.t2m.value),
+                float(humidity if humidity is not None else 0.0),
+                ac_on=None,
+            )
+            if sio_handler is not None:
+                sio_handler.emit_to_views(
+                    "esp32_temphum",
+                    {
+                        "location": saved.location,
+                        "temperature": saved.temperature,
+                        "humidity": saved.humidity,
+                        "ac_on": None,
+                    },
+                )
+            logger.debug(
+                "Recorded outside weather location=%s temp=%.1fC hum=%.0f%%",
+                saved.location,
+                saved.temperature,
+                saved.humidity,
+            )
+    except Exception:
+        logger.exception("Failed to fetch/log outside weather")
+
+
 @esp32_bp.route("/esp32_test", methods=["GET", "POST"])
 @csrf.exempt
+@require_api_key
 def esp32_test():
     """
     Protected endpoint for testing ESP32 Wi-Fi/internet connectivity.

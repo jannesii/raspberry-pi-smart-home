@@ -113,16 +113,38 @@ class AuthMixin:
 
     def set_user_as_admin(self, username: str, is_admin: bool) -> None:
         """Sets the is_admin flag for the user with the given username."""
+        self.set_user_admin_flags(username, is_admin=is_admin)
+
+    def set_user_admin_flags(
+        self,
+        username: str,
+        *,
+        is_admin: bool,
+        is_root_admin: bool | None = None,
+    ) -> None:
+        """Set administrative flags while preserving root status when omitted."""
         sa_engine: Engine | None = self._sa_engine
         if sa_engine is None:
             raise RuntimeError("SQLAlchemy engine not initialized")
 
+        values: dict[str, bool] = {"is_admin": is_admin}
+        if is_root_admin is not None:
+            values["is_root_admin"] = is_root_admin
+
+        logger.debug(
+            "Setting user admin flags username=%s is_admin=%s is_root_admin=%s",
+            username,
+            is_admin,
+            is_root_admin,
+        )
         try:
-            stmt = update(users).where(users.c.username == username).values(is_admin=is_admin)
+            stmt = update(users).where(users.c.username == username).values(**values)
             with sa_engine.begin() as conn:
-                conn.execute(stmt)
+                result = conn.execute(stmt)
+            if result.rowcount == 0:
+                raise ValueError(f"User not found: {username}")
         except Exception as e:
-            logger.exception("Error setting user as admin: %s", e)
+            logger.exception("Error setting user admin flags: %s", e)
             raise
 
     def authenticate_user(self, username: str, password: str) -> bool:

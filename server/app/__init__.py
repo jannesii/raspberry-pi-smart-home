@@ -122,21 +122,28 @@ def _apply_logging_overrides(ctrl) -> None:
 
 
 def _seed_admin_user(app, ctrl) -> None:
-    logger.debug("_seed_admin_user called username=%s", app.config.get("WEB_USERNAME"))
-    try:
-        ctrl.register_user(  # type: ignore
-            app.config["WEB_USERNAME"],
-            password=app.config["WEB_PASSWORD"],
+    username = app.config.get("WEB_USERNAME")
+    password = app.config.get("WEB_PASSWORD")
+    logger.debug("_seed_admin_user called username=%s", username)
+    if not username or not password:
+        raise RuntimeError("WEB_USERNAME and WEB_PASSWORD are required.")
+
+    user = ctrl.register_user(  # type: ignore
+        username,
+        password=password,
+        is_admin=True,
+        is_root_admin=True,
+    )
+    if not user.is_admin or not user.is_root_admin:
+        ctrl.set_user_admin_flags(  # type: ignore
+            username,
             is_admin=True,
             is_root_admin=True,
         )
-        logger.info(
-            "Seeded admin user %s (is_admin=True, is_root_admin=True)",
-            app.config["WEB_USERNAME"],
-        )
-    except ValueError:
-        ctrl.set_user_as_admin(app.config["WEB_USERNAME"], True)  # type: ignore
-        logger.info("Ensured %s has is_admin=True (existing)", app.config["WEB_USERNAME"])
+        logger.info("Promoted existing user %s to Root-Admin", username)
+        return
+
+    logger.info("Root-Admin user %s is configured", username)
 
 
 def _configure_login(app) -> None:

@@ -6,11 +6,14 @@ import contextlib
 import json
 import os
 import tempfile
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from app.core.controller import Controller
-from app.core.models import CarHeaterReadyByConfig, CarHeaterReadyByState
+from app.core.models import CarHeaterReadyByConfig, CarHeaterReadyByState, CarHeaterStatus
+from app.services.car_heater.ready_by_service import ReadyByService
 
 
 @pytest.fixture
@@ -252,6 +255,77 @@ class TestMigration:
         for table_name in ["ready_by_state", "ready_by_config"]:
             assert "migrated" in stats[table_name]
             assert "errors" in stats[table_name]
+
+
+class _CarHeaterServiceStub:
+    def __init__(self):
+        self.commands: list[str] = []
+
+    def turn_on(self, **_kwargs):
+        self.commands.append("turn_on")
+
+    def turn_off(self, **_kwargs):
+        self.commands.append("turn_off")
+
+    def queue_command(self, command):
+        self.commands.append(command["action"])
+
+
+class _KFactorStub:
+    def get_active_params(self, **_kwargs):
+        return 100.0, 0.8
+
+    def predict_time_to_target_minutes(self, **_kwargs):
+        return 10.0
+
+
+class _KeepAtTempStub:
+    def __init__(self):
+        self.target_temperature_c = None
+        self.enabled = False
+
+    def get_settings(self):
+        return self
+
+    def update_settings(self, settings):
+        self.target_temperature_c = settings.target_temperature_c
+        self.enabled = settings.enabled
+
+
+def test_ready_by_completion_enables_keep_at_temp_without_turning_heater_on():
+    car_heater = _CarHeaterServiceStub()
+    keep_at_temp = _KeepAtTempStub()
+    service = ReadyByService(
+        car_heater_service=car_heater,
+        kfactor_calibrator=_KFactorStub(),
+        keep_at_temp_service=keep_at_temp,
+    )
+    now = datetime.now(ZoneInfo("Europe/Helsinki")).replace(microsecond=0)
+    service.schedule(ready_by_ts=now + timedelta(minutes=30), target_temp_c=20.0)
+    status = CarHeaterStatus(
+        id=None,
+        timestamp=now.isoformat(),
+        is_heater_on=False,
+        instant_power_w=0.0,
+        voltage_v=None,
+        current_a=None,
+        energy_total_wh=None,
+        energy_last_min_wh=None,
+        energy_ts=None,
+        device_temp_c=None,
+        device_temp_f=None,
+        ambient_temp=20.0,
+        source="test",
+    )
+
+    service.tick(status, outside_temp_c=-5.0, is_test=True)
+
+    schedule = service.get_schedule(as_object=True)
+    assert schedule is not None
+    assert schedule.status == "completed"
+    assert keep_at_temp.target_temperature_c == 20.0
+    assert keep_at_temp.enabled is True
+    assert car_heater.commands == []
 
 
 if __name__ == "__main__":

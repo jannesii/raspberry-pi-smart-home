@@ -151,6 +151,8 @@ Browse to http://127.0.0.1:5555 and log in.
 - Security headers (CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy) are applied by default, with CDN allowlist for Chart.js/HLS/Socket.IO.
 - API CORS is now opt-in via `API_ALLOWED_ORIGINS`; same-origin browser use works without it, and cross-origin API use should be explicitly allowlisted.
 - API key query-string auth is disabled by default; use `Authorization: Bearer ...` or `X-API-Key`, and only set `ALLOW_API_KEY_QUERY_PARAM=1` for legacy compatibility.
+- Login and user-management redirects accept local application paths only.
+- Existing `WEB_USERNAME` accounts are promoted to Root-Admin during startup, and root-only guards deny access when the user lookup fails.
 - Hue bridge HTTP calls now honor `HUE_HTTP_TIMEOUT_S` (default `5.0`) to avoid hanging worker threads on slow bridge responses.
 - Legacy-to-SQLAlchemy controller migration helpers are available for 3D, auth, AC, car heater, and ready-by data (`migrate_*_to_pg`).
 - `scripts/restart.sh` retries `pre-commit run --all-files` once before aborting.
@@ -170,11 +172,14 @@ Browse to http://127.0.0.1:5555 and log in.
 - WebSocket-delivered car heater status now runs the same backend runtime logic as the legacy HTTP status path, so Keep at Temperature, Ready by Time, Battery Charge Mode, alerts, and kFactor ticks keep working in websocket-primary mode.
 - ESP32 Redis bridge status summaries now log the first live status at `INFO`; recurring heartbeat summaries are downgraded to `DEBUG` unless `ESP32_REDIS_STATUS_INFO_REPEAT_INTERVAL_S` is explicitly enabled.
 - Temperature ESP firmware now uses WebSocket-only telemetry/RPC through `esp32_ws`; the main app consumes `esp32:temperature:*` Redis channels and persists readings through the existing `esp32_temphum` path.
+- ESP device telemetry is no longer accepted through the main app's Socket.IO server; `esp32_ws` and Redis are the device ingress path, while the car-heater HTTP endpoint remains an authenticated fallback.
+- Temperature telemetry rejects non-finite or implausible values (`-50..80°C`, `0..100%`), and FMI/thermostat refresh work runs outside the ingestion request.
 - `esp32_ws` filters temperature-device reconnect status frames before Redis so they are not misvalidated as empty sensor readings after service restarts.
 - Temperatures page Socket.IO reconnects now refresh the latest reading snapshot automatically, so readings catch up after server restarts without a manual page refresh.
 - Temperature ESP firmware JSON is built with ArduinoJson `JsonDocument`; the legacy embedded HTTP server and HTTP poster are excluded from the active PlatformIO build.
 - Car heater cabin temperature now renders with two decimals, and the main page version-busts `car_heater.js` so timestamp/format fixes are not hidden behind browser cache.
 - Car heater settings helpers no longer override the main page formatter globals, so the live card keeps second-precision timestamps and two-decimal cabin temperatures while websocket-originated live status shows `source=WS`.
+- Ready-by completion enables Keep at Temperature and returns before any new heater-on command can be queued.
 - Car heater settings and logs views now use explicit Finnish locale time formatting (`fi-FI`) instead of browser-default locale formatting.
 - Temperatures workspace now keeps sleep scheduling controls stacked for the narrow side panel, and long room/detail labels wrap cleanly instead of overflowing cards.
 - AC sleep controls now include a transient early-sleep toggle that enters sleep behavior until the scheduled window takes over.

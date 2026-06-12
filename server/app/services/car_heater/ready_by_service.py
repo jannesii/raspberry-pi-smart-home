@@ -305,6 +305,12 @@ class ReadyByService:
                     s.reached_too_late,
                 )
                 s.status = "completed"
+                try:
+                    self._after_completed()
+                except Exception:
+                    logger.exception("ready_by: failed to enable keep-at-temperature")
+                self._persist_if_changed(is_test=is_test)
+                return
 
             heater_on = bool(getattr(car_status, "is_heater_on", False))
             if now >= planned_start and not heater_on:
@@ -317,8 +323,19 @@ class ReadyByService:
 
     def _after_completed(self) -> None:
         """Actions to perform after a schedule is completed."""
-        self._keep_at_temp_service.target_temperature_c = self._schedule.target_temp_c
-        self._keep_at_temp_service.enabled = True
+        if self._schedule is None:
+            logger.debug("ready_by: completion actions skipped without a schedule")
+            return
+        settings = self._keep_at_temp_service.get_settings()
+        if settings is None:
+            raise RuntimeError("Keep-at-temperature settings are unavailable")
+        settings.target_temperature_c = self._schedule.target_temp_c
+        settings.enabled = True
+        self._keep_at_temp_service.update_settings(settings)
+        logger.debug(
+            "ready_by: keep-at-temperature enabled target=%.1fC",
+            self._schedule.target_temp_c,
+        )
 
     def _queue_command(self, action: str, reason: str) -> None:
         logger.debug("ready_by: _queue_command action=%s reason=%s", action, reason)
