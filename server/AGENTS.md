@@ -594,6 +594,8 @@ When changing user-visible JS or CSS in production, bump the versioned asset URL
 
 **PostgreSQL sequence drift**: If rows are imported with explicit `id` values, the serial sequence may lag behind `MAX(id)` and cause duplicate PK errors on inserts. For kFactor insert paths, use controller-level sequence realignment (`pg_get_serial_sequence` + `setval`) and retry once.
 
+**PostgreSQL runtime pooling**: Runtime PostgreSQL engines must use a bounded `QueuePool`; do not apply `NullPool` globally. Opening a new psycopg socket for every controller operation can trigger Eventlet file-descriptor listener collisions under concurrent requests. Keep `NullPool` limited to SQLite/test or one-shot migration paths.
+
 **Migration helpers**: Controller-level legacy migration helpers (`migrate_3d_to_pg`, `migrate_auth_to_pg`, `migrate_ac_to_pg`, `migrate_car_heater_to_pg`, `migrate_ready_by_to_pg`) use `DB_PATH` as the SQLite source and `_sa_engine` as the SQLAlchemy target. Keep them idempotent.
 
 **Pytest bootstrap**: Repo-root test runs should work without manually exporting `PYTHONPATH`; keep root import bootstrap intact for `.venv/bin/pytest -q`.

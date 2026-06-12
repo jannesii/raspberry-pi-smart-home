@@ -143,6 +143,8 @@ Browse to http://127.0.0.1:5555 and log in.
 - Chart modal outdoor temperature range selection now supports multiple location aliases (case-insensitive, substring match).
 - Temperature tiles now support multiple outside locations for grouping and outside-range stats.
 - SQLAlchemy Core schema + engine are the runtime database path.
+- Runtime PostgreSQL connections use a bounded reusable pool to avoid per-query
+  socket churn under Eventlet; SQLite test engines continue to use `NullPool`.
 - Alembic migrations are staged (baseline + kFactor result FK) and target PostgreSQL.
 - SQLite connections (sqlite3 + SQLAlchemy/Alembic) enable the foreign_keys PRAGMA.
 - Security headers (CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy) are applied by default, with CDN allowlist for Chart.js/HLS/Socket.IO.

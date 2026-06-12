@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from sqlalchemy import Engine, create_engine, event
-from sqlalchemy.pool import NullPool
+from sqlalchemy.pool import NullPool, QueuePool
 
 logger = logging.getLogger(__name__)
 
@@ -48,17 +48,36 @@ def get_engine_for_url(db_url: str) -> Engine:
     if db_url in _ENGINES:
         return _ENGINES[db_url]
 
+    is_sqlite = db_url.startswith("sqlite")
     connect_args = {}
-    if db_url.startswith("sqlite"):
+    engine_options = {
+        "connect_args": connect_args,
+        "future": True,
+    }
+    if is_sqlite:
         connect_args = {"check_same_thread": False}
+        engine_options["connect_args"] = connect_args
+        engine_options["poolclass"] = NullPool
+        logger.debug("Creating SQLite engine with NullPool")
+    else:
+        engine_options.update(
+            {
+                "poolclass": QueuePool,
+                "pool_size": 5,
+                "max_overflow": 5,
+                "pool_timeout": 30,
+                "pool_pre_ping": True,
+                "pool_use_lifo": True,
+            }
+        )
+        logger.debug(
+            "Creating pooled SQLAlchemy engine pool_size=%s max_overflow=%s",
+            engine_options["pool_size"],
+            engine_options["max_overflow"],
+        )
 
-    engine = create_engine(
-        db_url,
-        connect_args=connect_args,
-        poolclass=NullPool,
-        future=True,
-    )
-    if db_url.startswith("sqlite"):
+    engine = create_engine(db_url, **engine_options)
+    if is_sqlite:
         event.listen(engine, "connect", _enable_sqlite_foreign_keys)
 
     _ENGINES[db_url] = engine
