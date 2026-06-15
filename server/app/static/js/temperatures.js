@@ -829,6 +829,7 @@
 
   function syncAcStatus(data) {
     if (!data) return;
+    console.debug('⚙️ Syncing AC status fields:', Object.keys(data));
     state.ac.isOn = Object.prototype.hasOwnProperty.call(data, 'is_on') ? !!data.is_on : state.ac.isOn;
     state.ac.thermostatEnabled = Object.prototype.hasOwnProperty.call(data, 'thermo_active')
       ? !!data.thermo_active
@@ -908,33 +909,40 @@
     if (Object.prototype.hasOwnProperty.call(data, 'smooth_window')) dom.thermoSmoothWindow.value = parseInt(data.smooth_window, 10) || 1;
     if (Object.prototype.hasOwnProperty.call(data, 'max_stale_s')) dom.thermoMaxStaleS.value = data.max_stale_s == null ? '' : parseInt(data.max_stale_s, 10);
 
-    let controlLocations = [];
-    try {
-      const raw = typeof data.control_locations === 'string'
-        ? JSON.parse(data.control_locations)
-        : data.control_locations;
-      if (Array.isArray(raw)) controlLocations = raw.map(value => String(value));
-    } catch {
-      controlLocations = [];
+    if (Object.prototype.hasOwnProperty.call(data, 'control_locations')) {
+      let controlLocations = [];
+      try {
+        const raw = typeof data.control_locations === 'string'
+          ? JSON.parse(data.control_locations)
+          : data.control_locations;
+        if (Array.isArray(raw)) controlLocations = raw.map(value => String(value));
+      } catch {
+        controlLocations = [];
+      }
+      if (!controlLocations.length) {
+        const initialRoom = chooseInitialRoom();
+        controlLocations = initialRoom ? [initialRoom.name] : [];
+      }
+      state.controlLocations = controlLocations;
+      renderControlLocationButtons();
     }
-    if (!controlLocations.length) {
-      const initialRoom = chooseInitialRoom();
-      controlLocations = initialRoom ? [initialRoom.name] : [];
-    }
-    state.controlLocations = controlLocations;
-    renderControlLocationButtons();
 
-    let sleepSchedule = data.sleep_schedule;
-    try {
-      if (typeof sleepSchedule === 'string') sleepSchedule = JSON.parse(sleepSchedule);
-    } catch {
-      sleepSchedule = null;
+    const hasSleepSchedule = Object.prototype.hasOwnProperty.call(data, 'sleep_schedule');
+    const hasSleepWindow = Object.prototype.hasOwnProperty.call(data, 'sleep_start')
+      || Object.prototype.hasOwnProperty.call(data, 'sleep_stop');
+    if (hasSleepSchedule || hasSleepWindow) {
+      let sleepSchedule = hasSleepSchedule ? data.sleep_schedule : null;
+      try {
+        if (typeof sleepSchedule === 'string') sleepSchedule = JSON.parse(sleepSchedule);
+      } catch {
+        sleepSchedule = null;
+      }
+      setSleepScheduleFields(
+        sleepSchedule,
+        data.sleep_start ? String(data.sleep_start).slice(0, 5) : '',
+        data.sleep_stop ? String(data.sleep_stop).slice(0, 5) : '',
+      );
     }
-    setSleepScheduleFields(
-      sleepSchedule,
-      data.sleep_start ? String(data.sleep_start).slice(0, 5) : '',
-      data.sleep_stop ? String(data.sleep_stop).slice(0, 5) : '',
-    );
 
     renderOverview();
   }

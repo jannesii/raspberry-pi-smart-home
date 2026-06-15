@@ -19,7 +19,7 @@ available.
 - FMI outside weather observations without an API key
 - Local TinyTuya AC control using device ID, LAN IP, and local key
 - Thermostat target, hysteresis, minimum cycle, stale-reading, and sensor
-  selection controls
+  selection controls with live partial updates that preserve form state
 - Weekly sleep schedules, apply-to-all scheduling, temporary sleep overrides,
   and early-sleep mode
 - Heating and cooling rate estimates based on sensor and AC event history
