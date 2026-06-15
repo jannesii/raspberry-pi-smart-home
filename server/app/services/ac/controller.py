@@ -1,5 +1,7 @@
 import logging
 import os
+import threading
+import time
 from typing import Any, ClassVar
 
 import tinytuya
@@ -15,6 +17,18 @@ def _env_float(name: str, default: float) -> float:
         return default
     try:
         return float(raw)
+    except ValueError:
+        logger.warning("AC CONTROLLER: invalid %s=%r, using default=%s", name, raw, default)
+        return default
+
+
+def _env_int(name: str, default: int) -> int:
+    """Parse an integer environment variable with a safe default."""
+    raw = os.getenv(name)
+    if raw in (None, ""):
+        return default
+    try:
+        return int(raw)
     except ValueError:
         logger.warning("AC CONTROLLER: invalid %s=%r, using default=%s", name, raw, default)
         return default
@@ -62,6 +76,10 @@ class ACController:
     MODE = 4
     FAN = 5
 
+    TRANSIENT_RESPONSE_ERRORS: ClassVar[frozenset[str]] = frozenset({"900", "904"})
+    DEFAULT_RETRY_ATTEMPTS = 3
+    DEFAULT_RETRY_DELAY_S = 0.25
+
     def __init__(
         self,
         tinytuya_device: tinytuya.Device | None = None,
@@ -73,6 +91,8 @@ class ACController:
         tuya_version: float | None = None,
         connection_timeout_s: float | None = None,
         persist: bool | None = None,
+        retry_attempts: int | None = None,
+        retry_delay_s: float | None = None,
     ) -> None:
         """
         Initialize the controller.
@@ -85,6 +105,24 @@ class ACController:
             winter,
             tinytuya_device is not None,
             IP or None,
+        )
+        resolved_retry_attempts = (
+            int(retry_attempts)
+            if retry_attempts is not None
+            else _env_int("AC_TUYA_RETRY_ATTEMPTS", self.DEFAULT_RETRY_ATTEMPTS)
+        )
+        resolved_retry_delay_s = (
+            float(retry_delay_s)
+            if retry_delay_s is not None
+            else _env_float("AC_TUYA_RETRY_DELAY_S", self.DEFAULT_RETRY_DELAY_S)
+        )
+        self._retry_attempts = max(1, resolved_retry_attempts)
+        self._retry_delay_s = max(0.0, resolved_retry_delay_s)
+        self._device_lock = threading.RLock()
+        logger.debug(
+            "AC CONTROLLER: transient retry attempts=%s delay_s=%s",
+            self._retry_attempts,
+            self._retry_delay_s,
         )
         if winter:
             logger.debug("AC CONTROLLER: skipping device initialization due to winter mode")
@@ -170,7 +208,7 @@ class ACController:
 
         try:
             logger.debug("AC CONTROLLER: get_status called")
-            resp = self.ac.status()
+            resp = self._call_device_with_retries("status")
             logger.debug("AC CONTROLLER: raw status response=%s", resp)
             if not isinstance(resp, dict):
                 logger.warning(
@@ -211,7 +249,7 @@ class ACController:
 
     def _send_commands(self, index: int, value: Any) -> dict[str, Any]:
         logger.debug("AC CONTROLLER: sending command index=%s value=%s", index, value)
-        resp = self.ac.set_value(index, value)
+        resp = self._call_device_with_retries("set_value", index, value)
         logger.debug("AC CONTROLLER: raw command response=%s", resp)
         if not isinstance(resp, dict):
             logger.warning(
@@ -235,6 +273,60 @@ class ACController:
             detail = f"{resp.get('Error')} ({err})" if err else str(resp.get("Error"))
             raise RuntimeError(f"AC command failed: {detail}")
         return resp
+
+    def _call_device_with_retries(self, method_name: str, *args: Any) -> Any:
+        """Serialize TinyTuya access and retry transient malformed responses."""
+        with self._device_lock:
+            for attempt in range(1, self._retry_attempts + 1):
+                logger.debug(
+                    "AC CONTROLLER: device call method=%s attempt=%s/%s",
+                    method_name,
+                    attempt,
+                    self._retry_attempts,
+                )
+                response = getattr(self.ac, method_name)(*args)
+                if not self._is_transient_response(response):
+                    if attempt > 1:
+                        logger.debug(
+                            "AC CONTROLLER: device call recovered method=%s attempt=%s",
+                            method_name,
+                            attempt,
+                        )
+                    return response
+
+                if attempt >= self._retry_attempts:
+                    return response
+
+                logger.debug(
+                    "AC CONTROLLER: transient device response method=%s err=%s "
+                    "attempt=%s/%s; resetting connection",
+                    method_name,
+                    response.get("Err"),
+                    attempt,
+                    self._retry_attempts,
+                )
+                self._reset_device_connection()
+                if self._retry_delay_s:
+                    time.sleep(self._retry_delay_s)
+
+        raise RuntimeError("AC device retry loop exited unexpectedly")
+
+    def _is_transient_response(self, response: Any) -> bool:
+        """Return whether a TinyTuya response is safe to retry."""
+        if not isinstance(response, dict) or not response.get("Error"):
+            return False
+        return str(response.get("Err") or "") in self.TRANSIENT_RESPONSE_ERRORS
+
+    def _reset_device_connection(self) -> None:
+        """Close the current TinyTuya socket so the next attempt reconnects."""
+        close = getattr(self.ac, "close", None)
+        if not callable(close):
+            logger.debug("AC CONTROLLER: device has no close method for retry reset")
+            return
+        try:
+            close()
+        except Exception:
+            logger.debug("AC CONTROLLER: failed to reset device connection", exc_info=True)
 
     def _validate_mode(self, mode: str) -> None:
         if mode not in self.MODES:

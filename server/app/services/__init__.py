@@ -46,7 +46,7 @@ def _build_tuya_ac_device(device_id: str, ip: str, local_key: str):
     tuya_version = _env_float("AC_TUYA_VERSION", 3.1)
     timeout_s = _env_float("AC_TUYA_TIMEOUT_S", 5.0)
     persist = _env_bool("AC_TUYA_PERSIST", False)
-    logger.debug(
+    logger.info(
         "AC init TinyTuya config ip=%s version=%s timeout_s=%s persist=%s",
         ip,
         tuya_version,
@@ -66,7 +66,7 @@ def _build_tuya_ac_device(device_id: str, ip: str, local_key: str):
         device.set_socketTimeout(timeout_s)
         device.set_socketPersistent(persist)
     except Exception:
-        logger.debug("AC init TinyTuya post-init socket tuning skipped", exc_info=True)
+        logger.warning("AC init TinyTuya post-init socket tuning skipped", exc_info=True)
     return device
 
 

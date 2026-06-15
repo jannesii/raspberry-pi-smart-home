@@ -528,6 +528,8 @@ When changing user-visible JS or CSS in production, bump the versioned asset URL
 
 **Diagnostics**: Initialize the AC TinyTuya device with env-driven `AC_TUYA_VERSION` (and timeout/persist knobs when needed) instead of relying on library defaults. When status/control fails, inspect the raw TinyTuya `Err` code in logs; `914` points to local key/version mismatch, `901` can occur even when the device IP answers ping if the local-control handshake cannot complete.
 
+**Concurrency and retries**: TinyTuya device instances are stateful and shared by the thermostat loop plus web handlers. Serialize all device calls. Retry only transient malformed-response codes (`900`/`904`) after closing the socket; do not retry credential/protocol errors such as `914`. For short poll intervals, enable `AC_TUYA_PERSIST` to avoid opening a new TCP connection on every loop.
+
 ### 6.5 ESP32 WebSocket Service
 
 **Restart**: `esp32_ws.service` runs Gunicorn with long-lived WebSocket requests. Keep the systemd stop path hard-kill based (`KillSignal=SIGKILL`, short `TimeoutStopSec`) so restarts do not block on stuck Gunicorn shutdown.
