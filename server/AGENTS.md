@@ -530,6 +530,8 @@ When changing user-visible JS or CSS in production, bump the versioned asset URL
 
 **Concurrency and retries**: TinyTuya device instances are stateful and shared by the thermostat loop plus web handlers. Serialize all device calls. Retry only transient malformed-response codes (`900`/`904`) after closing the socket; do not retry credential/protocol errors such as `914`. For short poll intervals, enable `AC_TUYA_PERSIST` to avoid opening a new TCP connection on every loop.
 
+**Partial status payloads**: TinyTuya can return non-empty `dps` maps that omit one or more known datapoints. Normalize only datapoints that are actually present and non-null; never synthesize `switch=None`, because downstream boolean conversion would create false OFF transitions.
+
 ### 6.5 ESP32 WebSocket Service
 
 **Restart**: `esp32_ws.service` runs Gunicorn with long-lived WebSocket requests. Keep the systemd stop path hard-kill based (`KillSignal=SIGKILL`, short `TimeoutStopSec`) so restarts do not block on stuck Gunicorn shutdown.

@@ -91,6 +91,33 @@ def test_get_status_returns_empty_dict_for_empty_dps(caplog: pytest.LogCaptureFi
     assert "empty status response" in caplog.text
 
 
+@pytest.mark.parametrize("power_dps", [{}, {"1": None}])
+def test_get_status_omits_missing_dps_fields(
+    power_dps: dict[str, object],
+    caplog: pytest.LogCaptureFixture,
+):
+    """Partial device payloads must not invent false power-state values."""
+    device = DummyDevice(
+        status_response={
+            "dps": {
+                **power_dps,
+                "4": "cold",
+                "5": "high",
+            }
+        }
+    )
+    controller = ACController(tinytuya_device=device)
+
+    with caplog.at_level(logging.DEBUG, logger="app.services.ac.controller"):
+        status = controller.get_status()
+
+    assert status == {
+        "mode": "cold",
+        "fan_speed_enum": "high",
+    }
+    assert "partial status response missing_dps=['1', '2', '3']" in caplog.text
+
+
 def test_turn_on_raises_runtime_error_for_device_error():
     """Command failures should bubble up with the TinyTuya error details."""
     device = DummyDevice(

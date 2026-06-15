@@ -232,11 +232,27 @@ class ACController:
                 logger.warning("AC CONTROLLER: empty status response dps=%s raw=%s", result, resp)
                 return status_map
 
-            status_map["switch"] = result.get(str(self.POWER))
-            status_map["mode"] = result.get(str(self.MODE))
-            status_map["fan_speed_enum"] = result.get(str(self.FAN))
-            status_map["set_temperature"] = result.get(str(self.TEMP_SET))
-            status_map["temp_current"] = result.get(str(self.TEMP_CURRENT))
+            field_map = (
+                ("switch", self.POWER),
+                ("mode", self.MODE),
+                ("fan_speed_enum", self.FAN),
+                ("set_temperature", self.TEMP_SET),
+                ("temp_current", self.TEMP_CURRENT),
+            )
+            missing_dps: list[str] = []
+            for field_name, dp_code in field_map:
+                dp_key = str(dp_code)
+                if dp_key not in result or result[dp_key] is None:
+                    missing_dps.append(dp_key)
+                    continue
+                status_map[field_name] = result[dp_key]
+
+            if missing_dps:
+                logger.debug(
+                    "AC CONTROLLER: partial status response missing_dps=%s present_dps=%s",
+                    missing_dps,
+                    sorted(result),
+                )
             logger.debug("AC CONTROLLER: normalized status=%s", status_map)
             return status_map
         except Exception:

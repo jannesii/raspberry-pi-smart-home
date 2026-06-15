@@ -203,7 +203,9 @@ The standalone ESP32 service uses its own environment file and process. See
 
 TinyTuya calls are serialized across the thermostat and web handlers. Transient
 malformed responses are retried after reconnecting; persistent mode is
-recommended when the thermostat uses a short poll interval.
+recommended when the thermostat uses a short poll interval. Partial status
+responses preserve the last known power state instead of reporting a false
+transition.
 
 ## Access and API Security
 
