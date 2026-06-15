@@ -594,6 +594,11 @@ When changing user-visible JS or CSS in production, bump the versioned asset URL
 
 **Temperatures AC events**: AC Socket.IO events are partial payloads. Merge only fields that are present; omitted `control_locations` or sleep schedule fields must not reset the thermostat settings form.
 
+**AC sleep status**: Build HTTP and Socket.IO sleep status from
+`SleepManager.get_status_payload()` so override activity and the formatted
+`sleep_override_until` value stay consistent. Do not coerce the override end
+time to a boolean.
+
 **Mobile overlays**: Do not place fixed-position mobile sheets inside ancestors with persistent `transform` styles, including reveal animations that use `animation-fill-mode: both`. Mobile browsers can anchor the sheet to the transformed layout instead of the viewport.
 
 ### 6.8 API Security

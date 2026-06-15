@@ -6,7 +6,6 @@ All functions receive the SocketEventHandler instance as the first argument.
 
 from __future__ import annotations
 
-import contextlib
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -192,6 +191,9 @@ def handle_ac_control(handler: SocketEventHandler, data: dict[str, Any]) -> None
                 return
             ac_thermo.disable_sleep_for(minutes)
             return
+        if action == "cancel_sleep_override":
+            ac_thermo.cancel_sleep_override()
+            return
 
         handler.socketio.emit("error", {"message": f"Invalid AC control action: {action}"})
         logger.warning("Bad ac_control action: %s", action)
@@ -228,15 +230,12 @@ def _emit_ac_status(handler: SocketEventHandler, ac_thermo: ACThermostat) -> Non
     handler.emit_to_views("ac_state", {"mode": mode, "fan_speed": fan})
 
     # Emit sleep configuration
-    payload = {
-        "sleep_enabled": bool(getattr(ac_thermo.cfg, "sleep_active", True)),
-        "sleep_start": getattr(ac_thermo.cfg, "sleep_start", None),
-        "sleep_stop": getattr(ac_thermo.cfg, "sleep_stop", None),
-        "sleep_time_active": bool(ac_thermo.is_sleep_window_now),
-        "early_sleep_enabled": bool(ac_thermo._sleep.early_sleep_enabled),
-    }
-    with contextlib.suppress(Exception):
-        payload["sleep_schedule"] = getattr(ac_thermo.cfg, "sleep_weekly", None)
+    payload = ac_thermo._sleep.get_status_payload()
+    logger.debug(
+        "_emit_ac_status sleep override_active=%s override_until=%s",
+        payload["sleep_override_active"],
+        payload["sleep_override_until"],
+    )
     handler.emit_to_views("sleep_status", payload)
 
     # Emit thermostat configuration

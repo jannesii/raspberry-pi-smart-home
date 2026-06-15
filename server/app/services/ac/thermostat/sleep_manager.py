@@ -54,21 +54,34 @@ class SleepManager:
     def override_until(self) -> float | None:
         return self._sleep_override_until
 
+    @property
+    def override_active(self) -> bool:
+        return self._sleep_override_until is not None and time.time() < float(
+            self._sleep_override_until
+        )
+
+    def cancel_sleep_override(self) -> None:
+        self._sleep_override_until = None
+        logger.info("Sleep override canceled")
+
     def is_sleep_window_now(self) -> bool:
         """Return True if current local time falls within configured sleep window.
 
         Supports optional weekly schedule; falls back to single start/stop.
         """
+        override_active = self.override_active
+        if not override_active and self._sleep_override_until is not None:
+            expired_at = self._sleep_override_until
+            self._sleep_override_until = None
+            logger.info("thermo: sleep override expired at epoch %.0f", expired_at)
+            self._emit_sleep_status()
+
         if not getattr(self._cfg, "sleep_active", True):
             return False
 
         # Honor temporary override: when active, pretend not in sleep window
-        if self._sleep_override_until is not None:
-            now = time.time()
-            if now < float(self._sleep_override_until):
-                return False
-            # Expired -> clear override
-            self._sleep_override_until = None
+        if override_active:
+            return False
 
         # Try weekly schedule first
         try:
@@ -188,12 +201,17 @@ class SleepManager:
 
     def get_status_payload(self) -> dict[str, Any]:
         """Build sleep status payload for notification."""
+        sleep_time_active = bool(self.is_sleep_window_now())
+        override_active = self.override_active
         payload: dict[str, Any] = {
             "sleep_enabled": bool(getattr(self._cfg, "sleep_active", True)),
             "sleep_start": getattr(self._cfg, "sleep_start", None),
             "sleep_stop": getattr(self._cfg, "sleep_stop", None),
-            "sleep_time_active": bool(self.is_sleep_window_now()),
+            "sleep_time_active": sleep_time_active,
             "early_sleep_enabled": self.early_sleep_enabled,
+            "sleep_override_active": override_active,
+            "sleep_override_until": None,
+            "sleep_schedule": None,
         }
 
         # Attach weekly schedule (as dict) if present
@@ -207,9 +225,15 @@ class SleepManager:
                 payload["sleep_schedule"] = None
 
         # Attach temporary override info if active
-        if self._sleep_override_until is not None:
+        if override_active and self._sleep_override_until is not None:
             payload["sleep_override_until"] = epoch_to_hhmm(
                 float(self._sleep_override_until), self._tz
             )
 
+        logger.debug(
+            "thermo: sleep status active=%s override_active=%s override_until=%s",
+            sleep_time_active,
+            override_active,
+            payload["sleep_override_until"],
+        )
         return payload

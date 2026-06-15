@@ -49,6 +49,7 @@ def get_ac_status():
         ), 503
     try:
         enabled = getattr(ac_thermo, "_enabled", True)
+        sleep_status = ac_thermo._sleep.get_status_payload()
         try:
             st = ac_thermo.ac.get_status()
             mode = st.get("mode") if isinstance(st, dict) else None
@@ -56,30 +57,29 @@ def get_ac_status():
         except Exception:
             mode = None
             fan = None
-        return jsonify(
-            {
-                "is_on": bool(ac_thermo.is_on),
-                "thermostat_enabled": bool(enabled),
-                "thermo_active": bool(enabled),
-                "mode": mode,
-                "fan_speed": fan,
-                "sleep_enabled": bool(getattr(ac_thermo.cfg, "sleep_active", True)),
-                "sleep_start": getattr(ac_thermo.cfg, "sleep_start", None),
-                "sleep_stop": getattr(ac_thermo.cfg, "sleep_stop", None),
-                "sleep_time_active": bool(ac_thermo.is_sleep_window_now),
-                "early_sleep_enabled": bool(ac_thermo._sleep.early_sleep_enabled),
-                "sleep_schedule": getattr(ac_thermo.cfg, "sleep_weekly", None),
-                "setpoint_c": float(getattr(ac_thermo.cfg, "target_temp", 0.0)),
-                "pos_hysteresis": float(getattr(ac_thermo.cfg, "pos_hysteresis", 0.0)),
-                "neg_hysteresis": float(getattr(ac_thermo.cfg, "neg_hysteresis", 0.0)),
-                "min_on_s": int(getattr(ac_thermo.cfg, "min_on_s", 240)),
-                "min_off_s": int(getattr(ac_thermo.cfg, "min_off_s", 240)),
-                "poll_interval_s": int(getattr(ac_thermo.cfg, "poll_interval_s", 15)),
-                "smooth_window": int(getattr(ac_thermo.cfg, "smooth_window", 5)),
-                "max_stale_s": getattr(ac_thermo.cfg, "max_stale_s", None),
-                "control_locations": getattr(ac_thermo.cfg, "control_locations", None),
-            }
+        payload = {
+            "is_on": bool(ac_thermo.is_on),
+            "thermostat_enabled": bool(enabled),
+            "thermo_active": bool(enabled),
+            "mode": mode,
+            "fan_speed": fan,
+            "setpoint_c": float(getattr(ac_thermo.cfg, "target_temp", 0.0)),
+            "pos_hysteresis": float(getattr(ac_thermo.cfg, "pos_hysteresis", 0.0)),
+            "neg_hysteresis": float(getattr(ac_thermo.cfg, "neg_hysteresis", 0.0)),
+            "min_on_s": int(getattr(ac_thermo.cfg, "min_on_s", 240)),
+            "min_off_s": int(getattr(ac_thermo.cfg, "min_off_s", 240)),
+            "poll_interval_s": int(getattr(ac_thermo.cfg, "poll_interval_s", 15)),
+            "smooth_window": int(getattr(ac_thermo.cfg, "smooth_window", 5)),
+            "max_stale_s": getattr(ac_thermo.cfg, "max_stale_s", None),
+            "control_locations": getattr(ac_thermo.cfg, "control_locations", None),
+            **sleep_status,
+        }
+        logger.debug(
+            "API /ac/status override_active=%s override_until=%s",
+            payload["sleep_override_active"],
+            payload["sleep_override_until"],
         )
+        return jsonify(payload)
     except Exception as e:
         logger.exception("Error reading AC status: %s", e)
         return jsonify(

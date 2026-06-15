@@ -848,6 +848,9 @@
     state.ac.sleepOverrideUntil = Object.prototype.hasOwnProperty.call(data, 'sleep_override_until')
       ? data.sleep_override_until
       : state.ac.sleepOverrideUntil;
+    state.ac.sleepOverrideActive = Object.prototype.hasOwnProperty.call(data, 'sleep_override_active')
+      ? data.sleep_override_active
+      : state.ac.sleepOverrideActive;
     state.ac.mode = data.mode || state.ac.mode;
     state.ac.fanSpeed = data.fan_speed || state.ac.fanSpeed;
 
@@ -876,7 +879,7 @@
     if (state.ac.sleepEnabled === true && state.ac.sleepActive === true) {
       setStatusPill(dom.sleepStatusPill, 'Sleep now', 'state-on');
     } else if (state.ac.sleepEnabled === true) {
-      const suffix = state.ac.sleepOverrideUntil ? ` · until ${String(state.ac.sleepOverrideUntil).slice(0, 5)}` : '';
+      const suffix = state.ac.sleepOverrideActive ? ` · until ${String(state.ac.sleepOverrideUntil).slice(0, 5)}` : '';
       setStatusPill(dom.sleepStatusPill, `Sleep enabled${suffix}`, 'state-idle');
     } else if (state.ac.sleepEnabled === false) {
       setStatusPill(dom.sleepStatusPill, 'Sleep off', 'state-off');
@@ -887,6 +890,7 @@
     dom.btnSleepToggleMain.textContent = state.ac.sleepEnabled ? 'Disable sleep' : 'Enable sleep';
     dom.btnSleepToggle.textContent = state.ac.sleepEnabled ? 'Disable sleep' : 'Enable sleep';
     dom.btnEarlySleepToggle.textContent = state.ac.earlySleepEnabled ? 'Disable early sleep' : 'Enable early sleep';
+    dom.btnSleepDisableFor.textContent = state.ac.sleepOverrideActive ? 'Cancel' : 'Apply';
 
     setActiveButtons([dom.modeCold, dom.modeWet, dom.modeWind], state.ac.mode);
     setActiveButtons([dom.fanLow, dom.fanHigh], state.ac.fanSpeed);
@@ -1157,9 +1161,13 @@
     });
 
     dom.btnSleepDisableFor.addEventListener('click', () => {
-      const minutes = parseInt(dom.sleepDisableMinutes.value, 10);
-      if (Number.isFinite(minutes) && minutes > 0) {
-        emitSocketAction({ action: 'disable_sleep_for', minutes });
+      if (state.ac.sleepOverrideActive === true) {
+        emitSocketAction({ action: 'cancel_sleep_override'})
+      } else {
+        const minutes = parseInt(dom.sleepDisableMinutes.value, 10);
+        if (Number.isFinite(minutes) && minutes > 0) {
+          emitSocketAction({ action: 'disable_sleep_for', minutes });
+        }
       }
     });
 

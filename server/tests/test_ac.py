@@ -371,6 +371,57 @@ class TestSleepManagerEarlySleep:
         assert emitted == ["sleep_status"]
 
 
+class TestSleepManagerOverride:
+    """Test temporary sleep override state and expiry notifications."""
+
+    @staticmethod
+    def _cfg():
+        return SimpleNamespace(
+            sleep_active=True,
+            sleep_start="22:00",
+            sleep_stop="07:00",
+            sleep_weekly=None,
+        )
+
+    def test_active_override_status_includes_hhmm(self, monkeypatch):
+        emitted: list[str] = []
+        manager = SleepManager(self._cfg(), UTC, lambda: emitted.append("sleep_status"))
+        monkeypatch.setattr(sleep_manager_module.time, "time", lambda: 1000.0)
+
+        manager.disable_for(5)
+
+        payload = manager.get_status_payload()
+        assert payload["sleep_override_active"] is True
+        assert payload["sleep_override_until"] == "00:21"
+        assert emitted == []
+
+    def test_expired_override_clears_and_emits_status(self, monkeypatch):
+        emitted: list[str] = []
+        manager = SleepManager(self._cfg(), UTC, lambda: emitted.append("sleep_status"))
+        now = 1000.0
+        monkeypatch.setattr(sleep_manager_module.time, "time", lambda: now)
+        monkeypatch.setattr(sleep_manager_module, "now_minutes_local", lambda: 12 * 60)
+        manager.disable_for(1)
+
+        now = 1061.0
+
+        assert manager.is_sleep_window_now() is False
+        assert manager.override_until is None
+        assert manager.override_active is False
+        assert emitted == ["sleep_status"]
+
+    def test_cancel_override_clears_status(self, monkeypatch):
+        manager = SleepManager(self._cfg(), UTC, lambda: None)
+        monkeypatch.setattr(sleep_manager_module.time, "time", lambda: 1000.0)
+        manager.disable_for(5)
+
+        manager.cancel_sleep_override()
+
+        payload = manager.get_status_payload()
+        assert payload["sleep_override_active"] is False
+        assert payload["sleep_override_until"] is None
+
+
 class TestACMigration:
     """Test AC data migration from SQLite to PostgreSQL."""
 

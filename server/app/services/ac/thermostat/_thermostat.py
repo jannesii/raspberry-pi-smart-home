@@ -288,6 +288,13 @@ class ACThermostat:
         self._emit_sleep_status()
         self.step_sleep_check()
 
+    def cancel_sleep_override(self) -> None:
+        """Cancel the active temporary sleep override."""
+        logger.debug("thermo: cancel_sleep_override requested")
+        self._sleep.cancel_sleep_override()
+        self._emit_sleep_status()
+        self.step_sleep_check()
+
     def _emit_sleep_status(self) -> None:
         """Emit sleep status notification."""
         self._emitter.emit_sleep_status(self._sleep.get_status_payload())
