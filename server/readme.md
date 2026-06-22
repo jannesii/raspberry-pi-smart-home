@@ -189,7 +189,7 @@ main Socket.IO message queue currently uses local Redis directly.
 
 | Integration | Variables |
 |---|---|
-| AC / TinyTuya | `AC_DEV_ID`, `AC_IP`, `AC_LOCAL_KEY`, `AC_TUYA_VERSION`, `AC_TUYA_TIMEOUT_S`, `AC_TUYA_PERSIST`, `AC_TUYA_RETRY_ATTEMPTS`, `AC_TUYA_RETRY_DELAY_S`, `WINTER_MODE` |
+| AC / TinyTuya | `AC_DEV_ID`, `AC_IP`, `AC_LOCAL_KEY`, `AC_TUYA_VERSION`, `AC_TUYA_TIMEOUT_S`, `AC_TUYA_PERSIST`, `AC_TUYA_RETRY_ATTEMPTS`, `AC_TUYA_RETRY_DELAY_S`, `AC_TUYA_STATE_SETTLE_S`, `WINTER_MODE` |
 | Thermostat | `THERMOSTAT_LOCATION`, `ROOM_THERMAL_CAPACITY_J_PER_K` |
 | Philips Hue | `HUE_BRIDGE_IP`, `HUE_USERNAME`, `HUE_HTTP_TIMEOUT_S` |
 | YNAB | `YNAB_API_KEY`, `YNAB_BUDGET_ID`, `YNAB_HTTP_TIMEOUT_S`, `YNAB_HTTP_RETRIES` |
@@ -205,7 +205,9 @@ TinyTuya calls are serialized across the thermostat and web handlers. Transient
 malformed responses are retried after reconnecting; persistent mode is
 recommended when the thermostat uses a short poll interval. Partial status
 responses preserve the last known power state instead of reporting a false
-transition.
+transition. After an app-issued power command, contradictory TinyTuya power
+status is ignored for `AC_TUYA_STATE_SETTLE_S` seconds (default 120) unless the
+device confirms the new state sooner.
 
 ## Access and API Security
 

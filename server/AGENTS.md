@@ -532,6 +532,8 @@ When changing user-visible JS or CSS in production, bump the versioned asset URL
 
 **Partial status payloads**: TinyTuya can return non-empty `dps` maps that omit one or more known datapoints. Normalize only datapoints that are actually present and non-null; never synthesize `switch=None`, because downstream boolean conversion would create false OFF transitions.
 
+**Post-command status lag**: TinyTuya `switch` status can briefly report the pre-command state after a successful local ON/OFF command. Keep the thermostat-level `AC_TUYA_STATE_SETTLE_S` guard so immediate contradictory reads do not get recorded as external power changes.
+
 ### 6.5 ESP32 WebSocket Service
 
 **Restart**: `esp32_ws.service` runs Gunicorn with long-lived WebSocket requests. Keep the systemd stop path hard-kill based (`KillSignal=SIGKILL`, short `TimeoutStopSec`) so restarts do not block on stuck Gunicorn shutdown.

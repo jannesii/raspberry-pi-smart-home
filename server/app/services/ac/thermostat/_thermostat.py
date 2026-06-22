@@ -7,6 +7,7 @@ The main ACThermostat class that coordinates all thermostat activities.
 from __future__ import annotations
 
 import logging
+import os
 import time
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -28,8 +29,22 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
+def _env_float(name: str, default: float) -> float:
+    """Parse a float environment variable with a safe default."""
+    raw = os.getenv(name)
+    if raw in (None, ""):
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        logger.warning("thermo: invalid %s=%r, using default=%s", name, raw, default)
+        return default
+
+
 class ACThermostat:
     """Main thermostat controller using external temperature source."""
+
+    DEFAULT_LOCAL_POWER_SETTLE_S = 120.0
 
     def __init__(
         self,
@@ -59,6 +74,12 @@ class ACThermostat:
         )
         self._enabled: bool = bool(getattr(cfg, "thermo_active", True)) if not winter else False
         self._last_change_ts: float = 0.0
+        self._local_power_expected_on: bool | None = None
+        self._local_power_settle_until: float = 0.0
+        self._local_power_settle_s = max(
+            0.0,
+            _env_float("AC_TUYA_STATE_SETTLE_S", self.DEFAULT_LOCAL_POWER_SETTLE_S),
+        )
 
         # Track persisted start ISO for the current phase
         self._phase_started_at_iso: str | None = getattr(cfg, "phase_started_at", None)
@@ -79,6 +100,7 @@ class ACThermostat:
             self.mode,
             self.fan_speed,
         )
+        logger.debug("thermo: local power settle window=%ss", self._local_power_settle_s)
 
     def _init_phase_timing(self) -> None:
         """Initialize phase timing from persisted state."""
@@ -184,6 +206,48 @@ class ACThermostat:
         self._last_change_ts = self._now()
         self._emitter.emit_status(self._is_on)
 
+    def _mark_local_power_command(self, expected_on: bool) -> None:
+        """Start the settle window for a locally issued power command."""
+        self._local_power_expected_on = expected_on
+        self._local_power_settle_until = self._now() + self._local_power_settle_s
+        logger.debug(
+            "thermo: local power command expected_on=%s settle_until=%.3f",
+            expected_on,
+            self._local_power_settle_until,
+        )
+
+    def _clear_local_power_command(self, reason: str) -> None:
+        """Clear the local command guard once device status is reliable again."""
+        if self._local_power_expected_on is None:
+            return
+        logger.debug(
+            "thermo: clearing local power command guard reason=%s expected_on=%s",
+            reason,
+            self._local_power_expected_on,
+        )
+        self._local_power_expected_on = None
+        self._local_power_settle_until = 0.0
+
+    def _should_ignore_external_state(self, reported_on: bool, now: float) -> bool:
+        """Return whether a contradictory device read is likely post-command lag."""
+        expected_on = self._local_power_expected_on
+        if expected_on is None:
+            return False
+        if now >= self._local_power_settle_until:
+            self._clear_local_power_command("settle_expired")
+            return False
+        if reported_on == expected_on:
+            self._clear_local_power_command("device_confirmed")
+            return False
+        logger.debug(
+            "thermo: ignoring device state during local command settle "
+            "reported_on=%s expected_on=%s remaining_s=%.1f",
+            reported_on,
+            expected_on,
+            self._local_power_settle_until - now,
+        )
+        return True
+
     def _thresholds(self) -> tuple[float, float]:
         """Return (on_at, off_at) temperature thresholds."""
         on_at = self.cfg.target_temp + float(self.cfg.pos_hysteresis)
@@ -198,12 +262,14 @@ class ACThermostat:
         """Turn AC on and record transition."""
         self.ac.turn_on()
         self._is_on = True
+        self._mark_local_power_command(True)
         return self._record_transition()
 
     def turn_off(self) -> int | None:
         """Turn AC off and record transition."""
         self.ac.turn_off()
         self._is_on = False
+        self._mark_local_power_command(False)
         return self._record_transition()
 
     def set_power(self, on: bool) -> None:
@@ -530,13 +596,24 @@ class ACThermostat:
         try:
             status = self.ac.get_status()
             if isinstance(status, dict) and "switch" in status:
+                now = self._now()
                 new_is_on = bool(status.get("switch", False))
                 if new_is_on != self._is_on:
-                    logger.info(
-                        "thermo: device state changed externally -> %s",
-                        "ON" if new_is_on else "OFF",
-                    )
-                    self._record_external_state(new_is_on)
+                    if self._should_ignore_external_state(new_is_on, now):
+                        logger.debug(
+                            "thermo: suppressed external state reconciliation "
+                            "reported=%s internal=%s",
+                            "ON" if new_is_on else "OFF",
+                            "ON" if self._is_on else "OFF",
+                        )
+                    else:
+                        logger.info(
+                            "thermo: device state changed externally -> %s",
+                            "ON" if new_is_on else "OFF",
+                        )
+                        self._record_external_state(new_is_on)
+                else:
+                    self._clear_local_power_command("device_matches_internal")
             # Track mode/fan changes
             if isinstance(status, dict):
                 changed = False
