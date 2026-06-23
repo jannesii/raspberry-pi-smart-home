@@ -600,8 +600,12 @@ When changing user-visible JS or CSS in production, bump the versioned asset URL
 
 **AC sleep status**: Build HTTP and Socket.IO sleep status from
 `SleepManager.get_status_payload()` so override activity and the formatted
-`sleep_override_until` value stay consistent. Do not coerce the override end
-time to a boolean.
+`sleep_override_until`/`sleep_for_until` values stay consistent. Do not coerce
+formatted override end times to booleans.
+
+**AC sleep transients**: `disable_for` and `sleep_for` are separate temporary
+states and should cancel each other when started. Scheduled sleep windows must
+clear an active `sleep_for` state once the real schedule takes over.
 
 **Mobile overlays**: Do not place fixed-position mobile sheets inside ancestors with persistent `transform` styles, including reveal animations that use `animation-fill-mode: both`. Mobile browsers can anchor the sheet to the transformed layout instead of the viewport.
 

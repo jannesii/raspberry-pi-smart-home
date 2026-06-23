@@ -31,6 +31,7 @@ class SleepManager:
         self._is_sleep_time: bool = False
         self._is_early_sleep_time: bool = False
         self._sleep_override_until: float | None = None
+        self._sleep_for_until: float | None = None
         self._emit_sleep_status: Callable[[], None] = emit_sleep_status_callback
 
     @property
@@ -60,27 +61,49 @@ class SleepManager:
             self._sleep_override_until
         )
 
+    @property
+    def sleep_for_until(self) -> float | None:
+        return self._sleep_for_until
+
+    @property
+    def sleep_for_active(self) -> bool:
+        return self._sleep_for_until is not None and time.time() < float(self._sleep_for_until)
+
     def cancel_sleep_override(self) -> None:
         self._sleep_override_until = None
         logger.info("Sleep override canceled")
 
-    def is_sleep_window_now(self) -> bool:
-        """Return True if current local time falls within configured sleep window.
+    def cancel_sleep_for(self) -> None:
+        self._sleep_for_until = None
+        logger.info("Sleep-for override canceled")
 
-        Supports optional weekly schedule; falls back to single start/stop.
-        """
+    def _clear_expired_transient_states(self) -> tuple[bool, bool]:
         override_active = self.override_active
+        sleep_for_active = self.sleep_for_active
+        emit_status = False
+
         if not override_active and self._sleep_override_until is not None:
             expired_at = self._sleep_override_until
             self._sleep_override_until = None
+            emit_status = True
             logger.info("thermo: sleep override expired at epoch %.0f", expired_at)
+
+        if not sleep_for_active and self._sleep_for_until is not None:
+            expired_at = self._sleep_for_until
+            self._sleep_for_until = None
+            emit_status = True
+            logger.info("thermo: sleep-for override expired at epoch %.0f", expired_at)
+
+        if emit_status:
+            logger.debug("thermo: transient sleep state expired; emitting status")
             self._emit_sleep_status()
 
-        if not getattr(self._cfg, "sleep_active", True):
-            return False
+        return override_active, sleep_for_active
 
-        # Honor temporary override: when active, pretend not in sleep window
-        if override_active:
+    def _scheduled_sleep_window_now(self) -> bool:
+        """Return True only for configured sleep windows, excluding transients."""
+        if not getattr(self._cfg, "sleep_active", True):
+            logger.debug("thermo: scheduled sleep check skipped; sleep inactive")
             return False
 
         # Try weekly schedule first
@@ -108,24 +131,9 @@ class SleepManager:
                     if start_m == stop_m:
                         return False
 
-                    is_sleep_time: bool = False
                     if start_m < stop_m:
-                        is_sleep_time = start_m <= now_m < stop_m
-                    else:
-                        is_sleep_time = (now_m >= start_m) or (now_m < stop_m)
-
-                    early_sleep_enabled: bool = self.early_sleep_enabled
-
-                    # Reset early sleep when actual sleep window starts
-                    if is_sleep_time and early_sleep_enabled:
-                        self.early_sleep_enabled = False
-                        self._emit_sleep_status()
-
-                    # Act like in sleep window when early sleep enabled
-                    if not is_sleep_time and early_sleep_enabled:
-                        is_sleep_time = True
-
-                    return is_sleep_time
+                        return start_m <= now_m < stop_m
+                    return (now_m >= start_m) or (now_m < stop_m)
         except Exception as e:
             logger.debug("thermo: failed weekly sleep parse: %s", e)
 
@@ -148,7 +156,7 @@ class SleepManager:
             in_sleep = (now_m >= start_m) or (now_m < stop_m)
 
         logger.debug(
-            "thermo: sleep_check now=%02d:%02d start=%s stop=%s -> %s",
+            "thermo: scheduled_sleep_check now=%02d:%02d start=%s stop=%s -> %s",
             now_m // 60,
             now_m % 60,
             self._cfg.sleep_start,
@@ -156,6 +164,45 @@ class SleepManager:
             in_sleep,
         )
         return in_sleep
+
+    def is_sleep_window_now(self) -> bool:
+        """Return True if current local time falls within configured sleep window.
+
+        Supports optional weekly schedule; falls back to single start/stop.
+        """
+        override_active, sleep_for_active = self._clear_expired_transient_states()
+        scheduled_sleep = self._scheduled_sleep_window_now()
+
+        # Honor temporary disable: when active, pretend not in sleep window.
+        if override_active:
+            logger.debug("thermo: sleep disabled by temporary override")
+            return False
+
+        if scheduled_sleep:
+            if self.early_sleep_enabled:
+                self.early_sleep_enabled = False
+                self._emit_sleep_status()
+            if sleep_for_active and self._sleep_for_until is not None:
+                self._sleep_for_until = None
+                logger.info("thermo: sleep-for override cleared by scheduled sleep")
+                self._emit_sleep_status()
+            return True
+
+        if sleep_for_active:
+            logger.debug("thermo: sleep-for override active")
+            return True
+
+        if self.early_sleep_enabled and getattr(self._cfg, "sleep_active", True):
+            logger.debug("thermo: early sleep active")
+            return True
+
+        logger.debug(
+            "thermo: sleep_check scheduled=%s sleep_for=%s early=%s -> False",
+            scheduled_sleep,
+            sleep_for_active,
+            self.early_sleep_enabled,
+        )
+        return False
 
     def set_enabled(self, enabled: bool) -> None:
         """Set sleep mode enabled state."""
@@ -189,12 +236,33 @@ class SleepManager:
         try:
             m = int(minutes)
         except Exception:
+            logger.debug("thermo: invalid sleep disable duration: %s", minutes)
             return
         if m <= 0:
+            logger.debug("thermo: ignoring non-positive sleep disable duration: %s", minutes)
             return
+        self._sleep_for_until = None
         self._sleep_override_until = time.time() + (m * 60)
         logger.info(
             "thermo: sleep override enabled for %d minutes (until %s)",
+            m,
+            (datetime.now() + timedelta(minutes=m)).strftime("%H:%M"),
+        )
+
+    def sleep_for(self, minutes: int) -> None:
+        """Temporarily enforce sleep for the given minutes."""
+        try:
+            m = int(minutes)
+        except Exception:
+            logger.debug("thermo: invalid sleep-for duration: %s", minutes)
+            return
+        if m <= 0:
+            logger.debug("thermo: ignoring non-positive sleep-for duration: %s", minutes)
+            return
+        self._sleep_override_until = None
+        self._sleep_for_until = time.time() + (m * 60)
+        logger.info(
+            "thermo: sleep-for override enabled for %d minutes (until %s)",
             m,
             (datetime.now() + timedelta(minutes=m)).strftime("%H:%M"),
         )
@@ -203,6 +271,7 @@ class SleepManager:
         """Build sleep status payload for notification."""
         sleep_time_active = bool(self.is_sleep_window_now())
         override_active = self.override_active
+        sleep_for_active = self.sleep_for_active
         payload: dict[str, Any] = {
             "sleep_enabled": bool(getattr(self._cfg, "sleep_active", True)),
             "sleep_start": getattr(self._cfg, "sleep_start", None),
@@ -211,6 +280,8 @@ class SleepManager:
             "early_sleep_enabled": self.early_sleep_enabled,
             "sleep_override_active": override_active,
             "sleep_override_until": None,
+            "sleep_for_active": sleep_for_active,
+            "sleep_for_until": None,
             "sleep_schedule": None,
         }
 
@@ -230,10 +301,18 @@ class SleepManager:
                 float(self._sleep_override_until), self._tz
             )
 
+        if sleep_for_active and self._sleep_for_until is not None:
+            payload["sleep_for_until"] = epoch_to_hhmm(float(self._sleep_for_until), self._tz)
+
         logger.debug(
-            "thermo: sleep status active=%s override_active=%s override_until=%s",
+            (
+                "thermo: sleep status active=%s override_active=%s "
+                "override_until=%s sleep_for_active=%s sleep_for_until=%s"
+            ),
             sleep_time_active,
             override_active,
             payload["sleep_override_until"],
+            sleep_for_active,
+            payload["sleep_for_until"],
         )
         return payload

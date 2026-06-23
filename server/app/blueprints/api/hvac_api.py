@@ -45,6 +45,8 @@ def get_ac_status():
                 "sleep_stop": None,
                 "sleep_time_active": None,
                 "sleep_schedule": None,
+                "sleep_for_active": None,
+                "sleep_for_until": None,
             }
         ), 503
     try:
@@ -75,9 +77,14 @@ def get_ac_status():
             **sleep_status,
         }
         logger.debug(
-            "API /ac/status override_active=%s override_until=%s",
+            (
+                "API /ac/status override_active=%s override_until=%s "
+                "sleep_for_active=%s sleep_for_until=%s"
+            ),
             payload["sleep_override_active"],
             payload["sleep_override_until"],
+            payload["sleep_for_active"],
+            payload["sleep_for_until"],
         )
         return jsonify(payload)
     except Exception as e:
@@ -92,6 +99,8 @@ def get_ac_status():
                 "sleep_enabled": None,
                 "sleep_start": None,
                 "sleep_stop": None,
+                "sleep_for_active": None,
+                "sleep_for_until": None,
             }
         ), 500
 

@@ -422,6 +422,78 @@ class TestSleepManagerOverride:
         assert payload["sleep_override_until"] is None
 
 
+class TestSleepManagerSleepFor:
+    """Test temporary sleep-for state and expiry notifications."""
+
+    @staticmethod
+    def _cfg():
+        return SimpleNamespace(
+            sleep_active=True,
+            sleep_start="22:00",
+            sleep_stop="07:00",
+            sleep_weekly=None,
+        )
+
+    def test_sleep_for_status_includes_hhmm_and_sleep_active(self, monkeypatch):
+        emitted: list[str] = []
+        manager = SleepManager(self._cfg(), UTC, lambda: emitted.append("sleep_status"))
+        monkeypatch.setattr(sleep_manager_module.time, "time", lambda: 1000.0)
+        monkeypatch.setattr(sleep_manager_module, "now_minutes_local", lambda: 12 * 60)
+
+        manager.sleep_for(10)
+
+        payload = manager.get_status_payload()
+        assert payload["sleep_time_active"] is True
+        assert payload["sleep_for_active"] is True
+        assert payload["sleep_for_until"] == "00:26"
+        assert emitted == []
+
+    def test_expired_sleep_for_clears_and_emits_status(self, monkeypatch):
+        emitted: list[str] = []
+        manager = SleepManager(self._cfg(), UTC, lambda: emitted.append("sleep_status"))
+        now = 1000.0
+        monkeypatch.setattr(sleep_manager_module.time, "time", lambda: now)
+        monkeypatch.setattr(sleep_manager_module, "now_minutes_local", lambda: 12 * 60)
+        manager.sleep_for(1)
+
+        now = 1061.0
+
+        assert manager.is_sleep_window_now() is False
+        assert manager.sleep_for_until is None
+        assert manager.sleep_for_active is False
+        assert emitted == ["sleep_status"]
+
+    def test_scheduled_sleep_clears_active_sleep_for(self, monkeypatch):
+        emitted: list[str] = []
+        manager = SleepManager(self._cfg(), UTC, lambda: emitted.append("sleep_status"))
+        monkeypatch.setattr(sleep_manager_module.time, "time", lambda: 1000.0)
+        current_minutes = 12 * 60
+        monkeypatch.setattr(
+            sleep_manager_module,
+            "now_minutes_local",
+            lambda: current_minutes,
+        )
+        manager.sleep_for(10)
+
+        current_minutes = 23 * 60
+
+        assert manager.is_sleep_window_now() is True
+        assert manager.sleep_for_until is None
+        assert manager.sleep_for_active is False
+        assert emitted == ["sleep_status"]
+
+    def test_sleep_for_cancels_disable_override(self, monkeypatch):
+        manager = SleepManager(self._cfg(), UTC, lambda: None)
+        monkeypatch.setattr(sleep_manager_module.time, "time", lambda: 1000.0)
+
+        manager.disable_for(5)
+        manager.sleep_for(10)
+
+        payload = manager.get_status_payload()
+        assert payload["sleep_override_active"] is False
+        assert payload["sleep_for_active"] is True
+
+
 class TestACMigration:
     """Test AC data migration from SQLite to PostgreSQL."""
 

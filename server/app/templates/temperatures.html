@@ -3,7 +3,7 @@
 {% block title %}Temperatures{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/temperatures.css', v='20260429-1') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/temperatures.css', v='20260623-1') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/flash.css') }}">
 {% endblock %}
 
@@ -169,6 +169,11 @@
                 <input id="sleepDisableMinutes" type="number" step="5" min="1" value="30">
               </label>
               <button id="btnSleepDisableFor" class="action-button" type="button">Apply</button>
+              <label class="sleep-inline-field" for="sleepForMinutes">
+                <span class="control-label">Sleep for</span>
+                <input id="sleepForMinutes" type="number" step="5" min="1" value="10">
+              </label>
+              <button id="btnSleepFor" class="action-button" type="button">Apply</button>
             </div>
           </div>
 
@@ -361,6 +366,6 @@
   window.TEMPERATURES_BOOTSTRAP = {{ temperatures_bootstrap | tojson }};
 </script>
 <script src="{{ url_for('static', filename='js/init_sio.js', v='20260504-1') }}"></script>
-<script src="{{ url_for('static', filename='js/temperatures.js', v='20260615-2') }}"></script>
+<script src="{{ url_for('static', filename='js/temperatures.js', v='20260623-1') }}"></script>
 <script src="{{ url_for('static', filename='js/flash.js') }}"></script>
 {% endblock %}

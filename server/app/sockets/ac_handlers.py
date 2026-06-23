@@ -191,8 +191,23 @@ def handle_ac_control(handler: SocketEventHandler, data: dict[str, Any]) -> None
                 return
             ac_thermo.disable_sleep_for(minutes)
             return
+        if action == "sleep_for":
+            try:
+                minutes = int(data.get("minutes"))
+            except Exception:
+                handler.socketio.emit(
+                    "error",
+                    {"message": "Invalid minutes for sleep-for override"},
+                )
+                return
+            logger.debug("ac_control: sleep_for minutes=%s", minutes)
+            ac_thermo.sleep_for(minutes)
+            return
         if action == "cancel_sleep_override":
             ac_thermo.cancel_sleep_override()
+            return
+        if action == "cancel_sleep_for":
+            ac_thermo.cancel_sleep_for()
             return
 
         handler.socketio.emit("error", {"message": f"Invalid AC control action: {action}"})
@@ -232,9 +247,14 @@ def _emit_ac_status(handler: SocketEventHandler, ac_thermo: ACThermostat) -> Non
     # Emit sleep configuration
     payload = ac_thermo._sleep.get_status_payload()
     logger.debug(
-        "_emit_ac_status sleep override_active=%s override_until=%s",
+        (
+            "_emit_ac_status sleep override_active=%s override_until=%s "
+            "sleep_for_active=%s sleep_for_until=%s"
+        ),
         payload["sleep_override_active"],
         payload["sleep_override_until"],
+        payload["sleep_for_active"],
+        payload["sleep_for_until"],
     )
     handler.emit_to_views("sleep_status", payload)
 

@@ -21,7 +21,7 @@ available.
 - Thermostat target, hysteresis, minimum cycle, stale-reading, and sensor
   selection controls with live partial updates that preserve form state
 - Weekly sleep schedules, apply-to-all scheduling, cancellable temporary sleep
-  overrides, and early-sleep mode
+  overrides, duration-based sleep mode, and early-sleep mode
 - Heating and cooling rate estimates based on sensor and AC event history
 - BMP pressure, altitude, and temperature persistence/read APIs; the legacy
   BMP polling service is not started by the application bootstrap

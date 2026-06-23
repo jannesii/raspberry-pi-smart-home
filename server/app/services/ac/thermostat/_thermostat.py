@@ -354,10 +354,24 @@ class ACThermostat:
         self._emit_sleep_status()
         self.step_sleep_check()
 
+    def sleep_for(self, minutes: int) -> None:
+        """Temporarily enforce sleep."""
+        logger.debug("thermo: sleep_for requested minutes=%s", minutes)
+        self._sleep.sleep_for(minutes)
+        self._emit_sleep_status()
+        self.step_sleep_check()
+
     def cancel_sleep_override(self) -> None:
         """Cancel the active temporary sleep override."""
         logger.debug("thermo: cancel_sleep_override requested")
         self._sleep.cancel_sleep_override()
+        self._emit_sleep_status()
+        self.step_sleep_check()
+
+    def cancel_sleep_for(self) -> None:
+        """Cancel the active temporary sleep-for override."""
+        logger.debug("thermo: cancel_sleep_for requested")
+        self._sleep.cancel_sleep_for()
         self._emit_sleep_status()
         self.step_sleep_check()
 
