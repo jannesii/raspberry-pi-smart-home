@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
@@ -21,16 +22,37 @@ class DummyAC:
             "fan_speed_enum": "low",
         }
         self.commands: list[bool] = []
+        self.command_correlations: list[str | None] = []
+        self.status_diagnostics: dict[str, Any] = {
+            "sent_seq": 8,
+            "sent_cmd": 10,
+            "received_seq": 8,
+            "received_cmd": 10,
+            "sequence_match": True,
+            "command_match": True,
+            "persistent": True,
+            "attempt": 1,
+        }
 
     def get_status(self) -> dict[str, Any]:
         return dict(self.status)
 
-    def turn_on(self) -> dict[str, Any]:
+    def get_status_with_diagnostics(
+        self,
+        *,
+        correlation_id: str | None = None,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        diagnostics = {**self.status_diagnostics, "correlation_id": correlation_id}
+        return dict(self.status), diagnostics
+
+    def turn_on(self, *, correlation_id: str | None = None) -> dict[str, Any]:
         self.commands.append(True)
+        self.command_correlations.append(correlation_id)
         return {"ok": True}
 
-    def turn_off(self) -> dict[str, Any]:
+    def turn_off(self, *, correlation_id: str | None = None) -> dict[str, Any]:
         self.commands.append(False)
+        self.command_correlations.append(correlation_id)
         return {"ok": True}
 
     def set_temperature(self, _celsius: int) -> dict[str, Any]:
@@ -83,14 +105,17 @@ def _thermostat(
     monkeypatch: pytest.MonkeyPatch,
     ac: DummyAC,
     ctrl: DummyCtrl,
+    *,
+    cfg: SimpleNamespace | None = None,
+    notify=None,
 ) -> ACThermostat:
     monkeypatch.setenv("AC_TUYA_STATE_SETTLE_S", "30")
     return ACThermostat(
         ac=ac,  # type: ignore[arg-type]
-        cfg=_cfg(),  # type: ignore[arg-type]
+        cfg=cfg or _cfg(),  # type: ignore[arg-type]
         ctrl=ctrl,  # type: ignore[arg-type]
         location="test",
-        notify=lambda _event, _payload: None,
+        notify=notify or (lambda _event, _payload: None),
     )
 
 
@@ -106,10 +131,12 @@ def test_local_on_command_ignores_stale_off_status(monkeypatch: pytest.MonkeyPat
     assert thermostat.is_on is True
     assert ac.commands == [True]
     assert ctrl.ac_events == [{"is_on": True, "source": "thermostat"}]
+    assert ac.command_correlations[0]
 
 
 def test_stale_status_after_settle_window_records_external_change(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ):
     """After the settle window expires, conflicting status is trusted again."""
     ac = DummyAC(is_on=False)
@@ -118,13 +145,17 @@ def test_stale_status_after_settle_window_records_external_change(
 
     thermostat.turn_on()
     thermostat._local_power_settle_until = thermostat._now() - 1
-    thermostat.step()
+    with caplog.at_level(logging.WARNING, logger="app.services.ac.thermostat._thermostat"):
+        thermostat.step()
 
     assert thermostat.is_on is False
     assert ctrl.ac_events == [
         {"is_on": True, "source": "thermostat"},
-        {"is_on": False, "source": "thermostat"},
+        {"is_on": False, "source": "device"},
     ]
+    assert "action=accepted_after_settle" in caplog.text
+    assert "raw_switch=False raw_switch_type=bool" in caplog.text
+    assert f"correlation_id={ac.command_correlations[0]}" in caplog.text
 
 
 def test_confirming_status_clears_local_power_guard(monkeypatch: pytest.MonkeyPatch):
@@ -140,3 +171,41 @@ def test_confirming_status_clears_local_power_guard(monkeypatch: pytest.MonkeyPa
     assert thermostat.is_on is True
     assert thermostat._local_power_expected_on is None
     assert thermostat._local_power_settle_until == 0.0
+
+
+def test_partial_startup_status_uses_persisted_phase(monkeypatch: pytest.MonkeyPatch):
+    """Missing startup switch DPS should preserve the persisted power phase."""
+    ac = DummyAC(is_on=False)
+    ac.status = {"mode": "cold", "fan_speed_enum": "low"}
+    ctrl = DummyCtrl()
+    cfg = _cfg()
+    cfg.current_phase = "on"
+
+    thermostat = _thermostat(monkeypatch, ac, ctrl, cfg=cfg)
+
+    assert thermostat.is_on is True
+    assert thermostat.get_power_status_payload()["state_source"] == "persisted"
+
+
+def test_manual_power_event_and_ui_payload_share_correlation(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Manual commands should retain source and correlation through persistence and UI."""
+    ac = DummyAC(is_on=False)
+    ctrl = DummyCtrl()
+    notifications: list[tuple[str, dict[str, Any]]] = []
+    thermostat = _thermostat(
+        monkeypatch,
+        ac,
+        ctrl,
+        notify=lambda event, payload: notifications.append((event, payload)),
+    )
+
+    thermostat.set_power(True)
+
+    correlation_id = ac.command_correlations[-1]
+    assert correlation_id
+    assert ctrl.ac_events == [{"is_on": True, "source": "manual"}]
+    assert notifications[-1][0] == "ac_status"
+    assert notifications[-1][1]["state_source"] == "manual"
+    assert notifications[-1][1]["state_correlation_id"] == correlation_id

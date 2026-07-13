@@ -526,13 +526,15 @@ When changing user-visible JS or CSS in production, bump the versioned asset URL
 
 ### 6.4 AC / TinyTuya
 
-**Diagnostics**: Initialize the AC TinyTuya device with env-driven `AC_TUYA_VERSION` (and timeout/persist knobs when needed) instead of relying on library defaults. When status/control fails, inspect the raw TinyTuya `Err` code in logs; `914` points to local key/version mismatch, `901` can occur even when the device IP answers ping if the local-control handshake cannot complete.
+**Diagnostics**: Initialize the AC TinyTuya device with env-driven `AC_TUYA_VERSION` (and timeout/persist knobs when needed) instead of relying on library defaults. When status/control fails, inspect the raw TinyTuya `Err` code in logs; `914` points to local key/version mismatch, `901` can occur even when the device IP answers ping if the local-control handshake cannot complete. Power commands and reconciliation logs share `state_correlation_id` and include credential-free DPS 1 type/value plus TinyTuya request/response sequence metadata. Missing power DPS warnings are rate-limited to avoid poll-loop log spam.
 
-**Concurrency and retries**: TinyTuya device instances are stateful and shared by the thermostat loop plus web handlers. Serialize all device calls. Retry only transient malformed-response codes (`900`/`904`) after closing the socket; do not retry credential/protocol errors such as `914`. For short poll intervals, enable `AC_TUYA_PERSIST` to avoid opening a new TCP connection on every loop.
+**Concurrency and retries**: TinyTuya device instances are stateful and shared by the thermostat loop plus web handlers. Serialize all device calls. Retry only transient malformed-response codes (`900`/`904`) after closing the socket; do not retry credential/protocol errors such as `914`. For short poll intervals, `AC_TUYA_PERSIST` avoids opening a new TCP connection on every loop, but persistent sockets can also surface queued asynchronous frames; use the correlation diagnostics and an `AC_TUYA_PERSIST=False` A/B test when reported power repeatedly reverses after commands.
 
-**Partial status payloads**: TinyTuya can return non-empty `dps` maps that omit one or more known datapoints. Normalize only datapoints that are actually present and non-null; never synthesize `switch=None`, because downstream boolean conversion would create false OFF transitions.
+**Partial status payloads**: TinyTuya can return non-empty `dps` maps that omit one or more known datapoints. Normalize only datapoints that are actually present and non-null; never synthesize `switch=None`, because downstream boolean conversion would create false OFF transitions. During thermostat startup, fall back to the persisted `current_phase` when the device response omits `switch`.
 
 **Post-command status lag**: TinyTuya `switch` status can briefly report the pre-command state after a successful local ON/OFF command. Keep the thermostat-level `AC_TUYA_STATE_SETTLE_S` guard so immediate contradictory reads do not get recorded as external power changes.
+
+**Power event provenance**: Persist AC transitions with the actual source (`thermostat`, `manual`, `sleep`, or `device`). Keep the same correlation ID in command logs, reconciliation logs, event notes, and `ac_status`/`/api/ac/status` payloads so one state chain can be traced end-to-end.
 
 ### 6.5 ESP32 WebSocket Service
 

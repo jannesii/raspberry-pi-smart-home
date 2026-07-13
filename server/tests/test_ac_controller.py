@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from types import SimpleNamespace
 
 import pytest
 
@@ -17,6 +18,9 @@ class DummyDevice:
         self.command_response = command_response
         self.commands: list[tuple[int, object]] = []
         self.close_calls = 0
+        self.socketPersistent = True
+        self.raw_sent = SimpleNamespace(seqno=41, cmd=7)
+        self.raw_recv = [SimpleNamespace(seqno=41, cmd=7)]
 
     @staticmethod
     def _next_response(response):
@@ -58,6 +62,31 @@ def test_get_status_maps_known_dps_fields():
         "fan_speed_enum": "high",
         "set_temperature": 23,
         "temp_current": 21,
+    }
+
+
+def test_get_status_exposes_safe_transport_diagnostics():
+    """Diagnostic reads should expose power type and request metadata."""
+    device = DummyDevice(status_response={"dps": {"1": False}})
+    controller = ACController(tinytuya_device=device)
+
+    status, diagnostics = controller.get_status_with_diagnostics(correlation_id="ac-test-status")
+
+    assert status == {"switch": False}
+    assert diagnostics == {
+        "method": "status",
+        "attempt": 1,
+        "correlation_id": "ac-test-status",
+        "persistent": True,
+        "sent_seq": 41,
+        "sent_cmd": 7,
+        "received_seq": 41,
+        "received_cmd": 7,
+        "sequence_match": True,
+        "command_match": True,
+        "response_power": False,
+        "response_power_type": "bool",
+        "response_error": None,
     }
 
 
@@ -116,6 +145,21 @@ def test_get_status_omits_missing_dps_fields(
         "fan_speed_enum": "high",
     }
     assert "partial status response missing_dps=['1', '2', '3']" in caplog.text
+    assert "partial status missing power DPS" in caplog.text
+
+
+def test_missing_power_dps_warning_is_rate_limited(caplog: pytest.LogCaptureFixture):
+    """Repeated partial power payloads should not flood production logs."""
+    device = DummyDevice(
+        status_response={"dps": {"4": "cold", "5": "high"}},
+    )
+    controller = ACController(tinytuya_device=device)
+
+    with caplog.at_level(logging.WARNING, logger="app.services.ac.controller"):
+        controller.get_status()
+        controller.get_status()
+
+    assert caplog.text.count("partial status missing power DPS") == 1
 
 
 def test_turn_on_raises_runtime_error_for_device_error():
@@ -155,6 +199,22 @@ def test_turn_on_retries_transient_payload_errors():
     assert result == {"dps": {"1": True}}
     assert device.commands == [(controller.POWER, True)] * 3
     assert device.close_calls == 2
+
+
+def test_power_command_logs_correlation_and_response_metadata(
+    caplog: pytest.LogCaptureFixture,
+):
+    """Power command diagnostics should be traceable without full payload logging."""
+    device = DummyDevice(command_response={"dps": {"1": True}})
+    controller = ACController(tinytuya_device=device)
+
+    with caplog.at_level(logging.INFO, logger="app.services.ac.controller"):
+        controller.turn_on(correlation_id="ac-test-command")
+
+    assert "power command response correlation_id=ac-test-command" in caplog.text
+    assert "response_power=True" in caplog.text
+    assert "response_power_type=bool" in caplog.text
+    assert "sequence_match=True" in caplog.text
 
 
 def test_get_status_retries_transient_payload_error():

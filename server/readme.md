@@ -207,7 +207,11 @@ recommended when the thermostat uses a short poll interval. Partial status
 responses preserve the last known power state instead of reporting a false
 transition. After an app-issued power command, contradictory TinyTuya power
 status is ignored for `AC_TUYA_STATE_SETTLE_S` seconds (default 120) unless the
-device confirms the new state sooner.
+device confirms the new state sooner. Power commands, device reconciliation,
+and UI status payloads share a `state_correlation_id`; payloads also expose
+`state_source` and `state_observed_at`. AC event sources distinguish thermostat,
+manual, sleep, and device-observed transitions. If startup status omits the
+power DPS, the last persisted phase is retained.
 
 ## Access and API Security
 

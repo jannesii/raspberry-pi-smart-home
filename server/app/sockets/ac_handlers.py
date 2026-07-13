@@ -225,7 +225,14 @@ def handle_ac_control(handler: SocketEventHandler, data: dict[str, Any]) -> None
 def _emit_ac_status(handler: SocketEventHandler, ac_thermo: ACThermostat) -> None:
     """Emit all AC status updates to views."""
     logger.debug("_emit_ac_status called ac_thermo=%s", ac_thermo)
-    handler.emit_to_views("ac_status", {"is_on": bool(ac_thermo.is_on)})
+    power_payload = ac_thermo.get_power_status_payload()
+    logger.debug(
+        "_emit_ac_status power source=%s correlation_id=%s observed_at=%s",
+        power_payload["state_source"],
+        power_payload["state_correlation_id"],
+        power_payload["state_observed_at"],
+    )
+    handler.emit_to_views("ac_status", power_payload)
     handler.emit_to_views(
         "thermostat_status",
         {

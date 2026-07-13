@@ -27,11 +27,24 @@ class NotificationEmitter:
         self._notify = notify
         self._cfg = cfg
 
-    def emit_status(self, is_on: bool) -> None:
+    def emit_status(
+        self,
+        is_on: bool,
+        state_source: str,
+        state_correlation_id: str,
+        state_observed_at: str,
+    ) -> None:
         """Notify listeners about current AC on/off state."""
         try:
             if self._notify:
-                self._notify("ac_status", {"is_on": bool(is_on)})
+                payload = {
+                    "is_on": bool(is_on),
+                    "state_source": state_source,
+                    "state_correlation_id": state_correlation_id,
+                    "state_observed_at": state_observed_at,
+                }
+                logger.debug("thermo: emitting AC status payload=%s", payload)
+                self._notify("ac_status", payload)
         except Exception as e:
             logger.debug("thermo: notify failed: %s", e)
 

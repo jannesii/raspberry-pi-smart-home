@@ -59,8 +59,9 @@ def get_ac_status():
         except Exception:
             mode = None
             fan = None
+        power_payload = ac_thermo.get_power_status_payload()
         payload = {
-            "is_on": bool(ac_thermo.is_on),
+            **power_payload,
             "thermostat_enabled": bool(enabled),
             "thermo_active": bool(enabled),
             "mode": mode,
@@ -78,9 +79,12 @@ def get_ac_status():
         }
         logger.debug(
             (
-                "API /ac/status override_active=%s override_until=%s "
+                "API /ac/status source=%s correlation_id=%s "
+                "override_active=%s override_until=%s "
                 "sleep_for_active=%s sleep_for_until=%s"
             ),
+            payload["state_source"],
+            payload["state_correlation_id"],
             payload["sleep_override_active"],
             payload["sleep_override_until"],
             payload["sleep_for_active"],

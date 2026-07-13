@@ -11,6 +11,7 @@ import os
 import time
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 import pytz
 
@@ -62,10 +63,60 @@ class ACThermostat:
         self.location = location
         self.notify = notify
         self.tz = pytz.timezone("Europe/Helsinki")
+        self._local_power_expected_on: bool | None = None
+        self._local_power_settle_until: float = 0.0
+        self._local_power_commanded_at: float = 0.0
+        self._local_power_correlation_id: str | None = None
+        self._local_power_source: str | None = None
+        self._local_power_mismatch_count = 0
+        self._state_correlation_id = self._new_correlation_id()
+        self._state_source = "startup"
+        self._state_observed_at = datetime.now(self.tz).isoformat()
 
         # Initialize AC state
-        ac_status = self.ac.get_status() if not winter else None
-        self._is_on: bool = bool(ac_status.get("switch", False)) if ac_status else False
+        ac_status, startup_diagnostics = (
+            self._read_device_status(self._state_correlation_id) if not winter else ({}, {})
+        )
+        persisted_phase = getattr(cfg, "current_phase", None)
+        if winter:
+            self._is_on = False
+            self._state_source = "winter"
+            logger.debug(
+                "thermo: startup power state correlation_id=%s source=winter is_on=False",
+                self._state_correlation_id,
+            )
+        elif "switch" in ac_status and ac_status.get("switch") is not None:
+            raw_startup_switch = ac_status["switch"]
+            self._is_on = bool(raw_startup_switch)
+            self._state_source = "device"
+            logger.info(
+                "thermo: startup power state correlation_id=%s source=device raw_switch=%r "
+                "raw_switch_type=%s is_on=%s diagnostics=%s",
+                self._state_correlation_id,
+                raw_startup_switch,
+                type(raw_startup_switch).__name__,
+                self._is_on,
+                startup_diagnostics,
+            )
+        elif persisted_phase in {"on", "off"}:
+            self._is_on = persisted_phase == "on"
+            self._state_source = "persisted"
+            logger.warning(
+                "thermo: startup status missing switch correlation_id=%s; "
+                "using persisted_phase=%s diagnostics=%s",
+                self._state_correlation_id,
+                persisted_phase,
+                startup_diagnostics,
+            )
+        else:
+            self._is_on = False
+            self._state_source = "fallback"
+            logger.warning(
+                "thermo: startup status missing switch and persisted phase "
+                "correlation_id=%s; defaulting OFF diagnostics=%s",
+                self._state_correlation_id,
+                startup_diagnostics,
+            )
         self.mode: str | None = (
             ac_status.get("mode", "cold") if isinstance(ac_status, dict) else None
         )
@@ -74,8 +125,6 @@ class ACThermostat:
         )
         self._enabled: bool = bool(getattr(cfg, "thermo_active", True)) if not winter else False
         self._last_change_ts: float = 0.0
-        self._local_power_expected_on: bool | None = None
-        self._local_power_settle_until: float = 0.0
         self._local_power_settle_s = max(
             0.0,
             _env_float("AC_TUYA_STATE_SETTLE_S", self.DEFAULT_LOCAL_POWER_SETTLE_S),
@@ -146,6 +195,26 @@ class ACThermostat:
     def _now(self) -> float:
         return time.time()
 
+    @staticmethod
+    def _new_correlation_id() -> str:
+        """Create a compact identifier for one AC state transition chain."""
+        return f"ac-{uuid4().hex[:12]}"
+
+    def _read_device_status(
+        self,
+        correlation_id: str | None,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Read AC status with transport metadata when the controller supports it."""
+        reader = getattr(self.ac, "get_status_with_diagnostics", None)
+        if callable(reader):
+            status, diagnostics = reader(correlation_id=correlation_id)
+            return (
+                status if isinstance(status, dict) else {},
+                diagnostics if isinstance(diagnostics, dict) else {},
+            )
+        status = self.ac.get_status()
+        return (status if isinstance(status, dict) else {}, {})
+
     def _can_turn_on(self) -> bool:
         ok = (
             self._now() - self._last_change_ts
@@ -182,13 +251,22 @@ class ACThermostat:
         except Exception as e:
             logger.debug("thermo: persist conf failed: %s", e)
 
-    def _record_transition(self) -> int | None:
+    def _record_transition(
+        self,
+        *,
+        source: str,
+        correlation_id: str | None,
+    ) -> int | None:
         """Record phase transition, persist, return previous phase duration in minutes."""
         minutes = compute_phase_duration(self._phase_started_at_iso, self.tz)
 
         # Log AC on/off event into DB
         try:
-            self.ctrl.record_ac_event(is_on=bool(self._is_on), source="thermostat")
+            self.ctrl.record_ac_event(
+                is_on=bool(self._is_on),
+                source=source,
+                note=(f"correlation_id={correlation_id}" if correlation_id else None),
+            )
         except Exception as e:
             logger.debug("thermo: failed to record ac_event: %s", e)
 
@@ -197,21 +275,41 @@ class ACThermostat:
         self._persist_conf()
         return minutes
 
-    def _record_external_state(self, new_on: bool) -> None:
+    def _record_external_state(
+        self,
+        new_on: bool,
+        *,
+        correlation_id: str | None,
+    ) -> None:
         """Update counters on external device state changes without issuing commands."""
         if new_on == self._is_on:
             return
         self._is_on = new_on
-        self._record_transition()
+        self._set_state_metadata(source="device", correlation_id=correlation_id)
+        self._record_transition(source="device", correlation_id=correlation_id)
         self._last_change_ts = self._now()
-        self._emitter.emit_status(self._is_on)
+        self._emit_power_status()
 
-    def _mark_local_power_command(self, expected_on: bool) -> None:
+    def _mark_local_power_command(
+        self,
+        expected_on: bool,
+        *,
+        correlation_id: str,
+        source: str,
+    ) -> None:
         """Start the settle window for a locally issued power command."""
+        now = self._now()
         self._local_power_expected_on = expected_on
-        self._local_power_settle_until = self._now() + self._local_power_settle_s
+        self._local_power_commanded_at = now
+        self._local_power_settle_until = now + self._local_power_settle_s
+        self._local_power_correlation_id = correlation_id
+        self._local_power_source = source
+        self._local_power_mismatch_count = 0
         logger.debug(
-            "thermo: local power command expected_on=%s settle_until=%.3f",
+            "thermo: local power command correlation_id=%s source=%s expected_on=%s "
+            "settle_until=%.3f",
+            correlation_id,
+            source,
             expected_on,
             self._local_power_settle_until,
         )
@@ -221,12 +319,19 @@ class ACThermostat:
         if self._local_power_expected_on is None:
             return
         logger.debug(
-            "thermo: clearing local power command guard reason=%s expected_on=%s",
+            "thermo: clearing local power command guard reason=%s correlation_id=%s "
+            "expected_on=%s mismatches=%s",
             reason,
+            self._local_power_correlation_id,
             self._local_power_expected_on,
+            self._local_power_mismatch_count,
         )
         self._local_power_expected_on = None
         self._local_power_settle_until = 0.0
+        self._local_power_commanded_at = 0.0
+        self._local_power_correlation_id = None
+        self._local_power_source = None
+        self._local_power_mismatch_count = 0
 
     def _should_ignore_external_state(self, reported_on: bool, now: float) -> bool:
         """Return whether a contradictory device read is likely post-command lag."""
@@ -234,7 +339,6 @@ class ACThermostat:
         if expected_on is None:
             return False
         if now >= self._local_power_settle_until:
-            self._clear_local_power_command("settle_expired")
             return False
         if reported_on == expected_on:
             self._clear_local_power_command("device_confirmed")
@@ -248,6 +352,84 @@ class ACThermostat:
         )
         return True
 
+    def _set_state_metadata(
+        self,
+        *,
+        source: str,
+        correlation_id: str | None,
+    ) -> None:
+        """Update diagnostic metadata associated with the in-memory power state."""
+        self._state_source = source
+        self._state_correlation_id = correlation_id or self._new_correlation_id()
+        self._state_observed_at = datetime.now(self.tz).isoformat()
+        logger.debug(
+            "thermo: state metadata source=%s correlation_id=%s observed_at=%s",
+            self._state_source,
+            self._state_correlation_id,
+            self._state_observed_at,
+        )
+
+    def get_power_status_payload(self) -> dict[str, Any]:
+        """Return power state with source and correlation metadata for UI clients."""
+        return {
+            "is_on": bool(self._is_on),
+            "state_source": self._state_source,
+            "state_correlation_id": self._state_correlation_id,
+            "state_observed_at": self._state_observed_at,
+        }
+
+    def _emit_power_status(self) -> None:
+        """Emit the current power state and its diagnostic metadata."""
+        self._emitter.emit_status(**self.get_power_status_payload())
+
+    def _log_device_power_observation(
+        self,
+        *,
+        level: int,
+        action: str,
+        raw_switch: Any,
+        diagnostics: dict[str, Any],
+        now: float,
+        correlation_id: str | None,
+    ) -> None:
+        """Log one safe, correlation-friendly device power observation."""
+        command_age_s = (
+            now - self._local_power_commanded_at if self._local_power_commanded_at > 0 else None
+        )
+        settle_remaining_s = (
+            max(0.0, self._local_power_settle_until - now)
+            if self._local_power_expected_on is not None
+            else None
+        )
+        logger.log(
+            level,
+            "thermo: device power observation action=%s correlation_id=%s "
+            "raw_switch=%r raw_switch_type=%s reported_on=%s internal_on=%s "
+            "expected_on=%s command_source=%s command_age_s=%s "
+            "settle_remaining_s=%s mismatch_count=%s sent_seq=%s sent_cmd=%s "
+            "received_seq=%s received_cmd=%s sequence_match=%s command_match=%s "
+            "persistent=%s attempt=%s",
+            action,
+            correlation_id,
+            raw_switch,
+            type(raw_switch).__name__,
+            bool(raw_switch),
+            self._is_on,
+            self._local_power_expected_on,
+            self._local_power_source,
+            round(command_age_s, 1) if command_age_s is not None else None,
+            round(settle_remaining_s, 1) if settle_remaining_s is not None else None,
+            self._local_power_mismatch_count,
+            diagnostics.get("sent_seq"),
+            diagnostics.get("sent_cmd"),
+            diagnostics.get("received_seq"),
+            diagnostics.get("received_cmd"),
+            diagnostics.get("sequence_match"),
+            diagnostics.get("command_match"),
+            diagnostics.get("persistent"),
+            diagnostics.get("attempt"),
+        )
+
     def _thresholds(self) -> tuple[float, float]:
         """Return (on_at, off_at) temperature thresholds."""
         on_at = self.cfg.target_temp + float(self.cfg.pos_hysteresis)
@@ -258,28 +440,40 @@ class ACThermostat:
     # Power control
     # =========================================================================
 
-    def turn_on(self) -> int | None:
+    def turn_on(self, *, source: str = "thermostat") -> int | None:
         """Turn AC on and record transition."""
-        self.ac.turn_on()
+        correlation_id = self._new_correlation_id()
+        self.ac.turn_on(correlation_id=correlation_id)
         self._is_on = True
-        self._mark_local_power_command(True)
-        return self._record_transition()
+        self._set_state_metadata(source=source, correlation_id=correlation_id)
+        self._mark_local_power_command(
+            True,
+            correlation_id=correlation_id,
+            source=source,
+        )
+        return self._record_transition(source=source, correlation_id=correlation_id)
 
-    def turn_off(self) -> int | None:
+    def turn_off(self, *, source: str = "thermostat") -> int | None:
         """Turn AC off and record transition."""
-        self.ac.turn_off()
+        correlation_id = self._new_correlation_id()
+        self.ac.turn_off(correlation_id=correlation_id)
         self._is_on = False
-        self._mark_local_power_command(False)
-        return self._record_transition()
+        self._set_state_metadata(source=source, correlation_id=correlation_id)
+        self._mark_local_power_command(
+            False,
+            correlation_id=correlation_id,
+            source=source,
+        )
+        return self._record_transition(source=source, correlation_id=correlation_id)
 
     def set_power(self, on: bool) -> None:
         """Manually set AC power state."""
         if on:
-            self.turn_on()
+            self.turn_on(source="manual")
         else:
-            self.turn_off()
+            self.turn_off(source="manual")
         self._last_change_ts = self._now()
-        self._emitter.emit_status(self._is_on)
+        self._emit_power_status()
 
     # =========================================================================
     # AC mode/fan control
@@ -511,9 +705,9 @@ class ACThermostat:
             if self._is_on:
                 if self._can_turn_off():
                     logger.info("thermo: sleep active — turning OFF")
-                    self.turn_off()
+                    self.turn_off(source="sleep")
                     self._last_change_ts = self._now()
-                    self._emitter.emit_status(self._is_on)
+                    self._emit_power_status()
                 else:
                     wait = self.cfg.min_on_s - (self._now() - self._last_change_ts)
                     logger.debug(
@@ -565,7 +759,7 @@ class ACThermostat:
                 except Exception as e:
                     logger.debug("thermo: failed to set device temp to 16: %s", e)
                 self._last_change_ts = now
-                self._emitter.emit_status(self._is_on)
+                self._emit_power_status()
                 logger.debug("thermo: state changed -> ON; temp_set=16")
             else:
                 reasons = []
@@ -592,7 +786,7 @@ class ACThermostat:
                         log_type="ac",
                     )
                 self._last_change_ts = now
-                self._emitter.emit_status(self._is_on)
+                self._emit_power_status()
                 logger.debug("thermo: state changed -> OFF")
             else:
                 reasons = []
@@ -608,12 +802,29 @@ class ACThermostat:
         """One control step using external temperature."""
         # Refresh actual device state and inform listeners if changed
         try:
-            status = self.ac.get_status()
+            active_correlation_id = self._local_power_correlation_id
+            status, diagnostics = self._read_device_status(active_correlation_id)
             if isinstance(status, dict) and "switch" in status:
                 now = self._now()
-                new_is_on = bool(status.get("switch", False))
+                raw_switch = status["switch"]
+                new_is_on = bool(raw_switch)
                 if new_is_on != self._is_on:
+                    if self._local_power_expected_on is not None:
+                        self._local_power_mismatch_count += 1
                     if self._should_ignore_external_state(new_is_on, now):
+                        level = (
+                            logging.WARNING
+                            if self._local_power_mismatch_count == 1
+                            else logging.DEBUG
+                        )
+                        self._log_device_power_observation(
+                            level=level,
+                            action="suppressed_contradiction",
+                            raw_switch=raw_switch,
+                            diagnostics=diagnostics,
+                            now=now,
+                            correlation_id=active_correlation_id,
+                        )
                         logger.debug(
                             "thermo: suppressed external state reconciliation "
                             "reported=%s internal=%s",
@@ -621,12 +832,46 @@ class ACThermostat:
                             "ON" if self._is_on else "OFF",
                         )
                     else:
+                        correlation_id = active_correlation_id or self._new_correlation_id()
+                        self._log_device_power_observation(
+                            level=(
+                                logging.WARNING
+                                if active_correlation_id is not None
+                                else logging.INFO
+                            ),
+                            action=(
+                                "accepted_after_settle"
+                                if active_correlation_id is not None
+                                else "accepted_external_change"
+                            ),
+                            raw_switch=raw_switch,
+                            diagnostics=diagnostics,
+                            now=now,
+                            correlation_id=correlation_id,
+                        )
                         logger.info(
-                            "thermo: device state changed externally -> %s",
+                            "thermo: device state changed externally correlation_id=%s -> %s",
+                            correlation_id,
                             "ON" if new_is_on else "OFF",
                         )
-                        self._record_external_state(new_is_on)
+                        self._record_external_state(
+                            new_is_on,
+                            correlation_id=correlation_id,
+                        )
+                        self._clear_local_power_command("external_state_accepted")
                 else:
+                    if (
+                        self._local_power_expected_on is not None
+                        and new_is_on == self._local_power_expected_on
+                    ):
+                        self._log_device_power_observation(
+                            level=logging.INFO,
+                            action="command_confirmed",
+                            raw_switch=raw_switch,
+                            diagnostics=diagnostics,
+                            now=now,
+                            correlation_id=active_correlation_id,
+                        )
                     self._clear_local_power_command("device_matches_internal")
             # Track mode/fan changes
             if isinstance(status, dict):
