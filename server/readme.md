@@ -58,7 +58,8 @@ are currently disabled in the server handler.
   streaming
 - Runtime logging-level controls
 - Philips Hue local bridge routines and manual color application
-- Scheduled Sodexo Frami menu posts to Discord
+- Scheduled Sodexo Frami menu posts to Discord; running `sodexo.py` directly
+  previews the webhook JSON without sending or starting the scheduler
 - MAC-based VPN and DNS bypass management for the host's `novpn-master`
   service
 - Batched alert webhooks for car-heater and medicine notifications

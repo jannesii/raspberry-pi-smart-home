@@ -4,8 +4,8 @@ Fetch today's meals ("Tänään") from Sodexo Frami and send them to a Discord w
 Also includes a scheduler that posts every weekday at a set local time in a background thread.
 """
 
+import json
 import logging
-import os
 import sys
 import threading
 import unicodedata
@@ -58,16 +58,16 @@ class Meal:
 # ----- Discord formatting & sending -----
 
 
-def _send_today_meals_to_discord(
+def _build_today_meal_payloads(
     meals: list[Meal],
-    webhook_url: str,
     restaurant_name: str = "Ravintola Frami",
     username: str | None = "Lounasbotti",
     avatar_url: str | None = None,
-) -> None:
+) -> list[dict[str, str]]:
     """
-    Renames & orders meals, formats a 'Tänään' message, and posts it to a Discord webhook.
+    Rename and order meals, then build the Discord webhook payloads.
     """
+    logger.debug("Building Sodexo payloads for %d meals", len(meals))
     mapping: dict[str, str] = {
         "FROM OUR FAVORITES": "Perussetti",
         "FROM THE SOUP BOWL": "Keittolounas",
@@ -83,10 +83,7 @@ def _send_today_meals_to_discord(
         order_index[dst] = idx
 
     # Stable sort by our mapping (unknown types after known)
-    meals.sort(key=lambda m: order_index.get(m.type, float("inf")))
-    # Rename after sorting
-    for m in meals:
-        m.type = mapping.get(m.type, m.type)
+    sorted_meals = sorted(meals, key=lambda m: order_index.get(m.type, float("inf")))
 
     # Build Discord message
     now = datetime.now(ZoneInfo("Europe/Helsinki"))
@@ -95,11 +92,12 @@ def _send_today_meals_to_discord(
 
     grouped: dict[str, list[str]] = defaultdict(list)
     seen_order: list[str] = []
-    for m in meals:
-        if m.type not in grouped:
-            seen_order.append(m.type)
+    for m in sorted_meals:
+        meal_type = mapping.get(m.type, m.type)
+        if meal_type not in grouped:
+            seen_order.append(meal_type)
         if m.name:
-            grouped[m.type].append(m.name.strip())
+            grouped[meal_type].append(m.name.strip())
 
     lines: list[str] = [f"**{restaurant_name} — Tänään {date_str}**"]
     for t in seen_order:
@@ -134,13 +132,35 @@ def _send_today_meals_to_discord(
         if buf:
             yield buf
 
-    for idx, chunk in enumerate(_chunks(content)):
+    payloads: list[dict[str, str]] = []
+    for chunk in _chunks(content):
         payload = {"content": chunk}
         if username:
             payload["username"] = username
         if avatar_url:
             payload["avatar_url"] = avatar_url
+        payloads.append(payload)
 
+    logger.debug("Built %d Sodexo webhook payloads", len(payloads))
+    return payloads
+
+
+def _send_today_meals_to_discord(
+    meals: list[Meal],
+    webhook_url: str,
+    restaurant_name: str = "Ravintola Frami",
+    username: str | None = "Lounasbotti",
+    avatar_url: str | None = None,
+) -> None:
+    """Format today's meals and post them to a Discord webhook."""
+    payloads = _build_today_meal_payloads(
+        meals,
+        restaurant_name=restaurant_name,
+        username=username,
+        avatar_url=avatar_url,
+    )
+    logger.debug("Sending %d Sodexo webhook payloads", len(payloads))
+    for idx, payload in enumerate(payloads):
         r = requests.post(webhook_url, json=payload, timeout=15)
         if r.status_code not in (200, 204):
             raise RuntimeError(f"Discord webhook error (part {idx + 1}): {r.status_code} {r.text}")
@@ -180,9 +200,10 @@ def _fetch_today_meals() -> list[Meal]:
 def _post_today_menu(webhook_url: str, restaurant_name: str = "Sodexo Frami") -> bool:
     try:
         meals = _fetch_today_meals()
-        _send_today_meals_to_discord(
-            meals, webhook_url=webhook_url, restaurant_name=restaurant_name
-        )
+        if meals:
+            _send_today_meals_to_discord(
+                meals, webhook_url=webhook_url, restaurant_name=restaurant_name
+            )
         return True
     except Exception as e:
         logger.exception(f"[ERROR] post_today_menu failed: {e}")
@@ -284,36 +305,16 @@ def start_sodexo_webhook_thread(
 
 
 def main() -> int:
-    # Prefer WEBHOOK_URL env so you don't commit secrets
-    return 0
-    _post_today_menu(
-        webhook_url=os.getenv("SODEXO_WEBHOOK_URL"),
-        restaurant_name="Testi Ravintola",
-    )
-    return 0
-    webhook_url = os.getenv("SODEXO_WEBHOOK_URL")
-    if not webhook_url:
-        logger.error("Set SODEXO_WEBHOOK_URL env var.")
-        return 2
-
-    # If you run the script directly, start the scheduler and keep the main thread alive
-    stop_event, th = start_sodexo_webhook_thread(
-        webhook_url,
-        restaurant_name="Sodexo Frami",
-        hour=10,
-        minute=30,
-        tz_name="Europe/Helsinki",
-        skip_weekends=True,
-    )
-
-    logger.info("Scheduler started (weekdays 10:30 Europe/Helsinki). Press Ctrl+C to stop.")
     try:
-        while th.is_alive():
-            th.join(timeout=1.0)
-    except KeyboardInterrupt:
-        logger.info("\nStopping scheduler...")
-        stop_event.set()
-        th.join()
+        meals = _fetch_today_meals()
+        payloads = _build_today_meal_payloads(meals, restaurant_name="Sodexo Frami")
+    except Exception as e:
+        logger.exception("Failed to build Sodexo webhook preview: %s", e)
+        return 1
+
+    logger.debug("Printing %d Sodexo webhook payloads without sending", len(payloads))
+    for payload in payloads:
+        print(json.dumps(payload, ensure_ascii=False))
     return 0
 
 
