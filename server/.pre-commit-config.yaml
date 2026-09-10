@@ -34,3 +34,12 @@ repos:
       - id: check-ast
       # Ensure no debug statements
       - id: debug-statements
+
+  - repo: local
+    hooks:
+      - id: agent-instruction-budget
+        name: Check agent instruction budgets
+        entry: python3 server/scripts/check_agent_instructions.py
+        language: system
+        pass_filenames: false
+        always_run: true

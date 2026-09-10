@@ -1,97 +1,107 @@
-# ESP32 WebSocket Service
+# ESP32 WebSocket gateway
 
-Standalone WebSocket server for ESP32 device communication, separate from the main Flask app to avoid eventlet conflicts.
+This separate Flask-Sock process connects ESP32 devices to the main app through
+Redis. It handles both car-heater and temperature firmware without sharing the
+main app's Eventlet runtime. Implementation: [main.py](main.py).
 
-## Architecture
+## Run locally
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Main App (port 5555)          ESP32 WS Service (port 5556) │
-│    │                                  │                     │
-│    │ Redis pub/sub                    │ WebSocket           │
-│    ├─────────────────────────────────►│◄────────────────────┤
-│    │   esp32:commands                 │        ESP32        │
-│    │◄─────────────────────────────────┤                     │
-│    │   esp32:status                   │                     │
-│    │   esp32:action_results           │                     │
-└─────────────────────────────────────────────────────────────┘
-```
-
-## Redis Channels
-
-| Channel | Direction | Description |
-|---------|-----------|-------------|
-| `esp32:commands` | Main → WS Service | Commands to send to ESP32 |
-| `esp32:status` | WS Service → Main | Status updates from ESP32 |
-| `esp32:action_results` | WS Service → Main | Command execution results |
-
-## WebSocket Protocol
-
-### 1. Authentication (first message from ESP32)
-```json
-{"auth": "<api_key>", "device_id": "car_heater_esp32"}
-```
-
-### 2. Status Updates (ESP32 → Server)
-```json
-{
-  "timestamp": "2026-02-05 10:30:00",
-  "temperature": 22.5,
-  "shelly": "{\"output\": true, \"apower\": 1200, ...}",
-  "action_results": [
-    {"action": "turn_on", "success": true}
-  ]
-}
-```
-
-### 3. Commands (Server → ESP32)
-```json
-[{"action": "turn_on", "source": "web_ui", "reason": "Manual control"}]
-```
-
-## Installation
+Install the [main server dependencies](../readme.md#local-setup), then the
+additional gateway dependencies. From `server/`, with its environment active:
 
 ```bash
-# Install to systemd
+python -m pip install -r esp32_ws/requirements.txt
+redis-cli ping
+export REDIS_URL='redis://localhost:6379'
+export ESP32_WS_HOST='127.0.0.1'
+export ESP32_WS_PORT='5556'
+read -rsp 'Shared device key: ' ESP32_WS_API_KEY
+export ESP32_WS_API_KEY
+printf '\n'
+python esp32_ws/main.py
+```
+
+Set the same nonempty key in device firmware. The gateway currently accepts
+all keys when `ESP32_WS_API_KEY` is empty; do not leave it empty on a reachable
+service. This key is independent of main-app database-backed API keys.
+
+The Python entry point does not load an environment file. Export variables
+for local runs; systemd loads the file named in its unit. Redis must be running
+before startup because the manager connects when the module is imported.
+
+## Deployment and configuration
+
+The [supplied systemd unit](esp32_ws.service) uses the main virtual environment,
+Gunicorn with one worker/four threads, and `localhost:5556`. Edit its user,
+group, working directory, executable, and environment-file paths for your host,
+then install it from `server/esp32_ws/`:
+
+```bash
 sudo cp esp32_ws.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable esp32_ws
-sudo systemctl start esp32_ws
-
-# Check status
-sudo systemctl status esp32_ws
-journalctl -u esp32_ws -f
+sudo systemctl enable --now esp32_ws
 ```
 
-The packaged `esp32_ws.service` uses `KillSignal=SIGKILL` and
-`TimeoutStopSec=1` so restart/stop actions do not hang behind long-lived
-Gunicorn WebSocket requests.
+| Setting | Default | Applies to |
+| --- | --- | --- |
+| `REDIS_URL` | `redis://localhost:6379` | Gateway Redis connection |
+| `ESP32_WS_API_KEY` | Empty; verification disabled | First-message device authentication |
+| `ESP32_WS_HOST` | `0.0.0.0` | Direct Python entry point only |
+| `ESP32_WS_PORT` | `5556` | Direct Python entry point only |
+| `ESP32_WS_STATUS_LOG_INTERVAL_S` | `30` | Recurring gateway status summaries |
 
-The service logs throttled `ESP32 status received ...` summaries for incoming
-JSON status frames and `ESP32 WS ping received ...` for low-level WebSocket
-heartbeat pings from the device, which is useful when verifying live traffic in
-`journalctl -u esp32_ws -f`.
+Gunicorn's bind address comes from the unit's `--bind`, not the host/port
+variables. Provide a device-reachable WebSocket reverse proxy for a loopback
+bind; use WSS when crossing an untrusted network. Keep the gateway separate
+from main-app Socket.IO routing.
 
-## Configuration
+The unit deliberately uses `KillSignal=SIGKILL` and `TimeoutStopSec=1` to avoid
+hanging shutdowns on long-lived sockets. A restart drops device connections.
 
-Environment variables in `esp32_ws.service`:
+## Protocol and routing
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `REDIS_URL` | `redis://localhost:6379` | Redis connection URL |
-| `ESP32_WS_PORT` | `5556` | WebSocket service port |
-| `ESP32_WS_HOST` | `127.0.0.1` | Bind address |
-| `ESP32_WS_API_KEY` | (none) | API key for ESP32 auth |
+Connect to `/ws` and send an authentication JSON object within ten seconds:
 
-## Endpoints
+```json
+{"auth":"<shared-key>","device_id":"temperature_kitchen","device_type":"temperature"}
+```
 
-- `ws://host:5556/ws` — WebSocket endpoint for ESP32
-- `http://host:5556/health` — Health check with connected devices
-- `http://host:5556/` — Service info
+The response contains `status: authenticated`, `device_id`, and `device_type`.
+Use unique, stable IDs; reconnecting with the same ID replaces the old socket.
+Omitting `device_type` selects `car_heater`.
 
-## Development
+| Redis channel | Direction | Payload role |
+| --- | --- | --- |
+| `esp32:status` | Gateway → main app | Car-heater status |
+| `esp32:action_results` | Gateway → main app | Car-heater execution results |
+| `esp32:commands` | Main app → gateway | Legacy command, wrapped in an array for devices |
+| `esp32:temperature:telemetry` | Gateway → main app | Temperature readings/errors |
+| `esp32:temperature:rpc_results` | Gateway → caller | Temperature RPC response |
+| `esp32:temperature:commands` | Caller → gateway | Temperature RPC request |
+
+Temperature commands select a `device_id` or `target_device_id`; without a
+selector they go to all connected temperature devices. The selector is removed
+before forwarding and `type` defaults to `rpc_request`. Legacy `esp32:commands`
+currently broadcasts to all connected devices, not just the car heater.
+Commands for disconnected devices are dropped; Redis pub/sub is not a durable queue.
+
+For temperature payloads and RPC actions see the
+[firmware guide](../ESP32_temperature/README.md). The main app validates and
+persists measurements; status-only reconnect frames are filtered by the gateway.
+
+## Diagnostics
 
 ```bash
-cd esp32_ws
-python main.py
+curl --fail http://127.0.0.1:5556/health
+journalctl -u esp32_ws -f --no-pager
 ```
+
+`/` reports service information. `/health` reports connected devices and their
+message/status/transport-ping counters. These endpoints have no authentication;
+keep diagnostic access restricted. `status: healthy` is not an end-to-end
+check of current Redis connectivity or main-app persistence.
+
+The custom WebSocket server logs protocol PING/PONG frames below the JSON route.
+Check both transport activity and fresh measurements when diagnosing a stale
+sensor. From `server/`, isolated regression tests are
+`.venv/bin/pytest -q tests/test_esp32_ws_manager.py tests/test_esp32_api.py`.

@@ -1,286 +1,185 @@
 # Jannenkoti Smart Home Server
 
-Jannenkoti is a personal home automation server for Linux and Raspberry Pi
-deployments. It combines authenticated browser dashboards, Flask APIs,
-Socket.IO updates, PostgreSQL persistence, and a separate Redis-backed
-WebSocket gateway for ESP32 devices.
+A personal home automation dashboard for Linux and Raspberry Pi. Jannenkoti
+collects sensor readings, controls home devices, and provides authenticated
+browser tools for monitoring and administration. It is tailored to one home;
+device integrations need their own hardware, credentials, and configuration.
 
-The repository is tailored to one home environment and its devices. Optional
-integrations stay disabled when their credentials or host-side services are not
-available.
+## What it does
 
-## Current Features
-
-### Climate monitoring and AC automation
-
-- Multi-location ESP32 temperature and humidity telemetry
-- Live room workspace with search, sorting, outside-sensor grouping, and
-  per-day temperature and humidity charts
-- FMI outside weather observations without an API key
-- Local TinyTuya AC control using device ID, LAN IP, and local key
-- Thermostat target, hysteresis, minimum cycle, stale-reading, and sensor
-  selection controls with live partial updates that preserve form state
-- Weekly sleep schedules, apply-to-all scheduling, cancellable temporary sleep
-  overrides, duration-based sleep mode, and early-sleep mode
-- Heating and cooling rate estimates based on sensor and AC event history
-- BMP pressure, altitude, and temperature persistence/read APIs; the legacy
-  BMP polling service is not started by the application bootstrap
-
-### Car heater
-
-- Shelly-backed heater control through the car-heater ESP32
-- Live status, power, voltage, current, energy, cabin temperature, and FMI
-  weather data
-- Ready-by scheduling with learned start-time prediction
-- Keep-at-temperature and battery charge modes
-- kFactor passive and autonomous calibration with persisted sessions,
-  parameters, cooldowns, and prediction outcomes
-- Historical charts, command state, and ESP log snapshots
-- WebSocket-first device commands and telemetry with authenticated HTTP
-  fallback endpoints
-
-### 3D printer dashboard
-
-- HLS live video with captured-image fallback
-- Printer temperatures, state, layer progress, remaining time, speed, and
-  timelapse status
-- Timelapse configuration and G-code history/autocomplete
-
-Printer actions such as pause, resume, stop, home, and direct G-code execution
-are currently disabled in the server handler.
-
-### Administration and integrations
-
-- Session authentication with regular, admin, and Root-Admin roles
-- Temporary users with expiration times
-- API key creation, one-time token display, verification, and revocation
-- Database-backed application errors plus admin log browsing and live journal
-  streaming
-- Runtime logging-level controls
-- Philips Hue local bridge routines and manual color application
-- Scheduled Sodexo Frami menu posts to Discord; running `sodexo.py` directly
-  previews the webhook JSON without sending or starting the scheduler
-- MAC-based VPN and DNS bypass management for the host's `novpn-master`
-  service
-- Batched alert webhooks for car-heater and medicine notifications
-
-### Root-Admin tools
-
-- YNAB transaction review with local payee learning, ordered custom rules,
-  queue filters, fallback categories, bulk categorize/approve operations, and
-  a persisted test mode
-- Medicine purchase tracking with per-purchase dosing snapshots, refill-date
-  calculations, and bounded daily webhook alerts
-- Network VPN/DNS bypass management
+- **Climate:** live room temperatures and humidity, history charts, FMI weather,
+  and local TinyTuya AC control with thermostat and sleep schedules.
+- **Car heater:** live power/status, ready-by scheduling, keep-at-temperature,
+  battery charge mode, and learned heating-time estimates.
+- **3D printer:** live video, progress, and timelapse monitoring. Printer control
+  commands such as pause, home, and direct G-code execution are disabled.
+- **Administration:** users and API keys, logs, Hue lighting, webhook alerts,
+  Sodexo menu posts, and host-specific VPN/DNS bypass controls.
+- **Root-Admin tools:** YNAB transaction review and approval, medicine purchase
+  and refill tracking, and network-bypass management.
 
 ## Architecture
 
 ```text
-Browser
-  | HTTP + authenticated Socket.IO
-  v
-Main Flask app :5555 ---- SQLAlchemy Core ---- PostgreSQL
-  |       |
-  |       +---- Redis pub/sub ---- esp32_ws :5556 ---- ESP32 devices
-  |
-  +---- optional local/cloud APIs: TinyTuya, Hue, FMI, YNAB, Discord
-
-Printer/timelapse client ---- authenticated Socket.IO ---- Main Flask app
+Browser / printer client ── HTTP + Socket.IO ── Flask app :5555
+                                                   ├── SQLAlchemy Core ── PostgreSQL
+                                                   └── Redis ── esp32_ws :5556
+                                                                    │
+                                                               WebSocket
+                                                                    │
+                                                               ESP32 devices
 ```
 
-The two real-time paths have different responsibilities:
+The main app uses Python 3.11+, Flask-SocketIO/Eventlet, Jinja2, and vanilla
+JavaScript/CSS; there is no frontend build step. ESP32 devices connect to the
+separate gateway, which exchanges telemetry and commands with the app through
+Redis. Authenticated HTTP fallbacks exist for selected device endpoints.
 
-- The main Flask-SocketIO server handles authenticated browser views and the
-  printer/timelapse client.
-- Temperature and car-heater ESP32 devices authenticate to the standalone
-  `esp32_ws` service. Redis carries commands, telemetry, and command results
-  between that service and the main app.
-- API-key-protected HTTP endpoints remain available only where implemented as
-  device or integration fallbacks.
+## Local setup
 
-## Requirements
+Install Python 3.11 with virtual environment support and run Redis locally on
+port 6379. Linux is needed for host integrations such as systemd journal access
+and network bypass. PostgreSQL is required for production; SQLite is available
+for local development and tests.
 
-- Python 3.11 or newer
-- Redis at `redis://localhost:6379` for the default Socket.IO queue, rate-limit
-  storage, and ESP32 bridge
-- PostgreSQL for production
-- SQLite for tests and lightweight local development
-- A Linux host for systemd, journal streaming, HLS paths, and network-bypass
-  integration
-
-## Quick Start
+Run these commands from a fresh checkout:
 
 ```bash
 git clone https://github.com/jannesii/raspberry-pi-smart-home.git
-cd raspberry-pi-smart-home
+cd raspberry-pi-smart-home/server
 
 python3.11 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 
-# Ensure Redis is running before using real-time features.
-redis-cli ping
+redis-cli ping  # Expect PONG.
 
-# Minimal local development configuration. Omitting DATABASE_URL uses SQLite.
-export SECRET_KEY="$(openssl rand -hex 32)"
+export SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
 export DB_PATH="/tmp/jannenkoti-dev.db"
 export WEB_USERNAME="admin"
-export WEB_PASSWORD="change-this-password"
+read -rsp 'Local admin password: ' WEB_PASSWORD
+export WEB_PASSWORD
+printf '\n'
 
 python run.py
 ```
 
-Open `http://127.0.0.1:5555`.
+Open `http://127.0.0.1:5555` and sign in with those credentials. This example
+assumes `DATABASE_URL` is unset and no existing environment file supplies
+production credentials. The `/tmp` database is disposable; choose a persistent,
+writable path if you want to keep local data.
 
-`run.py` also loads `jannenkoti.env` from the repository root. The file is
-ignored by Git and can be used instead of shell exports.
+`run.py` loads `jannenkoti.env` from the working directory, so keep it in
+`server/` and run commands there. Exported variables take precedence. Missing
+integration credentials can produce startup warnings; those integrations will
+not be available. Configured services start with the app, including background
+work and device connections.
 
-Session cookies are always marked `Secure`. Use HTTPS for normal deployments;
-browser behavior for secure cookies on plain HTTP localhost can vary.
-
-## PostgreSQL Setup
-
-Production runtime data should use `DATABASE_URL`. `DB_PATH` remains required
-because the legacy SQLite manager is instantiated during startup, but it is not
-the production runtime database when `DATABASE_URL` is set.
-
-```bash
-cp alembic.ini.example alembic.ini
-
-export DATABASE_URL="postgresql+psycopg://user:password@localhost/jannenkoti"
-export DB_PATH="/tmp/jannenkoti-legacy.db"
-
-alembic upgrade head
-python run.py
-```
-
-`alembic.ini` is intentionally ignored so local credentials cannot be
-committed. Keep the database URL in the environment; the migration environment
-prefers `DATABASE_URL` over the example URL.
-
-`WEB_USERNAME` and `WEB_PASSWORD` are required at every startup. The configured
-username is created as Root-Admin when absent and promoted to Root-Admin if it
-already exists.
+Session cookies always have the `Secure` flag. If login does not persist over
+local HTTP, use a local HTTPS reverse proxy. Production must use HTTPS.
 
 ## Configuration
 
-Environment values may be exported by the process manager or placed in
-`jannenkoti.env`.
+These variables are required at every startup:
 
-### Core
+| Variable | Purpose |
+| --- | --- |
+| `SECRET_KEY` | Stable, private key for sessions and CSRF |
+| `WEB_USERNAME` | Account to create or promote to Root-Admin |
+| `WEB_PASSWORD` | Password used when creating that account |
+| `DB_PATH` | Writable SQLite path, also required for legacy bootstrap with PostgreSQL |
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `SECRET_KEY` | required | Flask session and CSRF signing key |
-| `WEB_USERNAME` | required | Startup Root-Admin username |
-| `WEB_PASSWORD` | required | Startup Root-Admin password when creating the user |
-| `DB_PATH` | required | Legacy bootstrap path and SQLite development database |
-| `DATABASE_URL` | SQLite from `DB_PATH` | PostgreSQL SQLAlchemy URL |
-| `PORT` | `5555` | Local development server port |
-| `ALLOWED_WS_ORIGINS` | `["http://127.0.0.1:5555"]` | JSON Socket.IO origin allowlist |
-| `API_ALLOWED_ORIGINS` | `[]` | JSON CORS allowlist for `/api/*` |
-| `RATE_LIMIT_STORAGE_URI` | `redis://localhost:6379` | Flask-Limiter storage |
-| `RATE_LIMIT_WHITELIST` | `[]` | JSON list of exact IPs, wildcards, or CIDRs |
-| `ALLOW_API_KEY_QUERY_PARAM` | `false` | Legacy query-string API key support |
+An existing account keeps its password; changing `WEB_PASSWORD` does not reset
+it. Keep credentials in the process environment or ignored `jannenkoti.env`.
 
-`REDIS_URL` configures the ESP32 bridge and car-heater command publisher. The
-main Socket.IO message queue currently uses local Redis directly.
+Common optional settings:
 
-### Optional integrations
+| Variable | Default / purpose |
+| --- | --- |
+| `DATABASE_URL` | PostgreSQL SQLAlchemy URL; otherwise SQLite at `DB_PATH` |
+| `PORT` | Local app port, default `5555` |
+| `ALLOWED_WS_ORIGINS` | JSON list, default `["http://127.0.0.1:5555"]`; set to your browser origin |
+| `API_ALLOWED_ORIGINS` | JSON CORS allowlist, default `[]`; same-origin requests need no entry |
+| `RATE_LIMIT_STORAGE_URI` | Rate-limit Redis URL, default `redis://localhost:6379` |
+| `REDIS_URL` | ESP32 bridge/command Redis URL, default `redis://localhost:6379` |
 
-| Integration | Variables |
-|---|---|
-| AC / TinyTuya | `AC_DEV_ID`, `AC_IP`, `AC_LOCAL_KEY`, `AC_TUYA_VERSION`, `AC_TUYA_TIMEOUT_S`, `AC_TUYA_PERSIST`, `AC_TUYA_RETRY_ATTEMPTS`, `AC_TUYA_RETRY_DELAY_S`, `AC_TUYA_STATE_SETTLE_S`, `WINTER_MODE` |
-| Thermostat | `THERMOSTAT_LOCATION`, `ROOM_THERMAL_CAPACITY_J_PER_K` |
-| Philips Hue | `HUE_BRIDGE_IP`, `HUE_USERNAME`, `HUE_HTTP_TIMEOUT_S` |
-| YNAB | `YNAB_API_KEY`, `YNAB_BUDGET_ID`, `YNAB_HTTP_TIMEOUT_S`, `YNAB_HTTP_RETRIES` |
-| Sodexo Discord post | `SODEXO_WEBHOOK_URL`, `SODEXO_POST_HOUR`, `SODEXO_POST_MINUTE` |
-| Shared alerts | `ALERT_WEBHOOK_URL`, `ALERT_WEBHOOK_BATCH_SECONDS` |
-| ESP32 bridge | `REDIS_URL`, `ESP32_WS_API_KEY`, `ESP32_WS_HOST`, `ESP32_WS_PORT` |
-| Network bypass | `LEASES_FILE`, `STATIC_LEASES_CACHE`, `NOVPN_RESTART_TIMEOUT_S` |
+The main Socket.IO message queue uses `redis://localhost:6379` directly;
+changing `REDIS_URL` does not move that queue.
 
-The standalone ESP32 service uses its own environment file and process. See
-[esp32_ws/README.md](esp32_ws/README.md).
+Configure only the integrations you use:
 
-TinyTuya calls are serialized across the thermostat and web handlers. Transient
-malformed responses are retried after reconnecting; persistent mode is
-recommended when the thermostat uses a short poll interval. Partial status
-responses preserve the last known power state instead of reporting a false
-transition. After an app-issued power command, contradictory TinyTuya power
-status is ignored for `AC_TUYA_STATE_SETTLE_S` seconds (default 120) unless the
-device confirms the new state sooner. Power commands, device reconciliation,
-and UI status payloads share a `state_correlation_id`; payloads also expose
-`state_source` and `state_observed_at`. AC event sources distinguish thermostat,
-manual, sleep, and device-observed transitions. If startup status omits the
-power DPS, the last persisted phase is retained.
+| Integration | Starting configuration / reference |
+| --- | --- |
+| AC | `AC_DEV_ID`, `AC_IP`, `AC_LOCAL_KEY`; set `AC_TUYA_VERSION` to match the device |
+| Hue | `HUE_BRIDGE_IP`, `HUE_USERNAME` |
+| YNAB | `YNAB_API_KEY`, `YNAB_BUDGET_ID`; [review workflow](docs/features/ynab.md) |
+| ESP32 | [Gateway setup](esp32_ws/README.md) and [temperature firmware](ESP32_temperature/README.md) |
+| Sodexo | `SODEXO_WEBHOOK_URL`, `SODEXO_POST_HOUR`, `SODEXO_POST_MINUTE` |
+| Alerts | `ALERT_WEBHOOK_URL`, `ALERT_WEBHOOK_BATCH_SECONDS` |
 
-## Access and API Security
+See [app/config.py](app/config.py) for core parsing/defaults and
+[service initialization](app/services/__init__.py) plus individual services for
+integration options. AC behavior and other non-obvious feature rules are in
+[feature contracts](docs/development/feature-contracts.md).
 
-- Browser pages and browser-oriented APIs use Flask-Login session cookies.
-- Admin pages cover users, logs, logging controls, API keys, and timelapse
-  configuration.
-- Root-Admin guards protect YNAB, medicine, and network-bypass operations.
-- External device endpoints use `Authorization: Bearer <token>` or
-  `X-API-Key: <token>`.
-- API-key query parameters are rejected unless
-  `ALLOW_API_KEY_QUERY_PARAM=1`.
-- CSRF protects normal browser mutations. API-key device ingress and selected
-  legacy routes are explicitly exempt.
-- Cross-origin `/api/*` access is disabled unless the origin is listed in
-  `API_ALLOWED_ORIGINS`.
-- Security headers are applied to all responses.
+## Production
 
-The HTTP API is feature-specific rather than a complete public API for every
-dashboard capability. Route definitions under `app/blueprints/api/` are the
-authoritative endpoint inventory.
+Provision a PostgreSQL database and user, keep the required settings above,
+and apply migrations before starting the app. From `server/` with the virtual
+environment active:
+
+```bash
+cp alembic.ini.example alembic.ini  # First-time setup only.
+export DATABASE_URL='postgresql+psycopg://user:password@localhost/jannenkoti'
+alembic upgrade head
+
+gunicorn --worker-class eventlet --workers 1 --bind 127.0.0.1:5555 run:app
+```
+
+Replace the example database credentials with your own. `alembic.ini` is
+ignored; its tracked example is credential-free. The migration loader currently
+also reads `../jannenkoti.env` with override enabled: ensure that file does not
+supply a conflicting `DATABASE_URL`. It does not load `server/jannenkoti.env`
+in the same way as `run.py`; export the migration connection explicitly.
+
+Run the app behind an HTTPS reverse proxy with WebSocket support and set
+`ALLOWED_WS_ORIGINS` to the public origin. Use **one main-app worker** because
+background services hold in-process state. Install and run the ESP32 gateway
+as its own process; review the paths in its supplied systemd unit for your host.
+
+Browser mutations use session authentication and CSRF protection. YNAB,
+medicine, and network-bypass operations require Root-Admin. Device HTTP APIs
+accept `Authorization: Bearer <token>` or `X-API-Key`; query-string keys are
+disabled by default. Endpoint definitions live in [app/blueprints/api/](app/blueprints/api/).
 
 ## Development
 
-```bash
-# Tests
-.venv/bin/pytest -q
+From `server/`, using the virtual environment created above:
 
-# Lint and formatting checks
+```bash
+.venv/bin/pytest -q
 .venv/bin/ruff check app tests run.py esp32_ws
 .venv/bin/ruff format --check app tests run.py esp32_ws
-
-# Repository hooks
-.venv/bin/pre-commit run --all-files
+.venv/bin/pre-commit run --config .pre-commit-config.yaml --all-files
+python3 scripts/check_agent_instructions.py
 ```
 
-Tests use SQLite through the same SQLAlchemy Core interfaces used with
-PostgreSQL in production.
+Tests use SQLite through SQLAlchemy Core. Keep validation isolated from live
+devices and production data. The server's pre-commit configuration is inside
+`server/`, so pass it explicitly as shown.
 
-For production, run the main app with one Eventlet Gunicorn worker behind an
-HTTPS reverse proxy. Long-lived background services and in-process singleton
-state are not designed for multiple main-app workers. Run `esp32_ws` as its
-separate Gunicorn/systemd service.
+[AGENTS.md](AGENTS.md) describes the code layout, working conventions, and
+validation expectations. Pre-commit and CI enforce its size budget. Keep this
+README focused on orientation and setup; update feature documentation for
+implementation details and troubleshooting.
 
-## Repository Layout
+## Further reading
 
-```text
-app/
-  blueprints/       HTML, API, auth, and Villenkoti routes
-  core/             Controller mixins, dataclasses, schema, database engines
-  services/         AC, car heater, Hue, weather, YNAB, alerts, Redis bridge
-  sockets/          Browser/printer Socket.IO handlers
-  static/           Vanilla JavaScript and CSS
-  templates/        Jinja2 templates
-esp32_ws/           Standalone ESP32 WebSocket-to-Redis service
-ESP32_temperature/  PlatformIO temperature-sensor firmware
-migrations/         Alembic migrations
-tests/              Pytest suite
-```
-
-## Documentation
-
-- [Technical Guide](docs/technical-guide.md)
-- [ESP32 WebSocket Service](esp32_ws/README.md)
-- [Temperature ESP32 Firmware](ESP32_temperature/README.md)
-- [YNAB Categorizer](docs/ynab_categorizer.md)
-- [Database Next Steps](docs/db_next_steps.md)
-- [Development Guidelines](AGENTS.md)
+- [Feature contracts](docs/development/feature-contracts.md): behavior to preserve when editing
+- [Documentation index](docs/README.md): architecture, database operations, and feature guides
+- [ESP32 gateway](esp32_ws/README.md) and [temperature firmware](ESP32_temperature/README.md)
+- [YNAB categorizer](docs/features/ynab.md)
 
 ## License
 
-MIT License - Copyright 2025-2026 Janne Siirtola
+[MIT](../LICENSE)

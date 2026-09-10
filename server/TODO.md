@@ -1,6 +1,0 @@
-- [ ] Heating duration calculation
-- [ ] KFactor Calibartion
-    - cabin_volume_m3  = 2.8f,
-    - heater_power_W   = 1000.0f,
-    - air_density_kg_m3 = 1.2f,
-    - specific_heat_J_kgK = 1000.0f
