@@ -7,6 +7,10 @@ That audit asked whether the Ready-by implementation is correct. This study asks
 a different question: is heating the cabin air to a target temperature the right
 way to have clear windows at departure?
 
+Updated on the same day with the owner's answers to the open questions. They
+are summarised in [Open Questions](#open-questions) and applied throughout;
+facts from them are labelled **[Owner]**.
+
 > **Bottom line.** For removing exterior frost, cabin air temperature is neither
 > necessary nor sufficient. With the cabin held at +10 °C and −10 °C outside, the
 > glass/frost interface ends up anywhere from about 0 °C to −6 °C depending on
@@ -36,6 +40,7 @@ Evidence labels used throughout:
 | **[Model]** | Result of this study's synthetic model; not a measurement of this car |
 | **[Derived]** | This study's own calculation from cited physics, with inputs stated |
 | **[Hyp]** | Hypothesis about this car or installation; unverified |
+| **[Owner]** | Stated by the car's owner on 2026-09-29; not independently verified |
 
 Source numbers `[n]` refer to [Sources](#sources). Some physics values and
 derivations come from research notes compiled for this study. Where the owning
@@ -263,11 +268,32 @@ These are limits of the concept, separate from the audit's software defects
   0.5 mm of solid ice [Lit: 2, 3, 4].
 - **Surface emissivity matters.** A low-emissivity outer coating markedly
   reduces radiation frost. Volvo reported more than 80 % fewer mornings needing
-  scraping in a coastal Swedish climate [Lit: 11, 12, abstracts].
-- **Station versus car** [Hyp]. The reference station, Seinäjoki Pelmaa, lies in
-  an open river valley. On calm, clear nights its air temperature, and the sky
-  view it enjoys, can differ from the parking spot's (buildings, trees, a
-  carport).
+  scraping in a coastal Swedish climate [Lit: 11, 12, abstracts]. This car's
+  windshield is ordinary laminated safety glass, most likely green-tinted
+  solar-control glass, neither heated nor acoustic [Owner]. A body tint absorbs
+  solar near-infrared and does not imply a low-emissivity surface [Hyp], so no
+  frost reduction from the glass should be expected.
+- **This parking spot.** The car stands in the open in Seinäjoki town [Owner]:
+  - The only obstruction is a tall building about 30 m to the west. It hides
+    part of the western sky, and its facade radiates more warmly than the sky
+    would. It also shelters the car from westerly winds, so wind at the car is
+    probably at the low end of the 0.3–0.65 scaling [Hyp].
+  - The reference station, Seinäjoki Pelmaa (fmisid 101486), is about 23 km to
+    the north-west, in an open river valley. The airport station (137188) is
+    about 12.7 km to the south [Derived from station coordinates].
+  - On calm, clear nights a field station in a valley can run colder than a
+    sheltered town lot [Hyp]. HARMONIE forecasts can be requested for the car's
+    own coordinates.
+- **Local climate** [Owner]:
+  - The windows are frosted almost every winter morning.
+  - Mid-winter mornings are typically −8…−14 °C, with cold spells down to
+    −35…−45 °C.
+  - That typical range is the model's marginal zone: at −10 °C a 1.5 kW heater
+    cleared the frost within 4 h only if its airflow reached the glass, and at
+    −15 °C only when aimed at it on a calm morning. At −20 °C and below, no
+    modelled configuration cleared within 4 h [Model, E3]. For this car,
+    heater placement probably decides whether typical mornings clear at all,
+    and cold spells need an honest "cannot clear" answer [Hyp].
 
 ### Interior frost and fog are separate problems
 
@@ -398,7 +424,8 @@ slightly below air temperature.
 | Outside air | −2 to −25 °C |
 
 At 1 kW the steady cabin rise is about 22 K; the audit's default model gives
-15 K. The model is meant to show **structure and ranges**, not to predict this
+15 K. The owner's heater is rated 1.7 kW, and PTC heaters deliver less as the
+cabin warms [Owner; Lit: 18], so the 1500 W runs are the closer match. The model is meant to show **structure and ranges**, not to predict this
 car. Results are most sensitive to `h_i` and to how the cabin splits into fast
 and slow parts. The steady-state results (E1, E2) do not depend on heat
 capacities at all.
@@ -525,23 +552,36 @@ excludes (line 23); that is why the audit did not find it.
   frame carries `timestamp`, `temperature` and the raw Shelly
   `Switch.GetStatus` JSON (`src/io/WebSocketTask.cpp:439–445`). Pressure is
   measured but not transmitted.
-- **The load is described inconsistently:**
-  - the firmware README calls it a **car block heater**
-    (`ESP32C3-Car-Heater/README.md:3`);
-  - the server models a cabin heater with a nominal 1000 W
-    (`app/services/car_heater/kfactor/constants.py:22–26`);
-  - a "Battery Charge Mode" with a 20 W cut-off
-    (`app/services/car_heater/car_heater_service.py:39–45`) implies a battery
-    charger on the same outlet.
-- **Unknowns** [Hyp]: what the relay actually powers, and where the heater and
-  the cabin sensor sit.
+- **The load is only the cabin heater**, a DEFA Termini II 1700 [Owner]. The
+  outlet has continuous power, with no timer in the circuit [Owner].
+  - The firmware README's "car block heater" (`ESP32C3-Car-Heater/README.md:3`)
+    is outdated.
+  - The server's nominal 1000 W
+    (`app/services/car_heater/kfactor/constants.py:22–26`) is below the model's
+    1.7 kW name rating.
+  - DEFA's Termini heaters use PTC elements that deliver about 20 % less power
+    per 20 K of temperature rise [Lit: 18]. The Termini II 1700's own power
+    settings and thermostat were not verified here.
+  - Because the Shelly now measures the heater alone, its measured powered-on
+    draw is a clean estimate of future heating power (audit F01). It also shows
+    PTC decline and any thermostat cycling directly.
+- **Battery charge mode is no longer used** [Owner]
+  (`app/services/car_heater/car_heater_service.py:39–45`). Retiring it removes
+  one competing command source (audit F11) and makes audit F14 moot.
+- **The cabin sensor sits on the dashboard just below the windscreen**, and its
+  exact position has never been fixed [Owner]. So:
+  - It reads the air at the base of the windscreen and the dashboard surface:
+    the cold air sliding off the glass, sun on the dashboard, and possibly the
+    heater's jet. That is not mid-cabin air.
+  - Its position varies between sessions, which makes historical calibration
+    sessions less comparable with each other [Hyp].
 - `ESP32_temperature/` is the home DHT sensor firmware, not the car's.
 
 ### What the software knows
 
 | Quantity | Source and storage | Used by control? | Notes |
 | --- | --- | --- | --- |
-| Cabin air temperature | BMP280 → `car_heater_status.ambient_temp`, every frame | Ready-by, Keep at Temperature, calibration | Sensor position unknown |
+| Cabin air temperature | BMP280 → `car_heater_status.ambient_temp`, every frame | Ready-by, Keep at Temperature, calibration | On the dashboard below the windscreen, position not fixed [Owner] |
 | Relay state | Shelly `output` → `is_heater_on` | Yes | Relay on is not proof of heat [Lit: 35] |
 | Instantaneous power | Shelly `apower` → `instant_power_w` | Ready-by ETA (audit F01), charge mode | Measured active power, not a rating [Lit: 35]. PTC heaters draw less as the cabin warms [Lit: 18] |
 | Delivered energy | Shelly `aenergy` total, last-minute energy and minute timestamp → `energy_*` columns (`app/core/schema.py:152–168`) | No | Gives energy per session without power aliasing |
@@ -615,7 +655,7 @@ to 28 °C.
 | --- | --- | --- | --- | --- | --- |
 | Windshield inner-surface temperature (contact sensor) | Glass temperature at one point | Readiness, hold, early warning, and an automatic label every session. With the heater off, it also tracks overnight cooling | Cabin target as readiness proxy; weather-based guesses about the glass | Bonded with thin conductive film to the inner glass in the driver's area, at the spot that clears last (lower-middle unless shown otherwise). Foam-backed, out of the heater's jet, off the frit band | **Yes**, for closed-loop readiness and fast learning |
 | Second glass point (lower band) | Spatial spread | Checks that the reference point is representative | Assumption of uniform clearing | Near the cowl edge, driver's side | First winter only (validation) |
-| Cabin RH (e.g. replace the BMP280 with a temperature/humidity sensor) | Cabin dew point | Interior fog risk from snow and wet mats. Does not predict exterior frost | Nothing today | Near the glass sensor, shielded from heater air | Nice to have. RH sensors drift upward after long exposure near saturation [Lit: 45] |
+| Cabin RH (e.g. replace the BMP280 with a temperature/humidity sensor) | Cabin dew point | Interior fog risk from snow and wet mats. Does not predict exterior frost | Nothing today | A fixed, recorded position, shaded and away from the heater outlet (not loose on the dashboard) | Cheap enough to do together with the glass sensor: the owner is happy to swap the BMP280 [Owner]. RH sensors drift upward after long exposure near saturation [Lit: 45] |
 | Outside temperature/RH at the car | Local microclimate | Station versus parking-spot differences (e.g. cold-air pooling) | Pelmaa station values | Radiation shield, ventilated, near car height, away from car and house heat | Nice to have; adds little over FMI plus the glass sensor |
 | Camera inside, facing the glass | Visible frost (scattering, texture) | True outcome label | User report | Focused on the glass; grazing LED light at night | Optional labelling aid, not a control input. Needs a second board (see G) |
 | Dedicated frost/ice sensor | Deposit presence at one spot | Whether frost formed overnight | Weather-based frost estimate | Simplest is an outside proxy plate with a thermistor at windshield tilt and similar sky view | Not justified for control. Proxy surfaces need per-site calibration against the real surface [Lit: 45]. Electrodes on the outer glass would not survive wipers or scraping [Derived] |
@@ -922,8 +962,11 @@ faster, so no frost on the road does not mean no frost on the glass [Derived].
 
 **Strengths.**
 
-- Covers a real visibility failure mode: interior fog during melting.
-- Probably the biggest energy lever: not heating at all on frost-free mornings.
+- Covers a real visibility failure mode, interior fog during melting. The owner
+  does not think it is a practical problem for this car, though [Owner].
+- It saves energy by not heating on frost-free mornings. Here that mainly
+  applies in autumn and spring, since in mid-winter the windows are frosted
+  almost every morning [Owner].
 
 **Weaknesses.**
 
@@ -933,8 +976,8 @@ faster, so no frost on the road does not mean no frost on the glass [Derived].
 
 **Complexity.** Medium.
 
-**Hardware.** A glass sensor plus a cabin temperature/RH sensor; the BMP280 could
-be replaced by a temperature/RH part.
+**Hardware.** A glass sensor plus a cabin temperature/RH sensor. Swapping the
+BMP280 for a temperature/RH part makes the cabin half nearly free [Owner].
 
 **Validation.**
 
@@ -1014,7 +1057,7 @@ collection at no engineering cost.
 | Criterion | A: cabin target | B: duration | C: learned time | D: glass control | E: glass + humidity | F: hybrid | G: frost detection |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Ready on time | Low–medium; the right target depends on conditions | Medium; high with a generous margin | Medium–high once labelled | High for confirmation; planning via B/C | As D, plus awareness of interior fog | High if validated | Detection only; planning via B/C |
-| Unnecessary early heating | High in mild weather, or when "unreachable" | Medium (the margin) | Low–medium | Low–medium | Lowest (skips frost-free mornings) | Low | Low |
+| Unnecessary early heating | High in mild weather, or when "unreachable" | Medium (the margin) | Low–medium | Low–medium | Lowest in autumn and spring (skips frost-free mornings); like D in mid-winter | Low | Low |
 | Energy per departure | Variable; hours of overspend on unreachable targets | Predictable overspend, sized by the margin | Lower after learning | Lower after learning; holds on glass | Lowest | Low | Low |
 | Sensitivity to weather or forecast error | Medium | High | Medium–high | Low (measured) | Low–medium | Medium | Low |
 | Sensitivity to sensor error | High: success is defined on one cabin point | Low | Medium (label quality) | Medium (bonding, location) | Medium–high (RH near saturation) | Medium | High (lighting, fog) |
@@ -1025,14 +1068,14 @@ collection at no engineering cost.
 
 **Energy and timing** [Derived; the electricity price is an assumption]:
 
-- **A safety margin is cheap.** 15 extra minutes at 1.5 kW is 0.375 kWh, about
+- **A safety margin is cheap.** 15 extra minutes at 1.7 kW is 0.43 kWh, about
   €0.06 at 0.15 €/kWh; over 100 heated departures, about €6.
 - **The cost-optimal reliability is therefore high.** Valuing lateness at even
   €0.10–1.00 per minute puts it at about 96–99.6 % [Derived: learning research
   note §3].
 - **Long waste matters more than minutes.** The energy that matters is the
   avoidable hours:
-  - A's "unreachable, so start now" branch, e.g. 3 h × 1.5 kW = 4.5 kWh;
+  - A's "unreachable, so start now" branch, e.g. 3 h × 1.7 kW = 5.1 kWh;
   - an untimed thermostat hold;
   - heating on mornings with no frost.
 - **Reliability comes first.** A conservative five-minute-early plan is
@@ -1090,6 +1133,14 @@ Why this suits this project:
 **Zero-code lever.** The model's largest single lever is physical: whether the
 heater's airflow reaches the windshield. Test aiming the heater at the glass if
 the heater's instructions allow it, and record the placement as configuration.
+Typical mid-winter mornings here are −8…−14 °C [Owner], where the model is
+marginal. Placement is likely the difference between a 1.7 kW heater clearing
+the glass and not clearing it [Model/Hyp].
+
+**Cold spells need an honest answer.** At −20 °C and below, no modelled
+configuration cleared the frost within 4 h [Model]. The system should say
+"expect to scrape" instead of implying readiness. The glass sensor detects this
+as a plateau below the threshold.
 
 **No-hardware fallback.** If a glass sensor is unacceptable, B with outcome
 labels and one learned margin still works. It is reliable only with a generous
@@ -1108,23 +1159,37 @@ Hence the data-first minimum viable version below, with explicit decision rules.
 - F09's lesson to record missing values as missing, not 0;
 - F01's powered-on power semantics, wherever power feeds a prediction.
 
-F02–F06 matter only if the cabin model stays in a decision path, for example a
-comfort ETA.
+F02–F06 matter only if the cabin model stays in a decision path, which is
+likely, since the owner wants to keep the comfort mode for now [Owner]. F14 is
+moot, because charge mode is no longer used; retiring it also simplifies F11.
 
 ## Minimum Viable Version
 
 The simplest version worth building first. This is a description, not an
 implementation spec.
 
-1. **One sensor.** A contact temperature sensor bonded to the inner windshield
-   in the driver's area, lower-middle, outside the heater's jet, with its back
-   insulated. The ESP32 sends it as an additional field next to `temperature`.
-2. **Duration planner.** Start with the most conservative of the published
-   timer tables: roughly DEFA's automatic chart, 90 min at 0 °C, about 120 min
-   at −5 °C, 150 min at −10 °C and 180 min at −15 °C or below [Lit: 17]. Cap at
-   180 min. When the table says the cap is not enough, tell the user (for
-   example "expect to scrape"). Log cloud cover, wind and dew point, but do not
-   use them yet.
+1. **Sensors at fixed, recorded positions.**
+   - A contact temperature sensor bonded to the inner windshield in the
+     driver's area, lower-middle, outside the heater's jet, with its back
+     insulated. The ESP32 sends it as an additional field next to
+     `temperature`.
+   - At the same time, replace the loose dashboard BMP280 with a
+     temperature/RH sensor in a fixed spot [Owner: swap acceptable].
+   - Fix the heater's placement and orientation, and record them.
+2. **Duration planner.**
+   - Start with the most conservative of the published timer tables: roughly
+     DEFA's automatic chart, 90 min at 0 °C, about 120 min at −5 °C, 150 min at
+     −10 °C and 180 min at −15 °C or below [Lit: 17]. Cap at 180 min.
+   - When the table says the cap is not enough, tell the user (for example
+     "expect to scrape").
+   - Log cloud cover, wind and dew point, but do not use them yet.
+   - **The 2-hour question will come up immediately.** The owner would revisit
+     run-time safety if heating creeps past 2 h [Owner]. At the typical
+     mid-winter −8…−14 °C, DEFA's chart gives about 140–175 min. DEFA's tables
+     are sized for engine heating, and a cabin-only defrost may need less.
+     Measured glass clearing times from the first cold weeks will show
+     whether 2 h suffices. Alternatively, cap at 120 min from the start and
+     accept some scraping while learning; that is the owner's choice.
 3. **Execution.** Heat continuously from the planned start until departure plus
    30 min, then send an explicit OFF with a retry. Keep a cabin over-temperature
    cutoff. Keep at Temperature is not part of this mode.
@@ -1163,7 +1228,7 @@ missing: no glass data → table; no weather → last-known conservative duratio
 | Planned start, command sent, relay-on confirmed, first power above threshold | Server, Shelly | Separates the plan from actual heating |
 | Heater-off time and reason | Server | |
 | Actual departure | User label, or inferred from telemetry loss or unplugging | |
-| Cabin temperature trajectory | Existing status rows | Keep raw rows for the whole season (check retention) |
+| Cabin temperature (and RH, after the sensor swap) trajectory | Existing status rows | Keep raw rows permanently [Owner] |
 | Glass inner-surface temperature trajectory | New sensor | In the same frames |
 | Relay state, power, `aenergy` counters | Existing | Gives delivered energy per session |
 | Weather at planning, start and departure: `t2m`, `td`, `rh`, `ws_10min`, `wg_10min`, `ri_10min`/`r_1h`, `snow_aws` (Pelmaa); `n_man`, `wawa`, `vis` (airport 137188); HARMONIE forecast for departure (`Temperature`, `DewPoint`, `WindSpeedMS`, `TotalCloudCover`, `RadiationLW`) | FMI | Store the values used, with their observation times (audit F12) |
@@ -1191,12 +1256,27 @@ missing: no glass data → table; no weather → last-known conservative duratio
 - **Heater placement:** if feasible, compare one morning with the heater aimed
   at the windshield against one without, in similar conditions.
 
-### Retrospective data
+### Retention and retrospective data
 
-If production PostgreSQL kept last winter's `car_heater_status` rows, export the
-heating sessions and re-fetch FMI history for those times. This measures cabin
-warm-up and the heater's reachable cabin temperature at each outside temperature,
-which bears on A's feasibility. It gives no defrost outcomes.
+- **Requirement** [Owner]: this data must never be deleted. That covers raw
+  status rows, the weather values used, session records and labels.
+- **Current state:**
+  - The legacy SQLite schema deletes `car_heater_status` and `esp32_temphum`
+    rows older than 30 days (`app/core/database.py:290–297`).
+  - No PostgreSQL retention was found in migrations.
+  - The owner believes last winter's history is gone.
+- **Before collection starts:**
+  - check read-only what production actually holds;
+  - make sure nothing deletes these tables;
+  - back them up.
+
+  This is an implementation follow-up, not done in this study.
+- **If any of last winter's rows survive:** export the heating sessions and
+  re-fetch FMI history for those times. This measures cabin warm-up and the
+  heater's reachable cabin temperature at each outside temperature, which bears
+  on A's feasibility. It gives no defrost outcomes. The loose, varying sensor
+  position limits what it can show [Owner].
+- **Otherwise** the dataset starts this winter.
 
 ### Minimum data to choose, and decision rules
 
@@ -1204,8 +1284,11 @@ which bears on A's feasibility. It gives no defrost outcomes.
 
 - About 10–15 frost mornings with glass trajectories and labels.
 - At least 5 of them dedicated observation mornings.
-- Two temperature bands: about −2…−8 °C and −10 °C or colder.
+- Two temperature bands: about −2…−8 °C and −10 °C or colder. The owner's
+  typical −8…−14 °C mornings fall in both.
 - Both clear and cloudy nights.
+- If one occurs, at least one cold-spell morning (−20 °C or colder), to confirm
+  that "cannot clear" is detected and announced.
 
 **Decision rules:**
 
@@ -1228,26 +1311,36 @@ reliability is demonstrated over the season.
 
 ## Open Questions
 
-- **Load:** what the Shelly-switched load actually is (block heater, cabin
-  heater, charger or a combination), and the cabin heater's rating, PTC
-  behaviour and placement.
-- **Sensor:** where the BMP280 is mounted.
-- **Windshield:** heated, coated or acoustic laminated? Low-e and
-  heat-reflective coatings affect both frost formation and IR sensing.
-- **Parking spot:** sky view (buildings, trees, carport), and how its
-  microclimate compares with the Pelmaa field station.
-- **Frost frequency:** how often frost, ice and snow actually occur on this car
-  per winter, and in which temperature bands.
-- **Comfort:** does cabin comfort matter at all? If not, the comfort mode and
-  its cabin model could be retired later.
-- **Run-time policy:** safety limits for an unattended cabin heater. Official
-  guidance (e.g. Tukes) was not verified. A secondary source attributes a
-  two-hour cabin-heater limit to Motiva [Lit: 23, secondary].
-- **Power window:** whether the parking outlet has its own time window or power
-  limit.
-- **History:** whether production still holds last winter's status history.
-- **Interior fog:** is it a practical problem for this car, which would decide
-  whether cabin RH is worth adding?
+### Answered by the owner (2026-09-29)
+
+| Question | Answer [Owner] | Effect on this study |
+| --- | --- | --- |
+| What the Shelly switches | Only the cabin heater, a DEFA Termini II 1700. Battery charge mode is no longer needed | Measured power is pure heater draw, a clean estimate of future heating power. Charge mode can be retired (audit F11, F14) |
+| Cabin sensor position | On the dashboard just below the windscreen; never fixed | It reads near-glass air, not mid-cabin air, and varies between sessions. Fix its position (MVP) |
+| Windshield | Laminated safety glass, probably green-tinted solar-control; not heated, not acoustic | No low-e benefit against frost. The contact glass sensor is unaffected |
+| Parking spot | In the open; a tall building 30 m to the west; car at 62.8000 N, 22.8260 E | Pelmaa is about 23 km away, the airport station about 12.7 km. Use forecasts at the car's coordinates; some shelter from westerly wind |
+| Frost frequency and temperatures | Frosted almost every winter morning; typically −8…−14 °C, cold spells to −35…−45 °C | Typical mornings sit in the model's marginal zone; cold spells need "cannot clear" handling; skipping frost-free mornings helps mainly in autumn and spring |
+| Comfort | Keep the comfort mode for now; value unknown until tried | A stays, as a comfort mode outside the defrost path |
+| Run-time policy | Ignore for now, but revisit if heating creeps past 2 h | DEFA's chart already exceeds 2 h at typical temperatures (see MVP) |
+| Power window | None; the outlet timer was removed | The planner fully controls start time |
+| History | Probably gone; car heater data must never be deleted in future | Dataset starts this winter; retention must be verified and disabled |
+| Interior fog | Probably not a problem; swapping the BMP280 for a humidity-capable sensor is fine | Cabin RH comes almost free with the sensor swap |
+
+### Still open
+
+- **Heater placement:** where the Termini II 1700 stands and where its airflow
+  points. This is the model's largest lever. Also its actual power settings and
+  thermostat behaviour, which the Shelly power history will show.
+- **Car orientation:** which way the windshield faces, relative to the building
+  and the morning sun. Late-winter departures after sunrise may get solar help
+  that the model ignores.
+- **Sensor positions:** the fixed positions for the glass and cabin sensors,
+  once chosen.
+- **Surviving history:** whether production still holds any heater rows (a
+  read-only check).
+- **The 2-hour threshold:** to be revisited when the first cold-week clearing
+  times are in.
+- **Comfort:** whether the comfort mode earns its keep, after a season of use.
 
 ## Sources
 
