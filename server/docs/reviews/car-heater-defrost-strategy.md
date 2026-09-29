@@ -191,8 +191,9 @@ It correlates poorly when:
 - the deposit is thick or adhered ice, so the latent-heat dwell runs to tens of
   minutes [Model, E3];
 - the cabin sensor sits near the heater outlet or high in the warm upper cabin;
-- the heater has PTC elements, which deliver less power as the cabin warms.
-  DEFA gives about 20 % less power per 20 K rise [Lit: 18].
+- the heater's PTC element delivers less power as the cabin warms. For this
+  heater that is about 21 % less between −25 °C and +25 °C intake air
+  [Lit: 53].
 
 ### Is targeting a cabin temperature fundamentally unnecessary?
 
@@ -301,7 +302,9 @@ These are limits of the concept, separate from the audit's software defects
   in about 1.6–3.5 h on calm, overcast mornings. On calm, clear mornings only
   the fan-mixed case cleared (3.7 h), and when breezy and clear neither cleared
   within 4 h. At −15 °C neither cleared within 4 h [Model, E3, 1500 W]. The driver's
-  side, farthest from the heater, probably clears last [Hyp].
+  side, farthest from the heater, probably clears last [Hyp]. DEFA's manual
+  forbids floor placement (except on its Termini Stand) and directing the
+  heater toward a seat; see [The heater](#the-heater).
 
 ### Interior frost and fog are separate problems
 
@@ -498,6 +501,9 @@ cabin air and glass state, while the inner-glass temperature at clearing stays
 in a narrow band. They also show that the heater's airflow at the glass is the
 largest single lever: aiming it at the glass cleared frost 2–5× faster in the
 model and extended the range of temperatures where clearing is possible at all.
+The "aimed" case is a bound for strong coupling, not an approved setup: this
+heater's manual does not allow aiming it at the windscreen (see
+[The heater](#the-heater)).
 They do **not** establish this car's times, which depend on the heater's power
 and placement and on the cabin. Only field data can.
 
@@ -565,14 +571,10 @@ excludes (line 23); that is why the audit did not find it.
   - The firmware README's "car block heater" (`ESP32C3-Car-Heater/README.md:3`)
     is outdated.
   - The server's nominal 1000 W
-    (`app/services/car_heater/kfactor/constants.py:22–26`) is below the model's
-    1.7 kW name rating.
-  - DEFA's Termini heaters use PTC elements that deliver about 20 % less power
-    per 20 K of temperature rise [Lit: 18]. The Termini II 1700's own power
-    settings and thermostat were not verified here.
+    (`app/services/car_heater/kfactor/constants.py:22–26`) is well below what
+    this heater draws on its high setting (see [The heater](#the-heater)).
   - Because the Shelly now measures the heater alone, its measured powered-on
-    draw is a clean estimate of future heating power (audit F01). It also shows
-    PTC decline and any thermostat cycling directly.
+    draw is a clean estimate of future heating power (audit F01).
 - **Battery charge mode is no longer used** [Owner]
   (`app/services/car_heater/car_heater_service.py:39–45`). Retiring it removes
   one competing command source (audit F11) and makes audit F14 moot.
@@ -585,13 +587,59 @@ excludes (line 23); that is why the audit did not find it.
     sessions less comparable with each other [Hyp].
 - `ESP32_temperature/` is the home DHT sensor firmware, not the car's.
 
+### The heater
+
+Facts about the DEFA Termini II 1700, from DEFA's own documents unless marked
+otherwise. DEFA's product pages block automated access, so the product page
+was read from an Internet Archive copy.
+
+| Item | DEFA Termini II 1700 |
+| --- | --- |
+| Power settings | Rocker switch 0 / I / II: 0/830/1700 W at −25 °C and 0/650/1350 W at +25 °C, at 230 V [Lit: 53] |
+| Start peak | Up to 2200 W at switch-on; its duration is not stated [Lit: 53] |
+| Temperature dependence | PTC element: power falls smoothly as the intake air warms, about 7 W per K on setting II between DEFA's two published points [Lit: 53; Derived]. That is about 21 % over 50 K. DEFA's 2009 handbook rule of thumb, "about 20 % less power per 20 K" [Lit: 18], is not supported by DEFA's own tables |
+| Thermostat | None stated. The only control is the manual switch [Lit: 54], so the heater does not cycle on and off |
+| Overheating protection | Cut-out at 55 °C, which resets only after power is disconnected for about 30 min. A one-shot +80 °C fuse means factory repair [Lit: 53, 55] |
+| Tip-over switch, fan speed, airflow | Not stated in any DEFA document found |
+| Approved mounting | Fixed, on the side of the centre console or the footwell side wall, upside down under the glove box, or on the passenger-side A-pillar. Alternatively upright on DEFA's Termini Stand in the passenger footwell, never on the driver's side [Lit: 53–57] |
+| Prohibited | Blower pointing down; on the floor (except on the Stand); directed toward or leaning on a seat; covered. At least 300 mm must be free in front of the outlet and 50 mm around the intake [Lit: 53, 55, 56] |
+| Windscreen | No DEFA document mentions aiming the heater at the windscreen or mounting it on the dashboard. Every DEFA diagram blows rearward or upward into the cabin [Lit: 55, 56] |
+| Run time | Neither DEFA nor Tukes sets a maximum. Motiva advises not keeping an interior heater on for more than two hours, as energy advice [Lit: 59] |
+| Electrical and safety (Tukes) | Use a heater marked for car interiors and "do not cover", installed per its instructions. Earthed socket, with an RCD on outdoor sockets since 1997. Cable rated to −40 °C, at least 1.5 mm². No extension cords, except under supervision. Tukes also advises unplugging the car after use [Lit: 58] |
+
+What this means for the control problem [Derived/Hyp]:
+
+- **Expected power trace on setting II:** a start peak of up to 2.2 kW, then
+  about 1.7 kW in a −25 °C cabin, or about 1.5 kW near 0 °C, falling about
+  7 W per K with no cycling. Setting I draws about half as much, so the trace
+  also shows the switch position. The model's 1500 W runs match setting II.
+- **Relay on with about 0 W** means one of four things: a tripped 55 °C
+  cut-out, the switch at 0, the heater unplugged, or a blown fuse. The cut-out
+  resets only after about 30 min without power. The controller must therefore
+  hold the relay off for at least 30 min before one retry, and alert if power
+  stays at 0.
+- **The model's "aimed at the glass" case is not an approved setup for this
+  heater.** The approved positions nearest the windscreen are the passenger-side
+  A-pillar and under the glove box. Whether they heat the glass better than the
+  footwell is untested.
+- **The current placement** (footwell, blowing up at the passenger headrest
+  [Owner]) matches DEFA's configurations only if two things hold. It must be
+  fixed to the tunnel side with its bracket, or stand on the Termini Stand; and
+  the jet must not be directed toward the seat. Loose on the floor, or aimed at
+  the seat, it conflicts with the manual [Lit: 53, 55, 57].
+- **Shelly rating** [Lit: 60]:
+  - 16 A models (1PM Gen3 or Gen4) comfortably carry 1.7 kW (≈ 7.4 A) and the
+    2.2 kW peak (≈ 9.6 A).
+  - The 8 A 1PM Mini Gen3 (2000 W maximum) is below the start peak.
+  - All of these are rated only down to −20 °C ambient.
+
 ### What the software knows
 
 | Quantity | Source and storage | Used by control? | Notes |
 | --- | --- | --- | --- |
 | Cabin air temperature | BMP280 → `car_heater_status.ambient_temp`, every frame | Ready-by, Keep at Temperature, calibration | On the dashboard below the windscreen, position not fixed [Owner] |
 | Relay state | Shelly `output` → `is_heater_on` | Yes | Relay on is not proof of heat [Lit: 35] |
-| Instantaneous power | Shelly `apower` → `instant_power_w` | Ready-by ETA (audit F01), charge mode | Measured active power, not a rating [Lit: 35]. PTC heaters draw less as the cabin warms [Lit: 18] |
+| Instantaneous power | Shelly `apower` → `instant_power_w` | Ready-by ETA (audit F01), charge mode | Measured active power, not a rating [Lit: 35]. This heater's PTC element draws less as the cabin warms [Lit: 53] |
 | Delivered energy | Shelly `aenergy` total, last-minute energy and minute timestamp → `energy_*` columns (`app/core/schema.py:152–168`) | No | Gives energy per session without power aliasing |
 | Voltage, current, Shelly device temperature | Status row | No | |
 | Outside air temperature | FMI `t2m` at Seinäjoki Pelmaa (fmisid 101486). 10-min step, 2 h lookback, 120 s cache; the stale cache is kept on fetch failure (`app/services/weather/weather_service.py:15–25, 62–68, 156–176`) | Ready-by, calibration | Not stored with heater status. Stored as `esp32_temphum` rows labelled "Pelmaa" as a side effect of home-sensor posts (`app/blueprints/api/esp32_api.py:311–360`) |
@@ -910,7 +958,8 @@ pattern [Model; Hyp for the real car].
 - A glass-based hold replaces an arbitrary cabin-temperature hold.
 - It can detect "the heater cannot win today": the glass plateaus below θ
   while the cabin warms and the Shelly shows power drawn. Causes include too
-  cold or windy weather, thermostat cycling, or airflow not reaching the glass.
+  cold or windy weather, or airflow not reaching the glass. A tripped
+  overheating cut-out looks different: power falls to about 0 W.
 - Sensor faults can be detected by comparing with cabin and weather readings.
 
 **Failure modes.**
@@ -1139,15 +1188,24 @@ Why this suits this project:
    cents.
 
 **Zero-code lever.** The model's largest single lever is physical: whether the
-heater's airflow reaches the windshield. Test aiming the heater at the glass if
-the heater's instructions allow it, and record the placement as configuration.
-Typical mid-winter mornings here are −8…−14 °C [Owner], where the model is
-marginal. Placement is likely the difference between a 1.7 kW heater clearing
-the glass and not clearing it [Model/Hyp]. Today the heater blows at the
-passenger headrest, not the glass [Owner]. The cheapest experiment in this
-whole study is to turn it toward the base of the windscreen, within the
-heater's placement rules, and compare mornings (rule D4). Heating the passenger
-seat does nothing for the windshield.
+heater's airflow reaches the windshield. Typical mid-winter mornings here are
+−8…−14 °C [Owner], where the model is marginal. Placement is therefore likely
+the difference between a 1.7 kW heater clearing the glass and not clearing it
+[Model/Hyp].
+
+DEFA's manual limits the options. It does not allow aiming this heater at the
+windscreen, and it forbids directing it at a seat [Lit: 53, 55]. Today it blows
+at the passenger headrest [Owner]. So:
+
+1. First confirm that the current setup is bracket- or Stand-mounted, and not
+   aimed at the seat.
+2. Then run the cheapest experiment in this study: compare the current
+   placement with DEFA-approved positions nearer the windscreen, such as the
+   passenger-side A-pillar or upside down under the glove box, on comparable
+   mornings (rule D4).
+
+Record the placement as configuration. Heating the passenger seat does nothing
+for the windshield.
 
 **Cold spells need an honest answer.** At −20 °C and below, no modelled
 configuration cleared the frost within 4 h [Model]. The system should say
@@ -1189,8 +1247,12 @@ implementation spec.
      temperature/RH sensor in a fixed spot [Owner: swap acceptable].
    - Fix the heater's placement and orientation, and record them. It
      currently blows toward the passenger headrest [Owner]. Run the first
-     observation mornings with that placement as the baseline, then aimed at
-     the windscreen base (rule D4).
+     observation mornings with that placement as the baseline (if it is
+     mounted within DEFA's rules), then in a DEFA-approved position nearer the
+     windscreen, such as the passenger-side A-pillar or under the glove box
+     (rule D4).
+   - Check from the Shelly trace that the heater's switch is on setting II
+     (about 1.5–1.7 kW, not about half that).
 2. **Duration planner.**
    - Start with the most conservative of the published timer tables: roughly
      DEFA's automatic chart, 90 min at 0 °C, about 120 min at −5 °C, 150 min at
@@ -1199,15 +1261,22 @@ implementation spec.
      "expect to scrape").
    - Log cloud cover, wind and dew point, but do not use them yet.
    - **The 2-hour question will come up immediately.** The owner would revisit
-     run-time safety if heating creeps past 2 h [Owner]. At the typical
+     run-time safety if heating creeps past 2 h [Owner]. Neither DEFA nor Tukes
+     sets a run-time limit; Motiva's two-hour figure is energy advice
+     [Lit: 58, 59]. At the typical
      mid-winter −8…−14 °C, DEFA's chart gives about 140–175 min. DEFA's tables
      are sized for engine heating, and a cabin-only defrost may need less.
      Measured glass clearing times from the first cold weeks will show
      whether 2 h suffices. Alternatively, cap at 120 min from the start and
      accept some scraping while learning; that is the owner's choice.
-3. **Execution.** Heat continuously from the planned start until departure plus
-   30 min, then send an explicit OFF with a retry. Keep a cabin over-temperature
-   cutoff. Keep at Temperature is not part of this mode.
+3. **Execution.**
+   - Heat continuously from the planned start until departure plus 30 min, then
+     send an explicit OFF with a retry.
+   - Keep a cabin over-temperature cutoff.
+   - If power falls to about 0 W while the relay is on, treat it as a tripped
+     cut-out. Hold the relay off for at least 30 min before one retry, and
+     alert if power stays at 0 (see [The heater](#the-heater)).
+   - Keep at Temperature is not part of this mode.
 4. **Readiness indicator, display only.** "Windshield probably clear" when the
    glass is at least +3 °C for at least 10 min. It does not control anything
    until it has been validated.
@@ -1269,8 +1338,9 @@ missing: no glass data → table; no weather → last-known conservative duratio
 - **Range of conditions:** include at least one clear-sky frost morning below
   −8 °C and one near 0 °C (with ice or glaze if it occurs).
 - **Heater placement:** compare the current placement (passenger footwell,
-  blowing at the passenger headrest [Owner]) with the heater aimed at the
-  windscreen base, on mornings with similar conditions.
+  blowing at the passenger headrest [Owner]) with a DEFA-approved position
+  nearer the windscreen, such as the passenger-side A-pillar or under the glove
+  box, on mornings with similar conditions.
 
 ### Retention and retrospective data
 
@@ -1313,7 +1383,7 @@ missing: no glass data → table; no weather → last-known conservative duratio
 | D1 | Is the glass proxy valid? | Threshold-plus-dwell time within ±10 min of observed clearing on at least 4 of 5 observed mornings | Adopt D readiness. Otherwise move the sensor or change θ and τ |
 | D2 | Is A viable? | Cabin temperature at observed clearing spans at most 4 K across conditions and lies at least 3 K below the heater's reachable cabin temperature | A fixed cabin target plus dwell is viable. Otherwise reject A |
 | D3 | Is B enough without closed loop? | Residual log-SD of time-to-clear after a temperature-only fit | ≤ 0.2: B with a ×1.3–1.4 margin suffices. ≥ 0.35: add cloud and wind features, rely on D, or both |
-| D4 | Does heater placement matter? | Aiming the heater at the glass cuts time-to-clear by at least 30 % in similar conditions | Adopt that placement, if the heater's instructions allow |
+| D4 | Does heater placement matter? | A DEFA-approved position nearer the windscreen cuts time-to-clear by at least 30 % in similar conditions | Adopt that placement |
 
 **Choosing an architecture versus proving reliability.**
 
@@ -1337,18 +1407,23 @@ reliability is demonstrated over the season.
 | Parking spot | In the open; a tall building 30 m to the west; car at 62.8000 N, 22.8260 E | Pelmaa is about 23 km away, the airport station about 12.7 km. Use forecasts at the car's coordinates; some shelter from westerly wind |
 | Frost frequency and temperatures | Frosted almost every winter morning; typically −8…−14 °C, cold spells to −35…−45 °C | Typical mornings sit in the model's marginal zone; cold spells need "cannot clear" handling; skipping frost-free mornings helps mainly in autumn and spring |
 | Comfort | Keep the comfort mode for now; value unknown until tried | A stays, as a comfort mode outside the defrost path |
-| Run-time policy | Ignore for now, but revisit if heating creeps past 2 h | DEFA's chart already exceeds 2 h at typical temperatures (see MVP) |
+| Run-time policy | Ignore for now, but revisit if heating creeps past 2 h | DEFA's chart already exceeds 2 h at typical temperatures (see MVP). Neither DEFA nor Tukes sets a limit; Motiva's two hours is energy advice |
 | Power window | None; the outlet timer was removed | The planner fully controls start time |
 | History | Probably gone; car heater data must never be deleted in future | Dataset starts this winter; retention must be verified and disabled |
 | Interior fog | Probably not a problem; swapping the BMP280 for a humidity-capable sensor is fine | Cabin RH comes almost free with the sensor swap |
-| Heater placement | Passenger footwell, against its left (centre-tunnel) wall, blowing about 45° upward, roughly at the passenger headrest | The jet does not reach the windshield, so the model's natural-to-fan-mixed cases apply, not "aimed at the glass". Test rule D4 early |
+| Heater placement | Passenger footwell, against its left (centre-tunnel) wall, blowing about 45° upward, roughly at the passenger headrest | The jet does not reach the windshield, so the model's natural-to-fan-mixed cases apply. DEFA's manual forbids floor use without its Stand and aiming at a seat, and does not allow aiming at the windscreen. Test approved positions nearer the glass early (rule D4) |
 
 ### Still open
 
-- **Heater settings and placement rules:** the Termini II 1700's actual power
-  settings and thermostat behaviour, which the Shelly power history will show,
-  and where its manual allows it to be placed. DEFA's product page could not be
-  fetched.
+- **Heater mounting and switch setting:** whether the heater is
+  bracket-mounted, on the Termini Stand, or loose on the floor, and whether it
+  points at the seat. Also whether its switch is on setting II, which the
+  Shelly trace shows (about 1.5–1.7 kW on II, about half on I).
+- **Shelly model and location:** the firmware calls it a "Shelly PM1".
+  - A 16 A model is fine.
+  - The 8 A 1PM Mini Gen3 is below the heater's 2.2 kW start peak.
+  - All are rated only to −20 °C ambient, so where the Shelly is mounted
+    matters.
 - **Car orientation:** which way the windshield faces, relative to the building
   and the morning sun. Late-winter departures after sunrise may get solar help
   that the model ignores.
@@ -1439,6 +1514,17 @@ measurement of this installation.
 50. FMI open data parameter metadata and changelog — https://opendata.fmi.fi/meta?observableProperty=observation&param=n_man&language=eng ; https://en.ilmatieteenlaitos.fi/open-data-changelog
 51. Fintraffic Digitraffic road weather API (sensor list, e.g. road surface minus frost point) — https://tie.digitraffic.fi/api/weather/v1/sensors
 52. Secondary: Hackaday, Tech In Plain Sight: Windshield Frit (2024) — https://hackaday.com/2024/01/18/tech-in-plain-sight-windshield-frit/
+
+**The heater and its safety guidance**
+
+53. DEFA, Termini II 1700 product sheet (EN), PBR 260417 — https://www.defa.com/content/uploads/2017/05/GB-DEFA-Termini-II-1700.pdf ; product sheet (FI) — https://www.defa.com/content/uploads/Documentation/Electrical-pre-heating/Interior-heaters/FIN-DEFA-Termini-II-1700.pdf
+54. DEFA, Termini II 1700 product page. The live page blocks automated access; read via the Internet Archive copy of 2025-08-03 — http://web.archive.org/web/20250803021848/https://www.defa.com/product/termini-ii-1700/
+55. DEFA, Termini II User & Installation Manual, part 2 of 2 (text, 43005690_E05, 2012), EN pp. 2–3 and FI pp. 10–11 — https://www.defa.com/content/uploads/2017/05/43005690_E05-Termini-II-Userguide-Part2of2.pdf
+56. DEFA, Termini II User & Installation Manual, part 1 of 2 (diagrams, 43005690_E03): clearances (diagram 2) and mounting positions (diagram 3) — https://www.defa.com/content/uploads/2017/05/43005690_E03-Termini-II-Userguide-Part1of2.pdf
+57. DEFA, Termini Stand (430100) product sheet — https://www.defa.com/content/uploads/2017/05/GB-DEFA-Termini-Stand.pdf ; fitting instructions (705929) — https://www.defa.com/content/uploads/2017/05/705929.pdf
+58. Tukes, Auton lämmittimet ja liitäntäjohdot — https://tukes.fi/koti-ja-vapaa-aika/kodin-tekniikka-ja-sahko/auton-lammittimet-ja-liitantajohdot ; Tukes, Auton lämmittimen ja lämmitysjohtojen turvallinen käyttö (PDF, 2012) — https://tukes.fi/documents/10197/8647605/auto_lammitysjohdot.pdf
+59. Motiva, Moottorin esilämmitys (updated 23.10.2024): "Sisätilanlämmitintä ei kannata pitää päällä yli kahta tuntia." Live page now returns 404; read via the Internet Archive copy of 2025-09-12 — http://web.archive.org/web/20250912191136/https://www.motiva.fi/ratkaisut/kestava_liikenne_ja_liikkuminen/taloudellinen_ajaminen/moottorin_esilammitys
+60. Shelly Knowledge Base, Shelly 1PM Gen3 (16 A) — https://kb.shelly.cloud/knowledge-base/shelly-1pm-gen3 ; Shelly 1PM Mini Gen3 (8 A, 2000 W) — https://kb.shelly.cloud/knowledge-base/shelly-1pm-mini-gen3
 
 Repository evidence: the paths and line numbers above refer to revision
 `b95b30a` and the local, git-ignored `ESP32C3-Car-Heater/` checkout. Line
