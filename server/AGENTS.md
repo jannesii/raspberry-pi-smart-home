@@ -78,6 +78,20 @@ paste-ready Conventional Commit message covering all of them. Use
 `type(scope): imperative summary` (at most 72 characters, no trailing period),
 with an optional short bulleted body. Do not commit unless asked.
 
+## Agent skills
+
+### Issue tracker
+
+Track work in GitHub Issues. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the five default triage labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Use one root glossary and root ADR directory. See `docs/agents/domain.md`.
+
 ## Keep this file small
 
 - Root `AGENTS.md` has a hard limit of 120 lines and 1,100 words. All tracked
