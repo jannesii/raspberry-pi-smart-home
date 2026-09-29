@@ -294,6 +294,14 @@ These are limits of the concept, separate from the audit's software defects
     modelled configuration cleared within 4 h [Model, E3]. For this car,
     heater placement probably decides whether typical mornings clear at all,
     and cold spells need an honest "cannot clear" answer [Hyp].
+- **Current heater placement** [Owner]. The heater stands in the passenger
+  footwell against the centre-tunnel wall, blowing about 45° upward toward the
+  passenger headrest. The windshield therefore gets only mixed cabin air, the
+  model's natural-to-fan-mixed cases. At −10 °C those cleared heavy hoarfrost
+  in about 1.6–3.5 h on calm, overcast mornings. On calm, clear mornings only
+  the fan-mixed case cleared (3.7 h), and when breezy and clear neither cleared
+  within 4 h. At −15 °C neither cleared within 4 h [Model, E3, 1500 W]. The driver's
+  side, farthest from the heater, probably clears last [Hyp].
 
 ### Interior frost and fog are separate problems
 
@@ -1135,7 +1143,11 @@ heater's airflow reaches the windshield. Test aiming the heater at the glass if
 the heater's instructions allow it, and record the placement as configuration.
 Typical mid-winter mornings here are −8…−14 °C [Owner], where the model is
 marginal. Placement is likely the difference between a 1.7 kW heater clearing
-the glass and not clearing it [Model/Hyp].
+the glass and not clearing it [Model/Hyp]. Today the heater blows at the
+passenger headrest, not the glass [Owner]. The cheapest experiment in this
+whole study is to turn it toward the base of the windscreen, within the
+heater's placement rules, and compare mornings (rule D4). Heating the passenger
+seat does nothing for the windshield.
 
 **Cold spells need an honest answer.** At −20 °C and below, no modelled
 configuration cleared the frost within 4 h [Model]. The system should say
@@ -1175,7 +1187,10 @@ implementation spec.
      `temperature`.
    - At the same time, replace the loose dashboard BMP280 with a
      temperature/RH sensor in a fixed spot [Owner: swap acceptable].
-   - Fix the heater's placement and orientation, and record them.
+   - Fix the heater's placement and orientation, and record them. It
+     currently blows toward the passenger headrest [Owner]. Run the first
+     observation mornings with that placement as the baseline, then aimed at
+     the windscreen base (rule D4).
 2. **Duration planner.**
    - Start with the most conservative of the published timer tables: roughly
      DEFA's automatic chart, 90 min at 0 °C, about 120 min at −5 °C, 150 min at
@@ -1253,8 +1268,9 @@ missing: no glass data → table; no weather → last-known conservative duratio
   becomes clearable with wipers. This gives an uncensored time-to-clear.
 - **Range of conditions:** include at least one clear-sky frost morning below
   −8 °C and one near 0 °C (with ice or glaze if it occurs).
-- **Heater placement:** if feasible, compare one morning with the heater aimed
-  at the windshield against one without, in similar conditions.
+- **Heater placement:** compare the current placement (passenger footwell,
+  blowing at the passenger headrest [Owner]) with the heater aimed at the
+  windscreen base, on mornings with similar conditions.
 
 ### Retention and retrospective data
 
@@ -1325,12 +1341,14 @@ reliability is demonstrated over the season.
 | Power window | None; the outlet timer was removed | The planner fully controls start time |
 | History | Probably gone; car heater data must never be deleted in future | Dataset starts this winter; retention must be verified and disabled |
 | Interior fog | Probably not a problem; swapping the BMP280 for a humidity-capable sensor is fine | Cabin RH comes almost free with the sensor swap |
+| Heater placement | Passenger footwell, against its left (centre-tunnel) wall, blowing about 45° upward, roughly at the passenger headrest | The jet does not reach the windshield, so the model's natural-to-fan-mixed cases apply, not "aimed at the glass". Test rule D4 early |
 
 ### Still open
 
-- **Heater placement:** where the Termini II 1700 stands and where its airflow
-  points. This is the model's largest lever. Also its actual power settings and
-  thermostat behaviour, which the Shelly power history will show.
+- **Heater settings and placement rules:** the Termini II 1700's actual power
+  settings and thermostat behaviour, which the Shelly power history will show,
+  and where its manual allows it to be placed. DEFA's product page could not be
+  fetched.
 - **Car orientation:** which way the windshield faces, relative to the building
   and the morning sun. Late-winter departures after sunrise may get solar help
   that the model ignores.
