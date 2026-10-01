@@ -45,7 +45,9 @@ from wsproto.utilities import LocalProtocolError
 
 # Configure logging
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.getLevelNamesMapping().get(
+        os.getenv("ESP32_WS_LOG_LEVEL", "INFO").strip().upper(), logging.INFO
+    ),
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
@@ -362,7 +364,7 @@ class ESP32WebSocketManager:
                     conn.last_transport_pong_at = now
                     count = conn.transport_pong_count
         if event_type == "ping":
-            logger.info("ESP32 WS ping received device=%s count=%s", device_id, count or 1)
+            logger.debug("ESP32 WS ping received device=%s count=%s", device_id, count or 1)
         else:
             logger.debug("ESP32 WS pong received device=%s count=%s", device_id, count or 1)
 

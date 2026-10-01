@@ -113,7 +113,7 @@ Configure only the integrations you use:
 | AC | `AC_DEV_ID`, `AC_IP`, `AC_LOCAL_KEY`; set `AC_TUYA_VERSION` to match the device |
 | Hue | `HUE_BRIDGE_IP`, `HUE_USERNAME` |
 | YNAB | `YNAB_API_KEY`, `YNAB_BUDGET_ID`; [review workflow](docs/features/ynab.md) |
-| ESP32 | [Gateway setup](esp32_ws/README.md) and [temperature firmware](ESP32_temperature/README.md) |
+| ESP32 | `ESP32_WS_LOG_LEVEL` (default `INFO`); [gateway setup](esp32_ws/README.md) and [temperature firmware](ESP32_temperature/README.md) |
 | Sodexo | `SODEXO_WEBHOOK_URL`, `SODEXO_POST_HOUR`, `SODEXO_POST_MINUTE` |
 | Alerts | `ALERT_WEBHOOK_URL`, `ALERT_WEBHOOK_BATCH_SECONDS` |
 

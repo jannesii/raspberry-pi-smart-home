@@ -48,7 +48,13 @@ sudo systemctl enable --now esp32_ws
 | `ESP32_WS_API_KEY` | Empty; verification disabled | First-message device authentication |
 | `ESP32_WS_HOST` | `0.0.0.0` | Direct Python entry point only |
 | `ESP32_WS_PORT` | `5556` | Direct Python entry point only |
+| `ESP32_WS_LOG_LEVEL` | `INFO` | Gateway logging; use `DEBUG` for heartbeat, ping/pong, and telemetry diagnostics |
 | `ESP32_WS_STATUS_LOG_INTERVAL_S` | `30` | Recurring gateway status summaries |
+
+Log levels are case-insensitive; unrecognized values fall back to `INFO`.
+Restart the gateway after changing the environment setting. The default keeps
+connection events, warnings, and errors without logging every ping or telemetry
+message. Transport counters continue updating at every log level.
 
 Gunicorn's bind address comes from the unit's `--bind`, not the host/port
 variables. Provide a device-reachable WebSocket reverse proxy for a loopback

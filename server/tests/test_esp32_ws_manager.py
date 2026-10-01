@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
+import logging
 import sys
 import threading
 from pathlib import Path
 
+import pytest
 import redis
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -65,6 +68,36 @@ def _load_esp32_ws_main(monkeypatch):
     finally:
         sys.modules.pop(module_name, None)
     return module
+
+
+@pytest.mark.parametrize("level", [None, "INFO", "debug", "invalid"])
+def test_transport_logging_keeps_metrics_without_routine_noise(monkeypatch, level):
+    if level is None:
+        monkeypatch.delenv("ESP32_WS_LOG_LEVEL", raising=False)
+    else:
+        monkeypatch.setenv("ESP32_WS_LOG_LEVEL", level)
+    stream = io.StringIO()
+    monkeypatch.setattr(sys, "stderr", stream)
+    root_logger = logging.getLogger()
+    monkeypatch.setattr(root_logger, "handlers", [])
+    monkeypatch.setattr(root_logger, "level", logging.WARNING)
+    module = _load_esp32_ws_main(monkeypatch)
+    manager = module.ESP32WebSocketManager()
+    ws = _DummyWS()
+    ws.device_id = "temperature_test"
+    conn = manager.register_connection(ws.device_id, ws, device_type="temperature")
+
+    manager.note_transport_event(ws, "ping")
+    manager.note_transport_event(ws, "pong")
+    module.logger.warning("Test warning remains visible")
+
+    output = stream.getvalue()
+    assert ("WS ping received" in output) is (level == "debug")
+    assert ("WS pong received" in output) is (level == "debug")
+    assert "ESP32 device registered" in output
+    assert "Test warning remains visible" in output
+    assert conn.transport_ping_count == 1
+    assert conn.transport_pong_count == 1
 
 
 def test_stale_unregister_does_not_drop_replacement_connection(monkeypatch) -> None:
