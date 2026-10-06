@@ -8,7 +8,8 @@ tests instead of growing a chronological list of past bugs here.
 ## Car heater and kFactor
 
 Code: `app/services/car_heater/`, `app/core/_controller/car_heater*.py`,
-`app/blueprints/api/car_heater/`, `app/static/js/car_heater*.js`.
+`app/blueprints/api/car_heater/`, `app/static/js/car_heater*.js`,
+`ESP32C3-Car-Heater/src/`.
 Tests: `tests/test_car_heater*.py`, `tests/test_ready_by.py`.
 
 - Browser status uses normalized `CarHeaterStatus`, not raw ESP JSON.

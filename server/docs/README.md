@@ -10,11 +10,13 @@ that are useful beyond the code itself.
 | [Feature contracts](development/feature-contracts.md) | Non-obvious behavior to preserve | Affected feature code and regression tests |
 | [Database operations](operations/database.md) | Schema changes and legacy imports | Schema, Alembic environment, migration mixin |
 | [YNAB review](features/ynab.md) | Setup, review workflow, and test mode | YNAB service, API, and browser UI |
+| [Decision records](adr/) | Durable decisions and their reasons | The code and docs each decision governs |
 
 Component guides stay beside their implementation:
 
 - [ESP32 gateway](../esp32_ws/README.md): installation, transport, and diagnostics
 - [Temperature firmware](../ESP32_temperature/README.md): configuration, build, and RPC
+- [Car-heater firmware](../ESP32C3-Car-Heater/README.md): configuration, build, and protocol
 - [Agent guide](../AGENTS.md): repository working instructions
 
 ## Maintenance

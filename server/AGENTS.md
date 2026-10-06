@@ -11,6 +11,8 @@ Alembic, Jinja2; vanilla JavaScript/CSS with no frontend build step.
 - `app/services/`: integrations and background work attached to the Flask app.
 - `app/templates/` and `app/static/`: browser UI.
 - `esp32_ws/`: ESP32 WebSocket gateway; Redis connects it to the main app.
+- `ESP32_temperature/`, `ESP32C3-Car-Heater/`: separate PlatformIO firmware;
+  change shared device protocols here together with the server.
 - `migrations/`: Alembic migrations; `tests/`: pytest suite.
 
 Read nearby implementation and tests before editing. See [readme.md](readme.md)
@@ -69,7 +71,9 @@ Replace the example paths with the affected files. Run `.venv/bin/pytest -q`
 for changes spanning shared behavior. Use isolated test databases and mocked
 integrations; do not use live devices, webhooks, or production data as tests.
 For UI changes, check the affected interaction and responsive layout when a
-browser is available. Report what was verified and any remaining limitations.
+browser is available. For firmware changes, run `pio run -e <env>` in each
+affected project with config copied from its example; do not flash devices.
+Report what was verified and any remaining limitations.
 Update `readme.md` when user-facing features or setup instructions change.
 
 Before the final response, review all tracked changes, including staged and

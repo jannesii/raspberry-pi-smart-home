@@ -34,6 +34,9 @@ The main app uses Python 3.11+, Flask-SocketIO/Eventlet, Jinja2, and vanilla
 JavaScript/CSS; there is no frontend build step. ESP32 devices connect to the
 separate gateway, which exchanges telemetry and commands with the app through
 Redis. Authenticated HTTP fallbacks exist for selected device endpoints.
+The device firmware is maintained here too: `ESP32_temperature/` and
+`ESP32C3-Car-Heater/` are separate PlatformIO projects with their own local
+configuration and builds.
 
 ## Local setup
 
@@ -113,7 +116,7 @@ Configure only the integrations you use:
 | AC | `AC_DEV_ID`, `AC_IP`, `AC_LOCAL_KEY`; set `AC_TUYA_VERSION` to match the device |
 | Hue | `HUE_BRIDGE_IP`, `HUE_USERNAME` |
 | YNAB | `YNAB_API_KEY`, `YNAB_BUDGET_ID`; [review workflow](docs/features/ynab.md) |
-| ESP32 | `ESP32_WS_LOG_LEVEL` (default `INFO`); [gateway setup](esp32_ws/README.md) and [temperature firmware](ESP32_temperature/README.md) |
+| ESP32 | `ESP32_WS_LOG_LEVEL` (default `INFO`); [gateway setup](esp32_ws/README.md), [temperature firmware](ESP32_temperature/README.md), and [car-heater firmware](ESP32C3-Car-Heater/README.md) |
 | Sodexo | `SODEXO_WEBHOOK_URL`, `SODEXO_POST_HOUR`, `SODEXO_POST_MINUTE` |
 | Alerts | `ALERT_WEBHOOK_URL`, `ALERT_WEBHOOK_BATCH_SECONDS` |
 
@@ -177,7 +180,7 @@ implementation details and troubleshooting.
 
 - [Feature contracts](docs/development/feature-contracts.md): behavior to preserve when editing
 - [Documentation index](docs/README.md): architecture, database operations, and feature guides
-- [ESP32 gateway](esp32_ws/README.md) and [temperature firmware](ESP32_temperature/README.md)
+- [ESP32 gateway](esp32_ws/README.md), [temperature firmware](ESP32_temperature/README.md), and [car-heater firmware](ESP32C3-Car-Heater/README.md)
 - [YNAB categorizer](docs/features/ynab.md)
 
 ## License

@@ -8,6 +8,7 @@ Home automation and monitoring stack built around a Raspberry Pi. The project cu
 - Flask application with Jinja UI, REST endpoints, and Socket.IO streams for live data.
 - Integrations for HVAC control (Tuya/Smart Life), Philips Hue lighting, and Bambu Lab timelapse ingestion.
 - SQLite persistence, Redis-backed rate limiting, and Cloudflare/Nginx deployment guides.
+- ESP32 firmware for the temperature sensors (`server/ESP32_temperature/`) and car heater (`server/ESP32C3-Car-Heater/`), built with PlatformIO.
 - See `server/readme.md` for detailed setup, environment variables, and deployment instructions.
 
 ### `device_watcher/`

@@ -36,7 +36,7 @@ Evidence labels used throughout:
 | Label | Meaning |
 | --- | --- |
 | **[Lit]** | Stated by a cited standard, paper, manufacturer document or official data service |
-| **[Repo]** | Verified in this repository, or its local firmware checkout, at `b95b30a` |
+| **[Repo]** | Verified in this repository at `b95b30a`, or in the car-heater firmware then kept as a separate local checkout |
 | **[Model]** | Result of this study's synthetic model; not a measurement of this car |
 | **[Derived]** | This study's own calculation from cited physics, with inputs stated |
 | **[Hyp]** | Hypothesis about this car or installation; unverified |
@@ -558,9 +558,10 @@ repository.
 
 [Repo] The car device is a Seeed XIAO ESP32-C3 with a **BMP280** sensor, which
 measures temperature and pressure but not humidity. It switches a **Shelly
-PM1** relay through the Shelly's local RPC API. The firmware lives in a separate local
-checkout, `server/ESP32C3-Car-Heater/`, which the repository root `.gitignore`
-excludes (line 23); that is why the audit did not find it.
+PM1** relay through the Shelly's local RPC API. During this review the firmware
+was a separate local checkout at `server/ESP32C3-Car-Heater/`, excluded by the
+repository root `.gitignore`; that is why the audit did not find it. It is now
+tracked in this repository ([ADR 0001](../adr/0001-maintain-esp32-firmware-in-this-repository.md)).
 
 - **Telemetry** is sent every 5–10 s (`src/io/PosterTask.cpp:258–285`). Each
   frame carries `timestamp`, `temperature` and the raw Shelly
@@ -1723,5 +1724,6 @@ measurement of this installation.
 73. BerryBase, heat-shrink assortment T1535561 — https://www.berrybase.de/schrumpfschlauch-set-100-teilig-schwarz (consulted 2026-10-06).
 
 Repository evidence: the paths and line numbers above refer to revision
-`b95b30a` and the local, git-ignored `ESP32C3-Car-Heater/` checkout. Line
-numbers may move in later changes.
+`b95b30a` and to the car-heater firmware at its original commit `e995b65`,
+since imported unchanged into `ESP32C3-Car-Heater/` as `ec146ef`. Line numbers
+may move in later changes.
