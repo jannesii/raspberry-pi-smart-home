@@ -1,0 +1,52 @@
+// Example configuration for ESP32 Temperature/Humidity WebSocket sensor
+// Copy this file to include/config.h and fill with your values.
+// Do NOT commit include/config.h (it is in .gitignore).
+
+#pragma once
+
+// Device metadata
+#define DEVICE_LOCATION "Keittiö"
+
+// DHT sensor configuration
+#define DHTPIN 4
+#define DHTTYPE DHT22
+
+// WiFi
+#define WIFI_SSID      "YourSSID"
+#define WIFI_PASSWORD  "YourPassword"
+#define WIFI_HOSTNAME  "esp32-temp"
+#define MDNS_HOSTNAME  "esp32-temp"
+
+// Optional static IP settings (set WIFI_STATIC_IP_ENABLED to 1 to enable)
+#define WIFI_STATIC_IP_ENABLED 0
+#define WIFI_STATIC_IP ""
+#define WIFI_STATIC_GATEWAY ""
+#define WIFI_STATIC_NETMASK ""
+#define WIFI_STATIC_DNS1 ""
+#define WIFI_STATIC_DNS2 ""
+
+// WebSocket upstream (hostname only; no scheme)
+#define WS_HOST "wss.jannenkoti.com"
+#define WS_USE_TLS 1                // 1 = WSS, 0 = WS
+#define WS_PORT 443
+#define WS_PATH "/ws"
+
+// Posting cadence
+#define POST_INTERVAL_SECONDS 60     // default interval between posts in seconds
+#define ALIGN_POSTS_TO_MINUTE 1      // 1 = align to wall-clock boundaries, 0 = purely interval-based
+
+// API key for WebSocket device authentication
+#define WS_API_KEY "sk_example_ws_key"
+
+// Compatibility key for old tooling. New firmware traffic uses WS_API_KEY.
+#define API_KEY WS_API_KEY
+
+// Optional: default structured log level at boot ("error", "warn", "info", or "debug"). Defaults to "info" if omitted.
+// #define DEFAULT_LOG_LEVEL "debug"
+
+// Optional: factory reset button (hold active state for FACTORY_RESET_HOLD_MS at boot)
+// Uncomment and adjust to enable hardware-triggered factory reset.
+// #define FACTORY_RESET_PIN 0
+// #define FACTORY_RESET_ACTIVE_LEVEL LOW   // or HIGH depending on wiring
+// #define FACTORY_RESET_PIN_MODE INPUT_PULLUP
+// #define FACTORY_RESET_HOLD_MS 3000

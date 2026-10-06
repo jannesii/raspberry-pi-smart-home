@@ -1,0 +1,61 @@
+@httpApiKey = sk_example_http_key
+@httpApiUrl = http://test.local
+
+### GET status
+GET {{httpApiUrl}}/status
+Authorization: Bearer {{httpApiKey}}
+
+### GET sensor reading
+GET {{httpApiUrl}}/read
+Authorization: Bearer {{httpApiKey}}
+
+### GET metrics
+GET {{httpApiUrl}}/metrics
+Authorization: Bearer {{httpApiKey}}
+
+### GET logs
+GET {{httpApiUrl}}/logs
+Authorization: Bearer {{httpApiKey}}
+
+### POST logs clear
+POST {{httpApiUrl}}/logs
+Content-Type: application/json
+Authorization: Bearer {{httpApiKey}}
+
+{
+    "action": "clear"
+}
+
+### GET config
+GET {{httpApiUrl}}/config
+Authorization: Bearer {{httpApiKey}}
+
+### POST config
+POST {{httpApiUrl}}/config
+Content-Type: application/json
+Authorization: Bearer {{httpApiKey}}
+
+{
+    "log_level": "info"
+}
+
+### save config
+POST {{httpApiUrl}}/config/save
+Authorization: Bearer {{httpApiKey}}
+
+### discard config
+POST {{httpApiUrl}}/config/discard
+Authorization: Bearer {{httpApiKey}}
+
+### reset
+POST {{httpApiUrl}}/config/factory_reset
+Authorization: Bearer {{httpApiKey}}
+
+### POST task
+POST {{httpApiUrl}}/task
+Authorization: Bearer {{httpApiKey}}    
+
+{
+    "name": "SensorPostTask", 
+    "action": "restart"
+}
