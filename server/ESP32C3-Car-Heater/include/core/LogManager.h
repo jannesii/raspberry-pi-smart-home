@@ -27,7 +27,7 @@ public:
 
 private:
     LogCallback callback_;
-    
+
     static constexpr const char* NAMESPACE    = "logs";
     static constexpr const char* KEY_HEAD     = "head";
     static constexpr const char* KEY_COUNT    = "count";

@@ -70,11 +70,11 @@ private:
     bool httpInitialized_ = false;
 
     void initHttpIfNeeded();
-    
+
     uint32_t taskDelayS_ = 5;
     uint32_t postCount_ = 0;
     float avgPostMs_ = 0.0f;
-    
+
     String apiURL_ = "https://jannenkoti.com/api/car_heater/status";
     String apiKey_ = API_KEY;
 

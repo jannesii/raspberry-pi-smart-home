@@ -23,7 +23,6 @@ from typing import Any
 
 import redis
 
-
 COMMANDS_CHANNEL = "esp32:temperature:commands"
 RESULTS_CHANNEL = "esp32:temperature:rpc_results"
 
@@ -32,7 +31,7 @@ def _load_params(args: argparse.Namespace) -> dict[str, Any]:
     if args.params_json and args.params_file:
         raise SystemExit("Use either --params-json or --params-file, not both")
     if args.params_file:
-        with open(args.params_file, "r", encoding="utf-8") as fh:
+        with open(args.params_file, encoding="utf-8") as fh:
             data = json.load(fh)
     elif args.params_json:
         data = json.loads(args.params_json)

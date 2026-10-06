@@ -9,12 +9,12 @@
 
 /**
  * WebSocket client task for real-time communication with the server.
- * 
+ *
  * Connects to wss.jannenkoti.com and:
  * - Receives commands instantly (turn_on, turn_off, etc.)
  * - Sends status updates and heartbeats
  * - Auto-reconnects with exponential backoff
- * 
+ *
  * Runs as a separate FreeRTOS task alongside PosterTask (HTTP fallback).
  */
 class WebSocketTask
@@ -91,11 +91,11 @@ private:
     void connect();
     void disconnect();
     void sendAuthentication();
-    
+
     // Message handling
     void processMessage(const char* payload, size_t length);
     void processCommands(const char* jsonArray, size_t length);
-    
+
     // Command execution (shared with PosterTask)
     void executeCommand(const char* action, const char* source = nullptr);
     void handleTurnOn();
@@ -130,7 +130,7 @@ private:
     static constexpr const char* WS_HOST = "wss.jannenkoti.com";
     static constexpr uint16_t WS_PORT = 443;
     static constexpr const char* WS_PATH = "/ws";
-    
+
     // Reconnection with exponential backoff
     uint32_t reconnectDelayMs_ = 1000;
     static constexpr uint32_t RECONNECT_DELAY_MIN_MS = 1000;

@@ -127,11 +127,11 @@ void WebSocketTask::onWebSocketEvent(WStype_t type, uint8_t *payload, size_t len
         connected_ = true;
         stats_.connectCount++;
         stats_.lastConnectedMs = millis();
-        
+
         // Reset backoff on successful connection
         reconnectDelayMs_ = RECONNECT_DELAY_MIN_MS;
         webSocket_.setReconnectInterval(reconnectDelayMs_);
-        
+
         // Send authentication immediately
         sendAuthentication();
         break;
@@ -170,10 +170,10 @@ void WebSocketTask::connect()
     // Configure WebSocket with SSL
     webSocket_.beginSSL(WS_HOST, WS_PORT, WS_PATH);
     webSocket_.onEvent(webSocketEventStatic);
-    
+
     // Let the library reconnect, but control its retry interval ourselves.
     webSocket_.setReconnectInterval(reconnectDelayMs_);
-    
+
     // Enable heartbeat (WebSocket ping/pong)
     webSocket_.enableHeartbeat(15000, 3000, 2);  // ping every 15s, timeout 3s, 2 retries
 }
@@ -233,7 +233,7 @@ void WebSocketTask::processMessage(const char *payload, size_t length)
     {
         const char *error = doc["error"];
         Serial.printf("[WebSocket] Server error: %s\n", error);
-        
+
         if (strcmp(error, "unauthorized") == 0)
         {
             Serial.println("[WebSocket] Authentication failed - check API key");
@@ -360,7 +360,7 @@ void WebSocketTask::handleEspRestart()
 {
     Serial.println("[WebSocket] CMD: esp_restart");
     log("WS CMD: esp_restart - restarting in 1s");
-    
+
     // Send result before restart
     sendActionResult("esp_restart", true, "restarting now");
     vTaskDelay(pdMS_TO_TICKS(1000));
@@ -380,7 +380,7 @@ void WebSocketTask::sendStatus()
         return;
 
     String json = buildStatusJson();
-    
+
     Serial.println("[WebSocket] Sending status update");
     webSocket_.sendTXT(json);
     stats_.messagesSent++;
@@ -486,12 +486,12 @@ void WebSocketTask::recordCommandExecution(const char *action)
 bool WebSocketTask::wasCommandExecutedRecently(const char *action, uint32_t withinMs)
 {
     uint32_t now = millis();
-    
+
     for (size_t i = 0; i < MAX_RECENT_COMMANDS; ++i)
     {
         if (recentCommands_[i].executedAtMs == 0)
             continue;
-            
+
         if ((now - recentCommands_[i].executedAtMs) <= withinMs)
         {
             if (strcmp(recentCommands_[i].action, action) == 0)

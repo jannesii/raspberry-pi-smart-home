@@ -228,7 +228,7 @@ void PosterTask::run()
             sendImmediateResultIfNeeded();
         }
 
-        if (espRestartPending_ && espRestartResultSent_) 
+        if (espRestartPending_ && espRestartResultSent_)
         {
             Serial.println("ESP restart requested, restarting now...");
             log("ESP restart requested, restarting now...");

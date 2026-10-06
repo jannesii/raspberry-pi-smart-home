@@ -9,4 +9,4 @@ bool connectWifi(
     const IPAddress& wifiGateway,
     const IPAddress& wifiSubnet,
     const IPAddress& wifiDnsPrimary
-); 
+);

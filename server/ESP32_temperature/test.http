@@ -53,9 +53,9 @@ Authorization: Bearer {{httpApiKey}}
 
 ### POST task
 POST {{httpApiUrl}}/task
-Authorization: Bearer {{httpApiKey}}    
+Authorization: Bearer {{httpApiKey}}
 
 {
-    "name": "SensorPostTask", 
+    "name": "SensorPostTask",
     "action": "restart"
 }
