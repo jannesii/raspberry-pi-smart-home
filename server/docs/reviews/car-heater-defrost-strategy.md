@@ -1395,6 +1395,189 @@ missing: no glass data → table; no weather → last-known conservative duratio
 So the architecture choice can be made from 10–15 instrumented mornings, while
 reliability is demonstrated over the season.
 
+## Pre-winter preparation decisions (2026-10-06)
+
+The owner agreed to the following during `/grill-with-docs`. Hardware selection,
+operating policies and the initial experiment are recorded below. Physical
+installation checks remain. The owner confirmed the shared understanding and
+selected `/to-spec` on 2026-10-06.
+
+- **First version:** a weather-keyed duration planner plus measurement collection,
+  explicit heater OFF at the scheduled finish, and an experimental glass-readiness
+  display. Glass temperature will not control heating until validated.
+- **Ordering budget:** an initial EUR 100 ceiling for sensors, wiring and mounting
+  supplies, excluding equipment already owned. This is a budget, not a quoted
+  parts basket.
+- **Selected sensors:** two Adafruit TMP117 glass-temperature modules and one
+  Adafruit SHT45 cabin temperature/humidity module. The second glass point is for
+  checking spatial differences during the first winter. Delivery is to Finland;
+  the estimated sensor cable route is 1–2 m from the passenger-footwell ESP32.
+  Installed bus reliability must be tested before committing to the final mounts.
+  The SHT45 is rated to −40 °C [Lit: 63]; colder readings are outside its supported
+  operating range. Module accuracy is not proof of glass-contact accuracy.
+- **Fabrication:** a 3D printer is available, with PLA, PETG and Bambu TPU for AMS.
+  The owner enjoys soldering and tinkering; custom sensor assembly is acceptable.
+  Printed sensor holders, cable supports and enclosures are candidates; exact
+  designs and materials remain undecided.
+- **Existing mounting supplies:** thermal paste, polyimide tape and heat-shrink
+  are not already owned. The owner has ample 10 mm E30 foam from Muovijalelu.
+  Its vendor publishes thickness and approximately 30 kg/m³ density, but not
+  cell structure, thermal performance or moisture resistance [Lit: 71]. Use small
+  pieces as provisional air-facing sensor covers to test. Foam will not form the
+  glass-contact thermal layer, and the cabin humidity sensor must remain exposed
+  to air.
+- **Current installation:** the heater is on a 3D-printed bracket and has always
+  been on setting II. Its placement is the passenger-footwell position described
+  in the owner's original answers below. The printed bracket replaces DEFA's
+  original bracket, which the owner has never had. The owner regards it as
+  satisfactory after several years of use; its material, clearances and conformity
+  to DEFA's installation instructions have not been established. The Shelly is an
+  Outdoor Plug S Gen3, rated for 2500 W resistive load and −25…+51 °C ambient
+  [Lit: 61]; local temperature during colder spells remains an installation limit
+  not validated by this study. The owner explicitly chooses to keep using it
+  outside its published cold rating, citing successful use outdoors last winter.
+  Exact temperatures from that use are unknown. No cold-ambient block based on
+  the Shelly rating is requested; this decision does not establish a wider equipment
+  rating. The heater's over-temperature cutoff remains part of the proposed mode.
+- **Planned power arrangement:** the extension cord connects to the cabin mains
+  socket normally used for the heater. This socket is supplied only while the
+  external DEFA cable is connected. The extension supplies the XIAO ESP32-C3's
+  power adapter and the Shelly separately; the heater plugs into the Shelly.
+  This avoids drawing from the car battery. The equipment will sit in the
+  passenger footwell; precise locations remain open.
+  Here, "continuous" ESP32 power means independent of the Shelly relay, not
+  independent of the external supply. The owner normally connects the DEFA cable
+  when parking and leaves it connected overnight.
+  The extension socket, mains-to-USB adapter and USB-C cable are already owned.
+  The adapter is Biltema product 2000041031, article 84-8142, confirmed by the owner
+  reading its part number on 2026-10-06. Its manual specifies 5 V DC, 3 A total,
+  15 W maximum and 1.5 A per port with two ports occupied [Lit: 69]. No numerical
+  operating-temperature range was found in the manual. It also powers a ZTE MF79U
+  router through USB-A. A ZTE regional manual supports adapter-powered use and
+  recommends −10…+55 °C operation [Lit: 70]; the exact unit's current requirement
+  was not established. Combined startup and reconnection need testing.
+  The router belongs on the continuously supplied adapter branch, not on the
+  heater's switched branch.
+- **Heating limit:** the owner agreed to an initial maximum continuous session
+  of 180 minutes, including any heating after departure. Up to 30 minutes after
+  departure is allowed only within the unused portion of that limit: 150 minutes
+  before departure permits 30 afterward; 180 before departure permits none.
+- **Connection-loss policy:** heating may continue to its planned finish only if
+  the device can enforce that finish without the server. Communication loss must
+  not extend the session. External cable disconnection ends heating, and
+  reconnecting must not replay an old ON command.
+- **Initial sensor positions:** the owner agreed to a reference glass sensor at
+  the lower-middle of the driver's viewing area, a second near the lower
+  driver-side band above the black border, and a cabin sensor in a fixed shaded
+  position away from the heater outlet and ESP32. Mounts will be removable;
+  winter observations determine whether the positions need changing.
+- **Initial weather input:** use the existing FMI outside-temperature observations
+  for the duration table, deferring departure-time forecasts. Missing or stale
+  weather selects 180 minutes of preheat with a visible fallback indication and
+  no extra departure grace. This does not imply defrost readiness. The freshness
+  threshold still needs defining.
+- **Observation effort:** five selected mornings with photos every 10 minutes
+  during the final 30–60 minutes before departure are practical. This reduces the
+  effort compared with the full-session observations proposed above. If the glass
+  is already clear at the first photo, the clearing time is only known to precede
+  that photo; these observations do not automatically meet the original plan's
+  requirement for uncensored time-to-clear measurements or establish D1.
+- **Photo assistance:** the owner agreed to fixed phone placement, human framing
+  and start, timed photos every 10 minutes, and a departure outcome label. The
+  available phone is an iPhone 15 Pro; Chrome is usual, but another browser is
+  acceptable. Ultra-wide capture is a requested enhancement, subject to browser
+  support. The owner prefers inside photos. The observation page will be part of
+  the existing app, save timestamped photos against the heating session, and must
+  be ready for the first observation morning. Exact framing, morning lighting and
+  connectivity remain to be checked. Apple specifies 0…35 °C operating ambient
+  for the phone [Lit: 62]; cabin warmth before capture needs checking.
+  The owner already has a phone holder, can arrange another if needed, and can
+  provide lighting without purchasing it. Observations before or after sunrise
+  are both acceptable. Exact framing and connectivity are installation tests,
+  rather than assumptions of successful automatic capture.
+
+### Provisional ordering basket
+
+Supplier listings checked on 2026-10-06 [Lit: 64–67, 73]. These are displayed prices,
+not a checkout quotation; destination VAT, shipping and available supplies must
+be accounted for before ordering. The owner has selected the sensors; the
+remaining supplies are proposed, with already-owned items to be omitted.
+
+| Item | Quantity | Displayed total |
+| --- | --- | --- |
+| Adafruit TMP117 modules, product 4821 | 2 | EUR 23.80 |
+| Adafruit SHT45 module, product 5665 | 1 | EUR 13.75 |
+| JST-SH four-pin 400 mm cables, product 5385, cut into wiring pigtails | 2 | EUR 4.40 |
+| Four-core stranded wire, 4 × 0.14 mm², 5 m | 1 | EUR 3.50 |
+| ARCTIC MX-4 thermal paste, 4 g | 1 | EUR 3.80 |
+| Polyimide tape set, product 125477 | 1 | EUR 13.20 |
+| Heat-shrink assortment, product T1535561 | 1 | EUR 1.90 |
+| Finland delivery under the supplier's EU shipping terms | 1 | EUR 9.90 |
+| **Subtotal before any replacement power hardware** | | **EUR 74.25** |
+
+Allow approximately EUR 80 delivered after destination VAT adjustment. The
+extension socket, confirmed Biltema mains-to-USB adapter and USB-C cable are
+already owned; combined ESP32/router startup still needs testing. Heat-shrink
+still needs purchasing.
+Existing 10 mm E30 foam is available for a provisional cover, subject to material
+and mounting checks; a new foam purchase is not yet justified.
+
+The TMP117 module's connectors prevent the sensor face from sitting flat against
+glass [Lit: 68]. A proposed printed carrier presses the PCB backside beneath the
+small sensor tongue against glass through a thin nonconductive thermal layer,
+with a small foam cover on the air-facing side. Thermal paste is not adhesive.
+Installed bias and lag need verification; chip accuracy does not establish surface
+measurement accuracy. Retaining tape and foam must not sit between the sensor's
+thermal path and glass or cover a large windshield patch.
+
+PETG carriers and TPU cable supports are candidates away from the heater outlet;
+actual local temperatures and attachment remain to be checked. The estimated
+1–2 m I²C wiring is not guaranteed by cable length alone. Start with the selected
+modules and test the actual route; a bus extender is not in the initial basket.
+The proposed wire listing does not establish operation at −45 °C.
+
+### First-frost software boundary
+
+The owner confirmed these boundaries of the initial collection version. They
+are preparation decisions rather than an implementation spec:
+
+- **Firmware and both telemetry paths:** collect two glass temperatures plus cabin
+  temperature/RH, retaining sensor timestamps, validity and missing readings.
+  Cached readings must not masquerade as fresh measurements. Keep measurements
+  even when Shelly status is unavailable.
+- **Durable evidence:** preserve raw readings, session identity, departure and plan
+  history, actual execution milestones, power/energy, weather values used, outcome
+  labels, photos and installation/version metadata. Check deployed retention and
+  surviving history read-only, then arrange backup before collection starts.
+- **Bounded duration mode:** use the initial table and agreed weather fallback,
+  180-minute total limit, bounded grace, explicit cancellation/OFF, and a finish
+  enforced independently of server connectivity. Prevent competing comfort or
+  calibration commands and stale ON replay from taking over the session. Retain
+  the cabin over-temperature cutoff. Define weather freshness before implementation.
+- **Experimental display:** show glass measurements and provisional threshold/dwell
+  status. Neither that indicator nor cabin temperature establishes validated
+  defrost readiness or shortens the initial duration mode.
+- **Observation page:** authenticated page in the existing app; select the heating
+  session, confirm inside camera preview, start timed photos every 10 minutes,
+  record actual capture time, show upload/interruption status, and finish with an
+  outcome label. Keep the page visible during capture. Try ultra-wide selection
+  on the actual phone, with a regular rear-camera fallback [Lit: 72]. Five mornings
+  use the agreed 30–60-minute window; ordinary departures need only the outcome.
+
+**Before frost:** confirm equipment locations; document the
+heater attachment and clearances; test the 1–2 m sensor wiring, glass contact and
+attachment, ESP32/router startup, and the actual inside camera view with available
+lighting. Verify persistence, start/cancel/finish, reconnect and stale-command
+behaviour with isolated tests before unattended operation. No automatic block
+based solely on the Shelly's published cold rating is requested by the owner.
+
+**Requires winter observations:** validate threshold/dwell against observed
+clearing; adjust duration and sensor positions; compare heater placements; assess
+the usefulness of comfort mode and the ability to clear in cold spells. If glass
+is already clear when observation begins, do not invent an exact clearing time.
+Glass-controlled readiness/hold, learned timing and frost-free skipping remain
+later stages rather than requirements for the first collection version.
+
 ## Open Questions
 
 ### Answered by the owner (2026-09-29)
@@ -1415,15 +1598,14 @@ reliability is demonstrated over the season.
 
 ### Still open
 
-- **Heater mounting and switch setting:** whether the heater is
-  bracket-mounted, on the Termini Stand, or loose on the floor, and whether it
-  points at the seat. Also whether its switch is on setting II, which the
-  Shelly trace shows (about 1.5–1.7 kW on II, about half on I).
-- **Shelly model and location:** the firmware calls it a "Shelly PM1".
-  - A 16 A model is fine.
-  - The 8 A 1PM Mini Gen3 is below the heater's 2.2 kW start peak.
-  - All are rated only to −20 °C ambient, so where the Shelly is mounted
-    matters.
+- **Heater mounting:** the owner confirmed a 3D-printed bracket and setting II
+  on 2026-10-06. It replaces the original bracket, which is not available. Bracket
+  material, attachment, clearances and whether the heater points at the seat have
+  not been checked against DEFA's installation instructions.
+- **Shelly location:** the owner confirmed an Outdoor Plug S Gen3 on
+  2026-10-06. Passenger-footwell placement is planned; exact location and exposure
+  remain open. The earlier firmware name "Shelly PM1" is not a reliable
+  identification of this plug.
 - **Car orientation:** which way the windshield faces, relative to the building
   and the morning sun. Late-winter departures after sunrise may get solar help
   that the model ignores.
@@ -1431,8 +1613,9 @@ reliability is demonstrated over the season.
   once chosen.
 - **Surviving history:** whether production still holds any heater rows (a
   read-only check).
-- **The 2-hour threshold:** to be revisited when the first cold-week clearing
-  times are in.
+- **Run-time policy:** an initial 180-minute total continuous limit was agreed
+  on 2026-10-06, with up to 30 minutes of departure grace within that total. Revisit
+  actual durations when the first cold-week clearing times are in.
 - **Comfort:** whether the comfort mode earns its keep, after a season of use.
 
 ## Sources
@@ -1525,6 +1708,19 @@ measurement of this installation.
 58. Tukes, Auton lämmittimet ja liitäntäjohdot — https://tukes.fi/koti-ja-vapaa-aika/kodin-tekniikka-ja-sahko/auton-lammittimet-ja-liitantajohdot ; Tukes, Auton lämmittimen ja lämmitysjohtojen turvallinen käyttö (PDF, 2012) — https://tukes.fi/documents/10197/8647605/auto_lammitysjohdot.pdf
 59. Motiva, Moottorin esilämmitys (updated 23.10.2024): "Sisätilanlämmitintä ei kannata pitää päällä yli kahta tuntia." Live page now returns 404; read via the Internet Archive copy of 2025-09-12 — http://web.archive.org/web/20250912191136/https://www.motiva.fi/ratkaisut/kestava_liikenne_ja_liikkuminen/taloudellinen_ajaminen/moottorin_esilammitys
 60. Shelly Knowledge Base, Shelly 1PM Gen3 (16 A) — https://kb.shelly.cloud/knowledge-base/shelly-1pm-gen3 ; Shelly 1PM Mini Gen3 (8 A, 2000 W) — https://kb.shelly.cloud/knowledge-base/shelly-1pm-mini-gen3
+61. Shelly, Outdoor Plug S Gen3 product specifications — https://www.shelly.com/products/shelly-outdoor-plug-s-gen3 (consulted 2026-10-06).
+62. Apple, Keeping iPhone, iPad, and iPod touch within acceptable operating temperatures — https://support.apple.com/en-ie/118431 (consulted 2026-10-06).
+63. Sensirion, SHT4x datasheet — https://sensirion.com/media/documents/33FD6951/661CD142/HT_DS_Datasheet_SHT4x.pdf (consulted 2026-10-06).
+64. BerryBase, selected sensor listings — https://www.berrybase.de/adafruit-tmp117-0.10c-hochpraeziser-i2c-temperatursensor and https://www.berrybase.de/adafruit-sensirion-sht45-precision-temperature-humidity-sensor (consulted 2026-10-06).
+65. BerryBase, wiring listings — https://www.berrybase.de/adafruit-jst-sh-4-pin-kabel-1-mm-pitch-fuer-stemma-qt-und-qwiic-i2c-gnd-sda-scl-3-3-v/laenge-400mm and https://www.berrybase.de/vierlingslitze-isoliert-4x0-14mm-5m-farbe-blau-gelb-rot-gruen (consulted 2026-10-06).
+66. BerryBase, mounting supplies — https://www.berrybase.de/arctic-mx-4-2019-waermeleitpaste-4g and https://www.berrybase.de/hochtemperatur-polyimid-klebeband-set-4er-pack (consulted 2026-10-06).
+67. BerryBase, shipping and payment terms — https://www.berrybase.de/versand-und-zahlungsbedingungen (consulted 2026-10-06).
+68. Adafruit, TMP117 module dimensions and product photographs — https://www.adafruit.com/product/4821 (consulted 2026-10-06).
+69. Biltema, USB charger article 84-8142 manual — https://docs.biltema.com/v2/documents/file/fi/ee693f49-e4aa-4a27-b6d1-c86add5e3fc6 ; product — https://www.biltema.fi/toimisto---tekniikka/puhelintarvikkeet/puhelimen-laturit/usb-laturit/usb-laturi-3-lahtoliitantaa-tyyppi-a-c-3-a-2000041031 (consulted 2026-10-06).
+70. ZTE, MF79U regional quick-start guide — https://oss.ztedevices.com/prod/cn/direct/egypt/mf79u/TE%20MF79U%20Quick%20Start%20Guide%20V1.0-0512.pdf (consulted 2026-10-06).
+71. Muovijalelu, E30 1 cm foam product description — https://www.muovijalelu.fi/kauppa/vaahtomuovit/vaahtomuovia-mittojen-mukaan/vaahtomuovi-e30-1-cm/ (consulted 2026-10-06).
+72. W3C, Media Capture and Streams, camera orientation and device selection — https://w3c.github.io/mediacapture-main/ (consulted 2026-10-06).
+73. BerryBase, heat-shrink assortment T1535561 — https://www.berrybase.de/schrumpfschlauch-set-100-teilig-schwarz (consulted 2026-10-06).
 
 Repository evidence: the paths and line numbers above refer to revision
 `b95b30a` and the local, git-ignored `ESP32C3-Car-Heater/` checkout. Line
