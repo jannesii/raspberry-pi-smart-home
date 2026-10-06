@@ -27,37 +27,38 @@ Firmware for Seeed XIAO ESP32-C3 that controls a car block heater via Shelly PM1
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## Configuration
+## Configure and build
 
-Edit `include/core/staticconfig.h`:
-
-```cpp
-// WiFi credentials
-#define WIFI_SSID "your_ssid"
-#define WIFI_PASSWORD "your_password"
-
-// Shelly PM1 IP address
-#define SHELLY_IP "192.168.x.x"
-
-// HTTP API key (for /api/car_heater/status)
-#define API_KEY "sk_..."
-
-// WebSocket API key (for wss.jannenkoti.com/ws)
-#define WS_API_KEY "your_ws_api_key"
-```
-
-## Building
+Install PlatformIO. From `server/ESP32C3-Car-Heater/`:
 
 ```bash
-# Using PlatformIO CLI
-pio run
-
-# Upload to device
-pio run --target upload
-
-# Monitor serial output
-pio device monitor
+cp include/core/staticconfig.h.example include/core/staticconfig.h  # First-time setup only.
 ```
+
+Edit the ignored `include/core/staticconfig.h` before building. The
+[example](include/core/staticconfig.h.example) lists the required compile-time
+settings:
+
+| Settings | Purpose |
+| --- | --- |
+| `WIFI_SSID`, `WIFI_PASSWORD` | Wi-Fi credentials |
+| `WIFI_STATIC_IP_OCTETS` and the other `*_OCTETS` | Static IP, gateway, subnet, and DNS |
+| `I2C_SDA_PIN`, `I2C_SCL_PIN`, `BMP280_I2C_ADDRESS` | Cabin sensor wiring |
+| `SHELLY_IP` | Shelly relay address |
+| `API_KEY` | Server API key for the HTTP fallback, sent as `x-api-key` |
+| `WS_API_KEY` | Nonempty key matching gateway `ESP32_WS_API_KEY` |
+
+The gateway address is set in [WebSocketTask.h](include/io/WebSocketTask.h)
+and the HTTP fallback URL in [PosterTask.h](include/io/PosterTask.h).
+
+```bash
+pio run -e seeed_xiao_esp32c3
+pio run -e seeed_xiao_esp32c3 -t upload
+pio device monitor -b 115200
+```
+
+The [PlatformIO configuration](platformio.ini) supplies the board and library
+dependencies. Upload flashes the attached device.
 
 ## WebSocket Protocol
 

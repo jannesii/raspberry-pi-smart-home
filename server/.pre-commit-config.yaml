@@ -24,8 +24,9 @@ repos:
       - id: end-of-file-fixer
       # Check YAML syntax
       - id: check-yaml
-      # Check JSON syntax
+      # Check JSON syntax (VS Code settings are JSON with comments)
       - id: check-json
+        exclude: '(^|/)\.vscode/'
       # Check for merge conflict markers
       - id: check-merge-conflict
       # Detect private keys

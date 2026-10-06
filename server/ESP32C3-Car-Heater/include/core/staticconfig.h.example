@@ -1,0 +1,33 @@
+// Example compile-time configuration for the ESP32-C3 car heater controller.
+// Copy this file to include/core/staticconfig.h and replace the placeholders.
+// Do NOT commit include/core/staticconfig.h (it is in .gitignore).
+
+#pragma once
+
+#include <cstdint>
+
+// Wi-Fi credentials
+#define WIFI_SSID      "YourSSID"
+#define WIFI_PASSWORD  "YourPassword"
+
+// Static network settings (comma-separated IPv4 octets)
+#define WIFI_STATIC_IP_OCTETS   192, 168, 1, 50
+#define WIFI_GATEWAY_OCTETS     192, 168, 1, 1
+#define WIFI_SUBNET_OCTETS      255, 255, 255, 0
+#define WIFI_DNS_PRIMARY_OCTETS 192, 168, 1, 1
+
+// BMP280 cabin temperature sensor wiring
+constexpr uint8_t I2C_SDA_PIN = D4;
+constexpr uint8_t I2C_SCL_PIN = D5;
+constexpr uint8_t BMP280_I2C_ADDRESS = 0x76; // change to 0x77 for some modules
+
+// Shelly relay address on the car network
+#define SHELLY_IP "192.168.1.60"
+
+// HTTP fallback API key, sent as x-api-key to /api/car_heater/status
+#define API_KEY "sk_example_http_key"
+
+// WebSocket device key; must match ESP32_WS_API_KEY of the esp32_ws gateway
+#ifndef WS_API_KEY
+#define WS_API_KEY "sk_example_ws_key"
+#endif
