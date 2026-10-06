@@ -1499,29 +1499,44 @@ selected `/to-spec` on 2026-10-06.
 
 ### Provisional ordering basket
 
-Supplier listings checked on 2026-10-06 [Lit: 64–67, 73]. These are displayed prices,
-not a checkout quotation; destination VAT, shipping and available supplies must
-be accounted for before ordering. The owner has selected the sensors; the
-remaining supplies are proposed, with already-owned items to be omitted.
+Supplier prices and availability rechecked on 2026-10-06 [Lit: 64–67, 73–76].
+The original SHT45 module (5665) and 400 mm cables (5385) are unavailable;
+the revised basket proposes the available PTFE-covered SHT45 (6174) and 200 mm
+cables (4401). Each product below was listed as available on recheck. These are
+displayed prices, not a checkout quotation; confirm stock, destination VAT and
+shipping before ordering. The owner has selected the sensor types; the module
+variant and remaining supplies are proposed, with already-owned items omitted.
 
 | Item | Quantity | Displayed total |
 | --- | --- | --- |
-| Adafruit TMP117 modules, product 4821 | 2 | EUR 23.80 |
-| Adafruit SHT45 module, product 5665 | 1 | EUR 13.75 |
-| JST-SH four-pin 400 mm cables, product 5385, cut into wiring pigtails | 2 | EUR 4.40 |
-| Four-core stranded wire, 4 × 0.14 mm², 5 m | 1 | EUR 3.50 |
-| ARCTIC MX-4 thermal paste, 4 g | 1 | EUR 3.80 |
-| Polyimide tape set, product 125477 | 1 | EUR 13.20 |
-| Heat-shrink assortment, product T1535561 | 1 | EUR 1.90 |
-| Finland delivery under the supplier's EU shipping terms | 1 | EUR 9.90 |
-| **Subtotal before any replacement power hardware** | | **EUR 74.25** |
+| [Adafruit TMP117 modules, product 4821](https://www.berrybase.de/adafruit-tmp117-0.10c-hochpraeziser-i2c-temperatursensor) | 2 | EUR 23.80 |
+| [Adafruit SHT45 module with PTFE cover, product 6174](https://www.berrybase.de/en/adafruit-sht45-temperatur-und-luftfeuchtigkeitssensor-i2c-ptfe-membran-stemma-qt-qwiic-ip67) | 1 | EUR 19.90 |
+| [JST-SH four-pin 200 mm cables, product 4401](https://www.berrybase.de/en/detail/019aa86c9ff5712ab20fd49459c9d447), cut into wiring pigtails | 2 | EUR 3.60 |
+| [Four-core stranded wire, 4 × 0.14 mm², 5 m](https://www.berrybase.de/vierlingslitze-isoliert-4x0-14mm-5m-farbe-blau-gelb-rot-gruen) | 1 | EUR 3.50 |
+| [ARCTIC MX-4 thermal paste, 4 g](https://www.berrybase.de/arctic-mx-4-2019-waermeleitpaste-4g) | 1 | EUR 3.80 |
+| [Polyimide tape set, product 125477](https://www.berrybase.de/hochtemperatur-polyimid-klebeband-set-4er-pack) | 1 | EUR 13.20 |
+| [Heat-shrink assortment, product T1535561](https://www.berrybase.de/schrumpfschlauch-set-100-teilig-schwarz) | 1 | EUR 1.90 |
+| [Finland delivery under the supplier's EU shipping terms](https://www.berrybase.de/versand-und-zahlungsbedingungen) | 1 | EUR 9.90 |
+| **Subtotal before any replacement power hardware** | | **EUR 79.60** |
 
-Allow approximately EUR 80 delivered after destination VAT adjustment. The
+Allow approximately EUR 85 delivered after destination VAT adjustment. The
 extension socket, confirmed Biltema mains-to-USB adapter and USB-C cable are
 already owned; combined ESP32/router startup still needs testing. Heat-shrink
 still needs purchasing.
 Existing 10 mm E30 foam is available for a provisional cover, subject to material
 and mounting checks; a new foam purchase is not yet justified.
+
+The PTFE variant retains the SHT45 measurement interface, I²C address 0x44,
+3.3 V-compatible breakout and STEMMA QT connectors [Lit: 76]. It adds a
+protective membrane over the sensor opening; this does not establish waterproof
+installation of the complete board. Keep the cabin holder ventilated and verify
+its fit against the actual module.
+
+Cutting two double-ended 200 mm cables in half provides four connector pigtails
+of approximately 100 mm each, enough for the three sensor modules plus a spare.
+Solder these to the longer four-core wire and insulate/strain-relieve the joints;
+the pigtail length does not set the installed bus length. Verify pin assignment
+before powering the assembled wiring [Lit: 75].
 
 The TMP117 module's connectors prevent the sensor face from sitting flat against
 glass [Lit: 68]. A proposed printed carrier presses the PCB backside beneath the
@@ -1722,6 +1737,9 @@ measurement of this installation.
 71. Muovijalelu, E30 1 cm foam product description — https://www.muovijalelu.fi/kauppa/vaahtomuovit/vaahtomuovia-mittojen-mukaan/vaahtomuovi-e30-1-cm/ (consulted 2026-10-06).
 72. W3C, Media Capture and Streams, camera orientation and device selection — https://w3c.github.io/mediacapture-main/ (consulted 2026-10-06).
 73. BerryBase, heat-shrink assortment T1535561 — https://www.berrybase.de/schrumpfschlauch-set-100-teilig-schwarz (consulted 2026-10-06).
+74. BerryBase, available Adafruit SHT45 PTFE variant ADA6174, EUR 19.90 — https://www.berrybase.de/en/adafruit-sht45-temperatur-und-luftfeuchtigkeitssensor-i2c-ptfe-membran-stemma-qt-qwiic-ip67 (availability and price rechecked 2026-10-06).
+75. BerryBase, available Adafruit 200 mm JST-SH cable ADA4401, EUR 1.80 each — https://www.berrybase.de/en/detail/019aa86c9ff5712ab20fd49459c9d447 (availability and price rechecked 2026-10-06).
+76. Adafruit, SHT45 with PTFE cover, product 6174, interface and dimensions — https://www.adafruit.com/product/6174 (consulted 2026-10-06).
 
 Repository evidence: the paths and line numbers above refer to revision
 `b95b30a` and to the car-heater firmware at its original commit `e995b65`,
