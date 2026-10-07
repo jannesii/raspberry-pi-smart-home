@@ -81,6 +81,19 @@ work and device connections.
 Session cookies always have the `Secure` flag. If login does not persist over
 local HTTP, use a local HTTPS reverse proxy. Production must use HTTPS.
 
+## Car-heater UI design preview
+
+Compare three throwaway layouts with synthetic heating, session and photo states:
+
+```sh
+python3 scripts/run_car_heater_ui_prototype.py
+```
+
+Open `http://127.0.0.1:8765/car_heater?variant=A`. See the
+[prototype guide](docs/reviews/car-heater-ui-prototype.md) for the layout comparison
+and phone access. This preview runs separately from the Flask app and uses no
+live devices or database.
+
 ## Configuration
 
 These variables are required at every startup:

@@ -1594,6 +1594,119 @@ is already clear when observation begins, do not invent an exact clearing time.
 Glass-controlled readiness/hold, learned timing and frost-free skipping remain
 later stages rather than requirements for the first collection version.
 
+## Car-heater UI/UX redesign discussion (2026-10-07)
+
+The owner requested adding a car-heater page redesign to the project and
+confirmed that it should address both usability and visual appearance. Improving
+the workflow and information hierarchy, together with a coherent visual refresh,
+is the agreed direction; cosmetic changes alone do not satisfy that request.
+
+The owner confirmed that the redesign covers everyday controls, history/charts,
+advanced settings and the observation workflow, while preserving the agreed
+heating behavior. The iPhone 15 Pro is the primary target for everyday operation;
+desktop layouts should support reviewing history and analyzing measurements.
+
+The owner agreed to two delivery milestones for the complete redesign. The
+first-frost milestone uses the new layout and visual direction for departure
+planning, confirmed heater/connectivity/freshness status, manual start/cancel,
+photo capture, outcome labels and session measurement review. Advanced settings,
+calibration, detailed charts, logs and maintenance controls can retain their
+existing accessible views until redesigned in the second milestone; completing
+those views remains required scope. Establish the overall layout and visual
+direction before implementing the milestones.
+
+The owner confirmed the following everyday design decisions:
+
+- The Heating view leads with the next departure, planned heating start/finish
+  and confirmed current heater state. Measurements support that plan; diagnostics
+  belong in a separate area.
+- Navigation has three main views: Heating for everyday operation, Sessions for
+  history/photos/outcomes, and Settings for configuration and maintenance.
+  Observation capture opens from its associated heating session.
+- The visual direction is a calm dark interface with clear typography,
+  restrained colors, fewer enclosing cards, consistent icons, comfortable
+  spacing and readable contrast. Color communicates state and emphasizes actions.
+- Manual heating uses a selected duration, initially defaulting to 60 minutes,
+  within the agreed 180-minute limit. Show remaining time and an easily accessible
+  Stop action, clearly distinguishing manual heating from departure scheduling.
+
+The owner also confirmed these control and language decisions:
+
+- Comfort heating remains available through an expandable section in Heating,
+  with its target temperature there and hysteresis/calibration in Settings.
+  Departure scheduling and manual heating remain the primary everyday actions.
+- Battery-charge controls are removed from the redesigned car-heater interface
+  because Shelly switches only the cabin heater. Retirement of the underlying
+  legacy code remains separate work.
+- Initially select one upcoming departure with editable date/time and a Tomorrow
+  shortcut. Show the resulting heating start/finish plan before saving. Recurring
+  weekly schedules are not an initial redesign requirement.
+- Stop acts immediately without a confirmation dialog; device restarts require
+  confirmation. Show Stopping until acknowledged, followed by confirmed OFF or
+  a clear failure/unknown state rather than optimistic success.
+- The car-heater interface consistently uses English, local 24-hour dates/times
+  and Europe/Helsinki scheduling.
+
+The owner confirmed the following review, capture and Settings decisions:
+
+- Sessions opens as a newest-first list with departure/session time, heating
+  duration, outcome and photo availability. Support date filtering and an
+  explicit Outcome not recorded state.
+- Session review presents the outcome and heating timeline, then temperature
+  graphs, humidity and photos. Plot the two glass temperatures and cabin
+  temperature together, with humidity and power on separate plots. Missing
+  evidence remains missing and the glass indicator is labeled experimental.
+- Observation capture opens in a dedicated view with a large preview and
+  prominent capture/upload status. Keep Start, next-photo countdown, manual
+  capture and Finish easy to reach; finishing observation leads to outcome entry.
+- Settings groups controls into Heating preferences, Installation & devices,
+  Calibration, and Diagnostics. Place explanations beside their fields and
+  collapse advanced calibration controls initially.
+- While a timed heating session is active, other heating-mode start controls are
+  unavailable with an explanation. Keep Stop visible and require confirmed
+  shutdown before another mode starts, preventing silent replacement or extension.
+
+The owner confirmed that Finish observation ends capture and opens outcome entry,
+while Stop heating separately requests OFF. Finishing observation or recording
+an outcome does not change heating automatically; heating retains its bounded
+planned finish unless explicitly stopped.
+
+Before UI implementation, review phone and desktop previews covering scheduled,
+heating, disconnected, session-review and camera-capture states. This visual review
+is an agreed milestone so the owner can assess layout and appearance concretely.
+
+The owner confirmed the shared understanding on 2026-10-07 and selected
+`/prototype` to compare three interactive visual directions before implementation.
+See [the UI prototype](car-heater-ui-prototype.md) for the review question, run
+command and sample states. The prototype demonstrates the agreed direction; it
+does not implement the production requirements.
+
+After reviewing the prototype, the owner approved **A (Departure first) with
+B's heating timeline** on 2026-10-07. Keep A's information hierarchy and desktop
+main-column/secondary-column layout, with a start/departure/latest-finish
+timeline and a single-column phone reading order. This is the approved visual
+direction for the redesign. On the same day, `/to-spec` incorporated the full
+redesign, both required delivery milestones and the confirmed browser testing
+approach into [spec #2](https://github.com/jannesii/raspberry-pi-smart-home/issues/2).
+The spec also reflects the completed firmware consolidation, corrected ordering
+basket and clarified independent-finish/commissioning requirements.
+
+The owner approved the `/to-tickets` breakdown on 2026-10-07. Existing tickets
+#5, #7, #8, #9, #10 and #12 were updated, and five native sub-issues were added:
+
+- [#14 — Redesigned manual heating and confirmed state](https://github.com/jannesii/raspberry-pi-smart-home/issues/14), required before first-frost commissioning.
+- [#15 — Comfort heating and installation preferences](https://github.com/jannesii/raspberry-pi-smart-home/issues/15).
+- [#16 — Calibration settings](https://github.com/jannesii/raspberry-pi-smart-home/issues/16).
+- [#17 — Diagnostics, restarts and detailed charts](https://github.com/jannesii/raspberry-pi-smart-home/issues/17).
+- [#18 — Complete the redesign and retire transitional views](https://github.com/jannesii/raspberry-pi-smart-home/issues/18).
+
+Tickets #15–#18 deliver the required second milestone and do not block
+first-frost commissioning or winter collection. Ticket #12 now also depends on
+#14. Publication verification covered all 84 spec stories, native sub-issue
+relationships and 25 native blocking edges; the graph was acyclic and each
+visible Blocked by section matched its native links. The parent spec's body,
+title and state were not changed during ticket publication.
+
 ## Open Questions
 
 ### Answered by the owner (2026-09-29)

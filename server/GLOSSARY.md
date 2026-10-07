@@ -18,6 +18,12 @@ _Avoid_: Cabin-temperature readiness
 One heating attempt associated with a trigger and, when applicable, a departure
 time.
 
+**Manual heating**:
+Heating started directly by the driver for a selected duration.
+
+**Comfort heating**:
+Heating intended to maintain a selected cabin-air temperature.
+
 **Heating limit**:
 The maximum continuous heater-on duration permitted for a heating session,
 including any heating after departure time.

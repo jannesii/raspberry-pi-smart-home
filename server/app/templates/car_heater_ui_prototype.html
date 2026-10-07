@@ -1,0 +1,35 @@
+<!doctype html>
+<!-- THROWAWAY: Three layouts of /car_heater, selected by ?variant=A|B|C.
+Question: Which information hierarchy best supports everyday heating and frost observation?
+Visual thesis: Quiet charcoal surfaces, generous type, warm action accent, minimal framing.
+Content: Next departure, confirmed state, bounded controls; measurements and review follow.
+Interaction: In-place plan preview, visible pending OFF, independent observation finish.
+This isolated host uses the existing app's navbar styling but only synthetic data. -->
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Car Heater · UI prototype</title>
+<link rel="stylesheet" href="/static/css/base.css">
+<link rel="stylesheet" href="/static/css/navbar.css">
+<link rel="stylesheet" href="/static/css/car_heater_ui_prototype.css">
+</head>
+<body>
+<a class="skip" href="#workspace">Skip to car heater</a>
+<nav class="navbar" aria-label="Application">
+<button class="menu-toggle" id="menuToggle" aria-expanded="false" aria-controls="mobileMenu">Menu</button>
+<ul class="nav-list" id="mobileMenu">
+<li><a aria-disabled="true">Home</a></li><li><a aria-disabled="true">Temperatures</a></li>
+<li><a href="/car_heater" aria-current="page">Car Heater</a></li>
+<li><a aria-disabled="true">YNAB</a></li><li><a aria-disabled="true">Asetukset</a></li><li><a aria-disabled="true">Kirjaudu Ulos</a></li>
+</ul></nav>
+<div class="sample-strip"><span>UI PROTOTYPE · SAMPLE DATA</span><span>7 Oct 2026 · Europe/Helsinki</span></div>
+<main id="workspace" tabindex="-1"></main>
+<aside class="prototype-tools" aria-label="Prototype controls">
+<div class="variant-switch"><button id="previous" aria-label="Previous layout">←</button><strong id="variantLabel"></strong><button id="next" aria-label="Next layout">→</button></div>
+<label class="scenario-label">Sample state <select id="scenario"><option value="scheduled">Scheduled</option><option value="heating">Heating</option><option value="disconnected">Disconnected</option><option value="review">Session review</option><option value="capture">Camera capture</option></select></label>
+<details><summary>Sample state details</summary><pre id="debug"></pre></details>
+</aside>
+<div id="announcement" class="sr-only" role="status" aria-live="polite"></div>
+<dialog id="restartDialog"><h2>Restart device?</h2><p>In the finished app, this will interrupt communication. This preview only simulates a restart.</p><div class="actions"><button data-action="close-dialog">Cancel</button><button class="primary" data-action="restart">Simulate restart</button></div></dialog>
+<script src="/static/js/car_heater_ui_prototype.js"></script>
+</body></html>
