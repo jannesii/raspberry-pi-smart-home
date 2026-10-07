@@ -1,0 +1,57 @@
+{
+  "units": "mm",
+  "status": "DRAFT: physical measurements outstanding",
+  "parts": {
+    "carrier": {
+      "valid": true,
+      "solids": 1,
+      "volume_mm3": 3338.5133164189447,
+      "size_mm": [
+        56.8,
+        33.380000000002,
+        13.750000000000004
+      ]
+    },
+    "foam_bridge": {
+      "valid": true,
+      "solids": 1,
+      "volume_mm3": 1123.9990124517687,
+      "size_mm": [
+        17.6,
+        33.38,
+        2.0
+      ]
+    },
+    "assembly": {
+      "valid": true,
+      "solids": 2,
+      "volume_mm3": 4462.512328870714,
+      "size_mm": [
+        56.8,
+        33.380000000002,
+        14.150000000000004
+      ]
+    }
+  },
+  "checks": {
+    "pcb_keepout_overlap_mm3": 0.0,
+    "mating_overlap_mm3": 0.0,
+    "tongue_keepout_clear": true,
+    "trial_cable_corridor_overlap_mm3": 0.0,
+    "foam_space_clear": true,
+    "bridge_hole_diameter_mm": 2.8,
+    "peg_diameter_mm": 2.4,
+    "glass_edge_chamfer_mm": 0.4,
+    "base_thickness_mm": 2.0,
+    "bridge_thickness_mm": 2.0,
+    "hard_stop_height_mm": 12.149999999999999,
+    "trial_foam_compression_mm": 0.3
+  },
+  "not_verified": [
+    "physical board/cable fit",
+    "foam contact force",
+    "windshield curvature",
+    "adhesive retention and thermal bias/lag",
+    "slicer toolpaths"
+  ]
+}

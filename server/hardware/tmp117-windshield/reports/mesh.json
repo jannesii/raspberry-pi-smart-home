@@ -1,0 +1,24 @@
+{
+  "units": "mm",
+  "mesh_faceting_allowance_deg": 0.2,
+  "parts": {
+    "carrier": {
+      "watertight": true,
+      "winding_consistent": true,
+      "bodies": 1,
+      "volume_mm3": 3333.873797778706,
+      "relative_volume_error": 0.0013896960115215018,
+      "minimum_downward_surface_angle_deg": 44.89625398672028,
+      "downward_surfaces_above_bed_are_only_shallow_chamfers": true
+    },
+    "foam_bridge": {
+      "watertight": true,
+      "winding_consistent": true,
+      "bodies": 1,
+      "volume_mm3": 1124.0381129080179,
+      "relative_volume_error": 3.4786913347684134e-05,
+      "minimum_downward_surface_angle_deg": null,
+      "downward_surfaces_above_bed_are_only_shallow_chamfers": true
+    }
+  }
+}

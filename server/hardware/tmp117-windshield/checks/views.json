@@ -1,0 +1,38 @@
+{
+  "jobs": [
+    {
+      "input": "STEP/assembly.step",
+      "mode": "view",
+      "outputs": [
+        {
+          "path": "views/assembly.png",
+          "camera": "iso"
+        },
+        {
+          "path": "views/assembly-side.png",
+          "camera": "front"
+        }
+      ]
+    },
+    {
+      "input": "STEP/carrier.step",
+      "mode": "view",
+      "outputs": [
+        {
+          "path": "views/carrier-bottom.png",
+          "camera": "bottom"
+        }
+      ]
+    },
+    {
+      "input": "STEP/foam_bridge.step",
+      "mode": "view",
+      "outputs": [
+        {
+          "path": "views/foam-bridge.png",
+          "camera": "iso"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "source": "https://github.com/adafruit/Adafruit-TMP117-PCB/blob/874b3a5b27792d4d166547bab075cb963e1bdb32/Adafruit_TMP117.brd",
+  "sha256": "a91de3882d9278d157ef3526270b1798f74daa4b8450b1aaf1b60809dfb68cbb",
+  "units": "mm",
+  "outer_bounds": [
+    0,
+    0,
+    25.4,
+    17.78
+  ],
+  "outer_corner_radius": 2.54,
+  "sensor_xy": [
+    12.7,
+    8.89
+  ],
+  "tongue_slot_centerlines": [
+    [
+      10.033,
+      7.62,
+      10.033,
+      12.065
+    ],
+    [
+      10.033,
+      12.065,
+      15.367,
+      12.065
+    ],
+    [
+      15.367,
+      12.065,
+      15.367,
+      7.62
+    ]
+  ],
+  "slot_width": 0.508,
+  "connector_xy": [
+    [
+      2.667,
+      8.89
+    ],
+    [
+      22.733,
+      8.89
+    ]
+  ],
+  "note": "Layout facts only; no physical PCB thickness, chip height or mated cable envelope established."
+}

@@ -94,6 +94,13 @@ Open `http://127.0.0.1:8765/car_heater?variant=A`. See the
 and phone access. This preview runs separately from the Flask app and uses no
 live devices or database.
 
+## TMP117 windshield holder
+
+A parametric PETG carrier, foam bridge, STEP/STL exports and inspection reports
+are available in [the holder guide](hardware/tmp117-windshield/README.md). The
+exports are measurement-gated drafts; measure the delivered PCB, connected cable
+and installation stack before a final print.
+
 ## Configuration
 
 These variables are required at every startup:

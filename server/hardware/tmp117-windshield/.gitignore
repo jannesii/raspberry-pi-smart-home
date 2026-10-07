@@ -1,0 +1,8 @@
+# CAD provenance, reproducible views and measured reports belong with the model.
+!src/lib/board-layout.json
+!checks/views.json
+!reports/*.json
+!views/*.png
+__pycache__/
+*.log
+tmp/
