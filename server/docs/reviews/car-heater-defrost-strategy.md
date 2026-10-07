@@ -1521,10 +1521,33 @@ variant and remaining supplies are proposed, with already-owned items omitted.
 
 Allow approximately EUR 85 delivered after destination VAT adjustment. The
 extension socket, confirmed Biltema mains-to-USB adapter and USB-C cable are
-already owned; combined ESP32/router startup still needs testing. Heat-shrink
-still needs purchasing.
+already owned; combined ESP32/router startup still needs testing. At basket
+preparation, heat-shrink still needed purchasing.
 Existing 10 mm E30 foam is available for a provisional cover, subject to material
 and mounting checks; a new foam purchase is not yet justified.
+
+**Order placed (2026-10-07).** The owner confirmed ordering the following parts;
+quantities and merchandise totals are recorded from the supplied order screenshot.
+The provisional basket above remains the original estimate.
+
+| Ordered item | Quantity | Merchandise total |
+| --- | --- | --- |
+| Adafruit TMP117 modules, product 4821 | 3 | EUR 35.70 |
+| Adafruit SHT45 module with PTFE cover, product 6174 | 1 | EUR 19.90 |
+| JST-SH four-pin 200 mm cables, product 4401 | 4 | EUR 7.20 |
+| Four-core stranded wire, 4 × 0.14 mm², 5 m | 1 | EUR 3.50 |
+| ARCTIC MX-4 thermal paste, 4 g | 1 | EUR 3.80 |
+| Polyimide tape set, product 125477 | 1 | EUR 13.20 |
+| Heat-shrink assortment, product T1535561 | 1 | EUR 1.90 |
+| **Merchandise subtotal** | | **EUR 85.20** |
+
+The TMP117 minimum order was three modules. The installation plan still uses two
+glass sensors; the third is available as a spare, with no third measurement point
+agreed. Four cables were ordered instead of the two in the provisional basket.
+Shipping and the final paid total are not shown in the screenshot, so compliance
+with the EUR 100 delivered budget remains unconfirmed. Receipt, inventory checks
+and physical fitting remain pending under [issue #11](https://github.com/jannesii/raspberry-pi-smart-home/issues/11).
+Parts arrival is a prerequisite for physical fitting, not software work.
 
 The PTFE variant retains the SHT45 measurement interface, I²C address 0x44,
 3.3 V-compatible breakout and STEMMA QT connectors [Lit: 76]. It adds a
