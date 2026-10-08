@@ -1617,6 +1617,142 @@ is already clear when observation begins, do not invent an exact clearing time.
 Glass-controlled readiness/hold, learned timing and frost-free skipping remain
 later stages rather than requirements for the first collection version.
 
+## Sensor-holder redesign discussion (2026-10-08)
+
+The owner selected `/grill-with-docs` to revisit both holders in `hardware/`
+before further CAD work, confirmed the shared conceptual design understanding,
+and selected `/to-spec` on 2026-10-08. The resulting
+[sensor-holder redesign specification #19](https://github.com/jannesii/raspberry-pi-smart-home/issues/19)
+is published with `ready-for-agent`. Final fit dimensions await board delivery
+and physical measurement; the conceptual agreement is not proof of fit.
+
+Supporting [sensor-holder design research](sensor-holder-design-research.md)
+separates manufacturer facts, engineering recommendations and physical
+measurement gaps. It informs the interview without selecting a replacement
+concept or approving the previous drafts.
+
+- **Scope:** redesign both the TMP117 windshield holder and SHT45 cabin holder
+  from the ground up after agreeing the design. Discuss shared constraints, but
+  evaluate each mount against its distinct sensing purpose. Existing geometry
+  and its mechanical choices are references, not accepted requirements.
+- **Vehicle [Owner]:** 2005 Volkswagen Golf V. Retain the agreed initial glass
+  locations: lower-middle of the driver's viewing area and near the lower
+  driver-side band above the black border. The owner delegates the cabin-sensor
+  location recommendation to the agent, accounting for the documented
+  passenger-footwell heater and the proposed shared sensor wiring. Actual trim
+  attachment geometry and cabin airflow at the candidate site remain unverified.
+- **Cabin location recommendation:** use the driver-facing upper side of the
+  centre console below the centre stack, near the forward gear-lever area, as
+  the initial candidate. Keep air access and separation from trim, clear of
+  knees and controls. This agent recommendation is provisional pending actual
+  airflow, clearance and heater-on comparison; the model year alone cannot
+  establish an optimal measurement location or printable trim interface.
+- **Wiring:** physical daisy chaining on the shared I²C bus is a candidate;
+  provide both-port access/strain relief on intermediate boards. A possible
+  order is ESP32 → SHT45 → reference TMP117 → lower-band TMP117, subject to
+  route measurement and complete-bus testing. The two TMP117s need distinct
+  addresses; normal address-jumper configuration is allowed, without
+  destructive board modifications.
+- **Board preservation:** keep both board types and their connectors intact;
+  normal address-jumper soldering and cable-extension soldering are acceptable.
+  Boards have not arrived, so final fit dimensions await physical measurements.
+- **Printer [Owner]:** Bambu Lab A1, with 0.2, 0.4, 0.6 and 0.8 mm nozzles.
+  Use the normal 0.4 mm nozzle as the design baseline; other sizes are available
+  if a demonstrated need justifies changing it.
+- **Reason:** the owner considers the drafts too assumption-heavy and too
+  similar for their different use cases. The replacement concepts need deeper
+  research before modeling.
+- **Retention preference:** use tape for securing parts only when no better
+  solution is available. In particular, reconsider the TMP117 bridge's tape
+  retention and small locating pegs. Screws, bolts, other removable mechanisms,
+  and permanent adhesive are alternatives to evaluate, not selected solutions.
+  After comparing vehicle-attachment concepts, the owner selected available
+  double-sided tape for the windshield bases during the current testing phase.
+  Thin or wide strips are available. Polyimide tape is an alternative to assess,
+  not a reason to assume equivalent adhesive or removal performance. Cover
+  fastening remains mechanical; this does not reinstate taped cover retention.
+- **Vehicle attachment:** both complete mounts must be removable and
+  repositionable without damaging the vehicle. Permanent bonding within an
+  assembly remains an option; this does not permit permanent vehicle attachment.
+  The cabin mounting adapter also uses the owner's double-sided tape during
+  testing; the housing remains removable from the taped adapter using screws.
+- **Available suction cups [Owner]:** Bambu HA008, 25 mm mushroom-head cups
+  ([product](https://eu.store.bambulab.com/products/suction-caps-with-mushroom-head?id=48927627444572)).
+  The owner doubts long-term retention; alternatives were compared, and tape
+  was chosen for current testing. Suction remains unselected. No year-round
+  retention claim has been established for any attachment.
+- **TMP117 service access:** the sensor and insulation cover must be removable
+  while leaving the windshield attachment in place, preserving the measurement
+  location during servicing.
+- **TMP117 cover closure:** the cover must seat against structural stops so
+  tightening its screws does not directly increase pressure on the sensor
+  tongue. Glass-contact force and insulation thickness remain separate physical
+  validation questions.
+- **Purpose-specific covers:** shield the insulated TMP117 sensor region from
+  cabin airflow without requiring an airtight enclosure; keep cable exits
+  accessible. Give the SHT45 housing generous openings for cabin-air exchange.
+- **TMP117 thermal arrangement:** use PCB-backside contact beneath the sensor
+  tongue, a thin MX-4 interface and a small replaceable air-side E30 insulation
+  pad as the initial arrangement. Pad thickness and contact force stay adjustable
+  pending physical fit; closing the cover must not bend the tongue.
+- **Board retention:** the owner accepted printed locating features and removable
+  BT3-fastened retainers bearing only on confirmed component-free board areas.
+  Keep the TMP117 glass-contact region unobstructed and avoid the SHT45 membrane.
+  The owner confirmed printed retainers as the primary TMP117 retention method;
+  polyimide tape is optional during fitting. It must stay outside the
+  sensor-to-glass thermal interface. Board removal must leave the double-sided
+  taped printed base in place.
+- **Board removal direction:** after disconnecting cables and removing retainers,
+  lift each board out toward the cabin. Do not require sliding TMP117 across glass.
+- **Cable retention:** use compact removable BT3-fastened clamps on insulated
+  cables, with slack at the plugs and access independent of the sensor cover.
+  Intermediate holders accommodate both cables; the end holder accommodates one.
+- **Service frequency:** allow several removals during development, followed
+  by occasional maintenance and sensor replacement rather than routine removal.
+- **SHT45 protection:** protect the board and connector from incidental knocks
+  while allowing cabin air to reach the sensing element freely. Explore a
+  ventilated protective housing with a BT3-fastened removable cover and separate
+  mounting adapter; the owner accepted this concept direction.
+- **Available fasteners [Owner]:** washers, nuts and bolts from M2 to M5, plus
+  Bambu Lab BT3 socket-head self-tapping screws in lengths from BT3×5 to BT3×30
+  ([product link](https://eu.store.bambulab.com/products/bt3-socket-head-cap-self-tapping-screws-shcs-new?id=48694582608220)).
+  The owner prefers self-tapping screws for printed parts because they need no
+  nuts, but accepts either fastening approach. For occasional service, prefer
+  self-tapping screws in printed-part joints with an owner-specified **2.55 mm
+  pilot diameter**. This is not a PCB mounting-hole or screw-clearance diameter.
+  Engagement, boss strength, repeated-service durability and component
+  clearances remain to be established.
+- **BT3 lengths:** use stocked lengths of 6 mm or longer; do not require BT3×5,
+  because the owner has few of those. Select length and engagement together so
+  screws cannot reach the PCB or glass.
+- **Printability:** optimize both designs for 3D printing. Prefer orientations
+  and geometry that print without generated support structures; use printed
+  supports only when absolutely necessary. No support-dependent concept has
+  been accepted.
+- **Part count:** multiple printed pieces are acceptable when they avoid
+  supports or improve assembly and service. Keep unnecessary complexity low.
+- **Installation lifetime:** both mounts remain installed year-round, including
+  driving and summer parking.
+- **Rigid-part material:** PETG is selected for both holders. The owner explicitly
+  excludes material temperature testing from the required work. Keep physical
+  fit, screw-pilot and sensor-contact checks; do not add a PETG heat/cold test gate.
+- **Modeling workflow:** the owner intends to use `text-to-cad:cad` when
+  implementing the later modeling tickets. The agreed requirements remain the
+  design authority. Preserve parametric sources, reproducible exports,
+  saved-artifact checks and visual review; keep unknown fit dimensions explicit
+  until physical measurement. Specification #19 captures the agreed requirements;
+  the owner approved the four-ticket breakdown through `/to-tickets`.
+- **Published delivery graph:**
+  [TMP117 draft #20](https://github.com/jannesii/raspberry-pi-smart-home/issues/20)
+  and [SHT45 draft #21](https://github.com/jannesii/raspberry-pi-smart-home/issues/21)
+  can start independently. Both block
+  [measurement/trial fitting #22](https://github.com/jannesii/raspberry-pi-smart-home/issues/22),
+  which also requires board delivery and is `ready-for-human`. Its evidence
+  unblocks [measured-model finalization #23](https://github.com/jannesii/raspberry-pi-smart-home/issues/23).
+  The three modeling tickets are `ready-for-agent`; all four are native
+  sub-issues of #19 with native blocking links. Final physical preparation stays
+  in #11 and installed sensing/bus validation in #12.
+
 ## Car-heater UI/UX redesign discussion (2026-10-07)
 
 The owner requested adding a car-heater page redesign to the project and
