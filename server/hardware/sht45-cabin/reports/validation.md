@@ -1,92 +1,125 @@
-# Validation — SHT45 cabin holder
+# SHT45 6174 redesign validation — DRAFT
 
-Reviewed 2026-10-07. **Measurement-gated draft; no physical fit, print or
-winter-temperature test performed.** This report applies to the supplied
-`holder.step` and `holder.stl`, in millimetres. Artifact SHA-256 values are
-recorded in `geometry.json` and `mesh.json` respectively.
+Spec #19 / ticket #21, 2026-10-08. Millimetres. No delivered hardware was
+measured; no vehicle, printer, live device, production data or webhook was used.
+The previous M2/tie-saddle holder and its evidence have been replaced.
 
-## Checks actually run
+## Saved artifact evidence
 
-- cadgen 0.7.15 source generation and STEP/STL export.
-- `checks/check_geometry.py` against the saved STEP, including measurement
-  gate rejection tests. Synthetic passing inputs test the gate, not hardware.
-- `checks/check_mesh.py` against the actual STL, using trimesh/numpy/scipy.
-- DfAM `measure` and six axis-aligned `orientations` on that STL, at 45°.
-- STEP isometric, top, front and underside snapshots; STL isometric snapshot.
-  Each was opened and visually reviewed after final geometry changes.
-- Ruff check and format check on CAD source/check scripts (via `uvx ruff`;
-  the repository `.venv/bin/ruff` is unavailable in this environment).
-- Repository `scripts/check_agent_instructions.py`.
+- All nine independently printable STEP parts are valid, one-solid,
+  positive-volume bodies. The installed STEP has nine valid printed solids:
+  adapter, housing, cover, four retainers and two clamps.
+- Each installed part matches its separately exported solid at the required
+  pose, with <0.001 mm³ volume disagreement. Pairwise printed mating has
+  <1e-6 mm³ interference. Coupon service parts also mate without overlap.
+- PCB backside allowance is Z=18 from adapter underside; housing underside
+  Z=8 and adapter plate top Z=2 leave a 6 mm air gap. Roof exterior is Z=28.
+  Installed printed envelope is 80 × 40 × 28 mm.
+- A 16 × 12 mm through-air prism clears every installed printed solid from
+  below the tape plane through the roof. Five roof windows total 683.52 mm²,
+  about 38.8% of the 44 × 40 mm rectangular roof envelope. Side inlets and
+  both open plug/transition corridors are checked. This validates geometric
+  air paths, not actual airflow, thermal isolation, bias or response time.
+- A drilled 25.4 × 17.78 × 1.6 mm candidate PCB allowance clears installed
+  printed parts. Four support tops and short locating pins are present.
+  The whole PCB lift prism above the 0.8 mm pins clears housing/adapter
+  after releasing cover/retainers/cables. Candidate component, two mated
+  plug (8 × 8 × 6 mm), slack and transition allowances clear printed material.
+  These are design envelopes, not models of a received board or flexible cable.
+- Blind 2.55 mm pilot cores, surrounding material and closed floors are checked
+  in the saved adapter/housing. BT3x6 gives 4/4/4/2 mm engagement for adapter,
+  cover, retainer and clamp joints, with 1 mm pilot-bottom margin. Screw
+  envelopes clear the PCB; 6 mm driver and 7 mm head envelopes clear service
+  parts. Cover removal is required for retainers/adapter joints; clamp access
+  remains independent of the cover.
+- Locating spigots are 4 mm diameter ×0.8 mm high; mating recesses are 4.4 mm
+  diameter ×1 mm deep. Saved mating/shoulders provide 0.2 mm radial/axial
+  allowances. Two 64 ×7 mm tape rails contain material at the adapter underside.
+- Board/plug coupon preserves actual retainer/clamp stops, pilots and PCB-lift
+  geometry; only cover towers are removed. Separate adapter/socket coupons
+  mate at the same stack. Pilot coupon checks 2.45/2.55/2.65 mm bores.
 
-No server behavior changed; no live devices, production databases or
-integration calls were used for validation. No application pytest suite was
-needed for this isolated hardware/documentation addition.
+See [geometry.json](geometry.json) and [mesh.json](mesh.json). The exact check
+programs read saved artifacts; they do not accept source constants as evidence.
 
-## Saved geometry findings
+## Mesh and print geometry
 
-| Selected geometry / check | Result and threshold |
-| --- | --- |
-| Holder STEP | Valid, one solid, positive volume 2957.242 mm³ |
-| Envelope / bed datum | 56.7 × 30 × 12 mm; minimum Z=0 within 0.000001 mm |
-| Sensor/tongue air column | 6.4 × 6.4 mm XY, from Z=−0.01 to above PCB; overlap <0.000001 mm³ (reported zero) |
-| Above whole nominal PCB | No printed cover; overlap <0.000001 mm³ |
-| Between base and board | Printed material restricted to four declared corner-post footprints |
-| PCB support plane | Z=12 mm; 10 mm above 2 mm base top |
-| Four printed post tops | Total annular area 67.387 mm²; saved-section area agrees with design formula. Actual PCB contact is smaller because its candidate holes are 2.5 mm, versus 1.6 mm pilots; physical contact is unverified |
-| Post feet | Full footprints supported continuously from the bed; no cantilevered post bottoms |
-| Blind pilots | Four open 1.6 mm × 6 mm cylindrical bores, checked at declared centres/depth |
-| Tape zones | Two complete 30 × 6 mm planar underside rectangles, 360 mm² total; no material below Z=0 |
-| Cable corridor | 6.8 mm wide above saddle, unobstructed; design corridor, not measured plug envelope |
-| Tie slots | Four through slots, with an unobstructed 2.5 × 1.7 mm inner test section |
-| Release gate | Rejects missing measurements, false physical confirmations, long/wide screws, inadequate contact land, cable crowding, membrane offset, thin tape and NaN inputs |
+All nine saved millimetre STLs are watertight, consistently wound, one-body and
+positive-volume. Bounding sizes agree with STEP within 0.001 mm, volumes within
+0.2%; the maximum measured volume error is below 0.08%. STL chord tolerance
+is **relative 0.0002**, not a millimetre distance. Mesh hashes are recorded.
 
-Retained reports: [geometry.json](geometry.json), [mesh.json](mesh.json),
-[holder-dfam.json](holder-dfam.json), [orientations.json](orientations.json).
-The manufacturer candidate layout and SHA-256 are in
-[board-layout.json](../src/lib/board-layout.json); it is explicitly not a
-confirmed 6174-specific mechanical drawing.
+Print orientations put flat undersides on the bed for adapter, housing and
+coupons; flat exterior/top faces on the bed for cover, retainers and clamps.
+Post bottoms and fences extend to the bed, avoiding unsupported initial
+cantilevers. Mesh normals use a 45° limit with 0.2° faceting allowance.
+The only steeper downward features are the explicitly bounded **0.5 mm radial
+recess ledges at Z=1** in housing/board coupon and adapter socket coupon:
+about 24.48 mm² for four recesses, 6.12 mm² for one. Other tiny downward-normal
+components along tessellated curved walls are counted in total downward area,
+not labelled support requirements. Source changes to separate collinear window
+and fence boundaries resolved mismatched STL edges without weakening topology
+checks. The two end windows differ by 0.4 mm in depth for reliable tessellation.
 
-## Mesh and FDM findings
+## Slicer attempt and limit
 
-The STL is watertight, consistently wound and one connected body. Its
-2953.963 mm³ volume differs from the exact STEP by 0.111%, below the check's
-0.2% threshold. Dimensions agree within 0.001 mm. DfAM reports millimetre-scale
-geometry (`scale.units_suspect=false`). These results support slicing the
-draft; they do not establish hardware fit.
+The installed OrcaSlicer 2.4.0-dev AppImage was attempted with complete built-in
+**Bambu Lab A1 0.4 nozzle / 0.20mm Strength @BBL A1 / Generic PETG @BBL A1**
+presets. The process had `enable_support=0` and `wall_loops=4`. It exited with
+**139 (segmentation fault) before producing G-code**; even its help invocation
+exited 139. No toolpaths or layers could be inspected. No print was sent.
+**Support-free slicer verification remains outstanding.** Mesh-normal checks
+and small recess-ledges are not a substitute for that inspection.
 
-Compare against the pinned text-to-cad 0.7.15 plugin's FDM defaults in
-`skills/dfam-check/references/process-limits.md` (relative to plugin root):
+To reproduce the attempt without using personal profiles, resolve full presets
+using the CAD plugin's `gcode/scripts/orca_presets.py`, copy them to an ignored
+`tmp/` directory, set the two process fields above, then run the installed Orca:
 
-| Finding | Evidence and interpretation |
-| --- | --- |
-| Supported wall ≥1.2 mm | `wall_thickness.min_mm=1.641`; passes sampled limit |
-| Unsupported wall ≥1.6 mm | `min_mm=1.641`, `p05_mm=1.642`, 2,000 valid samples; passes sampled limit. Sampled minima are not an exhaustive proof |
-| Self-supporting angle ≥45° | DfAM bins 56.69 mm² below the strict boundary. Independent mesh check localizes all downward faces above the bed to the first 0.4 mm exterior rim and measures a minimum 44.896°. This is within the documented 0.2° mesh-faceting allowance for exact 45° chamfers; a strict no-tolerance pass is **not** claimed |
-| Orientation | Supplied +Z-up orientation has lowest binned area: 56.69 mm² (1.6%), 12 mm height. The other five have 214.25–1062.12 mm² and 12–56.7 mm height |
-| Support estimate | `estimated_support_volume_mm3=8.0`, 0.3% coarse upper bound; corresponds to shallow rim faceting, not a slicer instruction to add supports |
-| Hole rule ≥2 mm | DfAM does not measure hole diameter. Saved STEP explicitly checks 1.6 mm pilots; they are below the generic FDM hole recommendation and require calibration/drilling/tapping before assembly |
-| Bridge/positive-feature rules | Not measured by this DfAM tool. No spanning roof is designed; actual paths still require slicer review |
+```sh
+ORCA=/home/jannesi/Applications/OrcaSlicer_Linux_V2.4.0-dev.AppImage
+"$ORCA" STL/adapter.stl \
+  --load-settings 'tmp/slicer/process.json;tmp/slicer/printer.json' \
+  --load-filaments tmp/slicer/filament-1.json --arrange 1 --slice 0 \
+  --outputdir "$(pwd)/tmp/slicer" --export-3mf adapter.gcode.3mf
+```
 
-The initial model had collinear tessellation T-junctions where corner posts
-crossed the aperture's bottom boundary. Final source places the entire post
-footprint on the rail, uses a 26.6 × 7.7 mm base aperture and exterior-only
-chamfers. The sensor air column remains clear. The saddle was widened to
-16 mm and posts to 4.9 mm after sampled wall checks; final STL was regenerated
-and passed the independent closure and wall checks. No mesh hole-filling or
-post-export repair hides source geometry defects.
+Repeat for each STL when a working slicer is available. Inspect recess shoulders,
+blind pilots, locating pins, small retainer pads and the cover ribs in the
+supplied orientations with supports disabled. Use the actual filament profile
+for printing; Generic PETG here was a diagnostic preset, not a physical result.
 
-## Visual inspection and limits
+## Visual review and automated checks
 
-The final isometric and top STEP views show four mounting posts, open central
-aperture, no lid and two paired tie stations on the external saddle. The
-front view confirms the raised support plane and flat base. The underside
-shows the open aperture, solid post feet and unbroken tape rails. The STL
-view confirms the exported part has the same visible features. No fabricated
-board/plug/fastener model was used to suggest a verified assembly fit.
+The implementer rendered and inspected installed isometric, top, front and
+underside views, individual part print orientations and the housing mesh.
+The views expose the membrane opening, lateral inlets, independent clamps,
+retainer pads, tape opening and raised adapter interface. The PCB and cables
+are omitted deliberately, so visual review cannot establish delivered fit.
+A complete snapshot job is maintained at `checks/views.json`; mesh snapshot:
+`cadgen stl snapshot STL/housing.stl views/housing-mesh.png` using runtime 0.7.17.
+Models are also shown in the CAD viewer; viewer display does not replace this
+saved-image review. [evidence.json](evidence.json) binds reviewed artifacts/views
+to SHA-256 hashes.
 
-Still physically unverified: delivered board revision, all mounting lands,
-membrane/package location and height, connector fit/removal, cable bends and
-strain relief, drilled/tapped holes, screw seating and retention, tape
-thickness/adhesion/removal, trim curvature, vibration, heat/cold creep, airflow,
-thermal bias/lag and actual print/slicer toolpaths. Enter measurements and
-perform the physical trials in the README before final-print release.
+Run all checks using the commands in [the project guide](../README.md):
+`check_redesign.py`, `check_geometry.py`, `test_release_gate.py` and
+`check_mesh.py`. Seven release tests cover missing measurements/confirmations,
+unsafe interfaces, invalid values, retainer thickness adjustment undersized
+screw heads and matching-but-inconsistent received layouts. They use synthetic data only. CAD checks plus Ruff, optional Mypy
+(`--ignore-missing-imports --follow-imports=skip`) and repository instruction
+budgets were run. Mypy does not typecheck the CAD kernel or unannotated bodies.
+The requested `.venv/bin/ruff` is absent; `uvx ruff` provides the fallback.
+No unrelated server suite substitutes for CAD validation; spec #19 explicitly
+limits this work to hardware geometry and documentation.
+
+## Release still requires physical evidence
+
+Confirm the 6174 revision/layout, thickness, safe lands, underside, component and
+membrane positions, both plugged cable envelopes, relaxed bends, clamp grip,
+BT3 pilots/head/tools, tape, trim curvature/site airflow and physical retention.
+Inspect normal connector/header service and several removal/reseat cycles.
+Confirm seating, attachment and nondamaging removal of the taped adapter.
+Unknown dimensions remain `None`; no generic 5665 layout is final-fit evidence.
+Measure and revise before setting final release flags. No material temperature
+testing, year-round adhesion certification or installed sensor/bus validation
+was performed or is inferred from these exports.

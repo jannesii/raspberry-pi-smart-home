@@ -1,10 +1,116 @@
 {
-  "input": "STEP/holder.step",
-  "mode": "view",
-  "outputs": [
-    {"path": "views/holder.png", "camera": "iso"},
-    {"path": "views/holder-top.png", "camera": "top"},
-    {"path": "views/holder-side.png", "camera": "front"},
-    {"path": "views/holder-bottom.png", "camera": "bottom"}
+  "jobs": [
+    {
+      "input": "STEP/assembly.step",
+      "mode": "view",
+      "outputs": [
+        {
+          "path": "views/assembly.png",
+          "camera": "iso"
+        },
+        {
+          "path": "views/assembly-top.png",
+          "camera": "top"
+        },
+        {
+          "path": "views/assembly-side.png",
+          "camera": "front"
+        },
+        {
+          "path": "views/assembly-bottom.png",
+          "camera": "bottom"
+        }
+      ]
+    },
+    {
+      "input": "STEP/adapter.step",
+      "mode": "view",
+      "outputs": [
+        {
+          "path": "views/adapter.png",
+          "camera": "iso"
+        }
+      ]
+    },
+    {
+      "input": "STEP/housing.step",
+      "mode": "view",
+      "outputs": [
+        {
+          "path": "views/housing.png",
+          "camera": "iso"
+        }
+      ]
+    },
+    {
+      "input": "STEP/cover.step",
+      "mode": "view",
+      "outputs": [
+        {
+          "path": "views/cover.png",
+          "camera": "iso"
+        }
+      ]
+    },
+    {
+      "input": "STEP/retainer.step",
+      "mode": "view",
+      "outputs": [
+        {
+          "path": "views/retainer.png",
+          "camera": "iso"
+        }
+      ]
+    },
+    {
+      "input": "STEP/cable_clamp.step",
+      "mode": "view",
+      "outputs": [
+        {
+          "path": "views/cable_clamp.png",
+          "camera": "iso"
+        }
+      ]
+    },
+    {
+      "input": "STEP/pilot_coupon.step",
+      "mode": "view",
+      "outputs": [
+        {
+          "path": "views/pilot_coupon.png",
+          "camera": "iso"
+        }
+      ]
+    },
+    {
+      "input": "STEP/fit_coupon.step",
+      "mode": "view",
+      "outputs": [
+        {
+          "path": "views/fit_coupon.png",
+          "camera": "iso"
+        }
+      ]
+    },
+    {
+      "input": "STEP/adapter_coupon.step",
+      "mode": "view",
+      "outputs": [
+        {
+          "path": "views/adapter_coupon.png",
+          "camera": "iso"
+        }
+      ]
+    },
+    {
+      "input": "STEP/adapter_socket_coupon.step",
+      "mode": "view",
+      "outputs": [
+        {
+          "path": "views/adapter_socket_coupon.png",
+          "camera": "iso"
+        }
+      ]
+    }
   ]
 }

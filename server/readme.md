@@ -104,11 +104,12 @@ and installation stack before a final print.
 
 ## SHT45 cabin holder
 
-A removable open-frame PETG holder for the Adafruit 6174 PTFE module, with
-raised PCB supports, tape mounting rails and cable strain relief, is available
-in [the cabin holder guide](hardware/sht45-cabin/README.md). Its STEP/STL exports
-are measurement-gated drafts; confirm the board layout, fasteners, connected
-cable and trim/tape fit before a final print.
+A ventilated PETG housing for the Adafruit 6174 PTFE module, with a separate
+taped console adapter, removable board retainers, two BT3 cable clamps and fit
+coupons, is available in [the cabin holder guide](hardware/sht45-cabin/README.md).
+Its installed STEP assembly and printable STLs are measurement-gated drafts;
+confirm the delivered board, both plugs, bearing lands, fasteners and trim/tape
+fit before final release.
 
 ## Configuration
 

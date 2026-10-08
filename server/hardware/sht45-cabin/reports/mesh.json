@@ -1,16 +1,117 @@
 {
   "units": "mm",
   "mesh_faceting_allowance_deg": 0.2,
+  "size_tolerance_mm": 0.001,
+  "relative_volume_tolerance": 0.002,
+  "slicer_verified": false,
   "parts": {
-    "holder": {
+    "adapter": {
+      "stl_sha256": "55df3fd6beb48b0bdaa734ad9bdc61851bb7a5d69e6b82ae085af0ad31744a5b",
       "watertight": true,
       "winding_consistent": true,
       "bodies": 1,
-      "volume_mm3": 2953.963489124509,
-      "relative_volume_error": 0.0011087351039158477,
-      "minimum_downward_surface_angle_deg": 44.89632524194696,
-      "downward_surfaces_above_bed_are_only_shallow_chamfers": true
+      "volume_mm3": 5464.749579352898,
+      "relative_volume_error": 0.00016888878111243066,
+      "downward_surface_area_above_bed_mm2": 123.94819842750886,
+      "recess_ledge_area_mm2": 0.0,
+      "recess_ledge_radial_span_mm": 0,
+      "support_free_slicer_evidence": "not available"
+    },
+    "housing": {
+      "stl_sha256": "9e92cf934ce2ab541a28bd6990b8bdf8264985aa517ff2ead3479c5f70a8e7ea",
+      "watertight": true,
+      "winding_consistent": true,
+      "bodies": 1,
+      "volume_mm3": 10377.30137797837,
+      "relative_volume_error": 0.0007669033737378594,
+      "downward_surface_area_above_bed_mm2": 411.822463179358,
+      "recess_ledge_area_mm2": 24.48166016106552,
+      "recess_ledge_radial_span_mm": 0.5,
+      "support_free_slicer_evidence": "not available"
+    },
+    "cover": {
+      "stl_sha256": "1b7b70d28ee96af795175c3d268c957775ca2e6ba7efe2a496c8391a0e4f73f5",
+      "watertight": true,
+      "winding_consistent": true,
+      "bodies": 1,
+      "volume_mm3": 2846.666370958934,
+      "relative_volume_error": 1.995760915085576e-05,
+      "downward_surface_area_above_bed_mm2": 0.0,
+      "recess_ledge_area_mm2": 0.0,
+      "recess_ledge_radial_span_mm": 0,
+      "support_free_slicer_evidence": "not available"
+    },
+    "retainer": {
+      "stl_sha256": "355ca1a10996604fbe4d735904a9e347884240c69db991103bbf795e396e8976",
+      "watertight": true,
+      "winding_consistent": true,
+      "bodies": 1,
+      "volume_mm3": 112.68755527445329,
+      "relative_volume_error": 0.00014165781783059828,
+      "downward_surface_area_above_bed_mm2": 0.0,
+      "recess_ledge_area_mm2": 0.0,
+      "recess_ledge_radial_span_mm": 0,
+      "support_free_slicer_evidence": "not available"
+    },
+    "cable_clamp": {
+      "stl_sha256": "1d50d686ceeb76b490b2d553406db1bcce7ed4622469eb1c63b405140c496995",
+      "watertight": true,
+      "winding_consistent": true,
+      "bodies": 1,
+      "volume_mm3": 455.4375210191757,
+      "relative_volume_error": 0.00015623281303800418,
+      "downward_surface_area_above_bed_mm2": 0.0,
+      "recess_ledge_area_mm2": 0.0,
+      "recess_ledge_radial_span_mm": 0,
+      "support_free_slicer_evidence": "not available"
+    },
+    "pilot_coupon": {
+      "stl_sha256": "dd285e05401e3d1baa14a1596b270a3e23cb3c1ab6e87fd23e3654dd9a92ff5a",
+      "watertight": true,
+      "winding_consistent": true,
+      "bodies": 1,
+      "volume_mm3": 1833.6457588638423,
+      "relative_volume_error": 0.00039893501512966445,
+      "downward_surface_area_above_bed_mm2": 0.0,
+      "recess_ledge_area_mm2": 0.0,
+      "recess_ledge_radial_span_mm": 0,
+      "support_free_slicer_evidence": "not available"
+    },
+    "fit_coupon": {
+      "stl_sha256": "1612a9e84c239f027c12be716c84cfacfae4fa4958bd7b458614f75882e5e743",
+      "watertight": true,
+      "winding_consistent": true,
+      "bodies": 1,
+      "volume_mm3": 8021.186939947044,
+      "relative_volume_error": 0.00040019501730303997,
+      "downward_surface_area_above_bed_mm2": 411.82246317935795,
+      "recess_ledge_area_mm2": 24.48166016106552,
+      "recess_ledge_radial_span_mm": 0.5,
+      "support_free_slicer_evidence": "not available"
+    },
+    "adapter_coupon": {
+      "stl_sha256": "34d111ad45ce13351eb50fc364494cc76ac4978841e0991c7264264002056863",
+      "watertight": true,
+      "winding_consistent": true,
+      "bodies": 1,
+      "volume_mm3": 836.8922604755398,
+      "relative_volume_error": 0.0002846581445454799,
+      "downward_surface_area_above_bed_mm2": 0.0,
+      "recess_ledge_area_mm2": 0.0,
+      "recess_ledge_radial_span_mm": 0,
+      "support_free_slicer_evidence": "not available"
+    },
+    "adapter_socket_coupon": {
+      "stl_sha256": "6b529bf8be6e82c4643b1d7369ed77976ab623ec630a965a38a7b8ae7e8db820",
+      "watertight": true,
+      "winding_consistent": true,
+      "bodies": 1,
+      "volume_mm3": 534.0105896992386,
+      "relative_volume_error": 2.2313985274635684e-05,
+      "downward_surface_area_above_bed_mm2": 6.120412775825141,
+      "recess_ledge_area_mm2": 6.120412775825141,
+      "recess_ledge_radial_span_mm": 0.5,
+      "support_free_slicer_evidence": "not available"
     }
-  },
-  "stl_sha256": "d76a0332a6a3522569397ae78c9914e75904488245cd8d1b94932e059a9d7c9e"
+  }
 }

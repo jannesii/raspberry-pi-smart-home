@@ -1,82 +1,82 @@
-"""Open PETG holder, mm; PCB centre XY, tape-pad underside Z=0.
+"""Millimetre draft; adapter underside Z=0, housing local underside Z=0.
 
-Candidate manufacturer layout belongs to 5665; compare with received 6174.
-None values are measurement gates, never silently claimed as hardware facts.
+Candidate 5665 layout is NOT confirmed for ordered PTFE 6174. Printed contacts,
+plug volumes and PCB thickness below are allowances, never received facts.
 """
 
 from __future__ import annotations
 
-import json
 import math
 from dataclasses import dataclass
-from pathlib import Path
 
 from cadgen import build123d as bd
 
 
-def layout():
-    return json.loads(Path(__file__).with_name("board-layout.json").read_text())
-
-
 @dataclass(frozen=True)
 class Parameters:
-    # Nominal candidate layout: update these if the delivered board differs.
     board_length: float = 25.4
     board_width: float = 17.78
     hole_pitch_x: float = 20.32
     hole_pitch_y: float = 12.7
     hole_diameter: float = 2.5
-    base: float = 2.0
-    frame_width: float = 33.4
-    frame_depth: float = 30.0
-    aperture_width: float = 26.6
-    aperture_depth: float = 7.7
-    corner: float = 1.0
-    edge_break: float = 0.4
-    board_back_z: float = 12.0  # design standoff, NOT board height
-    post_diameter: float = 4.9
-    pilot_diameter: float = 1.6  # trial M2 tap-drill; calibrate printed hole
-    pilot_depth: float = 6.0
-    saddle_start: float = 14.0
-    saddle_length: float = 26.0
-    saddle_width: float = 16.0
-    tie_stations: tuple[float, float] = (30.0, 36.0)
-    tie_y: float = 4.6
-    tie_slot_width: float = 3.2
-    tie_slot_depth: float = 2.4
-    tie_slot_radius: float = 0.6
-    clearance: float = 0.6
-    sensor_keepout_width: float = 6.4  # design corridor around entire tongue
-    sensor_keepout_depth: float = 6.4
-    sensor_x: float = 0.0
-    sensor_y: float = 0.0
-    # Physical interfaces. Contact radii refer to the smallest of all four lands.
-    received_layout_confirmed: bool = False
+    pilot: float = 2.55
+    clearance_hole: float = 3.4
+    adapter_height: float = 8.0
+    board_back: float = 10.0
+    cover_stop: float = 18.0
+    retainer_stop: float = 14.0
+    plate: float = 2.0
+    draft_pcb_thickness: float = 1.6
+    clamp_gap: float = 3.0
+    board_length_measured: float | None = None
+    board_width_measured: float | None = None
+    hole_pitch_x_measured: float | None = None
+    hole_pitch_y_measured: float | None = None
+    hole_diameter_measured: float | None = None
     pcb_thickness_measured: float | None = None
     backside_protrusion_measured: float | None = None
-    top_free_land_radius_measured: float | None = None
-    bottom_free_land_radius_measured: float | None = None
-    membrane_width_measured: float | None = None
-    membrane_depth_measured: float | None = None
+    component_top_above_back_measured: float | None = None
+    bottom_land_radius_measured: float | None = None
     membrane_x_measured: float | None = None
     membrane_y_measured: float | None = None
-    mated_plug_reach_measured: float | None = None
-    plug_lowest_above_back_measured: float | None = None  # signed offset
-    cable_width_measured: float | None = None
-    cable_bend_radius_measured: float | None = None
-    tie_width_measured: float | None = None
-    tie_thickness_measured: float | None = None
-    screw_thread_diameter_measured: float | None = None
-    screw_under_head_length_measured: float | None = None
+    membrane_width_measured: float | None = None
+    membrane_depth_measured: float | None = None
+    membrane_top_above_back_measured: float | None = None
+    plug_reach_measured: float | None = None
+    plug_width_measured: float | None = None
+    plug_height_measured: float | None = None
+    plug_lowest_above_back_measured: float | None = None
+    cable_diameter_measured: float | None = None
+    bend_radius_measured: float | None = None
+    free_exit_measured: float | None = None
+    tape_thickness_measured: float | None = None
+    trim_width_measured: float | None = None
+    trim_length_measured: float | None = None
+    screw_length_measured: float | None = None
     screw_head_radius_measured: float | None = None
-    calibrated_pilot_diameter_measured: float | None = None
-    mounting_tape_measured: float | None = None
-    trim_fit_confirmed: bool = False
-    tapped_retention_confirmed: bool = False
+    tool_diameter_measured: float | None = None
+    printed_pilot_measured: float | None = None
+    received_revision_confirmed: bool = False
+    bearing_lands_confirmed: bool = False
+    trim_airflow_clearance_confirmed: bool = False
+    retention_clamps_service_trial_passed: bool = False
+    tape_attachment_removal_trial_passed: bool = False
     ready_for_final_print: bool = False
 
     @property
-    def posts(self):
+    def pcb_thickness(self):
+        return (
+            self.draft_pcb_thickness
+            if self.pcb_thickness_measured is None
+            else self.pcb_thickness_measured
+        )
+
+    @property
+    def finger_depth(self):
+        return self.retainer_stop - self.board_back - self.pcb_thickness - 0.1
+
+    @property
+    def board_posts(self):
         return [
             (x, y)
             for x in (-self.hole_pitch_x / 2, self.hole_pitch_x / 2)
@@ -84,186 +84,285 @@ class Parameters:
         ]
 
     @property
-    def cable_channel_width(self):
-        return 2 * self.tie_y - self.tie_slot_depth
+    def retainers(self):
+        return [
+            (x, y) for x in (-self.hole_pitch_x / 2, self.hole_pitch_x / 2) for y in (-13.0, 13.0)
+        ]
 
     def validate(self):
-        if self.ready_for_final_print:
-            assert self.received_layout_confirmed, "Compare received 6174 with candidate layout"
-            assert self.trim_fit_confirmed and self.tapped_retention_confirmed
-            assert all(
-                value is not None
-                for name, value in vars(self).items()
-                if name.endswith("_measured")
-            ), "Complete all physical measurements before final-print release"
-        assert all(math.isfinite(v) for v in vars(self).values() if isinstance(v, (int, float)))
-        assert self.base >= 1.6 and self.corner > self.edge_break > 0
-        assert self.board_back_z > self.base + self.clearance
-        assert 0 < self.pilot_depth < self.board_back_z - self.base
-        assert self.pilot_diameter > 0
-        assert (self.post_diameter - self.pilot_diameter) / 2 >= 1.6 - 1e-9
-        assert self.aperture_width > self.board_length
-        assert self.aperture_depth > self.sensor_keepout_depth + 2 * self.clearance
-        assert self.frame_width - self.aperture_width >= 2 * 1.6
-        assert self.frame_depth - self.aperture_depth >= 2 * 1.6
-        assert self.saddle_start < self.frame_width / 2
-        assert self.saddle_width / 2 - self.tie_y - self.tie_slot_depth / 2 >= 1.2
-        for x, y in self.posts:
-            assert abs(x) + self.post_diameter / 2 <= self.board_length / 2
-            assert abs(y) + self.post_diameter / 2 <= self.board_width / 2
-            assert abs(y) + self.post_diameter / 2 > self.aperture_depth / 2 + 0.8
-            assert abs(y) - self.post_diameter / 2 >= self.aperture_depth / 2, (
-                "Keep each post entirely on a rail for clean, support-free meshing"
-            )
-        for x in self.tie_stations:
-            assert x - self.tie_slot_width / 2 > self.saddle_start + 1.6
-            assert x + self.tie_slot_width / 2 < self.saddle_start + self.saddle_length - 1.6
+        for name in (
+            "board_length",
+            "board_width",
+            "hole_pitch_x",
+            "hole_pitch_y",
+            "hole_diameter",
+            "clamp_gap",
+        ):
+            value = getattr(self, name)
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError(f"Invalid geometry allowance: {name}")
+        if self.clamp_gap <= 2:
+            raise ValueError("Clamp feet require gap greater than 2 mm")
+        if min(self.hole_pitch_x, self.hole_pitch_y) <= self.hole_diameter + 0.6:
+            raise ValueError("PCB locating holes overlap or lack separating material")
+        if self.hole_pitch_x + 4 > self.board_length or self.hole_pitch_y + 4 > self.board_width:
+            raise ValueError("Support lands extend outside PCB envelope")
+        distance_to_air_window = math.hypot(
+            max(self.hole_pitch_x / 2 - 8, 0), max(self.hole_pitch_y / 2 - 6, 0)
+        )
+        if distance_to_air_window < 2.01:
+            raise ValueError("PCB support enters protected through-air column")
+        if self.hole_pitch_y / 2 + self.hole_diameter / 2 > 7.65:
+            raise ValueError("Drill hole enters retainer contact pad; redesign lands")
+        signed = {"membrane_x_measured", "membrane_y_measured", "plug_lowest_above_back_measured"}
+        zero_allowed = signed | {"backside_protrusion_measured"}
         for name, value in vars(self).items():
-            if name.endswith("_measured") and value is not None:
-                assert math.isfinite(value)
-                if name not in (
-                    "membrane_x_measured",
-                    "membrane_y_measured",
-                    "plug_lowest_above_back_measured",
+            if name.endswith("_measured"):
+                if value is None:
+                    if self.ready_for_final_print:
+                        raise ValueError(f"Final fit requires {name}")
+                elif (
+                    not math.isfinite(value)
+                    or (name not in signed and value < 0)
+                    or (name not in zero_allowed and value == 0)
                 ):
-                    assert value >= 0, name
-                if name in (
-                    "pcb_thickness_measured",
-                    "membrane_width_measured",
-                    "membrane_depth_measured",
-                    "cable_width_measured",
-                    "cable_bend_radius_measured",
-                    "tie_width_measured",
-                    "tie_thickness_measured",
-                    "screw_thread_diameter_measured",
-                    "screw_under_head_length_measured",
-                    "screw_head_radius_measured",
-                    "calibrated_pilot_diameter_measured",
-                    "mounting_tape_measured",
-                ):
-                    assert value > 0, name
-        if self.pcb_thickness_measured is not None:
-            assert self.pcb_thickness_measured > 0
-        if self.backside_protrusion_measured is not None:
-            assert (
-                self.board_back_z - self.backside_protrusion_measured >= self.base + self.clearance
+                    raise ValueError(f"Invalid physical measurement: {name}")
+        if not 0 < self.finger_depth < self.retainer_stop - self.plate:
+            raise ValueError("PCB stack outside retainer adjustment range")
+        if self.pilot != 2.55 or self.clearance_hole < 3.4:
+            raise ValueError("Use BT3 2.55 mm source pilots and separate through-clearance")
+        if not self.ready_for_final_print:
+            return
+        if not all(
+            (
+                self.received_revision_confirmed,
+                self.bearing_lands_confirmed,
+                self.trim_airflow_clearance_confirmed,
+                self.retention_clamps_service_trial_passed,
+                self.tape_attachment_removal_trial_passed,
             )
-        if self.bottom_free_land_radius_measured is not None:
-            assert self.bottom_free_land_radius_measured >= self.post_diameter / 2
+        ):
+            raise ValueError("Final fit requires received-layout, lands and physical trials")
+        for name in (
+            "board_length",
+            "board_width",
+            "hole_pitch_x",
+            "hole_pitch_y",
+            "hole_diameter",
+        ):
+            if abs(getattr(self, name) - getattr(self, f"{name}_measured")) > 0.05:
+                raise ValueError(f"Update nominal layout to received {name}")
+        if self.board_length > 27.0 or self.board_width > 19.0 or self.hole_diameter < 2.4:
+            raise ValueError("Received PCB exceeds draft locating window/pins; redesign")
+        if self.bottom_land_radius_measured < 2.0:
+            raise ValueError("Support rings need confirmed 2 mm backside lands")
+        if self.backside_protrusion_measured > self.board_back - self.plate - 0.6:
+            raise ValueError("Backside reaches housing floor")
         if (
-            self.top_free_land_radius_measured is not None
-            and self.screw_head_radius_measured is not None
+            not self.pcb_thickness
+            <= self.component_top_above_back_measured
+            <= self.cover_stop - self.board_back - 0.6
         ):
-            assert self.top_free_land_radius_measured >= self.screw_head_radius_measured
-        if self.screw_head_radius_measured is not None:
-            assert (
-                self.hole_diameter / 2 < self.screw_head_radius_measured <= self.post_diameter / 2
-            )
-        if self.screw_thread_diameter_measured is not None:
-            assert abs(self.screw_thread_diameter_measured - 2.0) <= 0.1, "M2 tapped interface only"
-            assert self.screw_thread_diameter_measured + 0.2 <= self.hole_diameter
+            raise ValueError("Component stack reaches cover")
         if (
-            self.pcb_thickness_measured is not None
-            and self.screw_under_head_length_measured is not None
+            not self.pcb_thickness
+            <= self.membrane_top_above_back_measured
+            <= self.component_top_above_back_measured
         ):
-            engagement = self.screw_under_head_length_measured - self.pcb_thickness_measured
-            assert 3.0 <= engagement <= self.pilot_depth - self.clearance
-        if self.calibrated_pilot_diameter_measured is not None:
-            assert abs(self.calibrated_pilot_diameter_measured - self.pilot_diameter) <= 0.1
-        if self.cable_width_measured is not None:
-            assert self.cable_width_measured + 2 * self.clearance <= self.cable_channel_width
-        if self.tie_width_measured is not None:
-            assert self.tie_width_measured + 0.4 <= self.tie_slot_width
-        if self.tie_thickness_measured is not None:
-            assert self.tie_thickness_measured + 0.4 <= self.tie_slot_depth
-        if self.mounting_tape_measured is not None and self.tie_thickness_measured is not None:
-            assert self.mounting_tape_measured >= self.tie_thickness_measured + 0.4, (
-                "Tape must clear underside tie straps; keep locking heads on top/side"
-            )
-        if self.plug_lowest_above_back_measured is not None:
-            assert (
-                self.board_back_z + self.plug_lowest_above_back_measured
-                >= self.base + self.clearance
-            )
+            raise ValueError("Membrane and component heights inconsistent")
         if (
-            self.mated_plug_reach_measured is not None
-            and self.cable_bend_radius_measured is not None
+            abs(self.membrane_x_measured) + self.membrane_width_measured / 2 + 0.6 > 8
+            or abs(self.membrane_y_measured) + self.membrane_depth_measured / 2 + 0.6 > 6
         ):
-            # Conservative horizontal routing allowance, not a cable bend simulation.
-            assert (
-                self.board_length / 2
-                + self.mated_plug_reach_measured
-                + 2 * self.cable_bend_radius_measured
-                + self.clearance
-                <= self.tie_stations[0] - self.tie_slot_width / 2
-            ), "Extend saddle and move ties if relaxed cable routing needs more space"
-        for axis, limit, centre in (
-            ("width", self.sensor_keepout_width, self.sensor_x),
-            ("depth", self.sensor_keepout_depth, self.sensor_y),
+            raise ValueError("Membrane exceeds through-air window")
+        if (
+            self.plug_reach_measured > 8
+            or self.plug_width_measured > 8
+            or self.plug_height_measured > 6
         ):
-            size = getattr(self, f"membrane_{axis}_measured")
-            coord = getattr(self, f"membrane_{'x' if axis == 'width' else 'y'}_measured")
-            if size is not None and coord is not None:
-                assert abs(coord - centre) + size / 2 + self.clearance <= limit / 2
+            raise ValueError("Plug exceeds reserved envelope")
+        if (
+            self.board_back + self.plug_lowest_above_back_measured < self.plate + 0.6
+            or self.board_back + self.plug_lowest_above_back_measured + self.plug_height_measured
+            > self.cover_stop - 0.6
+        ):
+            raise ValueError("Plug reaches floor or cover")
+        if (
+            abs(self.cable_diameter_measured - self.clamp_gap) > 0.1
+            or self.free_exit_measured < self.bend_radius_measured + 2
+        ):
+            raise ValueError("Resize clamp or increase external bend clearance")
+        if self.trim_length_measured < 72 or self.trim_width_measured < 38:
+            raise ValueError("Measured trim interface too small for adapter")
+        if (
+            self.screw_length_measured != 6
+            or not 1.9 <= self.screw_head_radius_measured <= 3.5
+            or self.tool_diameter_measured > 6
+        ):
+            raise ValueError(
+                "Draft joints require measured BT3x6/head/tool envelope; redesign for other stock"
+            )
+        if not 2.45 <= self.printed_pilot_measured <= 2.65:
+            raise ValueError("Calibrate printed pilot on coupon")
 
 
 P = Parameters()
+MOUNTS = [(x, y) for x in (-30.0, 30.0) for y in (-15.0, 15.0)]
+STOPS = [(x, y) for x in (-19.0, 19.0) for y in (-16.0, 16.0)]
+CLAMPS = (-33.0, 33.0)
 
 
 def box_at(w, d, h, x=0, y=0, z=0):
     return bd.Pos(x, y, z + h / 2) * bd.Box(w, d, h)
 
 
-def rounded(w, d, h, x=0, y=0, z=0, radius=1):
-    return bd.Pos(x, y, z) * bd.extrude(bd.RectangleRounded(w, d, radius), amount=h)
-
-
-def cylinder(radius, height, x=0, y=0, z=0):
+def bore(d, h, x=0, y=0, z=0):
     return bd.Pos(x, y, z) * bd.Cylinder(
-        radius, height, align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN)
+        d / 2, h, align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN)
     )
 
 
-def holder(p=P):
+def rounded_plate(w, d, h):
+    return bd.extrude(bd.RectangleRounded(w, d, 1), amount=h)
+
+
+def pilot_boss(x, y, top, p=P, diameter=7):
+    return bore(diameter, top - p.plate, x, y, p.plate) - bore(p.pilot, 5.1, x, y, top - 5)
+
+
+def adapter_spigot(x=0, y=0, p=P):
+    """Common lift-off locating interface for adapter and measurement coupon."""
+    return bore(4, 0.8, x, y, p.adapter_height) - bore(p.clearance_hole, 1, x, y, p.adapter_height)
+
+
+def socket_tools(x=0, y=0, p=P):
+    """Common through-clearance and underside recess for housing and coupon."""
+    return bore(p.clearance_hole, p.plate + 2, x, y, -1) + bore(4.4, 1, x, y)
+
+
+def adapter(p=P):
     p.validate()
-    body = rounded(p.frame_width, p.frame_depth, p.base, radius=p.corner)
-    body -= box_at(p.aperture_width, p.aperture_depth, p.base + 2, z=-1)
-    body += rounded(
-        p.saddle_length,
-        p.saddle_width,
-        p.base,
-        x=p.saddle_start + p.saddle_length / 2,
-        radius=p.corner,
+    body = rounded_plate(72, 38, p.plate) - box_at(28, 20, p.plate + 2, z=-1)
+    for x, y in MOUNTS:
+        body += pilot_boss(x, y, p.adapter_height, p, 8)
+        # 4 mm locating spigot fits 4.4 mm recess beneath housing, not PCB.
+        body += adapter_spigot(x, y, p)
+    body.label = "DRAFT_taped_console_adapter"
+    return body
+
+
+def housing(p=P):
+    p.validate()
+    body = rounded_plate(80, 40, p.plate) - box_at(28, 20, p.plate + 2, z=-1)
+    for x, y in MOUNTS:
+        body -= socket_tools(x, y, p)
+    for x, y in p.board_posts:
+        # Rings + short locating pins: no screw passes through the PCB.
+        body += bore(4, p.board_back, x, y)
+        body += bore(1.8, 0.8, x, y, p.board_back)
+        # Join each post to window rail; no shelf under membrane or tongue.
+        body += box_at(4, 4, p.plate + 2, x, y + (2 if y > 0 else -2))
+    for x, y in p.retainers:
+        body += pilot_boss(x, y, p.retainer_stop, p)
+    for x, y in STOPS:
+        body += pilot_boss(x, y, p.cover_stop, p)
+    for x in CLAMPS:
+        for y in (-6, 6):
+            body += box_at(8, 6, 2, x, y, p.plate)
+            body -= bore(p.pilot, 3.1, x, y, 1)
+    # Perimeter fences, outside the board and away from plug centre lines.
+    for x in (-14.0, 14.0):
+        for y in (-7, 7):
+            body += box_at(1, 3.6, p.board_back + 0.8, x, y)
+    body.label = "DRAFT_removable_ventilated_housing"
+    return body
+
+
+def cover(p=P):
+    p.validate()
+    body = rounded_plate(44, 40, p.plate)
+    for x, y, w, d in (
+        (0, 0, 16, 12),
+        (-14, 0, 8, 19.6),
+        (14, 0, 8, 20),
+        (0, -13, 15.6, 5.6),
+        (0, 13, 15.6, 5.6),
+    ):
+        body -= box_at(w, d, p.plate + 2, x, y, -1)
+    for x, y in STOPS:
+        body -= bore(p.clearance_hole, p.plate + 2, x, y, -1)
+    for y in (-19, 19):
+        body += box_at(24, 2, 8, y=y, z=p.plate)
+    body.label = "DRAFT_ventilated_cover_top_down"
+    return body
+
+
+def retainer(p=P):
+    p.validate()
+    body = box_at(7, 9, p.plate, y=-1)
+    # After inversion this pad sits at |Y|=8, outside candidate 2.5 mm hole.
+    body += box_at(3, 0.7, p.finger_depth, y=-5, z=p.plate)
+    body -= bore(p.clearance_hole, p.plate + 2, z=-1)
+    body.label = "DRAFT_land_retainer_top_down"
+    return body
+
+
+def cable_clamp(p=P):
+    p.validate()
+    body = box_at(8, 18, 3)
+    for y in (-6, 6):
+        body += box_at(8, 6, p.clamp_gap - 2, y=y, z=3)
+        body -= bore(p.clearance_hole, 6, y=y, z=-1)
+    body.label = "DRAFT_insulated_cable_clamp_top_down"
+    return body
+
+
+def pilot_coupon(p=P):
+    body = rounded_plate(36, 14, p.plate)
+    for x, diameter in ((-12, 2.45), (0, 2.55), (12, 2.65)):
+        body += bore(8, 6, x=x, z=p.plate)
+        body -= bore(diameter, 5.1, x=x, z=3)
+    body.label = "DRAFT_pilot_ladder_left_2p45_centre_2p55_right_2p65"
+    return body
+
+
+def fit_coupon(p=P):
+    # Remove only cover towers: preserve actual retainer/clamp stops and pilots.
+    body = housing(p)
+    for x, y in STOPS:
+        body -= bore(7.2, p.cover_stop, x, y, p.plate)
+    body.label = "DRAFT_board_two_plug_coupon"
+    return body
+
+
+def adapter_coupon(p=P):
+    body = rounded_plate(20, 14, p.plate) + pilot_boss(0, 0, p.adapter_height, p, 8)
+    body += adapter_spigot(p=p)
+    body.label = "DRAFT_adapter_boss_coupon"
+    return body
+
+
+def adapter_socket_coupon(p=P):
+    body = rounded_plate(20, 14, p.plate) - socket_tools(p=p)
+    body.label = "DRAFT_adapter_socket_coupon_recess_on_bed"
+    return body
+
+
+def installed_housing(shape, p=P):
+    return shape.moved(bd.Location((0, 0, p.adapter_height)))
+
+
+def installed_cover(shape, p=P):
+    return shape.moved(bd.Location((0, 0, p.adapter_height + p.cover_stop + p.plate), (180, 0, 0)))
+
+
+def installed_retainer(shape, x, y, p=P):
+    return shape.moved(
+        bd.Location(
+            (x, y, p.adapter_height + p.retainer_stop + p.plate), (180, 0, 180 if y > 0 else 0)
+        )
     )
 
-    # Chamfer exterior rims only. Inner bevel/post coplanar junctions can produce
-    # T-junctions in tessellation; a square inner rim preserves a closed mesh.
-    def exterior_horizontal(edge):
-        b = edge.bounding_box()
-        inside_aperture = (
-            -p.aperture_width / 2 - 1e-6 <= b.min.X
-            and p.aperture_width / 2 + 1e-6 >= b.max.X
-            and -p.aperture_depth / 2 - 1e-6 <= b.min.Y
-            and p.aperture_depth / 2 + 1e-6 >= b.max.Y
-        )
-        return b.size.Z < 1e-6 and not inside_aperture
 
-    body = bd.chamfer([e for e in body.edges() if exterior_horizontal(e)], length=p.edge_break)
-    for x, y in p.posts:
-        body += cylinder(p.post_diameter / 2, p.board_back_z - p.base + 0.2, x, y, p.base - 0.2)
-        body -= cylinder(
-            p.pilot_diameter / 2, p.pilot_depth + 1, x, y, p.board_back_z - p.pilot_depth
-        )
-    for x in p.tie_stations:
-        for y in (-p.tie_y, p.tie_y):
-            body -= rounded(
-                p.tie_slot_width,
-                p.tie_slot_depth,
-                p.base + 2,
-                x,
-                y,
-                -1,
-                radius=p.tie_slot_radius,
-            )
-    body.label = "DRAFT_SHT45_open_holder_measure_before_print"
-    return body
+def installed_clamp(shape, x, p=P):
+    return shape.moved(bd.Location((x, 0, p.adapter_height + 5 + p.clamp_gap), (180, 0, 0)))

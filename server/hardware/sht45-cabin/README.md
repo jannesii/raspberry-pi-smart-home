@@ -1,188 +1,185 @@
 # SHT45 cabin holder — measurement-gated draft
 
-For Adafruit **product 6174, SHT45 with PTFE membrane**, in the car-heater
-project. Related work: [GitHub issue #11](https://github.com/jannesii/raspberry-pi-smart-home/issues/11).
-Design basis: [defrost strategy](../../docs/reviews/car-heater-defrost-strategy.md);
-project conventions: [TMP117 holder](../tmp117-windshield/README.md).
-These exports are **draft geometry, not final-fit print files**. Parts receipt
-and physical fitting remain outstanding; this does not complete issue #11.
+Parametric PETG housing for the ordered **Adafruit SHT45 PTFE 6174**.
+Implements [ticket #21](https://github.com/jannesii/raspberry-pi-smart-home/issues/21)
+and [spec #19](https://github.com/jannesii/raspberry-pi-smart-home/issues/19).
+All STEP/STL exports are **DRAFT**, not final-fit files. Physical receipt and
+fit remain gates under #11. No server/firmware behavior changes.
 
-## Chosen design
+## Air-sensing design
 
-One open PETG frame with four corner mounting posts and a right-hand cable
-saddle. The PCB mounts component-side outward, with its backside at Z=12 mm
-above the holder's tape plane. The base is 2 mm thick, leaving a 10 mm air gap
-between base top and PCB backside. Four 4.9 mm diameter posts contact only the
-mounting-hole regions; the rest of the PCB has no direct printed contact.
-Their long, small cross-sections and nylon rather than metal screws reduce
-the intended conduction path. This is a geometric design choice, **not a
-measured reduction in thermal bias**: radiation, adhesive, cable conduction,
-PCB self-heating and local airflow still matter.
+A separate flat taped console adapter supports a mechanically removable housing.
+Four adapter bosses place the housing underside 8 mm above the adapter underside,
+leaving 6 mm of open air above its 2 mm plate. The PCB backside is a further
+10 mm above the housing underside: **18 mm above the tape plane**. Coordinates
+use PCB-centred XY, +Z toward cabin, adapter underside Z=0. The installed envelope
+is **80 × 40 × 28 mm**, excluding screws, tape, board and cables.
 
-The base aperture is 26.6 × 7.7 mm. A 6.4 × 6.4 mm vertical column around the
-candidate central sensor/tongue is free of printed material from below the
-base to above the board. There is no lid, sensor cover, foam or printed
-material over the membrane. The surrounding base rails sit below the PCB;
-they do not enclose it. Keep the sensor face fully exposed to cabin air.
+A 28 × 20 mm opening passes through both structural plates. The cover has a
+16 × 12 mm unobstructed central air window over the candidate membrane/tongue,
+8 × 19.6 mm and 8 × 20 mm end windows, and two 15.6 × 5.6 mm side windows. Their combined
+683.52 mm² area is about 39% of the rectangular roof envelope (before screw
+holes). Side shields protect the board edges from incidental knocks; the area
+below them remains open to cross-flow. Cover ribs shield portions of the board
+and connector region without creating a closed air pocket. Openings cannot
+exclude every object; this is not an impact-rated or sealed housing.
 
-Four removable **M2 nylon screws** pass through the candidate PCB holes into
-blind, tapped post holes. Do not use the sensor tongue as a retention point.
-The pilot is a trial 1.6 mm diameter × 6 mm depth; the CAD deliberately does
-not model threads. Calibrate the printed pilot, drill/ream as needed, then
-tap M2 before fitting the PCB. Support the posts while tapping; remove swarf
-and deburr before bringing the board near them. Do not drive nylon screws
-into unprepared pilots or use tightening to straighten a bent board.
-Use only light seating force and check all four contact regions are clear
-of components/traces that could be damaged. Nylon thread retention, PETG
-creep and vibration resistance require a physical test.
+Four 4 mm support posts bear on candidate hole lands. Short **1.8 mm locating
+pins**, 0.8 mm high, enter candidate 2.5 mm holes. These are printed pins, not
+fasteners. Four removable retainers put small 3 × 0.7 mm pads at X=±10.16,
+Y=±8 mm on candidate clear top lands. A nominal 0.1 mm axial gap avoids using
+screw closure to force the board down. Pad clearance and positive retention
+must be trial-fitted, not inferred from the gap. Cover and retainers seat on
+structural bosses. No BT3 screw passes through the PCB. The PCB, connectors,
+sensor tongue and PTFE membrane remain intact.
 
-Select screw length **after measuring PCB thickness**: under-head length
-minus PCB thickness must give 3.0–5.4 mm engagement, leaving at least 0.6 mm
-before the blind bottom. A nominal 6 mm screw is only a trial candidate, not
-a verified part selection. The head must span the PCB hole and stay within
-the measured clear top land. Remove the four screws and lift the board
-straight off to reposition/service it; no snap latch bends the PCB.
+Two compact 8 × 18 mm clamps sit at X=±33 mm outside the cover. Each has two
+BT3 screws and a nominal 6 mm wide × 3 mm high cable corridor. They must grip
+insulated cable only, with slack at both mated plugs. Clamp screws remain
+accessible with the cover fitted. Eight millimetres of plug reach beyond each
+candidate board end are reserved; below-plug transition corridors are open.
+The model does **not** simulate a swept flexible cable. Straight plug exits,
+downward routing to the lower clamps and bends beyond the housing require
+inspection and a trial. Change routing or clamp location if relaxed bends
+cannot fit; never pull a plug into position using the clamp.
 
-Use right-hand port CONN3 from the candidate layout. The saddle begins at
-X=14 mm and ends at X=40 mm; two tie stations are at X=30 and 36 mm. Two
-small cable ties pass down one slot and up the opposite slot, holding the
-insulated wire bundle. Keep the connector fully mated with slack before the
-first tie and relaxed bends down to the saddle. The open tie corridor is
-6.8 mm wide. Do not use the connector as the anchor or crush wire insulation.
-Anchor the heavier extension separately to the vehicle. This design does
-not claim a fitted two-cable installation or validate the complete I²C bus.
+Initial site: **driver-facing upper side of the centre console below the centre
+stack near the forward gear lever**, away from the documented passenger-footwell
+heater. This is provisional: local airflow, shifter/hand clearance, trim shape
+and mounting surface are unverified. Keep shaded and away from heat sources.
+This mount senses cabin air independently of the TMP117 glass-holder geometry.
+Do not put foam, paste or adhesive at the membrane.
 
-Attach **two flat 30 × 6 mm underside tape zones**, centred at Y=±11.3 mm,
-with removable double-sided tape compatible with the actual trim and cabin
-temperatures. Total specified tape area is 360 mm². Keep tape off the central
-opening and cable saddle. The cable-tie return straps run underneath the
-saddle: installed/compressed tape thickness must be at least the measured
-strap thickness **plus 0.4 mm**. Keep tie locking heads on top or at the side,
-never underneath. Verify actual strap, head and trim clearance; thinner tape
-requires a geometry/routing change, not forceful seating of the base.
+## Nominal facts, allowances and unknowns
 
-The frame is planar, not matched to measured trim curvature. Mount at a
-fixed, shaded cabin position away from the heater outlet and ESP32, without
-rocking or bending the PCB. Check removal on the chosen trim/tape pair before
-committing to the location. Retaping allows relocation after winter testing;
-removal without cosmetic damage has not been established. Record location,
-orientation, cable route and any move so winter observations remain comparable.
+[Adafruit's 6174 product page](https://www.adafruit.com/product/6174) lists
+25.5 × 17.7 × 4.8 mm assembled module dimensions (rechecked 2026-10-08).
+**4.8 mm is not PCB thickness.** Candidate board geometry is retained in
+[src/lib/board-layout.json](src/lib/board-layout.json): the pinned manufacturer
+SHT45 Eagle layout identifies **5665, not explicitly 6174**. It supplies only a
+candidate 25.4 × 17.78 mm outline, 20.32 × 12.7 mm hole pitch, 2.5 mm drills and
+opposed connectors. No generic 5665 STEP is presented as a confirmed 6174 assembly.
+The recorded prior step.parts search found no SHT45 model; no vendor substitute
+has been added. Nothing is dimensioned by scaling photographs.
 
-## Outputs
+Every other default in [Parameters](src/lib/geometry.py) is a design allowance,
+including the 1.6 mm **draft-only** PCB thickness used to position the retainer
+finger. All `*_measured` fields remain `None`. The installed STEP contains only
+printed parts, with no invented board, cable, screw, membrane or tape stand-ins.
 
-| File | Purpose |
+For final-fit release, record the delivered revision and the following evidence:
+
+| Evidence | Release parameters / action |
 | --- | --- |
-| [src/holder.py](src/holder.py) | Maintained parametric export entrypoint |
-| [src/lib/geometry.py](src/lib/geometry.py) | Dimensions, measurement gates and geometry factory |
-| [src/lib/board-layout.json](src/lib/board-layout.json) | Candidate manufacturer layout and provenance |
-| [STEP/holder.step](STEP/holder.step) | Exact draft solid |
-| [STL/holder.stl](STL/holder.stl) | Draft print orientation; millimetres |
-| [checks/](checks/) | Saved-artifact geometry/mesh checks and view job |
-| [reports/validation.md](reports/validation.md) | Findings, measured CAD facts and limits |
-| [views/](views/) | Isometric, top, side, underside and STL inspection views |
+| Outline, hole pitches/drills, revision and connector orientation | Five board/hole `*_measured` dimensions; update nominal parameters to agree within 0.05 mm; `received_revision_confirmed` includes rounded corners, pin seating, tongue and connector comparison |
+| Actual PCB thickness | `pcb_thickness_measured`; changes retainer finger depth independently of cover stops |
+| Backside protrusions and component top above PCB backside | `backside_protrusion_measured`, `component_top_above_back_measured`; preserve ≥0.6 mm structural clearance |
+| Safe bearing lands | `bottom_land_radius_measured` ≥2 mm; confirm all four bottom contacts and top pad rectangles at X=±10.16/Y=±8, plus fences/pins, clear of solder/components/traces; `bearing_lands_confirmed` |
+| PTFE footprint, centre and top above backside | `membrane_{x,y,width,depth}_measured`, `membrane_top_above_back_measured`; keep ≥0.6 mm margin inside the 16 × 12 air column |
+| Both fully mated plug envelopes | `plug_{reach,width,height}_measured` and signed `plug_lowest_above_back_measured`; use the larger envelope across both ports; trial actual plug/latch extraction |
+| Cable insulation and relaxed bends | `cable_diameter_measured`, `bend_radius_measured`, `free_exit_measured`; resize clamp gap to the actual cable and prove grip; external exit clearance ≥bend radius +2 mm does not prove the internal transition bend |
+| Tape and actual trim dimensions | `tape_thickness_measured`, `trim_{width,length}_measured`; record trim curvature and test seating, screw/tool space, removal and airflow |
+| Fastener and driver | `screw_length_measured` (draft joints use BT3x6), `screw_head_radius_measured` 1.9–3.5 mm, `tool_diameter_measured` ≤6 mm, `printed_pilot_measured` 2.45–2.65 mm plus trial retention |
+| Physical trials | `trim_airflow_clearance_confirmed`, `retention_clamps_service_trial_passed`, `tape_attachment_removal_trial_passed` |
 
-Envelope: **56.7 × 30 × 12 mm**. There is only one printed part, so no separate
-assembly export is needed. Board, screws, trim, tape and cable are deliberately
-excluded from the model: no assumed physical stand-ins masquerade as fit proof.
-[src/README.md](src/README.md) is the model catalog.
+Only then set `ready_for_final_print=True`. Generation rejects missing,
+nonfinite, inconsistent or out-of-allowance measurements. Confirmation flags
+require recorded evidence, not merely successful CAD generation. Revise geometry
+and checks when a received interface exceeds an allowance; the gate cannot
+establish the truth of entered values. Test fixtures are explicitly synthetic.
+Physical fit, sensor bias/lag and bus reliability are separate evidence stages.
 
-## Manufacturer facts and applicability
+## Assembly and service
 
-Adafruit's [product 6174 page](https://www.adafruit.com/product/6174) gives
-25.5 × 17.7 × 4.8 mm **assembled module dimensions**. The 4.8 mm value does not
-establish PCB thickness, membrane height or plugged-cable clearance.
+1. Print/calibrate coupons first. Measure both faces of the delivered board,
+   all four lands, plugs, relaxed cables, screw heads/tips and tape/trim.
+   Trial pilots away from electronics and remove all swarf/burrs.
+2. Apply available double-sided tape to two **64 × 7 mm** underside zones,
+   centred at Y=±14.5 mm. Tape area is 896 mm². Keep the central opening and
+   screws clear. Validate tape/trim adhesion, flat seating and clean removal;
+   no year-round performance or nondamaging removal is claimed.
+3. Seat the housing on the four adapter bosses. The 4 mm spigots enter 4.4 mm
+   diameter, 1 mm deep underside recesses: 0.2 mm radial and axial allowances.
+   Use four BT3x6 through the housing into the adapter. Cover removal gives
+   full driver access. Adapter screws/tape remain outside the PCB footprint.
+4. Lower the inspected board onto the locating pins/supports, component-side
+   toward cabin. Fit four retainers with BT3x6, seating against their bosses.
+   Confirm free membrane/tongue, normal header/jumper service and no board
+   bending. SHT45 needs no address modification for the provisional shared bus;
+   cover removal exposes board service, and the board lifts out for solder work.
+5. Mate both cables for the provisional ESP32 → SHT45 → reference TMP117 →
+   lower-band TMP117 route. Route relaxed slack through the open transition
+   space, fit each clamp using two BT3x6, and confirm grip without insulation
+   damage. Anchor heavier extensions to the vehicle separately. No installed
+   I²C reliability claim is made.
+6. Fit the ventilated cover using four BT3x6, seating on its structural stops.
+   Check screw heads and tools remain clear of board/components/membrane.
 
-The [shared Adafruit guide](https://learn.adafruit.com/adafruit-sht40-temperature-humidity-sensor/downloads)
-links the [SHT45 Eagle board](https://github.com/adafruit/Adafruit-SHT40-PCB/blob/40fe2b3aca1aaa3b2185d3d138e77d5b043a56e1/Adafruit%20SHT45.brd).
-At that revision its nominal routed outline is 25.4 × 17.78 mm, corner radius
-2.54 mm, four mounting-hole drills 2.5 mm, hole pitch 20.32 × 12.7 mm and
-sensor centre (12.7, 8.89) mm from the lower-left board datum. Its isolated
-sensor tongue is described by layer-20 slot centre lines. These are **verified
-facts about that manufacturer file**; its repository identifies product
-5665, not explicitly the PTFE 6174. Check all of these against the delivered
-6174 before accepting this layout. If the pattern is asymmetric or the
-sensor has moved, revise the factory/keepout, not just the pitch constants.
+All source pilots are **2.55 mm**; through holes are **3.4 mm**. Draft adapter,
+cover and retainer screws have 4 mm engagement in 5 mm blind pilots; clamp
+screws have 2 mm engagement in 3 mm blind pilots. Each has 1 mm bottom margin.
+Total: **16 BT3x6 screws**. Longer stocked screws need redesigned joint stacks
+and checks; never substitute blindly. BT3x5 and tapped M2 PCB joints are not
+required. Repeated service and PETG thread wear/creep remain physical checks.
 
-The guide also links Adafruit's 5665 STEP model. It was not adopted as a
-confirmed 6174 assembly. A reachable `step.parts` search for `SHT45` returned
-zero items on 2026-10-07. Source revision, board SHA-256, raw outline records,
-hole coordinates and connector placements are retained in `board-layout.json`.
-No critical dimensions were scaled from product photographs.
+For board service: loosen/remove clamps as necessary, release cable plugs,
+remove the cover, then remove all four retainers and lift the PCB along +Z.
+The first 0.8 mm lift clears locating pins. Leave the adapter taped in place.
+Housing service additionally releases its four adapter screws; the spigots are
+straight lift-off features. Relocation requires a separately validated tape
+removal/replacement procedure.
 
-## Required measurements and release gate
+## Coupons, print orientations and evidence
 
-Unknown physical dimensions are `None` in `Parameters`. The draft has no
-invented board-thickness or plug model. Dimensions such as 12 mm standoff,
-4.9 mm posts and the cable saddle are **adjustable design allowances**.
+Print PETG on **Bambu A1, 0.4 mm**, starting with 0.2 mm layers and four walls.
+All STLs are saved at Z=0 in their intended orientation; do not auto-orient.
 
-Use PCB-centred XY coordinates and PCB backside as the component-height datum.
-For each hole, check both faces; use the smallest clear-land radius in the
-measurement parameters.
-
-| Measure / confirm on your hardware | Parameter / required action |
+| STL / quantity | Bed face / use |
 | --- | --- |
-| Received board revision, length, width, corners, all four hole centres and hole diameters | Confirm/update `board_length`, `board_width`, `hole_pitch_x`, `hole_pitch_y`, `hole_diameter`; set `received_layout_confirmed` only after comparison |
-| Actual PCB thickness | `pcb_thickness_measured`; do not use overall module height |
-| Lowest backside solder/component protrusion | `backside_protrusion_measured`; keep ≥0.6 mm clearance above base |
-| Clear backside land around each mounting hole | `bottom_free_land_radius_measured` must be ≥2.45 mm; otherwise redesign contact posts |
-| Clear top land and selected screw-head radius | `top_free_land_radius_measured`, `screw_head_radius_measured`; head must span hole without component interference |
-| PTFE package/membrane footprint and centre relative to PCB centre | `membrane_width_measured`, `membrane_depth_measured`, `membrane_x_measured`, `membrane_y_measured`; retain ≥0.6 mm margin inside sensor keepout and visually confirm tongue clearance |
-| Fully mated plug reach beyond right PCB edge | `mated_plug_reach_measured`; revise saddle/tie positions if needed |
-| Lowest plug surface relative to PCB backside | Signed `plug_lowest_above_back_measured`; must clear base by ≥0.6 mm |
-| Insulated wire-bundle width and relaxed routing bend radius | `cable_width_measured`, `cable_bend_radius_measured`; width plus 1.2 mm must fit 6.8 mm corridor |
-| Cable-tie strap width and thickness | `tie_width_measured`, `tie_thickness_measured`; fit slots and verify complete loops/locking heads |
-| Selected M2 nylon screw thread diameter and under-head length | `screw_thread_diameter_measured`, `screw_under_head_length_measured`; verify 3–5.4 mm engagement |
-| Actual drilled/reamed pilot before tapping | `calibrated_pilot_diameter_measured`; calibrate source/print and verify tap/screw retention on a trial part |
-| Tape thickness after installation/compression | `mounting_tape_measured`; must clear underside tie straps by ≥0.4 mm |
-| Trim curvature, base seating and tape removal | Physical fit trial; then `trim_fit_confirmed` |
-| Printed/tapped post integrity and gentle PCB retention | Physical retention trial; then `tapped_retention_confirmed` |
+| `adapter` ×1, `housing` ×1 | Underside on bed; posts/pins grow upward |
+| `cover` ×1 | Exterior roof on bed; side shields upward |
+| `retainer` ×4 | Flat top on bed; finger upward |
+| `cable_clamp` ×2 | Flat top on bed; feet upward |
+| `pilot_coupon` ×1 | Flat base down; left/centre/right bores 2.45/2.55/2.65 mm |
+| `fit_coupon` ×1 | Housing underside down; reduced-height board/two-plug coupon |
+| `adapter_coupon` ×1 + `adapter_socket_coupon` ×1 | Bases down; pair tests locating spigot/recess and BT3x6 joint |
 
-The cable generator guard reserves plug reach plus twice the measured bend
-radius before the first tie. This is a conservative horizontal allowance,
-**not a swept cable simulation**; the actual downward route and slack must be
-trial-fitted. Raise `board_back_z` or extend the saddle if that route needs it.
+Use a retainer and clamp with the pilot coupon to test clearance holes, head
+seating and thread engagement. Inspect/measure the centre 2.55 mm pilot, insert
+BT3x6 through the actual mating part, check remaining depth and repeated
+removal. Use the board/plug coupon with retainers and both clamps to inspect
+all lands, pins, plug removal, insulation grip and actual transition bends.
+Pair the adapter coupons with BT3x6; measure lateral play, seating, recess
+bridging fidelity and several lift/reseat cycles. Record print settings,
+dimensions, screw type, insertion observations and photographs for the later
+owner measurement ticket. Never tighten screws to compensate for a bad fit.
 
-Set `ready_for_final_print=True` only after entering every measured value and
-completing the three physical confirmation flags. Generation then rejects
-missing measurements and unsafe combinations. Regenerate and recheck every
-output after changing dimensions. This gate prevents incomplete release;
-it cannot independently verify the truth of entered values or winter behavior.
-The synthetic measurements in the check script test gate logic only.
+Vertical features and top-down service parts minimize supports. Housing and
+socket coupons have **0.5 mm radial recess ledges at Z=1 mm**; these small
+unsupported shoulders need slicer/print inspection. See
+[validation report](reports/validation.md) for actual evidence and limits.
+No material temperature qualification is required or claimed.
 
-## Regenerate, validate and inspect
+## Reproduce
 
-Run from this directory. CAD dependencies stay separate from the server.
+Run from this directory; CAD dependencies stay separate from server dependencies.
 
 ```sh
-uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.15 python src/holder.py
-uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.15 python checks/check_geometry.py
+CAD_RUNTIME='cadgen==0.7.17'
+for model in assembly pilot_coupon fit_coupon adapter_coupon adapter_socket_coupon; do
+  uvx --no-config --managed-python --python 3.13 --from "$CAD_RUNTIME" python "src/$model.py"
+done
+uvx --no-config --managed-python --python 3.13 --from "$CAD_RUNTIME" python checks/check_redesign.py
+uvx --no-config --managed-python --python 3.13 --from "$CAD_RUNTIME" python checks/check_geometry.py
+uvx --no-config --managed-python --python 3.13 --from "$CAD_RUNTIME" python checks/test_release_gate.py
 uv run --no-project --with trimesh --with numpy --with scipy python checks/check_mesh.py
-uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.15 cadgen step snapshot --job checks/views.json
-uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.15 cadgen stl snapshot STL/holder.stl views/holder-mesh.png
+uvx --no-config --managed-python --python 3.13 --from "$CAD_RUNTIME" cadgen step snapshot --job checks/views.json
 ```
 
-The maintained STL decorator uses `mesh_tolerance=0.001`, a **relative chord
-tolerance**, not 0.001 mm. Run the plugin's `dfam-check/scripts/dfam_tool.py`
-with its `dfam-check/requirements.txt` dependencies for `measure
-STL/holder.stl --angle-limit 45` and `orientations STL/holder.stl
---angle-limit 45`; save JSON under `reports/`. Review snapshots yourself after
-geometry edits; geometry checks and a viewer alone do not replace visual review.
-
-## PETG printing and physical commissioning
-
-Print with tape rails on the bed and posts up, as supplied. Starting point:
-0.4 mm nozzle, 0.2 mm layers, four perimeter lines and the printer/filament's
-PETG profile. A brim is optional. All holes/slots are vertical; no printed
-roof spans the board. Outside rims have 1 mm plan radii and shallow 0.4 mm
-45° chamfers. The inner rim is square; deburr it and the PCB contact tops.
-Supports are expected to be unnecessary; inspect actual slicer toolpaths,
-small pilot fidelity and first layers before printing. Tap/drill operations
-remain required; the pilot is below the DfAM guide's generic 2 mm hole limit.
-
-Trial fit without power first: confirm level board seating, all four clear
-lands, exposed membrane/tongue, connector removal, cable slack and tie return
-clearance. Check adhesive hold/removal, vibration and PETG creep at the chosen
-location. Compare cabin readings and response against a freely exposed sensor
-before relying on the mount; repeat after position changes and during winter
-testing. Document bias, lag and location. None of these physical checks have
-been performed by the CAD validation.
+Assembly calls its maintained child models; coupon entrypoints generate the
+remaining outputs. Relative STL chord tolerance is 0.0002, not 0.0002 mm.
+Saved artifact checks use 1e-6 mm³ interference tolerance, 0.001 mm bounding
+agreement and <0.2% mesh/exact volume error. Edit source, regenerate, rerun all
+checks and visually inspect snapshots after any geometry change. The model
+catalog is [src/README.md](src/README.md); exported exact files live in
+[STEP/](STEP/) and individual print meshes in [STL/](STL/).
