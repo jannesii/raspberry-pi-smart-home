@@ -1,0 +1,55 @@
+{
+  "units": "mm",
+  "status": "DRAFT: physical measurements outstanding",
+  "step_sha256": "a3f20ce3727a83600c0143336bfaf76d91e43f91aa221ff1d81bc89ff7328e35",
+  "parts": {
+    "holder": {
+      "valid": true,
+      "solids": 1,
+      "volume_mm3": 2957.2422874594,
+      "size_mm": [
+        56.7,
+        30.000000000001002,
+        12.000000000000334
+      ]
+    }
+  },
+  "checks": {
+    "sensor_air_column_overlap_mm3": 0.0,
+    "air_column_xy_mm": [
+      6.4,
+      6.4
+    ],
+    "base_aperture_xy_mm": [
+      26.6,
+      7.7
+    ],
+    "no_printed_cover_above_pcb": true,
+    "only_corner_posts_between_base_and_board": true,
+    "board_back_above_tape_plane_mm": 12.0,
+    "board_back_above_base_top_mm": 10.0,
+    "total_nominal_contact_area_mm2": 67.38716241949889,
+    "flat_tape_rectangles_mm": [
+      30.0,
+      6.0
+    ],
+    "total_tape_area_mm2": 360.0,
+    "pilot_holes": {
+      "count": 4,
+      "diameter_mm": 1.6,
+      "depth_mm": 6.0
+    },
+    "cable_channel_width_mm": 6.799999999999999,
+    "tie_slots_through": true,
+    "release_gate_negative_cases_pass": true
+  },
+  "candidate_layout": "Manufacturer SHT45 layout linked by shared guide; repository identifies 5665, NOT explicitly 6174. Physical comparison required.",
+  "not_verified": [
+    "6174 board revision/fit and membrane geometry",
+    "mated cable bend and clearance",
+    "printed/tapped pilot tolerance and nylon screw retention",
+    "adhesive/trim compatibility, curvature and tape removal",
+    "thermal bias, airflow response, PETG creep and vibration",
+    "slicer paths and physical print"
+  ]
+}

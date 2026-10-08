@@ -1,0 +1,16 @@
+{
+  "units": "mm",
+  "mesh_faceting_allowance_deg": 0.2,
+  "parts": {
+    "holder": {
+      "watertight": true,
+      "winding_consistent": true,
+      "bodies": 1,
+      "volume_mm3": 2953.963489124509,
+      "relative_volume_error": 0.0011087351039158477,
+      "minimum_downward_surface_angle_deg": 44.89632524194696,
+      "downward_surfaces_above_bed_are_only_shallow_chamfers": true
+    }
+  },
+  "stl_sha256": "d76a0332a6a3522569397ae78c9914e75904488245cd8d1b94932e059a9d7c9e"
+}

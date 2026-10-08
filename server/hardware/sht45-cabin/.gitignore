@@ -1,0 +1,10 @@
+# The repository ignores JSON globally; retain this project's CAD inputs/reports.
+!src/lib/board-layout.json
+!checks/views.json
+!reports/geometry.json
+!reports/mesh.json
+!reports/holder-dfam.json
+!reports/orientations.json
+
+tmp/
+__pycache__/

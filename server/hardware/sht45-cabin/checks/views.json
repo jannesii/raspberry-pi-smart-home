@@ -1,0 +1,10 @@
+{
+  "input": "STEP/holder.step",
+  "mode": "view",
+  "outputs": [
+    {"path": "views/holder.png", "camera": "iso"},
+    {"path": "views/holder-top.png", "camera": "top"},
+    {"path": "views/holder-side.png", "camera": "front"},
+    {"path": "views/holder-bottom.png", "camera": "bottom"}
+  ]
+}

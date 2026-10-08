@@ -101,6 +101,14 @@ are available in [the holder guide](hardware/tmp117-windshield/README.md). The
 exports are measurement-gated drafts; measure the delivered PCB, connected cable
 and installation stack before a final print.
 
+## SHT45 cabin holder
+
+A removable open-frame PETG holder for the Adafruit 6174 PTFE module, with
+raised PCB supports, tape mounting rails and cable strain relief, is available
+in [the cabin holder guide](hardware/sht45-cabin/README.md). Its STEP/STL exports
+are measurement-gated drafts; confirm the board layout, fasteners, connected
+cable and trim/tape fit before a final print.
+
 ## Configuration
 
 These variables are required at every startup:

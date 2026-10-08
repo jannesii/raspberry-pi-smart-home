@@ -1,0 +1,162 @@
+{
+  "units": "mm",
+  "source_url": "https://github.com/adafruit/Adafruit-SHT40-PCB/blob/40fe2b3aca1aaa3b2185d3d138e77d5b043a56e1/Adafruit%20SHT45.brd",
+  "source_sha256": "eef8b6e16c1a6af780e679e4c011232093fe37cfa4250502ed3527b02008122c",
+  "source_revision": "40fe2b3aca1aaa3b2185d3d138e77d5b043a56e1",
+  "applicability": "Manufacturer SHT45 layout linked by shared guide; repository identifies 5665, NOT explicitly 6174. Physical comparison required.",
+  "product_6174_envelope_mm": [
+    25.5,
+    17.7,
+    4.8
+  ],
+  "product_url": "https://www.adafruit.com/product/6174",
+  "checked_date": "2026-10-07",
+  "outline_mm": [
+    25.4,
+    17.78
+  ],
+  "corner_radius_mm": 2.54,
+  "mounting_holes_xy": [
+    [
+      2.54,
+      15.24
+    ],
+    [
+      22.86,
+      15.24
+    ],
+    [
+      2.54,
+      2.54
+    ],
+    [
+      22.86,
+      2.54
+    ]
+  ],
+  "mounting_hole_drill_mm": 2.5,
+  "mounting_pad_diameter_mm": 3.2,
+  "sensor_xy": [
+    12.7,
+    8.89
+  ],
+  "outline_wires": [
+    {
+      "x1": "0",
+      "y1": "15.24",
+      "x2": "0",
+      "y2": "2.54",
+      "width": "0",
+      "layer": "20"
+    },
+    {
+      "x1": "0",
+      "y1": "2.54",
+      "x2": "2.54",
+      "y2": "0",
+      "width": "0",
+      "layer": "20",
+      "curve": "90"
+    },
+    {
+      "x1": "2.54",
+      "y1": "0",
+      "x2": "22.86",
+      "y2": "0",
+      "width": "0",
+      "layer": "20"
+    },
+    {
+      "x1": "22.86",
+      "y1": "0",
+      "x2": "25.4",
+      "y2": "2.54",
+      "width": "0",
+      "layer": "20",
+      "curve": "90"
+    },
+    {
+      "x1": "25.4",
+      "y1": "2.54",
+      "x2": "25.4",
+      "y2": "15.24",
+      "width": "0",
+      "layer": "20"
+    },
+    {
+      "x1": "25.4",
+      "y1": "15.24",
+      "x2": "22.86",
+      "y2": "17.78",
+      "width": "0",
+      "layer": "20",
+      "curve": "90"
+    },
+    {
+      "x1": "22.86",
+      "y1": "17.78",
+      "x2": "2.54",
+      "y2": "17.78",
+      "width": "0",
+      "layer": "20"
+    },
+    {
+      "x1": "2.54",
+      "y1": "17.78",
+      "x2": "0",
+      "y2": "15.24",
+      "width": "0",
+      "layer": "20",
+      "curve": "90"
+    },
+    {
+      "x1": "10.414",
+      "y1": "7.112",
+      "x2": "10.414",
+      "y2": "11.557",
+      "width": "0.8128",
+      "layer": "20"
+    },
+    {
+      "x1": "10.414",
+      "y1": "11.557",
+      "x2": "14.986",
+      "y2": "11.557",
+      "width": "0.8128",
+      "layer": "20"
+    },
+    {
+      "x1": "14.986",
+      "y1": "11.557",
+      "x2": "14.986",
+      "y2": "7.112",
+      "width": "0.8128",
+      "layer": "20"
+    }
+  ],
+  "stemma_connectors": [
+    {
+      "name": "CONN3",
+      "xy": [
+        22.225,
+        8.89
+      ],
+      "rotation": "R90"
+    },
+    {
+      "name": "CONN4",
+      "xy": [
+        3.175,
+        8.89
+      ],
+      "rotation": "R270"
+    }
+  ],
+  "step_parts_search": {
+    "query": "SHT45",
+    "date": "2026-10-07",
+    "reachable": true,
+    "total": 0
+  },
+  "vendor_3d_model": "Shared guide links a 5665 STEP, not a confirmed 6174 PTFE assembly; not used as a fit reference."
+}
