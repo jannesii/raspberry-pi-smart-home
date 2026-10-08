@@ -1,17 +1,25 @@
-"""Printed parts only: no invented PCB, cable, foam or windshield geometry."""
+"""Installed printed parts; excludes unmeasured board, tape, foam and cables."""
 
+from base import base
+from cable_clamp import cable_clamp
 from cadgen import build123d as bd, step
-from carrier import carrier
-from foam_bridge import foam_bridge
-from lib.geometry import P
+from cover import cover
+from lib.geometry import CLAMPS, RETAINERS, installed_clamp, installed_cover, installed_retainer
+from retainer import retainer
 
 
 @step(out="../STEP/assembly.step")
 def assembly():
-    return bd.Compound(
-        children=[carrier(), foam_bridge().moved(bd.Location((0, 0, P.stop_z)))],
-        label="DRAFT_TMP117_holder_measure_before_print",
-    )
+    parts = [base(), installed_cover(cover())]
+    for x, y in RETAINERS:
+        part = installed_retainer(retainer(), x, y)
+        part.label = f"retainer_{x}_{y}"
+        parts.append(part)
+    for x, _ in CLAMPS:
+        part = installed_clamp(cable_clamp(), x)
+        part.label = f"clamp_{x}"
+        parts.append(part)
+    return bd.Compound(children=parts, label="DRAFT_TMP117_measurement_required")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,66 @@
 {
   "jobs": [
     {
+      "input": "STEP/base.step",
+      "mode": "view",
+      "outputs": [
+        {
+          "path": "views/base.png",
+          "camera": "iso"
+        }
+      ]
+    },
+    {
+      "input": "STEP/cover.step",
+      "mode": "view",
+      "outputs": [
+        {
+          "path": "views/cover.png",
+          "camera": "iso"
+        }
+      ]
+    },
+    {
+      "input": "STEP/retainer.step",
+      "mode": "view",
+      "outputs": [
+        {
+          "path": "views/retainer.png",
+          "camera": "iso"
+        }
+      ]
+    },
+    {
+      "input": "STEP/cable_clamp.step",
+      "mode": "view",
+      "outputs": [
+        {
+          "path": "views/cable_clamp.png",
+          "camera": "iso"
+        }
+      ]
+    },
+    {
+      "input": "STEP/pilot_coupon.step",
+      "mode": "view",
+      "outputs": [
+        {
+          "path": "views/pilot_coupon.png",
+          "camera": "iso"
+        }
+      ]
+    },
+    {
+      "input": "STEP/fit_coupon.step",
+      "mode": "view",
+      "outputs": [
+        {
+          "path": "views/fit_coupon.png",
+          "camera": "iso"
+        }
+      ]
+    },
+    {
       "input": "STEP/assembly.step",
       "mode": "view",
       "outputs": [
@@ -11,26 +71,10 @@
         {
           "path": "views/assembly-side.png",
           "camera": "front"
-        }
-      ]
-    },
-    {
-      "input": "STEP/carrier.step",
-      "mode": "view",
-      "outputs": [
+        },
         {
-          "path": "views/carrier-bottom.png",
+          "path": "views/assembly-bottom.png",
           "camera": "bottom"
-        }
-      ]
-    },
-    {
-      "input": "STEP/foam_bridge.step",
-      "mode": "view",
-      "outputs": [
-        {
-          "path": "views/foam-bridge.png",
-          "camera": "iso"
         }
       ]
     }

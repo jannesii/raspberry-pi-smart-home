@@ -1,57 +1,96 @@
 {
   "units": "mm",
   "status": "DRAFT: physical measurements outstanding",
+  "overlap_tolerance_mm3": 1e-06,
   "parts": {
-    "carrier": {
+    "base": {
       "valid": true,
       "solids": 1,
-      "volume_mm3": 3338.5133164189447,
+      "volume_mm3": 6593.290615908882,
       "size_mm": [
-        56.8,
-        33.380000000002,
-        13.750000000000004
+        64.0,
+        36.0,
+        15.0
       ]
     },
-    "foam_bridge": {
+    "cover": {
       "valid": true,
       "solids": 1,
-      "volume_mm3": 1123.9990124517687,
+      "volume_mm3": 3330.4392985415866,
       "size_mm": [
-        17.6,
-        33.38,
-        2.0
+        44.0,
+        32.0,
+        15.0
       ]
     },
-    "assembly": {
+    "retainer": {
       "valid": true,
-      "solids": 2,
-      "volume_mm3": 4462.512328870714,
+      "solids": 1,
+      "volume_mm3": 133.9415944622503,
       "size_mm": [
-        56.8,
-        33.380000000002,
-        14.150000000000004
+        7.0,
+        9.0,
+        6.35
+      ]
+    },
+    "cable_clamp": {
+      "valid": true,
+      "solids": 1,
+      "volume_mm3": 407.3663778490014,
+      "size_mm": [
+        8.0,
+        16.0,
+        4.0
+      ]
+    },
+    "pilot_coupon": {
+      "valid": true,
+      "solids": 1,
+      "volume_mm3": 1464.700004302105,
+      "size_mm": [
+        36.0,
+        12.0,
+        8.0
+      ]
+    },
+    "fit_coupon": {
+      "valid": true,
+      "solids": 1,
+      "volume_mm3": 5289.561080595598,
+      "size_mm": [
+        64.0,
+        36.0,
+        6.0
       ]
     }
   },
   "checks": {
-    "pcb_keepout_overlap_mm3": 0.0,
-    "mating_overlap_mm3": 0.0,
-    "tongue_keepout_clear": true,
-    "trial_cable_corridor_overlap_mm3": 0.0,
-    "foam_space_clear": true,
-    "bridge_hole_diameter_mm": 2.8,
-    "peg_diameter_mm": 2.4,
-    "glass_edge_chamfer_mm": 0.4,
-    "base_thickness_mm": 2.0,
-    "bridge_thickness_mm": 2.0,
-    "hard_stop_height_mm": 12.149999999999999,
-    "trial_foam_compression_mm": 0.3
+    "eight_valid_assembly_solids": true,
+    "printed_mating_overlap_mm3": 0,
+    "vertical_PCB_lift_base_clear": true,
+    "thermal_path_clear": true,
+    "both_plug_and_slack_allowances_clear": true,
+    "foam_allowance_clear": true,
+    "pilot_diameter_mm": 2.55,
+    "through_clearance_mm": 3.4,
+    "BT3_length_mm": 6,
+    "engagement_mm": [
+      4,
+      4,
+      2
+    ],
+    "minimum_screw_tip_above_base_underside_mm": 2,
+    "cover_structural_stop_z_mm": 15,
+    "tool_diameter_allowance_mm": 6,
+    "clamp_opening_height_mm": 3,
+    "clamp_opening_width_mm": 4
   },
   "not_verified": [
-    "physical board/cable fit",
-    "foam contact force",
-    "windshield curvature",
-    "adhesive retention and thermal bias/lag",
-    "slicer toolpaths"
+    "delivered PCB/plug/component/bearing-land fit",
+    "cable gripping and actual bends",
+    "contact force and physical retention",
+    "glass curvature and tape attachment/removal",
+    "slicer toolpaths",
+    "installed thermal bias/lag and bus reliability"
   ]
 }

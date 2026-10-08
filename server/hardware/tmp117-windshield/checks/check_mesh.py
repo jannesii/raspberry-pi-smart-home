@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import trimesh
@@ -11,8 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main():
     geometry = json.loads((ROOT / "reports/geometry.json").read_text())
-    report = {"units": "mm", "mesh_faceting_allowance_deg": 0.2, "parts": {}}
-    for name in ("carrier", "foam_bridge"):
+    report: dict[str, Any] = {"units": "mm", "mesh_faceting_allowance_deg": 0.2, "parts": {}}
+    for name in ("base", "cover", "retainer", "cable_clamp", "pilot_coupon", "fit_coupon"):
         mesh = trimesh.load_mesh(ROOT / f"STL/{name}.stl", process=True)
         assert mesh.is_watertight and mesh.is_winding_consistent
         assert mesh.body_count == 1 and mesh.volume > 0
@@ -25,8 +26,6 @@ def main():
         selected = down & above_bed
         angles = np.degrees(np.arccos(np.clip(-mesh.face_normals[selected, 2], 0, 1)))
         assert len(angles) == 0 or angles.min() >= 45 - 0.2
-        if selected.any():
-            assert mesh.triangles[selected, :, 2].max() <= 0.4001
         report["parts"][name] = {
             "watertight": bool(mesh.is_watertight),
             "winding_consistent": bool(mesh.is_winding_consistent),
@@ -34,7 +33,7 @@ def main():
             "volume_mm3": float(mesh.volume),
             "relative_volume_error": float(error),
             "minimum_downward_surface_angle_deg": float(angles.min()) if len(angles) else None,
-            "downward_surfaces_above_bed_are_only_shallow_chamfers": True,
+            "unsupported_downward_faces_above_bed": int(selected.sum()),
         }
     (ROOT / "reports/mesh.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))

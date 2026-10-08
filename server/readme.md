@@ -96,7 +96,8 @@ live devices or database.
 
 ## TMP117 windshield holder
 
-A parametric PETG carrier, foam bridge, STEP/STL exports and inspection reports
+A parametric PETG taped base, screwed airflow cover, removable board retainers,
+two cable clamps, fit coupons, STEP/STL exports and inspection reports
 are available in [the holder guide](hardware/tmp117-windshield/README.md). The
 exports are measurement-gated drafts; measure the delivered PCB, connected cable
 and installation stack before a final print.

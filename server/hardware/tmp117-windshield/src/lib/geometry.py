@@ -1,200 +1,226 @@
-"""Millimetres; PCB centre XY datum; mounting pads start at Z=0.
-
-Draft visualization values are deliberately NOT asserted board dimensions.
-Measured values must replace None before the final print.
-"""
+"""Draft millimetre geometry; glass Z=-installed tape, base underside Z=0."""
 
 from __future__ import annotations
 
-import json
+import math
 from dataclasses import dataclass
-from pathlib import Path
 
 from cadgen import build123d as bd
 
 
 @dataclass(frozen=True)
 class Parameters:
-    board_length: float = 25.4  # vendor Eagle outline, verify received revision
+    # Manufacturer nominal outline. Every other default is a design allowance.
+    board_length: float = 25.4
     board_width: float = 17.78
-    board_corner: float = 2.54
-    clearance: float = 0.6
-    rail: float = 7.2
-    base: float = 2.0
-    edge_break: float = 0.4
-    corner: float = 1.0
-    post_diameter: float = 5.6
-    peg_diameter: float = 2.4
-    peg_height: float = 1.6
-    peg_clearance: float = 0.4  # diametral
-    post_x: float = 5.0
-    bridge_width: float = 17.6
-    bridge_thickness: float = 2.0
-    foam_width: float = 8.0
-    foam_length: float = 8.0
-    foam_thickness: float = 10.0  # existing E30 nominal stock; measure actual
-    foam_compression: float = 0.03  # trial target; not a pressure specification
-    cable_reach: float = 20.0  # design allowance beyond right PCB edge
-    cable_tab_width: float = 12.0
-    tie_slot_width: float = 3.2
-    tie_slot_length: float = 2.4
-    tie_slot_radius: float = 0.6
-    tie_spacing: float = 6.0
+    pilot: float = 2.55
+    clearance_hole: float = 3.4
+    base_thickness: float = 2.0
+    cover_stop: float = 15.0
+    retainer_stop: float = 6.0
+    roof: float = 2.0
+    board_edge_clearance: float = 0.3
+    draft_pcb_thickness: float = 1.6
+    draft_tape: float = 0.15
+    draft_paste: float = 0.1
     pcb_thickness_measured: float | None = None
-    sensor_top_above_back_measured: float | None = None
-    mated_plug_reach_measured: float | None = None
-    cable_lowest_above_glass_measured: float | None = None
-    cable_width_measured: float | None = None
-    glass_layer_measured: float | None = None
-    mounting_tape_measured: float | None = None
+    tape_thickness_measured: float | None = None
+    paste_thickness_measured: float | None = None
+    sensor_top_measured: float | None = None
+    underside_protrusion_measured: float | None = None
+    plug_reach_measured: float | None = None
+    plug_width_measured: float | None = None
+    cable_diameter_measured: float | None = None
+    bend_radius_measured: float | None = None
+    foam_thickness_measured: float | None = None
+    bearing_lands_confirmed: bool = False
+    layout_confirmed: bool = False
+    physical_trial_passed: bool = False
     ready_for_final_print: bool = False
-    draft_sensor_top: float = 2.5
-    draft_glass_layer: float = 0.1
-    draft_mounting_tape: float = 0.15
 
     @property
-    def rail_y(self):
-        return self.board_width / 2 + self.clearance + self.rail / 2
-
-    @property
-    def left_x(self):
-        return -self.board_length / 2 - self.clearance - self.rail / 2
-
-    @property
-    def right_x(self):
-        return self.board_length / 2 + self.cable_reach
-
-    @property
-    def sensor_top(self):
-        return (
-            self.draft_sensor_top
-            if self.sensor_top_above_back_measured is None
-            else self.sensor_top_above_back_measured
+    def pcb_back(self):
+        tape = (
+            self.draft_tape
+            if self.tape_thickness_measured is None
+            else self.tape_thickness_measured
         )
+        paste = (
+            self.draft_paste
+            if self.paste_thickness_measured is None
+            else self.paste_thickness_measured
+        )
+        return paste - tape
 
     @property
-    def contact_layer(self):
-        return (
-            self.draft_glass_layer
-            if self.glass_layer_measured is None
-            else self.glass_layer_measured
+    def pcb_top(self):
+        thickness = (
+            self.draft_pcb_thickness
+            if self.pcb_thickness_measured is None
+            else self.pcb_thickness_measured
         )
+        return self.pcb_back + thickness
 
     @property
-    def mount_tape(self):
-        return (
-            self.draft_mounting_tape
-            if self.mounting_tape_measured is None
-            else self.mounting_tape_measured
-        )
-
-    @property
-    def stop_z(self):
-        return (
-            self.contact_layer
-            + self.sensor_top
-            + self.foam_thickness * (1 - self.foam_compression)
-            - self.mount_tape
-        )
+    def finger_depth(self):
+        return self.retainer_stop - self.pcb_top - 0.1
 
     def validate(self):
+        measured: dict[str, float] = {}
+        for name, value in vars(self).items():
+            if not name.endswith("_measured"):
+                continue
+            if value is None:
+                if self.ready_for_final_print:
+                    raise ValueError("Final fit requires every physical measurement")
+                continue
+            if not math.isfinite(value) or value < 0:
+                raise ValueError("Measurements must be finite nonnegative millimetres")
+            measured[name] = value
+        if self.pcb_thickness_measured is not None and self.pcb_thickness_measured <= 0:
+            raise ValueError("PCB thickness must be positive")
+        if not 0 < self.finger_depth < self.retainer_stop:
+            raise ValueError("Contact stack outside retainer adjustment range")
         if self.ready_for_final_print:
-            assert all(
-                value is not None
-                for name, value in vars(self).items()
-                if name.endswith("_measured")
-            ), "Measure every physical interface before final-print release"
-        assert self.base >= 1.6 and self.rail >= self.post_diameter + 2 * self.edge_break
-        assert 0 <= self.foam_compression <= 0.05
-        assert self.stop_z > self.base
-        assert self.peg_height < self.bridge_thickness
-        assert self.post_diameter + 1e-9 >= self.peg_diameter + 2 * 1.6
-        assert (
-            self.bridge_width / 2 - self.post_x - (self.peg_diameter + self.peg_clearance) / 2
-            >= 1.6
-        )
-        assert self.foam_width / 2 < self.post_x + self.post_diameter / 2
-        if self.mated_plug_reach_measured is not None:
-            assert (
-                self.cable_reach - self.rail / 2 > self.mated_plug_reach_measured + self.clearance
-            )
-        if self.cable_lowest_above_glass_measured is not None:
-            assert (
-                self.cable_lowest_above_glass_measured
-                >= self.mount_tape + self.base + self.clearance
-            )
-        if self.cable_width_measured is not None:
-            assert (
-                self.cable_width_measured + 2 * self.clearance
-                < self.cable_tab_width - 2 * self.tie_slot_length - 2 * 1.6
-            )
+            if not all(
+                (self.layout_confirmed, self.bearing_lands_confirmed, self.physical_trial_passed)
+            ):
+                raise ValueError(
+                    "Final fit requires measurements, confirmed lands/layout and physical trial"
+                )
+            if (
+                any(
+                    value <= 0
+                    for value in (
+                        measured["plug_reach_measured"],
+                        measured["plug_width_measured"],
+                        measured["cable_diameter_measured"],
+                        measured["bend_radius_measured"],
+                        measured["foam_thickness_measured"],
+                    )
+                )
+                or measured["sensor_top_measured"] < measured["pcb_thickness_measured"]
+            ):
+                raise ValueError(
+                    "Received component dimensions must be physically consistent and positive"
+                )
+            if measured["underside_protrusion_measured"] > measured["paste_thickness_measured"]:
+                raise ValueError("Backside protrusions prevent nominal glass contact")
+            if measured["plug_reach_measured"] > 8 or measured["plug_width_measured"] > 8:
+                raise ValueError("Plug exceeds reserved envelope; redesign clearance")
+            if measured["cable_diameter_measured"] > 3 or measured["bend_radius_measured"] > 10:
+                raise ValueError("Cable exceeds draft clamp/straight exit allowance")
+            if (
+                self.pcb_back
+                + measured["sensor_top_measured"]
+                + measured["foam_thickness_measured"]
+                > self.cover_stop - 0.5
+            ):
+                raise ValueError("Foam stack reaches cover; trim pad independently of screws")
 
 
 P = Parameters()
-
-
-def layout():
-    return json.loads(Path(__file__).with_name("board-layout.json").read_text())
+RETAINERS = [(x, y) for x in (-10.16, 10.16) for y in (-13.0, 13.0)]
+STOPS = [(x, y) for x in (-19.0, 19.0) for y in (-13.0, 13.0)]
+CLAMPS = [(-27.0, 0.0), (27.0, 0.0)]
 
 
 def box_at(w, d, h, x=0, y=0, z=0):
     return bd.Pos(x, y, z + h / 2) * bd.Box(w, d, h)
 
 
-def rounded(w, d, h, x=0, y=0, z=0, radius=1):
-    return bd.Pos(x, y, z) * bd.extrude(bd.RectangleRounded(w, d, radius), amount=h)
-
-
-def carrier(p=P):
-    p.validate()
-    length = p.right_x - p.left_x + p.rail
-    centre = (p.right_x + p.left_x) / 2
-    body = rounded(length, 2 * p.rail_y + p.rail, p.base, centre, radius=p.corner)
-    body -= box_at(length - 2 * p.rail, 2 * p.rail_y - p.rail, p.base + 2, centre, z=-1)
-    # Break all exposed base top/bottom rims at 45 degrees, including the aperture.
-    horizontal = [e for e in body.edges() if e.bounding_box().size.Z < 1e-6]
-    body = bd.chamfer(horizontal, length=p.edge_break)
-    # Cable saddle lies outside the PCB; no PCB ledge and no sensor backing.
-    tab_length = p.cable_reach / 2 + p.rail
-    tab_x = p.right_x - tab_length / 2 + p.rail / 2
-    tab = rounded(tab_length, p.cable_tab_width, p.base, tab_x, radius=p.corner)
-    tab = bd.chamfer(
-        [e for e in tab.edges() if e.bounding_box().size.Z < 1e-6], length=p.edge_break
+def bore(diameter, depth, x=0, y=0, z=0):
+    return bd.Pos(x, y, z) * bd.Cylinder(
+        diameter / 2, depth, align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN)
     )
-    body += tab
-    for x in (tab_x - p.tie_spacing / 2, tab_x + p.tie_spacing / 2):
-        for y in (
-            -p.cable_tab_width / 2 + p.tie_slot_length / 2 + 1.6,
-            p.cable_tab_width / 2 - p.tie_slot_length / 2 - 1.6,
-        ):
-            body -= rounded(
-                p.tie_slot_width, p.tie_slot_length, p.base + 2, x, y, -1, radius=p.tie_slot_radius
-            )
-    for x in (-p.post_x, p.post_x):
-        for y in (-p.rail_y, p.rail_y):
-            body += bd.Pos(x, y, p.base) * bd.Cylinder(
-                p.post_diameter / 2,
-                p.stop_z - p.base,
-                align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN),
-            )
-            body += bd.Pos(x, y, p.stop_z) * bd.Cylinder(
-                p.peg_diameter / 2,
-                p.peg_height,
-                align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN),
-            )
-    body.label = "draft_open_back_carrier"
-    return body
 
 
-def bridge(p=P):
+def base(p=P):
     p.validate()
-    body = rounded(p.bridge_width, 2 * p.rail_y + p.rail, p.bridge_thickness, radius=p.corner)
-    for x in (-p.post_x, p.post_x):
-        for y in (-p.rail_y, p.rail_y):
-            body -= bd.Pos(x, y, -1) * bd.Cylinder(
-                (p.peg_diameter + p.peg_clearance) / 2,
-                p.bridge_thickness + 2,
-                align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN),
-            )
-    body.label = "draft_foam_bridge"
+    # Window walls locate the PCB perimeter; no shelves beneath board/tongue.
+    body = box_at(64, 36, p.base_thickness)
+    body -= box_at(
+        p.board_length + 2 * p.board_edge_clearance,
+        p.board_width + 2 * p.board_edge_clearance,
+        p.base_thickness + 2,
+        z=-1,
+    )
+    # Blind pilots leave at least 1 mm of printed floor above mounting tape.
+    for x, y in STOPS:
+        body += bore(7, p.cover_stop - p.base_thickness, x, y, p.base_thickness)
+        body -= bore(p.pilot, 5, x, y, p.cover_stop - 4)
+    for x, y in RETAINERS:
+        body += bd.Pos(x, y, p.base_thickness) * bd.extrude(
+            bd.RectangleRounded(7, 7, 0.5), amount=p.retainer_stop - p.base_thickness
+        )
+        body -= bore(p.pilot, 5, x, y, p.retainer_stop - 4)
+    for x, _ in CLAMPS:
+        for y in (-5, 5):
+            body += box_at(8, 6, 2, x, y, 2)
+            body -= bore(p.pilot, 4, x, y, 1)
+    body.label = "DRAFT_taped_base"
     return body
+
+
+def cover(p=P):
+    # Print roof down: walls rise, so no bridge/support beneath installed roof.
+    body = box_at(44, 32, p.roof)
+    for y in (-10.7, 10.7):
+        body += box_at(12, 1.4, p.cover_stop - p.base_thickness, y=y, z=p.roof)
+    # Open ends admit plugs; small centre shield covers foam without sealing.
+    for x in (-15.3, 15.3):
+        body += bd.Pos(x, 0, p.roof) * bd.extrude(bd.RectangleRounded(1.4, 9, 0.3), amount=6)
+    for x, y in STOPS:
+        body -= bore(p.clearance_hole, p.roof + 2, x, y, -1)
+    body.label = "DRAFT_airflow_cover_roof_down"
+    return body
+
+
+def retainer(p=P):
+    p.validate()
+    body = box_at(7, 9, p.roof, y=-2)
+    body += box_at(5, 1.2, p.finger_depth, y=-5.9, z=p.roof)
+    body -= bore(p.clearance_hole, p.roof + 2, z=-1)
+    body.label = "DRAFT_land_retainer_top_down"
+    return body
+
+
+def cable_clamp(p=P):
+    body = box_at(8, 16, 3)
+    # Feet close on bosses. 4 x 3 mm opening grips only after measured sizing.
+    for y in (-5, 5):
+        body += box_at(8, 6, 1, y=y, z=3)
+        body -= bore(p.clearance_hole, 6, y=y, z=-1)
+    body.label = "DRAFT_cable_clamp_top_down"
+    return body
+
+
+def pilot_coupon(p=P):
+    body = box_at(36, 12, 2)
+    for x, d in ((-12, 2.45), (0, 2.55), (12, 2.65)):
+        body += bore(7, 6, x=x, z=2)
+        body -= bore(d, 7, x=x, z=2)
+    body.label = "DRAFT_pilot_ladder_left_2p45_middle_2p55_right_2p65"
+    return body
+
+
+def fit_coupon(p=P):
+    # Reduced-height full open board/plug window; reuse retention and clamp datums.
+    body = base(p)
+    body -= box_at(70, 40, 20, z=p.retainer_stop)
+    body.label = "DRAFT_board_plug_contact_stack_coupon"
+    return body
+
+
+def installed_cover(shape, p=P):
+    return shape.moved(bd.Location((0, 0, p.cover_stop + p.roof), (180, 0, 0)))
+
+
+def installed_retainer(shape, x, y, p=P):
+    # Local inward end is -Y; X rotation flips it. North needs a Z half-turn.
+    rotation = (180, 0, 180 if y > 0 else 0)
+    return shape.moved(bd.Location((x, y, p.retainer_stop + p.roof), rotation))
+
+
+def installed_clamp(shape, x):
+    return shape.moved(bd.Location((x, 0, 8), (180, 0, 0)))
