@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
+from datetime import date, timedelta
 
-from sqlalchemy import Engine, func, insert, select
+from sqlalchemy import Engine, insert, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from ...services.car_heater import ChargeModeState, KeepAtTempSettings
@@ -218,11 +219,15 @@ class CarHeaterMixin:
         if sa_engine is None:
             raise RuntimeError("SQLAlchemy engine not initialized")
 
+        # The column is local-time ISO text ("2026-10-13 19:13:29+03"), so
+        # its date prefix is the local day. Compare as text: date() on it
+        # fails on PostgreSQL and converts to UTC (or NULL) on SQLite.
+        next_day = (date.fromisoformat(date_str) + timedelta(days=1)).isoformat()
         try:
-            # Use func.date() for PostgreSQL compatibility
             stmt = (
                 select(car_heater_status)
-                .where(func.date(car_heater_status.c.timestamp) == date_str)
+                .where(car_heater_status.c.timestamp >= date_str)
+                .where(car_heater_status.c.timestamp < next_day)
                 .order_by(car_heater_status.c.timestamp, car_heater_status.c.id)
             )
 

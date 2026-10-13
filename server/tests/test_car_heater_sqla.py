@@ -238,6 +238,24 @@ class TestCarHeaterStatus:
         for r in results:
             assert r.source == "2024-01-16"
 
+    def test_get_status_for_date_matches_stored_local_text(self, controller: Controller):
+        """PostgreSQL stores this column as Helsinki-local text such as
+        '2026-10-13 00:30:00+03'; the local date prefix decides the day."""
+        for ts, source in [
+            ("2026-10-12 23:59:59+03", "before"),
+            ("2026-10-13 00:30:00+03", "day"),
+            ("2026-10-13 19:13:29+03", "day"),
+            ("2026-10-14 00:00:00+03", "after"),
+        ]:
+            controller.record_car_heater_status(make_status(timestamp=ts, source=source))
+
+        results = controller.get_car_heater_status_for_date("2026-10-13")
+
+        assert [r.timestamp for r in results] == [
+            "2026-10-13 00:30:00+03",
+            "2026-10-13 19:13:29+03",
+        ]
+
 
 class TestChargeModeState:
     """Tests for charge mode state singleton operations."""
