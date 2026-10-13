@@ -82,9 +82,9 @@ def main():
         expected.append(shapes["cable_clamp"].moved(bd.Location((x, 0, 16), (180, 0, 0))))
     assert abs(assembly.volume - sum(part.volume for part in expected)) < 0.001
     for part in expected:
-        assert abs(overlap(assembly, part) - part.volume) < 0.001, (
-            "Installed part differs from saved export"
-        )
+        assert (
+            abs(overlap(assembly, part) - part.volume) < 0.001
+        ), "Installed part differs from saved export"
     housing, cover = expected[1:3]
     # Membrane/tongue air column traverses adapter, housing and installed roof.
     clear(assembly, box(16, 12, 40, z=-1), "through membrane ventilation column")

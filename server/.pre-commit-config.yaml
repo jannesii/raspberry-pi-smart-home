@@ -19,9 +19,11 @@ repos:
     hooks:
       # Trim trailing whitespace
       - id: trailing-whitespace
-        exclude: '\.md$'
+        # STEP files are generated CAD exports; keep them byte-identical.
+        exclude: '\.(md|step)$'
       # Ensure files end with newline
       - id: end-of-file-fixer
+        exclude: '\.step$'
       # Check YAML syntax
       - id: check-yaml
       # Check JSON syntax (VS Code settings are JSON with comments)
