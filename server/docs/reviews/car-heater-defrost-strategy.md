@@ -80,15 +80,16 @@ test, for example, requires 80 % of zone A at 20 min and 95 % of zone B at
 | Candidate definition | Physically meaningful? | Measurable automatically here? | Assessment |
 | --- | --- | --- | --- |
 | Entire windshield above freezing | Stricter than needed; the lower band near the cowl clears last | No; one point sensor cannot cover the glass | Impractical and wasteful |
-| Driver's primary viewing area clear, wipers allowed | Yes; matches the regulatory notion | Only by the user or a camera. A glass sensor inside that area is a proxy | **Validation definition** |
+| Driver's primary viewing area clear, wipers allowed | Yes; matches the regulatory notion | Only by the user or a camera. A glass sensor outside sightlines is a proxy only after validation against clearing of that area | **Validation definition** |
 | No visible exterior frost anywhere | Yes, but stricter than needed at the edges | User or camera | Useful label, not a control input |
 | Predicted sufficient melt: glass at a reference point held above a threshold for a dwell time | Yes, once threshold and dwell are validated | **Yes, with a glass temperature sensor** | **Control definition** (needs validation) |
 | Cabin air above a target | Only indirectly | Yes | Not a readiness definition (next section) |
 
 **Proposed definition:**
 
-- **Control on:** glass inner-surface temperature at a reference point in the
-  driver's area is at least θ for at least τ, and is still held at departure.
+- **Control on:** glass inner-surface temperature at an unobtrusive reference
+  point is at least θ for at least τ, and is still held at departure. Its
+  relationship to clearing of the driver's area must be validated first.
 - **Validate against:** the user reports that the driver's area was clear, with
   wipers allowed.
 
@@ -664,8 +665,8 @@ The software cannot currently know:
 ### Which additional measurement would matter
 
 **The largest single gain in observability comes from a windshield inner-surface
-temperature measured at a reference point in the driver's area.** It combines
-the three unobservable influences into one number: how strongly the heater's
+temperature measured at a reference point validated against the driver's area.**
+It combines the three unobservable influences into one number: how strongly the heater's
 air reaches the glass, how much heat wind and sky remove, and the initial soak.
 In the model, the inner-glass temperature at clearing stayed within
 +0.4…+2.6 °C across all conditions, while cabin air at clearing ranged from 6.5
@@ -700,6 +701,13 @@ to 28 °C.
     0.17–0.22) makes interior IR unusable [Lit: 44]. Contact sensing is
     unaffected by coatings.
 - **Placement.**
+  - The complete mount, insulation and wiring must not obstruct the driver's
+    road view. Check from the actual driving position, including seat adjustment;
+    a diagram cannot establish a suitable location. Do not mount in the viewing
+    area simply to measure the spot that clears last.
+  - Start with unobtrusive lower-edge candidates on clear glass, above the black
+    border. Validate their temperatures against photos or human observations of
+    the driver's viewing area; edge temperatures may not represent that area.
   - Keep off the black frit band at the edge, which heats differently from the
     vision area [secondary: 52].
   - The usual OEM spot for glass sensors, at the mirror base, is convenient but
@@ -710,7 +718,7 @@ to 28 °C.
 
 | Candidate | Physical quantity | Why it helps | Inference it replaces | Placement | Necessary? |
 | --- | --- | --- | --- | --- | --- |
-| Windshield inner-surface temperature (contact sensor) | Glass temperature at one point | Readiness, hold, early warning, and an automatic label every session. With the heater off, it also tracks overnight cooling | Cabin target as readiness proxy; weather-based guesses about the glass | Bonded with thin conductive film to the inner glass in the driver's area, at the spot that clears last (lower-middle unless shown otherwise). Foam-backed, out of the heater's jet, off the frit band | **Yes**, for closed-loop readiness and fast learning |
+| Windshield inner-surface temperature (contact sensor) | Glass temperature at one point | Readiness, hold, early warning, and an automatic label every session after validation. With the heater off, it also tracks overnight cooling | Cabin target as readiness proxy; weather-based guesses about the glass | Bonded with thin conductive film to inner clear glass at an unobtrusive lower-edge candidate, with the entire mount and wiring outside driver sightlines. Foam-backed, out of the heater's jet, off the frit band; validate against clearing of the driver's viewing area | **Yes**, for closed-loop readiness and fast learning |
 | Second glass point (lower band) | Spatial spread | Checks that the reference point is representative | Assumption of uniform clearing | Near the cowl edge, driver's side | First winter only (validation) |
 | Cabin RH (e.g. replace the BMP280 with a temperature/humidity sensor) | Cabin dew point | Interior fog risk from snow and wet mats. Does not predict exterior frost | Nothing today | A fixed, recorded position, shaded and away from the heater outlet (not loose on the dashboard) | Cheap enough to do together with the glass sensor: the owner is happy to swap the BMP280 [Owner]. RH sensors drift upward after long exposure near saturation [Lit: 45] |
 | Outside temperature/RH at the car | Local microclimate | Station versus parking-spot differences (e.g. cold-air pooling) | Pelmaa station values | Radiation shield, ventilated, near car height, away from car and house heat | Nice to have; adds little over FMI plus the glass sensor |
@@ -921,8 +929,9 @@ meaningful difference [Derived: learning research note §5.3].
 
 **How it works.**
 
-- A contact sensor on the inner glass surface at a reference point in the
-  driver's area.
+- A contact sensor on the inner glass surface at an unobtrusive reference point,
+  validated against clearing of the driver's area, with its mount and wiring
+  outside driver sightlines.
 - **Ready** when `T_glass,in ≥ θ` for at least `τ`. After that, **hold** the
   glass above `θ_hold` until departure plus a grace period.
 - A planner (B, C or F) still decides when to start. D provides the success
@@ -1240,9 +1249,10 @@ The simplest version worth building first. This is a description, not an
 implementation spec.
 
 1. **Sensors at fixed, recorded positions.**
-   - A contact temperature sensor bonded to the inner windshield in the
-     driver's area, lower-middle, outside the heater's jet, with its back
-     insulated. The ESP32 sends it as an additional field next to
+   - A contact temperature sensor bonded to the inner windshield at a lower-edge
+     candidate outside driver sightlines, off the black border and outside the
+     heater's jet, with its back insulated. Validate against observed clearing
+     of the driver's area. The ESP32 sends it as an additional field next to
      `temperature`.
    - At the same time, replace the loose dashboard BMP280 with a
      temperature/RH sensor in a fixed spot [Owner: swap acceptable].
@@ -1467,11 +1477,18 @@ selected `/to-spec` on 2026-10-06.
   the device can enforce that finish without the server. Communication loss must
   not extend the session. External cable disconnection ends heating, and
   reconnecting must not replay an old ON command.
-- **Initial sensor positions:** the owner agreed to a reference glass sensor at
-  the lower-middle of the driver's viewing area, a second near the lower
-  driver-side band above the black border, and a cabin sensor in a fixed shaded
-  position away from the heater outlet and ESP32. Mounts will be removable;
-  winter observations determine whether the positions need changing.
+- **Initial sensor positions (corrected 2026-10-13):** the owner rejected the
+  reference mount in the driver's viewing area because it obstructs vision.
+  The earlier lower-middle recommendation is withdrawn. Candidate positions
+  are both along the lower clear-glass edge above the black border: reference
+  nearer the centre and comparison farther toward the driver side. Neither is
+  approved until the complete mount, insulation and wiring are checked from
+  the actual driving position and do not obstruct the road view. If there is no
+  suitable clear-glass location, revise the mounting approach rather than
+  accepting an obstruction. The cabin sensor remains in a fixed shaded position
+  away from the heater outlet and ESP32. Mounts will be removable; winter
+  observations must validate whether edge readings represent viewing-area
+  clearing before they can establish readiness.
 - **Initial weather input:** use the existing FMI outside-temperature observations
   for the duration table, deferring departure-time forecasts. Missing or stale
   weather selects 180 minutes of preheat with a visible fallback indication and
@@ -1635,10 +1652,10 @@ concept or approving the previous drafts.
   from the ground up after agreeing the design. Discuss shared constraints, but
   evaluate each mount against its distinct sensing purpose. Existing geometry
   and its mechanical choices are references, not accepted requirements.
-- **Vehicle [Owner]:** 2005 Volkswagen Golf V. Retain the agreed initial glass
-  locations: lower-middle of the driver's viewing area and near the lower
-  driver-side band above the black border. The owner delegates the cabin-sensor
-  location recommendation to the agent, accounting for the documented
+- **Vehicle [Owner]:** 2005 Volkswagen Golf V. The earlier lower-middle viewing-area
+  location is withdrawn; use the corrected lower-edge candidates above, subject
+  to an actual driver-sightline check of the full assemblies. The owner delegates
+  the cabin-sensor location recommendation to the agent, accounting for the documented
   passenger-footwell heater and the proposed shared sensor wiring. Actual trim
   attachment geometry and cabin airflow at the candidate site remain unverified.
 - **Cabin location recommendation:** use the driver-facing upper side of the
