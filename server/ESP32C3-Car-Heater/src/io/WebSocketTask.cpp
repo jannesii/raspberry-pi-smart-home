@@ -110,7 +110,11 @@ void WebSocketTask::onWebSocketEvent(WStype_t type, uint8_t *payload, size_t len
     switch (type)
     {
     case WStype_DISCONNECTED:
-        Serial.println("[WebSocket] Disconnected");
+        // A disconnect before WStype_CONNECTED is a failed TLS/upgrade handshake.
+        Serial.printf("[WebSocket] Disconnected (%s); heap free=%lu max_block=%lu\n",
+                      connected_ ? "session dropped" : "handshake failed",
+                      static_cast<unsigned long>(ESP.getFreeHeap()),
+                      static_cast<unsigned long>(ESP.getMaxAllocHeap()));
         connected_ = false;
         authenticated_ = false;
         stats_.disconnectCount++;
@@ -167,7 +171,10 @@ void WebSocketTask::onWebSocketEvent(WStype_t type, uint8_t *payload, size_t len
 
 void WebSocketTask::connect()
 {
-    Serial.printf("[WebSocket] Connecting to wss://%s:%d%s\n", WS_HOST, WS_PORT, WS_PATH);
+    Serial.printf("[WebSocket] Connecting to wss://%s:%d%s; heap free=%lu max_block=%lu\n",
+                  WS_HOST, WS_PORT, WS_PATH,
+                  static_cast<unsigned long>(ESP.getFreeHeap()),
+                  static_cast<unsigned long>(ESP.getMaxAllocHeap()));
 
     // Configure WebSocket with SSL
     webSocket_.beginSSL(WS_HOST, WS_PORT, WS_PATH);
