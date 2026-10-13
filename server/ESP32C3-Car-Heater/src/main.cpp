@@ -46,10 +46,7 @@ void setup()
 
     initMDNS();
 
-    initBMP280(
-        BMP280_I2C_ADDRESS,
-        I2C_SDA_PIN,
-        I2C_SCL_PIN);
+    initSensors(I2C_SDA_PIN, I2C_SCL_PIN);
 
     // Start HTTP poster task (fallback / primary for now)
     posterTask.start(8192, 1); // stack size, priority

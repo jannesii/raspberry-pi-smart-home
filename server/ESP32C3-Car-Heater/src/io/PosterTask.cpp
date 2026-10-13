@@ -4,6 +4,8 @@
 #include "io/PosterTask.h"
 #include "io/WebSocketTask.h"
 #include "io/measurements.h"
+#include "SensorJson.h"
+#include "core/version.h"
 #include "core/TimeKeeper.h"
 
 PosterTask::PosterTask(ShellyHandler &shelly,
@@ -102,15 +104,15 @@ void PosterTask::run()
         bool isShellyOn = false;
         bool shellySuccess = shelly_.getStatus(isShellyOn, false, &body);
 
-        float currentTemp = takeMeasurement(false).temperature;
-
+        const SensorSnapshot sensors = sampleSensors();
 
         JsonDocument doc;
         if (shellySuccess)
             doc["shelly"] = body;
         else
             doc["shelly_connected"] = false;
-        doc["temperature"] = currentTemp;
+        writeSensorStatusJson(doc.as<JsonObject>(), sensors);
+        doc["firmware_version"] = FIRMWARE_VERSION;
         doc["timestamp"]  = timekeeper::formatLocal();
 
         const size_t sentActionCount = pendingActionCount_;
@@ -328,14 +330,15 @@ void PosterTask::sendImmediateResultIfNeeded()
     String body = "";
     bool isShellyOn = false;
     bool shellySuccess = shelly_.getStatus(isShellyOn, false, &body);
-    float currentTemp = takeMeasurement(false).temperature;
+    const SensorSnapshot sensors = sampleSensors();
 
     JsonDocument doc;
     if (shellySuccess)
         doc["shelly"] = body;
     else
         doc["shelly_connected"] = false;
-    doc["temperature"] = currentTemp;
+    writeSensorStatusJson(doc.as<JsonObject>(), sensors);
+    doc["firmware_version"] = FIRMWARE_VERSION;
     doc["timestamp"]  = timekeeper::formatLocal();
 
     const size_t sentActionCount = pendingActionCount_;

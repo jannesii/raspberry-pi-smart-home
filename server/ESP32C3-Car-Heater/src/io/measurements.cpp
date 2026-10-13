@@ -1,95 +1,113 @@
-#include <Adafruit_BMP280.h>
+#include <Wire.h>
+#include <freertos/semphr.h>
 
 #include "io/measurements.h"
+#include "SensorJson.h"
+#include "io/sensorconfig.h"
 
-Adafruit_BMP280 bmp;
-static Measurements g_last_valid{NAN, NAN, NAN};
-static bool g_have_valid = false;
-static unsigned long g_last_ms = 0;
-static unsigned long g_last_fault_log_ms = 0;
+namespace
+{
+constexpr uint32_t kSensorSampleReuseMs = 1000;
+constexpr uint16_t kWireTimeoutMs = 50;
 
-static bool try_init_addr_pins(uint8_t address, uint8_t sda, uint8_t scl) {
-    Wire.begin(sda, scl);
-    delay(10);
-    if (bmp.begin(address)) {
-        Serial.printf("BMP280 found at 0x%02X (SDA=%u, SCL=%u)\n", address, sda, scl);
-        // Use forced mode so we explicitly trigger a fresh conversion each read
-        bmp.setSampling(Adafruit_BMP280::MODE_FORCED,     /* Operating Mode. */
-                        Adafruit_BMP280::SAMPLING_X2,     /* Temp. oversampling */
-                        Adafruit_BMP280::SAMPLING_X16,    /* Pressure oversampling */
-                        Adafruit_BMP280::FILTER_X16,      /* Filtering. */
-                        Adafruit_BMP280::STANDBY_MS_500); /* Standby time. */
+class WireI2cBus : public I2cBus
+{
+public:
+    bool write(uint8_t address, const uint8_t *data, size_t length) override
+    {
+        Wire.beginTransmission(address);
+        Wire.write(data, length);
+        return Wire.endTransmission() == 0;
+    }
+
+    bool read(uint8_t address, uint8_t *data, size_t length) override
+    {
+        const size_t received = Wire.requestFrom(address, length);
+        if (received != length)
+        {
+            while (Wire.available())
+                Wire.read();
+            return false;
+        }
+        for (size_t i = 0; i < length; ++i)
+            data[i] = static_cast<uint8_t>(Wire.read());
         return true;
     }
-    return false;
-}
 
-bool initBMP280(uint8_t address, uint8_t sda, uint8_t scl) {
-    // Try caller-provided first, then common ESP32-C3 pairs and both addresses.
-    // Prefer 6/7 to avoid conflict with LED on IO8 on many SuperMini boards.
-    if (try_init_addr_pins(address, sda, scl)) return true;
-    const uint8_t alt_addr = (address == 0x76) ? 0x77 : 0x76;
-    const uint8_t sda_opts[] = {sda, 6, 4, 8};
-    const uint8_t scl_opts[] = {scl, 7, 5, 9};
+    void delayMs(uint32_t ms) override { vTaskDelay(pdMS_TO_TICKS(ms)); }
+};
 
-    const size_t count = sizeof(sda_opts) / sizeof(sda_opts[0]);
-    for (size_t i = 0; i < count; ++i) {
-        uint8_t sda_i = sda_opts[i];
-        uint8_t scl_i = scl_opts[i];
-        if (try_init_addr_pins(address, sda_i, scl_i)) return true;
-        if (try_init_addr_pins(alt_addr, sda_i, scl_i)) return true;
-    }
+WireI2cBus g_bus;
+SensorSuite g_suite(g_bus, SensorAddresses{SHT45_I2C_ADDRESS,
+                                           TMP117_GLASS_REFERENCE_I2C_ADDRESS,
+                                           TMP117_GLASS_COMPARISON_I2C_ADDRESS});
+SemaphoreHandle_t g_mutex = nullptr;
+SensorSnapshot g_lastSnapshot;
+uint32_t g_lastSampleMs = 0;
+bool g_haveSample = false;
 
-    Serial.println("Could not find a valid BMP280 sensor on common I2C pins (6/7, 4/5, 8/9) or addresses (0x76/0x77). Check wiring.");
-    return false;
-}
-
-Measurements takeMeasurement(bool verbose) {
-    Measurements m;
-    // In forced mode, trigger a new conversion before reading
-    if (!bmp.takeForcedMeasurement()) {
-        Serial.println("[BMP280] Forced measurement failed; returning last value if available.");
-        unsigned long now = millis();
-        if (now - g_last_fault_log_ms > 10000UL) {
-            g_last_fault_log_ms = now;
+void logScan()
+{
+    Serial.print("[Sensors] I2C devices answering:");
+    bool any = false;
+    for (uint8_t address = 0x08; address < 0x78; ++address)
+    {
+        Wire.beginTransmission(address);
+        if (Wire.endTransmission() == 0)
+        {
+            Serial.printf(" 0x%02X", address);
+            any = true;
         }
     }
-    m.temperature = bmp.readTemperature();
-    m.pressure    = bmp.readPressure() / 100.0F;
-    m.altitude    = bmp.readAltitude(1013.25);
+    Serial.println(any ? "" : " none (check VIN/GND/SDA/SCL)");
+}
 
-    bool temp_ok = (m.temperature > -40.0f && m.temperature < 85.0f);
-    bool pres_ok = (m.pressure > 300.0f && m.pressure < 1100.0f);
+SensorReading aged(SensorReading reading, uint32_t extraMs)
+{
+    if (reading.status != ReadingStatus::Missing)
+        reading.ageMs += extraMs;
+    return reading;
+}
+} // namespace
 
-    if (!temp_ok || !pres_ok) {
-        Serial.println("[BMP280] Invalid reading detected (I2C glitch?). Keeping last value.");
-        unsigned long now = millis();
-        if (now - g_last_fault_log_ms > 10000UL) {
-            g_last_fault_log_ms = now;
-        }
-    } else {
-        g_last_valid = m;
-        g_have_valid = true;
-        g_last_ms = millis();
+void initSensors(uint8_t sda, uint8_t scl)
+{
+    g_mutex = xSemaphoreCreateMutex();
+    Wire.begin(sda, scl, I2C_CLOCK_HZ);
+    Wire.setTimeOut(kWireTimeoutMs);
+    Serial.printf("[Sensors] I2C SDA=%u SCL=%u at %lu Hz; expecting SHT45 0x%02X, "
+                  "TMP117 glass reference 0x%02X, glass comparison 0x%02X\n",
+                  sda, scl, static_cast<unsigned long>(I2C_CLOCK_HZ), SHT45_I2C_ADDRESS,
+                  TMP117_GLASS_REFERENCE_I2C_ADDRESS, TMP117_GLASS_COMPARISON_I2C_ADDRESS);
+    logScan();
+    g_suite.begin(millis());
+    const SensorSnapshot snap = sampleSensors();
+    Serial.printf("[Sensors] cabin=%s glass_reference=%s glass_comparison=%s\n",
+                  readingStatusName(snap.cabin.status), readingStatusName(snap.glassReference.status),
+                  readingStatusName(snap.glassComparison.status));
+}
+
+SensorSnapshot sampleSensors()
+{
+    if (g_mutex == nullptr)
+        return SensorSnapshot{}; // initSensors() not called: everything missing
+    xSemaphoreTake(g_mutex, portMAX_DELAY);
+    const uint32_t now = millis();
+    SensorSnapshot out;
+    if (g_haveSample && now - g_lastSampleMs < kSensorSampleReuseMs)
+    {
+        const uint32_t extra = now - g_lastSampleMs;
+        out.cabin = aged(g_lastSnapshot.cabin, extra);
+        out.glassReference = aged(g_lastSnapshot.glassReference, extra);
+        out.glassComparison = aged(g_lastSnapshot.glassComparison, extra);
     }
-
-    const Measurements& out = g_have_valid ? g_last_valid : m;
-    if (verbose) {
-        Serial.print("T: ");
-        Serial.print(out.temperature, 2);
-        Serial.print(" °C  |  P: ");
-        Serial.print(out.pressure, 2);
-        Serial.print(" hPa  |  Alt: ");
-        Serial.print(out.altitude, 2);
-        Serial.println(" m");
+    else
+    {
+        g_lastSnapshot = g_suite.sample(now);
+        g_lastSampleMs = now;
+        g_haveSample = true;
+        out = g_lastSnapshot;
     }
+    xSemaphoreGive(g_mutex);
     return out;
-}
-
-bool getLastMeasurement(Measurements& out, uint32_t& age_ms) {
-    if (!g_have_valid) return false;
-    out = g_last_valid;
-    unsigned long now = millis();
-    age_ms = (now >= g_last_ms) ? (now - g_last_ms) : 0;
-    return true;
 }

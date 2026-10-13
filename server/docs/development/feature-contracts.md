@@ -26,6 +26,17 @@ Tests: `tests/test_car_heater*.py`, `tests/test_ready_by.py`.
   stay synchronized. Preserve DB refresh of persisted config in workers.
 - Imported explicit IDs can leave PostgreSQL sequences behind. Preserve the
   kFactor controller's sequence realignment and single retry on collisions.
+- Glass/cabin `sensors` (firmware 3.0.0+) are ingested by one app-wide
+  `CarHeaterSensorTracker` for both transports and persisted to
+  `car_heater_sensor_frame` even without Shelly data. Only new samples store
+  values (late ones as `stale`, kept for history); omitted sensors (NULL state),
+  test-endpoint frames and cached/invalid/stale/out-of-order reports never
+  overwrite the live reading. Freshness is judged
+  when read (`CAR_HEATER_SENSOR_MAX_AGE_S`). Car sensors accept `-50..100°C`
+  (sunlit glass exceeds the room-sensor limit) and humidity `0..100%`. Missing cabin temperature stays
+  `None` for kFactor/keep-at-temperature; never substitute 0.
+- A status without `is_heater_on` (Shelly unreachable) is unknown, not OFF. The
+  gateway forwards car-heater frames carrying `shelly_connected` or `sensors`.
 
 ## AC, sleep, Hue, and temperatures
 

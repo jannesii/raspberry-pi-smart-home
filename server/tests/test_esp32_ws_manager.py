@@ -207,3 +207,41 @@ def test_malformed_temperature_reading_still_reaches_validation(monkeypatch) -> 
     )
 
     assert fake_redis.published[0][0] == module.CHANNEL_TEMPERATURE_TELEMETRY
+
+
+class _ScriptedWS(_DummyWS):
+    def __init__(self, messages: list[dict]) -> None:
+        super().__init__()
+        self._messages = [json.dumps(m) for m in messages]
+
+    def receive(self, timeout: float | None = None) -> str | None:
+        return self._messages.pop(0) if self._messages else None
+
+
+def test_car_heater_frames_without_shelly_still_reach_the_main_app(monkeypatch) -> None:
+    module = _load_esp32_ws_main(monkeypatch)
+    monkeypatch.setattr(module, "API_KEY", "")
+    fake_redis = _FakeRedis()
+    module.manager._redis = fake_redis
+    sensors = {"cabin": {"status": "ok", "temperature_c": 3.0, "humidity_pct": 90.0, "age_ms": 0}}
+    ws = _ScriptedWS(
+        [
+            {"auth": "", "device_id": "car_heater_esp32", "firmware_version": "3.0.0"},
+            {
+                "timestamp": "2026-11-02 05:10:00",
+                "temperature": 3.0,
+                "shelly_connected": False,
+                "sensors": sensors,
+            },
+            {"type": "heartbeat", "timestamp": "2026-11-02 05:10:30"},
+        ]
+    )
+
+    module.app.view_functions["esp32_websocket"].__wrapped__(ws)
+
+    statuses = [json.loads(p) for c, p in fake_redis.published if c == module.CHANNEL_STATUS]
+    assert len(statuses) == 1  # heartbeat is not a status frame
+    assert statuses[0]["sensors"] == sensors
+    assert statuses[0]["shelly_connected"] is False
+    assert statuses[0]["device_id"] == "car_heater_esp32"
+    assert "received_at" in statuses[0]

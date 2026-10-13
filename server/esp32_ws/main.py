@@ -61,6 +61,7 @@ HOST = os.getenv("ESP32_WS_HOST", "0.0.0.0")
 # Redis channels
 CHANNEL_COMMANDS = "esp32:commands"
 CHANNEL_STATUS = "esp32:status"
+_CAR_HEATER_STATUS_KEYS = ("status", "shelly", "shelly_connected", "sensors")
 CHANNEL_ACTION_RESULTS = "esp32:action_results"
 CHANNEL_TEMPERATURE_TELEMETRY = "esp32:temperature:telemetry"
 CHANNEL_TEMPERATURE_RPC_RESULTS = "esp32:temperature:rpc_results"
@@ -609,8 +610,10 @@ def esp32_websocket(ws):
                     )
                 continue
 
-            # Handle different car-heater message types
-            if "status" in message or "shelly" in message:
+            # Handle different car-heater message types. Frames sent while
+            # Shelly is unreachable carry shelly_connected/sensors instead of
+            # shelly and must still reach the main app for persistence.
+            if any(key in message for key in _CAR_HEATER_STATUS_KEYS):
                 # Status update from ESP32
                 message["device_id"] = device_id
                 message["received_at"] = datetime.now(UTC).isoformat()

@@ -3,7 +3,7 @@
 {% block title %}Car Heater{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater.css', v='20261013-1') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/flash.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_chart.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_settings.css') }}">
@@ -210,6 +210,43 @@
 
     <!-- Right Column on Desktop -->
     <div class="desktop-column">
+  <!-- Glass & Cabin Sensors Card -->
+  <section class="ios-card" aria-labelledby="carSensorsTitle">
+    <div class="ios-card-header">
+      <h3 id="carSensorsTitle">Glass &amp; cabin</h3>
+    </div>
+    <ul class="ios-list">
+      <li class="ios-list-item">
+        <span class="item-label">Glass reference</span>
+        <span id="sensorGlassReference" class="item-value sensor-reading">
+          <span class="sensor-value">—</span>
+          <span class="sensor-state">No data</span>
+        </span>
+      </li>
+      <li class="ios-list-item">
+        <span class="item-label">Glass comparison</span>
+        <span id="sensorGlassComparison" class="item-value sensor-reading">
+          <span class="sensor-value">—</span>
+          <span class="sensor-state">No data</span>
+        </span>
+      </li>
+      <li class="ios-list-item">
+        <span class="item-label">Cabin temperature</span>
+        <span id="sensorCabinTemp" class="item-value sensor-reading">
+          <span class="sensor-value">—</span>
+          <span class="sensor-state">No data</span>
+        </span>
+      </li>
+      <li class="ios-list-item">
+        <span class="item-label">Cabin humidity</span>
+        <span id="sensorCabinHumidity" class="item-value sensor-reading">
+          <span class="sensor-value">—</span>
+          <span class="sensor-state">No data</span>
+        </span>
+      </li>
+    </ul>
+  </section>
+
   <!-- Details Card -->
   <section class="ios-card">
     <div class="ios-card-header">
@@ -329,10 +366,10 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/init_sio.js', v='20260504-1') }}"></script>
-<script src="{{ url_for('static', filename='js/car_heater.js', v='20260323-4') }}"></script>
+<script src="{{ url_for('static', filename='js/car_heater.js', v='20261013-1') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater_logs.js', v='20260323-1') }}"></script>
 <script src="{{ url_for('static', filename='js/flash.js') }}"></script>
-<script src="{{ url_for('static', filename='js/car_heater_chart.js') }}"></script>
+<script src="{{ url_for('static', filename='js/car_heater_chart.js', v='20261013-1') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater_settings_base.js', v='20260323-2') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater_settings_schedule.js') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater_settings_kfactor.js') }}"></script>

@@ -1,6 +1,8 @@
 #include "io/WebSocketTask.h"
 #include "core/TimeKeeper.h"
 #include "io/measurements.h"
+#include "SensorJson.h"
+#include "core/version.h"
 #include <core/staticconfig.h>
 #include <ArduinoJson.h>
 #include <WiFi.h>
@@ -190,7 +192,7 @@ void WebSocketTask::sendAuthentication()
     JsonDocument doc;
     doc["auth"] = WS_API_KEY;  // From staticconfig.h
     doc["device_id"] = "car_heater_esp32";
-    doc["firmware_version"] = "2.0.0";
+    doc["firmware_version"] = FIRMWARE_VERSION;
 
     String json;
     serializeJson(doc, json);
@@ -432,12 +434,12 @@ String WebSocketTask::buildStatusJson()
     bool isOn = false;
     bool shellyOk = shelly_.getStatus(isOn, false, &shellyBody);
 
-    // Get temperature
-    float temp = takeMeasurement(false).temperature;
+    const SensorSnapshot sensors = sampleSensors();
 
     JsonDocument doc;
     doc["timestamp"] = timekeeper::formatLocal();
-    doc["temperature"] = temp;
+    writeSensorStatusJson(doc.as<JsonObject>(), sensors);
+    doc["firmware_version"] = FIRMWARE_VERSION;
 
     if (shellyOk)
         doc["shelly"] = shellyBody;

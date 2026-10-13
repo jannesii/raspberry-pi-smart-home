@@ -5,6 +5,10 @@
     { key: 'current_a', label: 'Current (A)', color: '#8cf86a', axis: 'yCurrent' },
     { key: 'ambient_temp', label: 'Ambient temp (°C)', color: '#ffd54f', axis: 'yTemp' },
     { key: 'device_temp_c', label: 'Device temp (°C)', color: '#f06292', axis: 'yTemp' },
+    { key: 'glass_reference_temp_c', label: 'Glass reference (°C)', color: '#64d2ff', axis: 'yTemp', gaps: true },
+    { key: 'glass_comparison_temp_c', label: 'Glass comparison (°C)', color: '#bf5af2', axis: 'yTemp', gaps: true },
+    { key: 'cabin_temp_c', label: 'Cabin SHT45 (°C)', color: '#30d158', axis: 'yTemp', gaps: true },
+    { key: 'cabin_humidity_pct', label: 'Cabin humidity (%)', color: '#a2845e', axis: 'yHumidity', gaps: true },
   ];
 
   const STORAGE_KEY = 'car_heater_chart_visibility';
@@ -33,6 +37,14 @@
       offset: true,
       title: { display: true, text: 'Voltage (V)' },
       ticks: { color: '#5ac8fa' },
+    },
+    yHumidity: {
+      type: 'linear',
+      position: 'right',
+      grid: { drawOnChartArea: false },
+      offset: true,
+      title: { display: true, text: 'Humidity (%)' },
+      ticks: { color: '#a2845e' },
     },
     yCurrent: {
       type: 'linear',
@@ -241,7 +253,8 @@
             tension: 0.25,
             borderWidth: 2,
             pointRadius: 0,
-            spanGaps: true,
+            // Sensor series show missing periods as gaps, not interpolated lines.
+            spanGaps: !series.gaps,
             yAxisID: series.axis,
             hidden: visibilityState[series.key] === false,
           })),
@@ -278,6 +291,9 @@
       }
       if (seriesKey === 'voltage_v') {
         return `${value.toFixed(1)} V`;
+      }
+      if (seriesKey === 'cabin_humidity_pct') {
+        return `${value.toFixed(0)} %`;
       }
       return `${value.toFixed(1)}${series.label.includes('°C') ? ' °C' : ''}`;
     }
@@ -340,6 +356,12 @@
       } else if (data && Array.isArray(data.rows)) {
         rows = data.rows;
         energyValue = data.energy_today_wh;
+      }
+      if (data && Array.isArray(data.sensor_rows) && data.sensor_rows.length) {
+        // Sensor samples have their own times; buckets need chronological rows.
+        rows = [...rows, ...data.sensor_rows].sort(
+          (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
+        );
       }
       renderData(rows);
       setEnergySummary(energyValue);

@@ -319,6 +319,33 @@ body {
   color: var(--ch-danger);
 }
 
+/* Glass & cabin sensor readings: value plus a text state (never color alone) */
+.ios-list-item .sensor-reading {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.sensor-reading .sensor-value {
+  color: var(--ch-text);
+}
+
+.sensor-reading .sensor-state {
+  font-size: 13px;
+  color: var(--ch-text-secondary);
+}
+
+.sensor-reading.sensor-stale .sensor-value,
+.sensor-reading.sensor-missing .sensor-value {
+  color: var(--ch-text-secondary);
+}
+
+.sensor-reading.sensor-stale .sensor-state,
+.sensor-reading.sensor-cached .sensor-state {
+  color: var(--ch-warning);
+}
+
 /* Toggle Switch - iOS Native */
 .ios-toggle {
   position: relative;

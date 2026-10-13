@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
@@ -21,6 +21,7 @@ from flask_login import current_user, login_required
 
 from ....extensions import csrf
 from ....security import require_api_key
+from ....services.car_heater.sensor_readings import SENSOR_KEYS, iso_utc
 from ._blueprint import car_bp
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,7 @@ logger.setLevel(logging.INFO)
 
 if TYPE_CHECKING:
     from ....core import Controller
-    from ....core.models import CarHeaterStatus
+    from ....core.models import CarHeaterSensorFrame, CarHeaterStatus
     from ....services.car_heater import CarHeaterService
 
 
@@ -308,4 +309,31 @@ def get_car_heater_history():
     energy_today_wh = None
     if len(energies) >= 2:
         energy_today_wh = energies[-1] - energies[0]
-    return jsonify({"rows": payload, "energy_today_wh": energy_today_wh}), 200
+
+    day_start = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=tz)
+    sensor_frames = ctrl.get_car_heater_sensor_frames_between(
+        iso_utc(day_start), iso_utc(day_start + timedelta(days=1) - timedelta(milliseconds=1))
+    )
+    return jsonify(
+        {
+            "rows": payload,
+            "sensor_rows": _sensor_history_rows(sensor_frames),
+            "energy_today_wh": energy_today_wh,
+        }
+    ), 200
+
+
+def _sensor_history_rows(frames: list[CarHeaterSensorFrame]) -> list[dict[str, Any]]:
+    """One point per accepted sample, at its sample time; no placeholder values."""
+    points: list[dict[str, Any]] = []
+    for frame in frames:
+        for key in SENSOR_KEYS:
+            temperature = getattr(frame, f"{key}_temp_c")
+            sampled_at = getattr(frame, f"{key}_sampled_at")
+            if temperature is None or sampled_at is None:
+                continue
+            point: dict[str, Any] = {"timestamp": sampled_at, f"{key}_temp_c": temperature}
+            if key == "cabin" and frame.cabin_humidity_pct is not None:
+                point["cabin_humidity_pct"] = frame.cabin_humidity_pct
+            points.append(point)
+    return points

@@ -3,20 +3,14 @@
 
 #include <Arduino.h>
 
-struct Measurements {
-    float temperature;
-    float pressure;
-    float altitude;
-};
+#include "SensorSuite.h"
 
-// Initializes BMP280 and returns true if successful
-// Defaults use config-defined I2C pins/address
-bool initBMP280(uint8_t address, uint8_t sda, uint8_t scl);
+// Starts the shared I2C bus, logs the addresses that answer, and identifies
+// the cabin SHT45 and the two windshield TMP117 sensors.
+void initSensors(uint8_t sda, uint8_t scl);
 
-// Takes and returns one measurement set
-Measurements takeMeasurement(bool verbose = true);
-
-// Returns last valid measurement and its age; returns false if none yet
-bool getLastMeasurement(Measurements& out, uint32_t& age_ms);
+// Thread-safe for the HTTP and WebSocket tasks. Calls within
+// kSensorSampleReuseMs reuse the previous bus sample with updated ages.
+SensorSnapshot sampleSensors();
 
 #endif

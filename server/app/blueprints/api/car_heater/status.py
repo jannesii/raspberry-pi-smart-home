@@ -26,6 +26,11 @@ from flask_login import current_user, login_required
 from ....core.models import CarHeaterStatus
 from ....extensions import csrf
 from ....security import require_api_key
+from ....services.car_heater.sensor_readings import (
+    CarHeaterSensorTracker,
+    build_sensor_frame,
+    normalize_temperature_c,
+)
 from ._blueprint import car_bp
 
 if TYPE_CHECKING:
@@ -77,6 +82,74 @@ _last_test_request_time: float | None = None
 _test_mode_was_active: bool = False
 _LATEST_STATUS_LOCK = Lock()
 _LATEST_NORMALIZED_STATUS: dict[str, Any] | None = None
+_SENSOR_TRACKER_LOCK = Lock()
+_SENSOR_TRACKER_KEY = "car_heater_sensor_tracker"
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+def get_car_heater_sensor_tracker() -> CarHeaterSensorTracker:
+    """Return the app's sensor tracker, seeding it from persisted samples once."""
+    app = current_app._get_current_object()
+    tracker = app.extensions.get(_SENSOR_TRACKER_KEY)
+    if tracker is not None:
+        return tracker
+    with _SENSOR_TRACKER_LOCK:
+        tracker = app.extensions.get(_SENSOR_TRACKER_KEY)
+        if tracker is None:
+            seed = {}
+            loader = getattr(
+                getattr(app, "ctrl", None), "get_latest_car_heater_sensor_samples", None
+            )
+            if callable(loader):
+                try:
+                    seed = loader()
+                except Exception:
+                    logger.warning("Could not seed car heater sensor tracker", exc_info=True)
+            tracker = CarHeaterSensorTracker(seed=seed)
+            app.extensions[_SENSOR_TRACKER_KEY] = tracker
+            logger.info(
+                "Car heater sensor tracker ready max_age_s=%.0f seeded=%s",
+                tracker.max_age_s,
+                sorted(seed),
+            )
+    return tracker
+
+
+def _ingest_sensor_readings(
+    ctrl: Controller,
+    data: dict[str, Any],
+    *,
+    frame_ts: datetime,
+    received_at: datetime,
+    source: str,
+    skip_db: bool,
+    is_test: bool,
+) -> dict[str, Any]:
+    """Apply a frame's glass/cabin sensors and persist them; return the live view.
+
+    Test-endpoint frames are simulations: they never reach the live readings.
+    """
+    tracker = get_car_heater_sensor_tracker()
+    if is_test:
+        return tracker.snapshot(received_at)
+    observations = tracker.ingest(data.get("sensors"), frame_ts=frame_ts, received_at=received_at)
+    if observations and not skip_db:
+        firmware_version = data.get("firmware_version")
+        frame = build_sensor_frame(
+            observations,
+            received_at=received_at,
+            frame_ts=frame_ts,
+            source=source,
+            firmware_version=str(firmware_version) if firmware_version is not None else None,
+        )
+        try:
+            ctrl.record_car_heater_sensor_frame(frame)
+        except Exception:
+            logger.exception("Failed to record car heater sensor frame")
+    return tracker.snapshot(received_at)
 
 
 def _normalize_logs_text(raw_logs: Any) -> str | None:
@@ -346,6 +419,11 @@ def build_current_status_response(ctrl: Controller) -> dict[str, Any]:
             )
         logger.debug("build_current_status_response using fallback status=%s", last_status)
 
+    # Re-judge sensor freshness now: the cached status was built at receipt.
+    sensors_snapshot = get_car_heater_sensor_tracker().snapshot(_utc_now())
+    if sensors_snapshot:
+        last_status = {**(last_status or {}), "sensors": sensors_snapshot}
+
     payload: dict[str, Any] = {"status": last_status}
 
     try:
@@ -475,7 +553,7 @@ def run_kfactor_tick(car: CarHeaterStatus, ambient_temp: float | None) -> None:
             ksvc.tick(
                 is_heater_on=bool(car.is_heater_on),
                 power_w=float(car.instant_power_w or 0),
-                cabin_temp_c=float(ambient_temp or 0),
+                cabin_temp_c=ambient_temp,  # None skips the tick; never inject 0 C
             )
             logger.debug("run_kfactor_tick completed")
     except Exception as e:
@@ -513,8 +591,13 @@ def process_car_heater_status_data(
     is_test: bool,
     skip_db: bool,
     status_source_override: str | None = None,
+    received_at: datetime | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any] | None, dict[str, Any] | None, list[dict[str, Any]]]:
-    """Process a car heater status payload for runtime state, DB, and UI emission."""
+    """Process a car heater status payload for runtime state, DB, and UI emission.
+
+    ``received_at`` is the gateway's receipt time for WebSocket frames; HTTP
+    frames are stamped on arrival.
+    """
     from .control import process_commands, sync_runtime_command_state
 
     logger.debug(
@@ -536,7 +619,16 @@ def process_car_heater_status_data(
     timestamp = parse_timestamp(data.get("timestamp"))
     shelly = parse_shelly_payload(data.get("shelly"))
     shelly_connected = bool(data.get("shelly_connected", True))
-    ambient_temp = data.get("temperature")
+    ambient_temp = normalize_temperature_c(data.get("temperature"))
+    sensors_snapshot = _ingest_sensor_readings(
+        ctrl,
+        data,
+        frame_ts=timestamp,
+        received_at=received_at or _utc_now(),
+        source=status_source_override or "HTTP",
+        skip_db=skip_db,
+        is_test=is_test,
+    )
 
     fallback_status.timestamp = timestamp
     fallback_status.ambient_temp = ambient_temp
@@ -558,6 +650,8 @@ def process_car_heater_status_data(
                 "process_car_heater_status_data applied source override=%s",
                 status_source_override,
             )
+        if sensors_snapshot:
+            status_payload["sensors"] = sensors_snapshot
         cache_latest_normalized_status(status_payload)
         _process_alerts(
             car=car,
@@ -576,6 +670,8 @@ def process_car_heater_status_data(
     else:
         logger.debug("process_car_heater_status_data had no usable shelly payload")
         status_payload = build_fallback_payload(timestamp, ambient_temp, shelly_connected)
+        if sensors_snapshot:
+            status_payload["sensors"] = sensors_snapshot
         cache_latest_normalized_status(status_payload)
         _process_alerts(
             car=None,

@@ -16,10 +16,14 @@
 #define WIFI_SUBNET_OCTETS      255, 255, 255, 0
 #define WIFI_DNS_PRIMARY_OCTETS 192, 168, 1, 1
 
-// BMP280 cabin temperature sensor wiring
+// Sensor I2C bus (XIAO ESP32C3: D4 = SDA, D5 = SCL)
 constexpr uint8_t I2C_SDA_PIN = D4;
 constexpr uint8_t I2C_SCL_PIN = D5;
-constexpr uint8_t BMP280_I2C_ADDRESS = 0x76; // change to 0x77 for some modules
+// Optional overrides; defaults are in include/io/sensorconfig.h
+// #define SHT45_I2C_ADDRESS 0x44
+// #define TMP117_GLASS_REFERENCE_I2C_ADDRESS 0x48
+// #define TMP117_GLASS_COMPARISON_I2C_ADDRESS 0x49
+// #define I2C_CLOCK_HZ 100000
 
 // Shelly relay address on the car network
 #define SHELLY_IP "192.168.1.60"

@@ -66,7 +66,9 @@ function updateHeroStatus(status) {
     return;
   }
 
-  const isOn = !!status.is_heater_on;
+  // Without Shelly data the relay state is unknown, not OFF.
+  const relayKnown = typeof status.is_heater_on === 'boolean';
+  const isOn = status.is_heater_on === true;
   const instantW = status.instant_power_w;
   const ambient = status.ambient_temp;
   const energyToday = status.energy_last_min_wh;
@@ -74,10 +76,10 @@ function updateHeroStatus(status) {
   // State indicator
   if (stateIndicator) {
     stateIndicator.classList.remove('state-on', 'state-off', 'state-unknown');
-    stateIndicator.classList.add(isOn ? 'state-on' : 'state-off');
+    stateIndicator.classList.add(!relayKnown ? 'state-unknown' : (isOn ? 'state-on' : 'state-off'));
   }
-  if (stateIcon) stateIcon.textContent = isOn ? '🔥' : '❄️';
-  if (stateTitle) stateTitle.textContent = isOn ? 'Heating' : 'Off';
+  if (stateIcon) stateIcon.textContent = !relayKnown ? '❓' : (isOn ? '🔥' : '❄️');
+  if (stateTitle) stateTitle.textContent = !relayKnown ? 'Unknown' : (isOn ? 'Heating' : 'Off');
 
   // Power display
   if (heroPowerValue) {
@@ -158,6 +160,67 @@ function updateDetailsSection(status) {
 }
 
 // ============================================
+// Glass & Cabin Sensor Readings
+// ============================================
+
+const CAR_SENSOR_ROWS = [
+  { sensor: 'glass_reference', elementId: 'sensorGlassReference', field: 'temperature_c', unit: ' °C', digits: 2 },
+  { sensor: 'glass_comparison', elementId: 'sensorGlassComparison', field: 'temperature_c', unit: ' °C', digits: 2 },
+  { sensor: 'cabin', elementId: 'sensorCabinTemp', field: 'temperature_c', unit: ' °C', digits: 1 },
+  { sensor: 'cabin', elementId: 'sensorCabinHumidity', field: 'humidity_pct', unit: ' %', digits: 0 },
+];
+
+// Latest reading per sensor. Frames that omit a sensor keep its last reading.
+const carSensorReadings = {};
+
+function mergeCarSensorReadings(sensors) {
+  if (!sensors || typeof sensors !== 'object') return;
+  const receivedMs = Date.now();
+  Object.entries(sensors).forEach(([sensor, reading]) => {
+    if (reading && typeof reading === 'object') {
+      carSensorReadings[sensor] = { ...reading, receivedMs };
+    }
+  });
+}
+
+function fmtSensorAge(seconds) {
+  if (seconds < 90) return `${Math.round(seconds)} s old`;
+  if (seconds < 5400) return `${Math.round(seconds / 60)} min old`;
+  return `${(seconds / 3600).toFixed(1)} h old`;
+}
+
+// Age is advanced locally from the server-reported age, so the browser
+// clock does not need to match the server.
+function describeCarSensor(reading) {
+  if (!reading) return { kind: 'missing', text: 'No data' };
+  if (reading.state === 'missing') return { kind: 'missing', text: 'Missing' };
+  if (reading.state === 'invalid') return { kind: 'missing', text: 'Invalid reading' };
+  const baseAge = Number(reading.age_s);
+  const maxAge = Number(reading.max_age_s);
+  if (!Number.isFinite(baseAge) || !Number.isFinite(maxAge)) return { kind: 'missing', text: 'No data' };
+  const age = baseAge + (Date.now() - reading.receivedMs) / 1000;
+  if (age > maxAge) return { kind: 'stale', text: `Stale · ${fmtSensorAge(age)}` };
+  if (reading.cached) return { kind: 'cached', text: 'Cached · last read failed' };
+  return { kind: 'fresh', text: 'Live' };
+}
+
+function renderCarSensorReadings() {
+  CAR_SENSOR_ROWS.forEach(row => {
+    const el = document.getElementById(row.elementId);
+    if (!el) return;
+    const reading = carSensorReadings[row.sensor];
+    const state = describeCarSensor(reading);
+    const valueEl = el.querySelector('.sensor-value');
+    const stateEl = el.querySelector('.sensor-state');
+    const value = state.kind === 'missing' ? null : reading?.[row.field];
+    if (valueEl) valueEl.textContent = fmtNum(value, row.unit, row.digits);
+    if (stateEl) stateEl.textContent = state.text;
+    el.classList.remove('sensor-fresh', 'sensor-stale', 'sensor-cached', 'sensor-missing');
+    el.classList.add(`sensor-${state.kind}`);
+  });
+}
+
+// ============================================
 // Combined Status Update
 // ============================================
 
@@ -170,11 +233,10 @@ function applyCarHeaterPayload(data, source = 'unknown') {
   console.log(`📡 applyCarHeaterPayload (${source}):`, data);
   if (!data) return;
 
-  if (data.status) {
-    updateStatusUI(data.status);
-  } else {
-    updateStatusUI(data);
-  }
+  const status = data.status || data;
+  updateStatusUI(status);
+  mergeCarSensorReadings(status?.sensors);
+  renderCarSensorReadings();
 
   if (data.command_status || data.commandStatus) {
     const cmdStatus = data.command_status || data.commandStatus;
@@ -447,6 +509,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (window.CAR_HEATER_LAST_STATUS) {
     updateStatusUI(window.CAR_HEATER_LAST_STATUS);
   }
+  // Re-evaluate sensor freshness between updates so old readings turn stale.
+  window.setInterval(renderCarSensorReadings, 15000);
 
   if (window.CAR_HEATER_CMD_STATUS) {
     updateCommandStatusUI(window.CAR_HEATER_CMD_STATUS);

@@ -142,6 +142,25 @@ class CarHeaterStatus:
 
 
 @dataclass
+class CarHeaterSensorFrame:
+    id: int | None
+    received_at: str
+    frame_timestamp: str | None = None
+    source: str | None = None
+    firmware_version: str | None = None
+    glass_reference_state: str | None = None
+    glass_reference_temp_c: float | None = None
+    glass_reference_sampled_at: str | None = None
+    glass_comparison_state: str | None = None
+    glass_comparison_temp_c: float | None = None
+    glass_comparison_sampled_at: str | None = None
+    cabin_state: str | None = None
+    cabin_temp_c: float | None = None
+    cabin_humidity_pct: float | None = None
+    cabin_sampled_at: str | None = None
+
+
+@dataclass
 class CarHeaterKFactorSession:
     id: int | None
     start_ts: str

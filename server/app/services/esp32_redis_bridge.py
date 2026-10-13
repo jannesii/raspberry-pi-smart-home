@@ -43,6 +43,18 @@ STATUS_SUMMARY_INFO_REPEAT_INTERVAL_S = float(
 )
 
 
+def _parse_gateway_received_at(raw: Any) -> datetime | None:
+    """Gateway receipt time (aware ISO text), or None to stamp on arrival."""
+    if not isinstance(raw, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        logger.debug("Ignoring unparseable gateway received_at=%r", raw)
+        return None
+    return parsed if parsed.tzinfo is not None else None
+
+
 class ESP32RedisBridge:
     """
     Bridge between ESP32 WebSocket service (via Redis) and main Flask app.
@@ -174,6 +186,7 @@ class ESP32RedisBridge:
                         is_test=False,
                         skip_db=False,
                         status_source_override="WS",
+                        received_at=_parse_gateway_received_at(data.get("received_at")),
                     )
                 )
 

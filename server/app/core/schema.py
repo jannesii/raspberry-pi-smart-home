@@ -167,6 +167,31 @@ car_heater_status = Table(
     Column("source", Text),
 )
 
+# One row per device status frame that reported glass/cabin sensors. A
+# ``*_state`` of NULL means the frame omitted that sensor; values are stored
+# only for new samples (state "ok", or "stale" when the frame arrived late).
+# Timestamps are UTC ISO text.
+car_heater_sensor_frame = Table(
+    "car_heater_sensor_frame",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("received_at", Text, nullable=False),
+    Column("frame_timestamp", Text),
+    Column("source", Text),
+    Column("firmware_version", Text),
+    Column("glass_reference_state", Text),
+    Column("glass_reference_temp_c", Float),
+    Column("glass_reference_sampled_at", Text),
+    Column("glass_comparison_state", Text),
+    Column("glass_comparison_temp_c", Float),
+    Column("glass_comparison_sampled_at", Text),
+    Column("cabin_state", Text),
+    Column("cabin_temp_c", Float),
+    Column("cabin_humidity_pct", Float),
+    Column("cabin_sampled_at", Text),
+    Index("idx_car_heater_sensor_frame_received_at", "received_at"),
+)
+
 car_heater_charge_mode = Table(
     "car_heater_charge_mode",
     metadata,

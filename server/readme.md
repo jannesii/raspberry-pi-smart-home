@@ -9,8 +9,9 @@ device integrations need their own hardware, credentials, and configuration.
 
 - **Climate:** live room temperatures and humidity, history charts, FMI weather,
   and local TinyTuya AC control with thermostat and sleep schedules.
-- **Car heater:** live power/status, ready-by scheduling, keep-at-temperature,
-  battery charge mode, and learned heating-time estimates.
+- **Car heater:** live power/status, two windshield glass temperatures and
+  cabin temperature/humidity with freshness, ready-by scheduling,
+  keep-at-temperature, battery charge mode, and learned heating-time estimates.
 - **3D printer:** live video, progress, and timelapse monitoring. Printer control
   commands such as pause, home, and direct G-code execution are disabled.
 - **Administration:** users and API keys, logs, Hue lighting, webhook alerts,
@@ -147,6 +148,7 @@ Configure only the integrations you use:
 | Hue | `HUE_BRIDGE_IP`, `HUE_USERNAME` |
 | YNAB | `YNAB_API_KEY`, `YNAB_BUDGET_ID`; [review workflow](docs/features/ynab.md) |
 | ESP32 | `ESP32_WS_LOG_LEVEL` (default `INFO`); [gateway setup](esp32_ws/README.md), [temperature firmware](ESP32_temperature/README.md), and [car-heater firmware](ESP32C3-Car-Heater/README.md) |
+| Car-heater sensors | `CAR_HEATER_SENSOR_MAX_AGE_S` (default `60`): glass/cabin samples older than this are shown and stored as stale, never current. Requires car-heater firmware 3.0.0+ and migration `20261013_0010` |
 | Sodexo | `SODEXO_WEBHOOK_URL`, `SODEXO_POST_HOUR`, `SODEXO_POST_MINUTE` |
 | Alerts | `ALERT_WEBHOOK_URL`, `ALERT_WEBHOOK_BATCH_SECONDS` |
 
