@@ -67,6 +67,10 @@ CHANNEL_TEMPERATURE_TELEMETRY = "esp32:temperature:telemetry"
 CHANNEL_TEMPERATURE_RPC_RESULTS = "esp32:temperature:rpc_results"
 CHANNEL_TEMPERATURE_COMMANDS = "esp32:temperature:commands"
 STATUS_SUMMARY_INTERVAL_S = float(os.getenv("ESP32_WS_STATUS_LOG_INTERVAL_S", "30"))
+# Each connection holds a Gunicorn thread. Devices heartbeat every 30 s, so a
+# silent socket (peer reset or reflashed without a close frame) is dropped to
+# free its thread instead of blocking forever.
+IDLE_TIMEOUT_S = float(os.getenv("ESP32_WS_IDLE_TIMEOUT_S", "90"))
 
 app = Flask(__name__)
 
@@ -573,9 +577,13 @@ def esp32_websocket(ws):
 
         # Main message loop
         while True:
-            data = ws.receive()
+            data = ws.receive(timeout=IDLE_TIMEOUT_S)
             if data is None:
-                logger.info("ESP32 %s disconnected (received None)", device_id)
+                logger.info(
+                    "ESP32 %s silent for %.0f s, closing to free its thread",
+                    device_id,
+                    IDLE_TIMEOUT_S,
+                )
                 break
 
             conn.last_message_at = datetime.now(UTC)
