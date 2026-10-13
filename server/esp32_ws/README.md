@@ -32,7 +32,12 @@ before startup because the manager connects when the module is imported.
 ## Deployment and configuration
 
 The [supplied systemd unit](esp32_ws.service) uses the main virtual environment,
-Gunicorn with one worker/four threads, and `localhost:5556`. Edit its user,
+Gunicorn with one worker, `--threads 16`, and `localhost:5556`. Each connected
+device holds one thread, and a dropped socket keeps its thread until the idle
+timeout while the device reconnects on another, so set `--threads` to at least
+twice the device count; a full pool makes new handshakes time out. Connections silent
+for `ESP32_WS_IDLE_TIMEOUT_S` (default 90; devices heartbeat every 30 s) are
+closed to free their thread. Edit its user,
 group, working directory, executable, and environment-file paths for your host,
 then install it from `server/esp32_ws/`:
 
@@ -49,6 +54,7 @@ sudo systemctl enable --now esp32_ws
 | `ESP32_WS_HOST` | `0.0.0.0` | Direct Python entry point only |
 | `ESP32_WS_PORT` | `5556` | Direct Python entry point only |
 | `ESP32_WS_LOG_LEVEL` | `INFO` | Gateway logging; use `DEBUG` for heartbeat, ping/pong, and telemetry diagnostics |
+| `ESP32_WS_IDLE_TIMEOUT_S` | `90` | Close a device connection after this many silent seconds |
 | `ESP32_WS_STATUS_LOG_INTERVAL_S` | `30` | Recurring gateway status summaries |
 
 Log levels are case-insensitive; unrecognized values fall back to `INFO`.

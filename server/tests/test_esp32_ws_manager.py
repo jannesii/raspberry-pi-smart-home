@@ -245,3 +245,32 @@ def test_car_heater_frames_without_shelly_still_reach_the_main_app(monkeypatch) 
     assert statuses[0]["shelly_connected"] is False
     assert statuses[0]["device_id"] == "car_heater_esp32"
     assert "received_at" in statuses[0]
+
+
+class _SilentPeerWS(_ScriptedWS):
+    """Peer that vanished without a close frame: receive() only returns on timeout."""
+
+    def __init__(self, messages: list[dict]) -> None:
+        super().__init__(messages)
+        self.idle_timeouts: list[float | None] = []
+
+    def receive(self, timeout: float | None = None) -> str | None:
+        if self._messages:
+            return self._messages.pop(0)
+        self.idle_timeouts.append(timeout)
+        if timeout is None:
+            raise AssertionError("receive() without a timeout would block this thread forever")
+        return None
+
+
+def test_silent_connection_is_released_after_idle_timeout(monkeypatch) -> None:
+    module = _load_esp32_ws_main(monkeypatch)
+    monkeypatch.setattr(module, "API_KEY", "")
+    module.manager._redis = _FakeRedis()
+    ws = _SilentPeerWS([{"auth": "", "device_id": "car_heater_esp32"}])
+
+    module.app.view_functions["esp32_websocket"].__wrapped__(ws)
+
+    # Devices heartbeat every 30 s; the gateway gives up after missing several.
+    assert ws.idle_timeouts and 60 <= ws.idle_timeouts[0] <= 180
+    assert module.manager.get_connection("car_heater_esp32") is None
