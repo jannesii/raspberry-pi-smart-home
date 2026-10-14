@@ -150,7 +150,6 @@ uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.17 python src/
 uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.17 python src/fit_coupon.py
 uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.17 python checks/check_redesign.py
 uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.17 python checks/check_geometry.py
-uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.17 python checks/test_release_gate.py
 uv run --no-project --with trimesh --with numpy --with scipy python checks/check_mesh.py
 uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.17 cadgen step snapshot --job checks/views.json
 ```

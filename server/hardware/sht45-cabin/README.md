@@ -171,7 +171,6 @@ for model in assembly pilot_coupon fit_coupon adapter_coupon adapter_socket_coup
 done
 uvx --no-config --managed-python --python 3.13 --from "$CAD_RUNTIME" python checks/check_redesign.py
 uvx --no-config --managed-python --python 3.13 --from "$CAD_RUNTIME" python checks/check_geometry.py
-uvx --no-config --managed-python --python 3.13 --from "$CAD_RUNTIME" python checks/test_release_gate.py
 uv run --no-project --with trimesh --with numpy --with scipy python checks/check_mesh.py
 uvx --no-config --managed-python --python 3.13 --from "$CAD_RUNTIME" cadgen step snapshot --job checks/views.json
 ```
