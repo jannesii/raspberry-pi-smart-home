@@ -327,3 +327,17 @@ class MedicineRefillCalculation:
     treatment_days: float
     dosing_days_covered: int
     dosing_weekdays: list[int]
+
+
+@dataclass
+class CarHeaterSession:
+    """A durable attempt, distinct from telemetry or an actuator command."""
+
+    id: str
+    trigger: str
+    created_at: str
+    observed_at: str
+    requested_departure_at: str | None
+    heating_duration_minutes: float | None
+    snapshot: dict
+    outcome: dict | None

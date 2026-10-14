@@ -1,0 +1,5 @@
+<nav class="heater-navigation" aria-label="Car heater">
+  <a href="{{ url_for('web.get_car_heater_page') }}" {% if heater_view == 'heating' %}aria-current="page"{% endif %}>Heating</a>
+  <a href="{{ url_for('web.car_heater_sessions_page') }}" {% if heater_view == 'sessions' %}aria-current="page"{% endif %}>Sessions</a>
+  <a href="{{ url_for('web.car_heater_settings_page') }}" {% if heater_view == 'settings' %}aria-current="page"{% endif %}>Settings</a>
+</nav>

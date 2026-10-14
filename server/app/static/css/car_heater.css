@@ -750,6 +750,13 @@ body {
     padding: 0 12px 24px;
   }
 
+  .page-header {
+    margin-left: -12px;
+    margin-right: -12px;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
   .hero-stats {
     grid-template-columns: repeat(3, 1fr);
     gap: 8px;

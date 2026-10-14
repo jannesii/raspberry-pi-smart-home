@@ -6,7 +6,7 @@ import logging
 from dataclasses import asdict, is_dataclass
 from typing import TYPE_CHECKING
 
-from flask import current_app, render_template
+from flask import current_app, render_template, request
 from flask_login import current_user, login_required
 
 from ...utils import get_ctrl
@@ -120,6 +120,7 @@ def get_car_heater_page():
 
     return render_template(
         "car_heater.html",
+        heater_view="settings" if request.path.endswith("/settings") else "heating",
         last_status=last_status,
         command_status=command_status,
         charge_mode_state=charge_mode_state,
@@ -128,3 +129,22 @@ def get_car_heater_page():
         kfactor_status=kfactor_status,
         weather_data=weather_data,
     )
+
+
+@web_bp.route("/car_heater/sessions")
+@web_bp.route("/car_heater/sessions/<session_id>")
+@login_required
+def car_heater_sessions_page(session_id=None):
+    if session_id and get_ctrl().get_car_heater_session(session_id) is None:
+        from flask import abort
+
+        abort(404)
+    return render_template(
+        "car_heater_sessions.html", heater_view="sessions", session_id=session_id
+    )
+
+
+@web_bp.route("/car_heater/settings")
+@login_required
+def car_heater_settings_page():
+    return get_car_heater_page()

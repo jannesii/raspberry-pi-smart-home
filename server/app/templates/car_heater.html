@@ -3,11 +3,12 @@
 {% block title %}Car Heater{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater.css', v='20261013-1') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater.css', v='20261014-2') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/flash.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_chart.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_settings.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_logs.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_sessions.css', v='20261014-2') }}">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 {% endblock %}
@@ -20,13 +21,15 @@
     <h2>Car Heater</h2>
   </header>
 
+  {% include 'car_heater_navigation.html' %}
+
   <!-- Queue Status Banner -->
   <div id="queueBanner" class="queue-banner">
     <span id="queueBannerText">Action queued…</span>
   </div>
 
   <!-- Desktop Grid Layout -->
-  <div class="desktop-grid">
+  <div class="desktop-grid" {% if heater_view == 'settings' %}hidden{% endif %}>
     <!-- Hero Status Card - spans full width on desktop -->
     <section class="hero-status">
       <div class="hero-status-main">
@@ -75,7 +78,7 @@
           </button>
           <button id="btnTurnOff" class="quick-action-btn action-off" type="button">
             <span class="icon">❄️</span>
-            <span class="label">Turn OFF</span>
+            <span class="label">Stop heating</span>
           </button>
         </div>
       </section>
@@ -124,9 +127,7 @@
             <p id="readyByStatusText" class="ready-by-status">No schedule</p>
           </div>
         </div>
-        <button id="btnOpenReadyBySettings" class="settings-gear-btn" type="button" title="Advanced Settings">
-          ⚙️
-        </button>
+
       </div>
 
       <!-- Progress bar (shown when scheduled/running) -->
@@ -188,23 +189,6 @@
       </div>
     </div>
 
-    <!-- Battery Charge Mode -->
-    <div class="charge-mode-section">
-      <div class="charge-mode-row">
-        <div class="charge-mode-left">
-          <div class="charge-mode-icon">🔋</div>
-          <div class="charge-mode-info">
-            <h4>Battery Charge Mode</h4>
-            <p id="chargeModeStatusText" class="charge-mode-status">Idle</p>
-          </div>
-        </div>
-        <label class="ios-toggle">
-          <input type="checkbox" id="chargeModeToggle" name="chargeModeToggle">
-          <span class="ios-toggle-track"></span>
-          <span class="ios-toggle-thumb"></span>
-        </label>
-      </div>
-    </div>
   </section>
     </div><!-- /desktop-column left -->
 
@@ -305,6 +289,12 @@
     </div>
   </section>
 
+    </div><!-- /desktop-column right -->
+  </div><!-- /desktop-grid -->
+  <section class="heater-evidence heater-settings" {% if heater_view != 'settings' %}hidden{% endif %} aria-labelledby="heaterSettingsHeading">
+    <h2 id="heaterSettingsHeading">Settings &amp; diagnostics</h2>
+    <p>Existing heating preferences, calibration, charts and logs remain available here.</p>
+    <button id="btnOpenReadyBySettings" class="evidence-button" type="button">Heating preferences &amp; calibration</button>
   <!-- Charts Button -->
   <button id="btnOpenCarHeaterCharts" class="charts-button" type="button">
     📈 View Charts
@@ -346,8 +336,8 @@
       </div>
     </div>
   </section>
-    </div><!-- /desktop-column right -->
-  </div><!-- /desktop-grid -->
+  </section>
+
 </div>
 
 <script>
@@ -366,10 +356,10 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/init_sio.js', v='20260504-1') }}"></script>
-<script src="{{ url_for('static', filename='js/car_heater.js', v='20261013-1') }}"></script>
+<script src="{{ url_for('static', filename='js/car_heater.js', v='20261014-2') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater_logs.js', v='20260323-1') }}"></script>
 <script src="{{ url_for('static', filename='js/flash.js') }}"></script>
-<script src="{{ url_for('static', filename='js/car_heater_chart.js', v='20261013-1') }}"></script>
+<script src="{{ url_for('static', filename='js/car_heater_chart.js', v='20261014-2') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater_settings_base.js', v='20260323-2') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater_settings_schedule.js') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater_settings_kfactor.js') }}"></script>

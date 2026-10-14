@@ -10,3 +10,7 @@ pre-commit>=4.0.0
 # Testing (optional, add if needed)
 # pytest>=8.0.0
 # pytest-cov>=4.0.0
+
+# Authenticated page integration checks (browser install is a separate step)
+playwright>=1.48,<2
+mypy>=1.13,<3

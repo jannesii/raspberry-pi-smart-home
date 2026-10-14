@@ -41,6 +41,21 @@ class CarHeaterSensorMixin:
         )
         return CarHeaterSensorFrame(id=new_id, **values)
 
+    def get_last_car_heater_sensor_frame(self) -> CarHeaterSensorFrame | None:
+        """Newest device report, including reports with missing sensor values."""
+        if self._sa_engine is None:
+            raise RuntimeError("SQLAlchemy engine not initialized")
+        stmt = (
+            select(car_heater_sensor_frame)
+            .order_by(
+                car_heater_sensor_frame.c.received_at.desc(), car_heater_sensor_frame.c.id.desc()
+            )
+            .limit(1)
+        )
+        with self._sa_engine.connect() as conn:
+            row = conn.execute(stmt).mappings().first()
+        return _row_to_frame(row) if row else None
+
     def get_car_heater_sensor_frames_between(
         self, start_iso: str, end_iso: str
     ) -> list[CarHeaterSensorFrame]:

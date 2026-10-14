@@ -1,0 +1,61 @@
+/* Scoped evidence workspace; the existing Heating tools retain their IDs. */
+.heater-evidence, .car-heater-page {
+  --evidence-bg: #101824;
+  --evidence-surface: #1a2635;
+  --evidence-text: #eef3f8;
+  --evidence-muted: #b4c2d1;
+  --evidence-border: #63758a;
+  --evidence-accent: #92dac7;
+}
+.heater-evidence {
+  box-sizing: border-box;
+  max-width: 1000px;
+  margin: 24px auto;
+  padding: 24px;
+  color: var(--evidence-text);
+  background: var(--evidence-bg);
+  border-radius: 16px;
+  font: 16px/1.6 system-ui, sans-serif;
+  overflow-wrap: anywhere;
+}
+.heater-evidence *, .heater-navigation { box-sizing: border-box; }
+.heater-evidence h1 { font-size: clamp(2rem, 6vw, 3rem); margin: 0 0 16px; }
+.heater-evidence h2 { font-size: 1.35rem; margin: 20px 0 12px; }
+.evidence-eyebrow, .heater-evidence p, .heater-evidence dt { color: var(--evidence-muted); }
+.evidence-eyebrow { font-size: .75rem; letter-spacing: .1em; }
+.heater-navigation { display: flex; gap: 8px; margin: 16px 0 24px; }
+.heater-navigation a { flex: 1; min-height: 48px; padding: 10px 12px; text-align: center; color: var(--evidence-text); background: var(--evidence-surface); border-radius: 8px; text-decoration: none; }
+.heater-navigation a[aria-current="page"] { color: var(--evidence-bg); background: var(--evidence-accent); font-weight: 650; }
+.heater-evidence a { color: var(--evidence-accent); }
+.heater-evidence .heater-navigation a[aria-current="page"] { color: var(--evidence-bg); }
+.evidence-form { display: grid; gap: 16px; max-width: 680px; }
+.evidence-form label, .evidence-inline label { display: grid; gap: 6px; }
+.heater-evidence input:not([type="radio"]):not([type="checkbox"]), .heater-evidence textarea, .heater-evidence select {
+  width: 100%; min-width: 0; min-height: 48px; padding: 10px; border: 1px solid var(--evidence-border); border-radius: 6px;
+  color: var(--evidence-text); background: var(--evidence-surface); font: inherit; color-scheme: dark;
+}
+.heater-evidence input::placeholder, .heater-evidence textarea::placeholder { color: var(--evidence-muted); }
+.evidence-button { min-height: 48px; padding: 10px 16px; border: 1px solid var(--evidence-border); border-radius: 8px; background: var(--evidence-surface); color: var(--evidence-text); font: inherit; cursor: pointer; touch-action: manipulation; }
+.evidence-primary { background: var(--evidence-accent); color: var(--evidence-bg); font-weight: 650; }
+.evidence-button:disabled { opacity: .6; cursor: wait; }
+.evidence-inline { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+.evidence-inline label { flex: 1; min-width: 180px; }
+.evidence-section { margin-top: 24px; border-top: 1px solid var(--evidence-border); padding-top: 16px; }
+.heater-evidence summary { min-height: 48px; padding: 10px 0; cursor: pointer; font-weight: 650; }
+.evidence-form details label { margin: 12px 0; }
+.heater-evidence fieldset { border: 1px solid var(--evidence-border); border-radius: 8px; padding: 12px; min-width: 0; }
+.evidence-form .evidence-choice { display: flex; align-items: center; min-height: 48px; gap: 12px; padding: 8px; }
+.evidence-choice input { width: 22px; height: 22px; flex-shrink: 0; accent-color: var(--evidence-accent); }
+.evidence-attempt { padding: 16px 0; border-top: 1px solid var(--evidence-border); }
+.evidence-attempt a { display: inline-block; min-height: 48px; padding: 8px 0; font-weight: 650; }
+.evidence-attempt p { margin: 4px 0; }
+.heater-evidence dl { display: grid; grid-template-columns: minmax(140px, 1fr) 2fr; gap: 8px 16px; }
+.heater-evidence dd { margin: 0; white-space: pre-wrap; }
+.heater-evidence :focus-visible, .heater-navigation :focus-visible { outline: 3px solid var(--evidence-accent); outline-offset: 3px; }
+.car-heater-page [hidden], .heater-evidence [hidden] { display: none !important; }
+.heater-settings { margin-top: 16px; }
+@media (max-width: 600px) {
+  .heater-evidence { margin: 8px; padding: 16px; border-radius: 10px; }
+  .heater-evidence dl { grid-template-columns: 1fr; gap: 4px; }
+  .heater-evidence dd { margin-bottom: 12px; }
+}

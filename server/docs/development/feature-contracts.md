@@ -44,6 +44,15 @@ Tests: `tests/test_car_heater*.py`, `tests/test_ready_by.py`.
   See [preservation operations](../operations/heater-history-preservation.md)
   for owner-controlled discovery, backup/restore and deployed migration in #12.
 
+- `car_heater_session` holds permanent attempt identities and immutable
+  installation/version snapshots, independently of command/relay telemetry.
+  Creation associates existing heating; it never operates or schedules a heater.
+  Outcome saves are authenticated and CSRF-protected, never invoke controls,
+  and keep missing departure times unknown. Already-clear observations do not
+  imply an exact clearing time. Driver-entered duration is reported evidence,
+  not confirmed power-on duration. Dates filter requested departure or observation
+  time in Europe/Helsinki. Later capture/review work should reuse these UUIDs.
+
 ## AC, sleep, Hue, and temperatures
 
 Code: `app/services/ac/`, `app/services/hue/`,

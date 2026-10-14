@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% block title %}Car heater sessions{% endblock %}
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_sessions.css', v='20261014-2') }}">
+{% endblock %}
+{% block content %}
+<main class="heater-evidence" lang="en" data-session-id="{{ session_id or '' }}">
+  <header><p class="evidence-eyebrow">CAR HEATER · PERMANENT EVIDENCE</p><h1>Sessions</h1></header>
+  {% include 'car_heater_navigation.html' %}
+  <p id="sessionFeedback" role="status" aria-live="polite" tabindex="-1"></p>
+  <button id="sessionRetry" class="evidence-button" type="button" hidden>Retry loading</button>
+  {% if not session_id %}
+  <section aria-labelledby="sessionListHeading">
+    <h2 id="sessionListHeading">Heating attempts</h2>
+    <form id="sessionFilter" class="evidence-inline">
+      <label for="sessionDate">Departure or session date<input id="sessionDate" name="date" type="date"></label>
+      <button class="evidence-button" type="submit">Filter</button>
+      <button class="evidence-button" id="sessionResetFilter" type="button">Show all</button>
+    </form>
+    <div id="sessionList" aria-busy="true"><p>Loading sessions…</p></div>
+  </section>
+  <details class="evidence-section" id="newAttempt">
+    <summary>Record a heating attempt</summary>
+    <p>Associate existing manual or comfort heating with permanent evidence. Recording an attempt does not start, stop or schedule heating.</p>
+    <form id="sessionCreate" class="evidence-form">
+      <label for="sessionTrigger">Trigger<select id="sessionTrigger" name="trigger"><option value="manual">Manual heating</option><option value="observation">Observation</option><option value="comfort">Comfort heating</option><option value="ready_by">Ready by</option></select></label>
+      <label for="sessionObserved">Observation began<input id="sessionObserved" name="observed_at" type="datetime-local" required></label>
+      <label for="sessionDeparture">Requested departure (optional)<input id="sessionDeparture" name="requested_departure_at" type="datetime-local"></label>
+      <label for="sessionDuration">Recorded heating duration in minutes (optional)<input id="sessionDuration" name="heating_duration_minutes" type="number" min="0" max="10000" step="any"></label>
+      <label for="sessionInstallation">Installation context (optional)<textarea id="sessionInstallation" name="installation" maxlength="2000" rows="3" placeholder="Sensor positions, heater placement, changes to mounting"></textarea></label>
+      <label for="sessionFirmware">Installed firmware version (optional)<input id="sessionFirmware" name="firmware_version" maxlength="2000" placeholder="Latest reported version used when available"></label>
+      <p>Times and the date filter use Europe/Helsinki.</p>
+      <button class="evidence-button evidence-primary" type="submit">Save attempt</button>
+      <p class="evidence-form-status" role="status"></p>
+    </form>
+  </details>
+  {% else %}
+  <a class="evidence-back" href="{{ url_for('web.car_heater_sessions_page') }}">Back to sessions</a>
+  <section id="sessionDetail" aria-busy="true" aria-labelledby="sessionDetailHeading"><h2 id="sessionDetailHeading">Heating attempt</h2><p>Loading session…</p></section>
+  <section class="evidence-section" aria-labelledby="outcomeHeading">
+    <h2 id="outcomeHeading">Departure outcome</h2>
+    <p>Saving an outcome does not change heating. Leave departure time empty unless departure was confirmed; unplugging or missing readings do not confirm it.</p>
+    <form id="sessionOutcome" class="evidence-form" hidden>
+      <fieldset><legend>Windshield condition</legend>
+        {% for value, label in [('clear', 'Clear'), ('wipers_enough', 'Wipers enough'), ('partial_scrape', 'Partial scrape'), ('full_scrape', 'Full scrape')] %}
+        <label class="evidence-choice"><input type="radio" name="result" value="{{ value }}" required>{{ label }}</label>
+        {% endfor %}
+      </fieldset>
+      <label class="evidence-choice"><input type="checkbox" name="already_clear_at_observation">Already clear when observation began</label>
+      <p>This records that it was clear at the first observation, without inventing an exact clearing time.</p>
+      <details><summary>Optional observation details</summary>
+        <label for="outcomeObserved">Actual observation time<input id="outcomeObserved" name="observed_at" type="datetime-local"></label>
+        <label for="outcomeDeparture">Confirmed actual departure time<input id="outcomeDeparture" name="actual_departure_at" type="datetime-local"></label>
+        <label for="outcomeFrost">Frost or ice type<input id="outcomeFrost" name="frost_type" maxlength="2000"></label>
+        <label for="outcomeWindows">Other-window condition<input id="outcomeWindows" name="other_windows" maxlength="2000"></label>
+        <label for="outcomeInterior">Interior fog or frost<input id="outcomeInterior" name="interior_condition" maxlength="2000"></label>
+      </details>
+      <button class="evidence-button evidence-primary" type="submit">Save outcome</button>
+      <p class="evidence-form-status" role="status"></p>
+    </form>
+  </section>
+  {% endif %}
+</main>
+<meta name="csrf-token" content="{{ csrf_token() }}">
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/car_heater_sessions.js', v='20261014-2') }}"></script>
+{% endblock %}

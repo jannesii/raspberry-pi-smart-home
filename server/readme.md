@@ -11,7 +11,8 @@ device integrations need their own hardware, credentials, and configuration.
   and local TinyTuya AC control with thermostat and sleep schedules.
 - **Car heater:** live power/status, two windshield glass temperatures and
   cabin temperature/humidity with freshness, ready-by scheduling,
-  keep-at-temperature, battery charge mode, and learned heating-time estimates.
+  keep-at-temperature, learned heating-time estimates, permanent heating attempts
+  and departure outcomes in Heating / Sessions / Settings.
 - **3D printer:** live video, progress, and timelapse monitoring. Printer control
   commands such as pause, home, and direct G-code execution are disabled.
 - **Administration:** users and API keys, logs, Hue lighting, webhook alerts,
@@ -222,3 +223,49 @@ implementation details and troubleshooting.
 ## License
 
 [MIT](../LICENSE)
+
+## Car-heater session evidence
+
+Open **Car Heater → Sessions** to browse attempts newest first, filter by
+requested departure/session date in Europe/Helsinki, or record an existing
+manual/comfort/ready-by attempt. Recording evidence never operates the heater
+or changes its plan. Existing control behavior remains in Heating; calibration,
+charts, logs and restart tools remain reachable in Settings. Battery-charge
+controls are removed from the interface; legacy backend support remains.
+
+Each attempt has a permanent UUID, creation/observation times, optional requested
+departure and reported heating duration, and an immutable installation/version
+snapshot. Add sensor/heater placement notes when recording the attempt. Firmware
+uses the latest stored device report, with its report time, unless the driver
+records an installed version explicitly. Missing versions stay unknown. Set
+`CAR_HEATER_SOFTWARE_VERSION` (defaults to the application package's `1.0.0`)
+and `CAR_HEATER_SOFTWARE_REVISION` to the deployed version/commit for useful
+software provenance. These may also be supplied in Flask configuration.
+
+Select an attempt to save **Clear**, **Wipers enough**, **Partial scrape** or
+**Full scrape**. Optional details include frost/ice type, other windows, interior
+fog/frost, actual observation and confirmed departure time. “Already clear when
+observation began” preserves that fact without assigning an exact clearing time.
+Leave confirmed departure blank for unplugging or telemetry gaps. Outcomes can
+be edited; saving them does not start/stop heating. Photos and command/relay
+milestones are not yet available in this view. Older telemetry is preserved,
+without fabricating historical attempts or outcomes.
+
+Session list/detail/create and outcome endpoints are authenticated under
+`/api/car_heater/sessions`; browser mutations require the normal CSRF token.
+Migration `20261014_0012` adds permanent session storage. Follow the existing
+backup/migration deployment procedure before using the workflow; a restart
+alone does not apply the migration. No automated retention deletes sessions.
+
+Optional isolated browser checks use Playwright without production devices:
+
+```sh
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python -m playwright install chromium
+.venv/bin/pytest -q tests/test_car_heater_sessions.py tests/test_car_heater_sessions_browser.py
+```
+
+The browser driver runs separately from the Eventlet-patched app host. These
+checks cover phone/desktop save/reload, date filtering, keyboard save,
+loading/save failures and reachable advanced tools. Check the visual feel and
+touch behavior on the actual iPhone before collection.

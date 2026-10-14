@@ -448,3 +448,18 @@ Index(
     desc(medicine_purchases.c.purchase_date),
     desc(medicine_purchases.c.id),
 )
+
+# Permanent evidence; creation never authorizes a heater command.
+car_heater_session = Table(
+    "car_heater_session",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("trigger", Text, nullable=False),
+    Column("created_at", Text, nullable=False),
+    Column("observed_at", Text, nullable=False),
+    Column("requested_departure_at", Text),
+    Column("heating_duration_minutes", Float),
+    Column("snapshot", Text, nullable=False),
+    Column("outcome", Text),
+)
+Index("idx_car_heater_session_observed_at", car_heater_session.c.observed_at)
