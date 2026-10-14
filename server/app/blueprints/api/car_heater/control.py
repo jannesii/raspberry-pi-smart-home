@@ -56,6 +56,8 @@ def _normalize_action_results(action_results: Any) -> list[dict[str, Any]]:
                         {
                             "action": item.get("action"),
                             "success": item.get("success", item.get("ok", False)),
+                            "session_id": item.get("session_id"),
+                            "note": item.get("note"),
                         }
                     )
                 else:
@@ -74,6 +76,8 @@ def _normalize_action_results(action_results: Any) -> list[dict[str, Any]]:
                 {
                     "action": action_results.get("action"),
                     "success": action_results.get("success", action_results.get("ok", False)),
+                    "session_id": action_results.get("session_id"),
+                    "note": action_results.get("note"),
                 }
             )
         else:
@@ -234,7 +238,6 @@ def get_car_heater_commands():
 
 
 @car_bp.route("/queue", methods=["POST"])
-@csrf.exempt
 @login_required
 def queue_car_heater_command():
     """HTTP fallback for queuing car heater commands from the web UI."""
@@ -258,7 +261,7 @@ def queue_car_heater_command():
 
         # Use centralized turn_on/turn_off methods
         if action == "turn_on":
-            service.turn_on(source="http_api", reason=f"Manual control by {username}")
+            service.start_bounded_session(data.get("duration_minutes", 60))
         elif action == "turn_off":
             service.turn_off(source="http_api", reason=f"Manual control by {username}")
         else:
@@ -267,6 +270,8 @@ def queue_car_heater_command():
 
         logger.debug("Queued car heater command via HTTP: %s", action)
         return jsonify({"ok": True, "queued": {"action": action}}), 200
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 409
     except Exception as e:
         logger.exception("Failed to queue car heater command via HTTP: %s", e)
     return jsonify({"error": "Failed to queue command"}), 500

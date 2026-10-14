@@ -145,3 +145,35 @@ Tests: `tests/test_medicine_calculator.py`, `tests/test_medicine_alert_service.p
   calendar days from the run-out date.
 - Daily webhook batches use latest purchases. Successful/no-eligible dates
   are complete; failed batches have a cooldown and per-date attempt limit.
+
+## Bounded car-heater execution (protocol bounded-v1)
+
+- `POST/GET/DELETE /api/car_heater/bounded` is authenticated; mutations require
+  browser CSRF. Manual duration is positive and at most 180 minutes (default 60).
+  Sessions retain immutable original finish and permanent #5 identity. Execution
+  JSON is separate from installation snapshots and driver outcomes.
+- Timed ON requires a fresh relay-local capability and confirmed OFF. The same
+  envelope (session UUID, issue time, 30-second delivery lifetime, original finish,
+  Shelly boot token and ESP32 boot token) crosses HTTP and WS. Firmware 3.1.0 uses
+  one `RelayExecutor`; OFF bypasses lifetime/cooldown and remains retryable.
+- The Shelly bounded-v1 script persists a high-water mark before ON, arms
+  `Switch.Set(toggle_after)` once, and never rearms duplicates. Its native relay
+  timer runs without router/server access or a running script. Shelly/script
+  restart requests OFF and never restores ON; required startup configuration is
+  checked before authorization. ESP32 reboot rejects commands from its prior boot.
+- Server restart requests OFF with the existing UUID/finish. Expiry or an
+  unconfirmed start past its delivery lifetime requests OFF. Lost/failed OFF stays
+  pending/failed-or-unknown; only matching relay-local stopped evidence confirms
+  shutdown. Stale relay evidence is shown unknown after 30 seconds.
+- Start suspends and persists disabled comfort, calibration and charge mode and
+  cancels old Ready-by schedules. Starts through those public services are blocked
+  until shutdown is confirmed. Finish never automatically resumes these modes.
+  Comfort remains available when explicitly selected outside bounded heating.
+- Execution milestones distinguish request, HTTP delivery, device execution,
+  observed relay ON/OFF, powered draw and confirmed shutdown; energy counter
+  endpoints are retained. Existing raw telemetry remains permanent. The test
+  status endpoint cannot update the bounded session or acknowledge its commands.
+- Software simulations do not establish deployed relay timer/reboot behavior or
+  cold-range suitability. No Shelly cold-ambient block is added. Owner-controlled
+  setup and physical acceptance are in #12; see
+  [bounded heating setup](../operations/bounded-car-heater.md).

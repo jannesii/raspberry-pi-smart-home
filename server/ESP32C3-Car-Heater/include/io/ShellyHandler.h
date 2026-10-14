@@ -1,14 +1,18 @@
 #pragma once
 
 #include <Arduino.h>
+#include "RelayExecutor.h"
 
-class ShellyHandler
+class ShellyHandler : public RelayTransport
 {
 public:
     ShellyHandler(String ipAddress);
 
     // Returns true on success (HTTP 2xx), false on failure
     bool switchOn();
+    bool executeHeaterCommand(JsonObjectConst command);
+    bool postRelay(const std::string& command) override;
+    void writeBoundedStatus(JsonObject target);
     bool switchOff();
     bool toggle();
 
@@ -24,4 +28,5 @@ private:
 
     String baseUrl_; // e.g. "http://192.168.33.1/rpc/Switch.Set?id=0&on="
     String ip_;
+    String bootId_;
 };

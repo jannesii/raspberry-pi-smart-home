@@ -95,6 +95,8 @@ def create_ready_by_schedule():
         )
 
         return jsonify({"ok": True, "schedule": asdict(schedule)}), 200
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 409
     except Exception as e:
         logger.exception("Failed to create Ready-by schedule: %s", e)
     return jsonify({"error": "Failed to create schedule"}), 500

@@ -3,7 +3,8 @@
 {% block title %}Car Heater{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater.css', v='20261014-2') }}">
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater.css', v='20261014-7') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/flash.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_chart.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_settings.css') }}">
@@ -71,10 +72,16 @@
     <div class="desktop-column">
       <!-- Quick Actions -->
       <section class="ios-card">
+        <div class="bounded-manual-controls">
+        <label for="manualDuration">Manual heating duration (minutes)</label>
+        <input id="manualDuration" type="number" min="1" max="180" step="1" value="60" inputmode="numeric">
+        <p id="boundedHeatingStatus" role="status" aria-live="polite">Checking bounded heating…</p>
+        <a id="boundedSessionLink" hidden>Review this heating session</a>
+        </div>
         <div class="quick-actions">
           <button id="btnTurnOn" class="quick-action-btn action-on" type="button">
             <span class="icon">🔥</span>
-            <span class="label">Turn ON</span>
+            <span class="label">Start timed heating</span>
           </button>
           <button id="btnTurnOff" class="quick-action-btn action-off" type="button">
             <span class="icon">❄️</span>
@@ -355,8 +362,9 @@
 {% endblock %}
 
 {% block scripts %}
+<script defer src="{{ url_for('static', filename='js/car_heater_bounded.js', v='20261014-7') }}"></script>
 <script src="{{ url_for('static', filename='js/init_sio.js', v='20260504-1') }}"></script>
-<script src="{{ url_for('static', filename='js/car_heater.js', v='20261014-2') }}"></script>
+<script src="{{ url_for('static', filename='js/car_heater.js', v='20261014-7') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater_logs.js', v='20260323-1') }}"></script>
 <script src="{{ url_for('static', filename='js/flash.js') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater_chart.js', v='20261014-2') }}"></script>

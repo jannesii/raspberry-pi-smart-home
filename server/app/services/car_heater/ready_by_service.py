@@ -164,6 +164,7 @@ class ReadyByService:
     ) -> ReadyBySchedule:
         """Schedule a Ready-by run (timestamps interpreted in local timezone if naive)."""
         with self._lock:
+            self._car_heater_service.require_mode_available()
             dt = (
                 ready_by_ts.astimezone(self._tz)
                 if ready_by_ts.tzinfo

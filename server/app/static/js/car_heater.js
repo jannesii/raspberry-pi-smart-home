@@ -454,7 +454,11 @@ function setQueueStatus(mode, text) {
 // ============================================
 
 function queueCommand(action) {
-  const payload = { action: action };
+  if (action === 'turn_on' || action === 'turn_off') {
+    window.dispatchEvent(new CustomEvent('car_heater_bounded_control', {detail: {action}}));
+    return;
+  }
+  const payload = { action: action, csrf_token: document.querySelector('meta[name="csrf-token"]')?.content || '' };
   lastQueuedAction = action;
   setQueueStatus('pending', 'Action queued…');
   updateSingleCommandStatus(action, 'queued');
@@ -484,6 +488,7 @@ function queueCommand(action) {
     headers: {
       'Content-Type': 'application/json',
       'X-Requested-With': 'XMLHttpRequest',
+      'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || '',
     },
     body: JSON.stringify(payload),
   }).then(resp => {

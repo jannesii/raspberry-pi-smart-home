@@ -2,11 +2,14 @@ import json
 import logging
 import os
 import threading
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 import redis
+
+from .bounded_heating import BoundedHeatingMixin
 
 if TYPE_CHECKING:
     from ...core.controller import Controller
@@ -45,7 +48,7 @@ class ChargeModeState:
     seen_above_threshold: bool = False
 
 
-class CarHeaterService:
+class CarHeaterService(BoundedHeatingMixin):
     """
     In-memory command queue for the car heater ESP.
 
@@ -61,8 +64,9 @@ class CarHeaterService:
     to push to the device in real-time.
     """
 
-    def __init__(self, controller: "Controller | None" = None) -> None:
-        self._lock = threading.Lock()
+    def __init__(self, controller: "Controller | None" = None, *, clock=time.time) -> None:
+        self._lock = threading.RLock()
+        self._clock = clock
         self._commands: list[dict[str, Any]] = []
         self._command_status = CommandStatus()
         self._controller = controller
@@ -85,6 +89,7 @@ class CarHeaterService:
         else:
             self._charge_mode_state = ChargeModeState()
 
+        self._init_bounded()
         self._stop_event = threading.Event()
         self._thread = threading.Thread(target=self._run, name="CarHeaterService", daemon=True)
         self._thread.start()
@@ -100,7 +105,9 @@ class CarHeaterService:
             source: Identifier of the calling component (e.g., 'ready_by', 'keep_at_temp', 'web_ui')
             reason: Human-readable explanation of why the heater is being turned on
         """
-        self._queue_heater_command("turn_on", source, reason)
+        with self._lock:
+            self.require_mode_available()
+            self._queue_heater_command("turn_on", source, reason)
 
     def turn_off(self, source: str, reason: str) -> None:
         """
@@ -112,14 +119,29 @@ class CarHeaterService:
             source: Identifier of the calling component (e.g., 'ready_by', 'charge_mode', 'web_ui')
             reason: Human-readable explanation of why the heater is being turned off
         """
-        self._queue_heater_command("turn_off", source, reason)
+        with self._lock:
+            if self._bounded and self._bounded["phase"] != "stopped":
+                self.stop_bounded_session(reason)
+                return
+            self._queue_heater_command("turn_off", source, reason)
 
     def _queue_heater_command(self, action: str, source: str, reason: str) -> None:
         """Internal method to queue a heater command and log it."""
-        command = {"action": action, "source": source, "reason": reason}
+        command = {
+            "action": action,
+            "source": source,
+            "reason": reason,
+            "issued_at": int(self._clock()),
+            "expires_at": int(self._clock()) + 30,
+        }
+        if self._bounded_capability:
+            command["boot_id"] = self._bounded_capability.get("boot_id")
+            command["device_boot_id"] = self._bounded_capability.get("device_boot_id")
         with self._lock:
+            if action == "turn_off":
+                self._commands = [c for c in self._commands if c.get("action") != "turn_on"]
             self._commands.append(command)
-            if hasattr(self._command_status, action):
+            if isinstance(action, str) and hasattr(self._command_status, action):
                 setattr(self._command_status, action, "queued")
 
         # Publish to Redis for real-time push via WebSocket service
@@ -158,10 +180,16 @@ class CarHeaterService:
         """
         if not isinstance(command, dict):
             raise TypeError("command must be a dict")
+        if command.get("action") in ("turn_on", "turn_off"):
+            getattr(self, command["action"])(
+                command.get("source", "queue"), command.get("reason", "control")
+            )
+            return
         with self._lock:
             self._commands.append(command)
             action = command.get("action")
-            setattr(self._command_status, action, "queued")
+            if isinstance(action, str) and hasattr(self._command_status, action):
+                setattr(self._command_status, action, "queued")
 
         # Publish to Redis for real-time push
         self._publish_command(command)
@@ -177,9 +205,27 @@ class CarHeaterService:
         with self._lock:
             for cmd in commands:
                 action = cmd.get("action")
-                if hasattr(self._command_status, action):
+                if (
+                    self._bounded
+                    and cmd.get("session_id") == self._bounded["session_id"]
+                    and not any(
+                        m["kind"] == "command_sent" and m.get("action") == action
+                        for m in self._bounded["milestones"]
+                    )
+                ):
+                    self._milestone("command_sent", "http_delivery", action=action)
+                if isinstance(action, str) and hasattr(self._command_status, action):
                     setattr(self._command_status, action, "sent")
         logger.debug("Marked %d car heater commands as sent", len(commands))
+
+    def accepts_command_result(self, command: dict[str, Any]) -> bool:
+        """Reject acknowledgements from superseded or already stopped sessions."""
+        with self._lock:
+            if not self._bounded or command.get("action") not in ("turn_on", "turn_off"):
+                return True
+            if self._bounded["phase"] == "stopped":
+                return not command.get("session_id")
+            return command.get("session_id") == self._bounded["session_id"]
 
     def mark_command_success(self, commands: list[dict[str, Any]]) -> None:
         """
@@ -190,10 +236,13 @@ class CarHeaterService:
         """
         with self._lock:
             for cmd in commands:
+                if not self.accepts_command_result(cmd):
+                    continue
+                self.observe_bounded_result(cmd)
                 action = cmd.get("action")
                 success = bool(cmd.get("success", False))
                 string = "success" if success else "failed"
-                if hasattr(self._command_status, action):
+                if isinstance(action, str) and hasattr(self._command_status, action):
                     setattr(self._command_status, action, string)
         logger.debug("Marked %d car heater commands as successful", len(commands))
 
@@ -305,7 +354,13 @@ class CarHeaterService:
 
         Called from the car_heater status API to respond to the ESP.
         """
+        self.tick_bounded()
         with self._lock:
+            self._commands = [
+                c
+                for c in self._commands
+                if c.get("action") != "turn_on" or c.get("expires_at", 0) > self._clock()
+            ]
             if not self._commands:
                 return []
             commands = list(self._commands)
@@ -337,6 +392,7 @@ class CarHeaterService:
         try:
             while not self._stop_event.is_set():
                 # Sleep with wake-up on stop_event for low CPU usage.
-                self._stop_event.wait(timeout=60.0)
+                self.tick_bounded()
+                self._stop_event.wait(timeout=1.0)
         except Exception:
             logger.exception("CarHeaterService thread crashed")

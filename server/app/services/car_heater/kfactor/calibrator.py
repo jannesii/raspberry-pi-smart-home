@@ -142,6 +142,8 @@ class KFactorCalibrator:
             self._state,
         )
         enabled = bool(value)
+        if enabled and self._car_heater_service is not None:
+            self._car_heater_service.require_mode_available()
         if not enabled and self._state in (STATE_AUTONOMOUS_ARMED, STATE_AUTONOMOUS_RECORDING):
             logger.info("kfactor: disabling autonomous while state=%s", self._state)
             if self._state == STATE_AUTONOMOUS_RECORDING:
@@ -182,6 +184,8 @@ class KFactorCalibrator:
     def update_config(self, updates: dict[str, Any]) -> None:
         """Merge user config updates into current config."""
         logger.debug("kfactor: update_config called updates=%s", updates)
+        if updates.get("enabled") and self._car_heater_service is not None:
+            self._car_heater_service.require_mode_available()
         self._refresh_config_if_changed()
         self._cfg = self._merge_config(updates)
         self._save_config_in_db(self._cfg)

@@ -24,6 +24,43 @@ if __name__ == "__main__":
     patch = pytest.MonkeyPatch()
     fixture = session_app.__wrapped__(work, patch)
     flask_app = next(fixture)
+    if len(sys.argv) > 2 and sys.argv[2] == "bounded":
+        from app.services.car_heater.car_heater_service import CarHeaterService
+
+        patch.setattr("redis.from_url", lambda *a, **kw: (_ for _ in ()).throw(OSError("isolated")))
+        heater = CarHeaterService(flask_app.ctrl)
+        flask_app.car_heater_service = heater
+        heater.observe_bounded_status(
+            {
+                "bounded": {
+                    "protocol": 1,
+                    "ready": True,
+                    "relay_on": False,
+                    "boot_id": "relay-one",
+                    "device_boot_id": "esp-one",
+                }
+            }
+        )
+
+        @flask_app.post("/test/relay-off")
+        def relay_off():
+            run = heater.get_bounded_session()
+            heater.observe_bounded_status(
+                {
+                    "bounded": {
+                        "protocol": 1,
+                        "ready": True,
+                        "relay_on": False,
+                        "session_id": run["session_id"],
+                        "phase": "stopped",
+                        "reason": "cancelled",
+                        "boot_id": "relay-one",
+                        "device_boot_id": "esp-one",
+                    }
+                }
+            )
+            return {"ok": True}
+
     authenticated = client.__wrapped__(flask_app)
     server = make_server("127.0.0.1", 0, flask_app, threaded=False)
     (work / "host.json").write_text(

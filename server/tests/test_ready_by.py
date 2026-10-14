@@ -258,6 +258,9 @@ class TestMigration:
 
 
 class _CarHeaterServiceStub:
+    def require_mode_available(self):
+        pass
+
     def __init__(self):
         self.commands: list[str] = []
 

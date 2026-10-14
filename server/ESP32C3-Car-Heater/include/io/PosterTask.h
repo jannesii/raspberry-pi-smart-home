@@ -80,6 +80,7 @@ private:
 
     struct ActionResult {
         String action;
+        String sessionId;
         bool success;
         String note;
     };

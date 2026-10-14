@@ -269,3 +269,14 @@ The browser driver runs separately from the Eventlet-patched app host. These
 checks cover phone/desktop save/reload, date filtering, keyboard save,
 loading/save failures and reachable advanced tools. Check the visual feel and
 touch behavior on the actual iPhone before collection.
+
+### Bounded manual car heating
+
+The Heating page supports a selected duration (default 60 minutes, maximum 180),
+a stable latest finish and explicit Stop pending/failed-or-unknown/confirmed states.
+Timed starts require ESP32C3-Car-Heater **3.1.0**, a compatible **bounded-v1** Shelly
+script and migration **20261014_0013**. Older/unsupported devices cannot authorize
+bounded heating. Both transports preserve the same session identity and deadline.
+See [setup and physical acceptance](docs/operations/bounded-car-heater.md) before
+owner-controlled deployment/flashing in #12. Review the permanent session to see
+request, relay, actual draw and shutdown milestones; outcomes remain independent.

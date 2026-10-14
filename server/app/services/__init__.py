@@ -302,6 +302,20 @@ def init_services(app: Flask) -> dict[str, Any]:
         kfactor_calibrator.set_keep_at_temp_service(keep_at_temp_service)
         kfactor_calibrator.set_weather_service(weather_service)
 
+    # Bounded sessions explicitly suspend old modes; finish never resumes them.
+    if car_heater_service is not None:
+
+        def suspend_heater_modes():
+            if ready_by_service is not None:
+                ready_by_service.cancel(reason="bounded_session", turn_off=False)
+            if keep_at_temp_service is not None:
+                keep_at_temp_service.enabled = False
+            if kfactor_calibrator is not None:
+                kfactor_calibrator.enabled = False
+            car_heater_service.set_charge_mode_enabled(False)
+
+        car_heater_service.bind_mode_suspension(suspend_heater_modes)
+
     # --- ESP32 Redis bridge (for WebSocket service communication) ---
     try:
         from .esp32_redis_bridge import init_esp32_redis_bridge

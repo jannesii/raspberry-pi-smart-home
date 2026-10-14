@@ -113,6 +113,7 @@ void PosterTask::run()
             doc["shelly_connected"] = false;
         writeSensorStatusJson(doc.as<JsonObject>(), sensors);
         doc["firmware_version"] = FIRMWARE_VERSION;
+    shelly_.writeBoundedStatus(doc.as<JsonObject>());
         doc["timestamp"]  = timekeeper::formatLocal();
 
         const size_t sentActionCount = pendingActionCount_;
@@ -122,6 +123,7 @@ void PosterTask::run()
                 JsonObject r = results.add<JsonObject>();
                 r["action"] = pendingActions_[i].action;
                 r["success"] = pendingActions_[i].success;
+                r["session_id"] = pendingActions_[i].sessionId;
                 if (pendingActions_[i].note.length() > 0) {
                     r["note"] = pendingActions_[i].note;
                 }
@@ -313,6 +315,7 @@ void PosterTask::queueActionResult(const char *action, bool success, const Strin
 
     ActionResult &slot = pendingActions_[pendingActionCount_++];
     slot.action = action;
+    slot.sessionId = "";
     slot.success = success;
     slot.note = note;
 }
@@ -339,6 +342,7 @@ void PosterTask::sendImmediateResultIfNeeded()
         doc["shelly_connected"] = false;
     writeSensorStatusJson(doc.as<JsonObject>(), sensors);
     doc["firmware_version"] = FIRMWARE_VERSION;
+    shelly_.writeBoundedStatus(doc.as<JsonObject>());
     doc["timestamp"]  = timekeeper::formatLocal();
 
     const size_t sentActionCount = pendingActionCount_;
@@ -348,6 +352,7 @@ void PosterTask::sendImmediateResultIfNeeded()
             JsonObject r = results.add<JsonObject>();
             r["action"] = pendingActions_[i].action;
             r["success"] = pendingActions_[i].success;
+                r["session_id"] = pendingActions_[i].sessionId;
             if (pendingActions_[i].note.length() > 0) {
                 r["note"] = pendingActions_[i].note;
             }
@@ -535,14 +540,15 @@ void PosterTask::processServerCommands(const String &respBody)
         // Some commands (like post_delay) may carry additional parameters
 
         // Skip if already executed via WebSocket (deduplication)
-        if (shouldSkipCommand(action)) {
+        if (strcmp(action, "turn_on") != 0 && strcmp(action, "turn_off") != 0 && shouldSkipCommand(action)) {
             continue;
         }
 
-        if (strcmp(action, "turn_on") == 0) {
-            handleTurnOn();
-        } else if (strcmp(action, "turn_off") == 0) {
-            handleTurnOff();
+        if (strcmp(action, "turn_on") == 0 || strcmp(action, "turn_off") == 0) {
+            bool success = shelly_.executeHeaterCommand(cmd);
+            if (!success && strcmp(action, "turn_off") == 0) shelly_.switchOff();
+            queueActionResult(action, success, success ? "relay accepted" : "relay failed or unsupported");
+            if (pendingActionCount_ > 0) pendingActions_[pendingActionCount_ - 1].sessionId = String(cmd["session_id"] | "");
         } else if (strcmp(action, "get_logs") == 0) {
             handleGetLogs();
         } else if (strcmp(action, "esp_restart") == 0) {

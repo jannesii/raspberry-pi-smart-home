@@ -35,3 +35,6 @@ constexpr uint8_t I2C_SCL_PIN = D5;
 #ifndef WS_API_KEY
 #define WS_API_KEY "sk_example_ws_key"
 #endif
+
+// ID of the enabled-on-boot bounded-v1 Shelly script.
+#define SHELLY_BOUNDED_SCRIPT_ID 1

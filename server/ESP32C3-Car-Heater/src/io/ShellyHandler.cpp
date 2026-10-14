@@ -2,11 +2,17 @@
 
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include "core/TimeKeeper.h"
+
+#ifndef SHELLY_BOUNDED_SCRIPT_ID
+#define SHELLY_BOUNDED_SCRIPT_ID 1
+#endif
 
 ShellyHandler::ShellyHandler(String ipAddress)
 {
     // Build base URL: "http://192.168.33.1/rpc/Switch.Set?id=0&on="
     ip_ = ipAddress;
+    bootId_ = String(esp_random(), HEX) + String(esp_random(), HEX);
     baseUrl_ = String("http://") + ipAddress + "/rpc/Switch.Set?id=0&on=";
     Serial.printf("[Shelly] Initialized with base URL: %s\n", baseUrl_.c_str());
 }
@@ -14,12 +20,17 @@ ShellyHandler::ShellyHandler(String ipAddress)
 
 bool ShellyHandler::switchOn()
 {
-    return sendSwitchRequest(true);
+    return false; // ON requires identity/lifetime through executeHeaterCommand.
 }
 
 bool ShellyHandler::switchOff()
 {
-    return sendSwitchRequest(false);
+    JsonDocument cmd;
+    cmd["action"] = "turn_off";
+    std::string body; serializeJson(cmd, body);
+    bool persisted = postRelay(body);
+    bool direct = sendSwitchRequest(false);
+    return persisted || direct;
 }
 
 bool ShellyHandler::toggle()
@@ -30,7 +41,7 @@ bool ShellyHandler::toggle()
         Serial.println("[Shelly] Failed to get current status for toggle");
         return false;
     }
-    return sendSwitchRequest(!isOn);
+    return isOn ? switchOff() : false;
 }
 
 bool ShellyHandler::sendSwitchRequest(bool on)
@@ -161,4 +172,42 @@ bool ShellyHandler::ping() {
     http.end();
 
     return (code == 200);
+}
+
+
+bool ShellyHandler::executeHeaterCommand(JsonObjectConst command) {
+    bool success = RelayExecutor::execute(command, timekeeper::nowEpochSeconds(), *this, bootId_.c_str());
+    if (!success && strcmp(command["action"] | "", "turn_on") == 0) {
+        // Unsupported capability/invalid deadline is fail-closed, not successful ON.
+        switchOff();
+    }
+    return success;
+}
+
+bool ShellyHandler::postRelay(const std::string& command) {
+    if (WiFi.status() != WL_CONNECTED) return false;
+    HTTPClient http;
+    String url = "http://" + ip_ + "/script/" + String(SHELLY_BOUNDED_SCRIPT_ID) + "/bounded";
+    http.setTimeout(5000);
+    http.begin(url);
+    http.addHeader("Content-Type", "application/json");
+    int code = http.POST(String(command.c_str()));
+    http.end();
+    return code == 200;
+}
+
+void ShellyHandler::writeBoundedStatus(JsonObject target) {
+    target["bounded"]["protocol"] = 1;
+    target["bounded"]["ready"] = false;
+    if (WiFi.status() != WL_CONNECTED) return;
+    HTTPClient http;
+    http.setTimeout(5000);
+    http.begin("http://" + ip_ + "/script/" + String(SHELLY_BOUNDED_SCRIPT_ID) + "/bounded");
+    int code = http.GET();
+    JsonDocument status;
+    if (code == 200 && !deserializeJson(status, http.getString()) && status["protocol"] == 1) {
+        target["bounded"].set(status.as<JsonObjectConst>());
+    }
+    http.end();
+    target["bounded"]["device_boot_id"] = bootId_;
 }

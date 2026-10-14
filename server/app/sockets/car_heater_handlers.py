@@ -77,6 +77,16 @@ def handle_car_heater_control(handler: SocketEventHandler, data: dict[str, Any])
         handler.socketio.emit("error", {"message": "Car heater service not initialized"})
         return
 
+    from flask_wtf.csrf import ValidationError, validate_csrf
+
+    try:
+        if not current_user.is_authenticated:
+            raise ValueError("Authentication required")
+        validate_csrf(data.get("csrf_token"))
+    except (ValidationError, ValueError) as exc:
+        handler.socketio.emit("error", {"message": str(exc)})
+        return
+
     try:
         # Get username for logging
         username = "unknown"
@@ -86,7 +96,7 @@ def handle_car_heater_control(handler: SocketEventHandler, data: dict[str, Any])
 
         # Use centralized turn_on/turn_off methods
         if action == "turn_on":
-            svc.turn_on(source="web_ui", reason=f"Manual control by {username}")
+            svc.start_bounded_session(data.get("duration_minutes", 60))
         elif action == "turn_off":
             svc.turn_off(source="web_ui", reason=f"Manual control by {username}")
         else:
@@ -102,6 +112,8 @@ def handle_car_heater_control(handler: SocketEventHandler, data: dict[str, Any])
                 "label": f"Queued: {action}",
             },
         )
+    except ValueError as exc:
+        handler.socketio.emit("error", {"message": str(exc)})
     except Exception as e:
         logger.exception("car_heater_control error: %s", e)
         handler.socketio.emit("error", {"message": "Car heater control error"})

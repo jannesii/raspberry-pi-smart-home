@@ -248,7 +248,7 @@ def test_migration_preserves_older_telemetry_and_exposes_permanent_sessions(
     from alembic.operations import Operations
 
     from app.core.models import CarHeaterStatus
-    from app.core.schema import car_heater_session
+    from app.core.schema import car_heater_execution, car_heater_session
 
     ctrl = session_app.ctrl
     ctrl.record_car_heater_status(
@@ -269,11 +269,17 @@ def test_migration_preserves_older_telemetry_and_exposes_permanent_sessions(
         )
     )
     engine = session_app.extensions["session_engine"]
+    car_heater_execution.drop(engine, checkfirst=True)
     car_heater_session.drop(engine)
     migration = importlib.import_module("migrations.versions.20261014_0012_car_heater_sessions")
     with engine.begin() as conn:
         monkeypatch.setattr(migration, "op", Operations(MigrationContext.configure(conn)))
         migration.upgrade()
+        execution_migration = importlib.import_module(
+            "migrations.versions.20261014_0013_car_heater_execution"
+        )
+        monkeypatch.setattr(execution_migration, "op", Operations(MigrationContext.configure(conn)))
+        execution_migration.upgrade()
     assert (
         client.get("/api/car_heater/history?date=2020-01-15").get_json()["rows"][0]["ambient_temp"]
         == -10
@@ -328,6 +334,52 @@ def test_postgresql_sessions_migration_and_outcome_roundtrip(
         session_app.ctrl = Controller(db_path=session_app.config["DB_PATH"])
         session_app.ctrl._sa_engine = create_engine(url)
         assert client.get(endpoint).get_json()["outcome"]["result"] == "partial_scrape"
+        # Exercise the public bounded service against the migrated private PG DB.
+        from app.services.car_heater.car_heater_service import CarHeaterService
+
+        # Only this service's settings are needed; do not bootstrap unrelated
+        # legacy schema defaults as part of a bounded-execution check.
+        with session_app.ctrl._sa_engine.begin() as conn:
+            conn.exec_driver_sql("""CREATE TABLE car_heater_charge_mode (
+                id INTEGER PRIMARY KEY, enabled BOOLEAN NOT NULL DEFAULT false,
+                threshold_w DOUBLE PRECISION NOT NULL DEFAULT 20,
+                power_cut BOOLEAN NOT NULL DEFAULT false, power_cut_at TEXT,
+                last_instant_power_w DOUBLE PRECISION,
+                seen_above_threshold BOOLEAN NOT NULL DEFAULT false)""")
+        monkeypatch.setattr(
+            "redis.from_url", lambda *a, **kw: (_ for _ in ()).throw(OSError("isolated"))
+        )
+        heater = CarHeaterService(session_app.ctrl, clock=lambda: 1800000000)
+        recovered = None
+        try:
+            heater.observe_bounded_status(
+                {
+                    "bounded": {
+                        "protocol": 1,
+                        "ready": True,
+                        "relay_on": False,
+                        "boot_id": "shelly-pg",
+                        "device_boot_id": "esp-pg",
+                    }
+                }
+            )
+            run = heater.start_bounded_session(60)
+            assert (
+                client.get("/api/car_heater/sessions/" + run["session_id"]).get_json()["execution"][
+                    "finish_at"
+                ]
+                == 1800003600
+            )
+            heater.stop()
+            recovered = CarHeaterService(session_app.ctrl, clock=lambda: 1800000010)
+            assert recovered.get_bounded_session()["session_id"] == run["session_id"]
+            assert recovered.get_bounded_session()["finish_at"] == 1800003600
+            assert [c["action"] for c in recovered.get_queued_commands()] == ["turn_off"]
+        finally:
+            heater.stop()
+            if recovered:
+                recovered.stop()
+
     finally:
         session_app.ctrl._sa_engine.dispose()
         session_app.ctrl._sa_engine = original

@@ -10,6 +10,7 @@ Organizes car heater functionality by feature:
 # Import blueprint first (no dependencies)
 # Import route modules to register routes on car_bp
 from . import (
+    bounded,
     control,
     kfactor,
     ready_by,

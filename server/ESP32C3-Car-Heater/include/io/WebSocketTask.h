@@ -97,7 +97,7 @@ private:
     void processCommands(const char* jsonArray, size_t length);
 
     // Command execution (shared with PosterTask)
-    void executeCommand(const char* action, const char* source = nullptr);
+    void executeCommand(const char* action, const char* source, JsonObjectConst command);
     void handleTurnOn();
     void handleTurnOff();
     void handleGetLogs();
@@ -107,7 +107,7 @@ private:
     // Status sending
     void sendStatus();
     void sendHeartbeat();
-    void sendActionResult(const char* action, bool success, const char* note = nullptr);
+    void sendActionResult(const char* action, bool success, const char* note = nullptr, const char* sessionId = nullptr);
 
     // Helpers
     String log(const String &msg) const;

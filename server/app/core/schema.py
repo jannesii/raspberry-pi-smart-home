@@ -463,3 +463,12 @@ car_heater_session = Table(
     Column("outcome", Text),
 )
 Index("idx_car_heater_session_observed_at", car_heater_session.c.observed_at)
+
+# Execution evidence is separate from driver observations and immutable snapshots.
+car_heater_execution = Table(
+    "car_heater_execution",
+    metadata,
+    Column("session_id", Text, ForeignKey("car_heater_session.id"), primary_key=True),
+    Column("active", Boolean, nullable=False),
+    Column("payload", Text, nullable=False),
+)

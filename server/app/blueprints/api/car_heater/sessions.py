@@ -116,7 +116,11 @@ def session_detail(session_id):
     attempt = current_app.ctrl.get_car_heater_session(session_id)
     if attempt is None:
         return jsonify(error="Session not found"), 404
-    return jsonify(asdict(attempt))
+    payload = asdict(attempt)
+    execution = current_app.ctrl.get_car_heater_execution(session_id)
+    if execution is not None:
+        payload["execution"] = execution
+    return jsonify(payload)
 
 
 @car_bp.put("/sessions/<session_id>/outcome")

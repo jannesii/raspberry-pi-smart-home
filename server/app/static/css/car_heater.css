@@ -946,3 +946,13 @@ body {
     animation: none;
   }
 }
+
+/* Bounded manual controls remain usable with phone text scaling. */
+.bounded-manual-controls { padding: 16px 16px 0; }
+.bounded-manual-controls label { display: block; }
+#manualDuration { min-height: 44px; width: 100%; max-width: 12rem; margin: 8px 0; padding: 8px 12px; box-sizing: border-box; font-size: 1rem; color: var(--ch-text); background: var(--ch-input-bg); border: 1px solid var(--ch-card-border); border-radius: 10px; }
+#manualDuration:focus-visible { outline: 2px solid var(--ch-accent-hover); outline-offset: 2px; }
+#boundedHeatingStatus { line-height: 1.5; overflow-wrap: anywhere; }
+#boundedSessionLink { display: block; margin-bottom: 12px; color: var(--ch-accent-hover); }
+#boundedSessionLink[hidden] { display: none; }
+.quick-action-btn:disabled { opacity: 0.5; cursor: not-allowed; }

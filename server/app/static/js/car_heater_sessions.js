@@ -86,7 +86,14 @@
     };
     const dl = element('dl');
     Object.entries(values).forEach(([key, value]) => dl.append(element('dt', key), element('dd', value ?? '—')));
-    detail.append(dl, element('p', 'Photos not available. Recorded times and duration are driver evidence; command and relay milestones are not available in this view.'));
+    detail.append(dl, element('p', 'Photos not available. Recorded times and duration are driver evidence.'));
+    if (row.execution) {
+      detail.append(element('h3', 'Heating execution'), element('p', `Latest finish: ${formatTime(new Date(row.execution.finish_at * 1000).toISOString())}`));
+      const milestones = element('ol');
+      row.execution.milestones.forEach(item => milestones.append(element('li',
+        `${formatTime(new Date(item.at * 1000).toISOString())} · ${item.kind.replaceAll('_', ' ')} · ${item.reason || '—'}${item.power_w == null ? '' : ' · ' + item.power_w + ' W'}`)));
+      detail.append(milestones);
+    }
     const form = document.getElementById('sessionOutcome');
     if (populate) {
       form.reset();

@@ -284,11 +284,11 @@ void WebSocketTask::processCommands(const char *jsonArray, size_t length)
             continue;
 
         Serial.printf("[WebSocket] Executing command: %s (from %s)\n", action, source);
-        executeCommand(action, source);
+        executeCommand(action, source, cmd);
     }
 }
 
-void WebSocketTask::executeCommand(const char *action, const char *source)
+void WebSocketTask::executeCommand(const char *action, const char *source, JsonObjectConst command)
 {
     bool success = false;
     const char *note = nullptr;
@@ -296,14 +296,13 @@ void WebSocketTask::executeCommand(const char *action, const char *source)
 
     if (strcmp(action, "turn_on") == 0)
     {
-        handleTurnOn();
-        success = true;
+        success = shelly_.executeHeaterCommand(command);
         sendImmediateStatus = true;
     }
     else if (strcmp(action, "turn_off") == 0)
     {
-        handleTurnOff();
-        success = true;
+        success = shelly_.executeHeaterCommand(command);
+        if (!success) shelly_.switchOff();
         sendImmediateStatus = true;
     }
     else if (strcmp(action, "get_logs") == 0)
@@ -334,7 +333,7 @@ void WebSocketTask::executeCommand(const char *action, const char *source)
     stats_.commandsExecuted++;
 
     // Send result back to server
-    sendActionResult(action, success, note);
+    sendActionResult(action, success, note, command["session_id"] | "");
     if (success && sendImmediateStatus)
     {
         Serial.printf("[WebSocket] Sending immediate status update after %s\n", action);
@@ -412,7 +411,7 @@ void WebSocketTask::sendHeartbeat()
     stats_.messagesSent++;
 }
 
-void WebSocketTask::sendActionResult(const char *action, bool success, const char *note)
+void WebSocketTask::sendActionResult(const char *action, bool success, const char *note, const char *sessionId)
 {
     if (!connected_ || !authenticated_)
         return;
@@ -422,6 +421,7 @@ void WebSocketTask::sendActionResult(const char *action, bool success, const cha
     JsonObject r = results.add<JsonObject>();
     r["action"] = action;
     r["success"] = success;
+    if (sessionId) r["session_id"] = sessionId;
     if (note != nullptr)
         r["note"] = note;
     doc["timestamp"] = timekeeper::formatLocal();
@@ -447,6 +447,7 @@ String WebSocketTask::buildStatusJson()
     doc["timestamp"] = timekeeper::formatLocal();
     writeSensorStatusJson(doc.as<JsonObject>(), sensors);
     doc["firmware_version"] = FIRMWARE_VERSION;
+    shelly_.writeBoundedStatus(doc.as<JsonObject>());
 
     if (shellyOk)
         doc["shelly"] = shellyBody;

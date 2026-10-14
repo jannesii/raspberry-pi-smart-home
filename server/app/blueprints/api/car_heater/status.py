@@ -640,6 +640,12 @@ def process_car_heater_status_data(
         fallback_status.shelly_connected,
     )
 
+    heater_service = getattr(current_app, "car_heater_service", None)
+    bounded_active = False
+    if not is_test and heater_service and hasattr(heater_service, "observe_bounded_status"):
+        heater_service.observe_bounded_status(data)
+        run = heater_service.get_bounded_session()
+        bounded_active = bool(run and run["phase"] != "stopped")
     car: CarHeaterStatus | None = None
     if shelly and shelly_connected:
         car = build_car_heater_status(timestamp, shelly, ambient_temp)
@@ -659,9 +665,10 @@ def process_car_heater_status_data(
             timestamp=timestamp,
             is_test=is_test,
         )
-        run_keep_at_temp_tick(car)
-        run_kfactor_tick(car, ambient_temp)
-        run_ready_by_tick(car, data.get("outside_temp"), is_test, sio)
+        if not bounded_active:
+            run_keep_at_temp_tick(car)
+            run_kfactor_tick(car, ambient_temp)
+            run_ready_by_tick(car, data.get("outside_temp"), is_test, sio)
 
         ksvc: KFactorCalibrator | None = getattr(current_app, "kfactor_calibrator", None)
         if ksvc is not None:
@@ -683,7 +690,9 @@ def process_car_heater_status_data(
     commands: list[dict[str, Any]] = []
     command_status: dict[str, Any] | None = None
     charge_mode_state: dict[str, Any] | None = None
-    if commands_enabled:
+    if is_test:
+        pass
+    elif commands_enabled:
         commands, command_status, charge_mode_state = process_commands(data, car)
     else:
         command_status, charge_mode_state = sync_runtime_command_state(data, car)

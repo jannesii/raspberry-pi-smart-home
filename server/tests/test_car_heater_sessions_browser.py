@@ -41,3 +41,37 @@ def test_authenticated_session_browser_flow(tmp_path, width):
         finally:
             host.terminate()
             host.wait(timeout=10)
+
+
+@pytest.mark.parametrize("width", [393, 1440])
+def test_authenticated_bounded_heating_browser_flow(tmp_path, width):
+    pytest.importorskip("playwright")
+    scripts = Path(__file__).parent / "browser"
+    host_file = tmp_path / "host.json"
+    host = subprocess.Popen(
+        [sys.executable, str(scripts / "car_heater_sessions_host.py"), str(tmp_path), "bounded"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        deadline = time.monotonic() + 20
+        while not host_file.exists() and host.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.1)
+        assert host_file.exists(), "Isolated bounded host did not start"
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(scripts / "car_heater_bounded_flow.py"),
+                str(host_file),
+                str(width),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=90,
+        )
+        if "Executable doesn't exist" in result.stderr:
+            pytest.skip("Run python -m playwright install chromium")
+        assert result.returncode == 0, result.stdout + result.stderr
+    finally:
+        host.terminate()
+        host.wait(timeout=10)

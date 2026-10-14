@@ -349,6 +349,11 @@ class ESP32RedisBridge:
 
             service = getattr(self._app, "car_heater_service", None)
             if service is not None and data.get("action"):
+                if not service.accepts_command_result(data):
+                    logger.debug(
+                        "Ignored obsolete heater result session=%s", data.get("session_id")
+                    )
+                    return
                 service.mark_command_success([data])
                 payload["command_status"] = asdict(service.get_command_status())
                 logger.debug(

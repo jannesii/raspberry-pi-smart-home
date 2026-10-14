@@ -95,3 +95,32 @@ class CarHeaterSessionMixin:
                 return None
         logger.debug("Saved departure outcome session=%s result=%s", session_id, outcome["result"])
         return self.get_car_heater_session(session_id)
+
+    def save_car_heater_execution(self, execution: dict) -> None:
+        from ..schema import car_heater_execution
+
+        values = {
+            "session_id": execution["session_id"],
+            "active": execution["phase"] != "stopped",
+            "payload": json.dumps(execution),
+        }
+        with self._sa_engine.begin() as conn:
+            result = conn.execute(
+                update(car_heater_execution)
+                .where(car_heater_execution.c.session_id == execution["session_id"])
+                .values(**values)
+            )
+            if not result.rowcount:
+                conn.execute(insert(car_heater_execution).values(**values))
+
+    def get_car_heater_execution(self, session_id: str | None = None) -> dict | None:
+        from ..schema import car_heater_execution
+
+        stmt = select(car_heater_execution.c.payload)
+        if session_id is None:
+            stmt = stmt.where(car_heater_execution.c.active.is_(True))
+        else:
+            stmt = stmt.where(car_heater_execution.c.session_id == session_id)
+        with self._sa_engine.connect() as conn:
+            payload = conn.execute(stmt).scalar()
+        return json.loads(payload) if payload else None

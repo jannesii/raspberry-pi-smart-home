@@ -38,6 +38,8 @@ class KeepAtTempService:
         Update the keep-at-temperature settings.
         """
         with self._lock:
+            if settings.enabled:
+                self._car_heater_service.require_mode_available()
             self._settings = settings
         self._ctrl.save_keep_at_temp_settings(settings)
         logger.debug("Updated KeepAtTemp settings: %r", settings)
@@ -63,6 +65,8 @@ class KeepAtTempService:
         Enable or disable keep-at-temperature.
         """
         with self._lock:
+            if enabled:
+                self._car_heater_service.require_mode_available()
             if self._settings:
                 self._settings.enabled = enabled
                 self._ctrl.save_keep_at_temp_settings(self._settings)
