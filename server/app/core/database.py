@@ -287,14 +287,6 @@ class DatabaseManager:
                 WHERE timestamp < datetime('now', '-7 days');
             END;
             """,
-            "cleanup_car_heater_status_after_insert": """
-            CREATE TRIGGER IF NOT EXISTS cleanup_car_heater_status_after_insert
-            AFTER INSERT ON car_heater_status
-            BEGIN
-                DELETE FROM car_heater_status
-                WHERE timestamp < datetime('now', '-30 days');
-            END;
-            """,
         }
 
         for _name, trigger_sql in triggers.items():

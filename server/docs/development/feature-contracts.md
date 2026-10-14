@@ -38,6 +38,12 @@ Tests: `tests/test_car_heater*.py`, `tests/test_ready_by.py`.
 - A status without `is_heater_on` (Shelly unreachable) is unknown, not OFF. The
   gateway forwards car-heater frames carrying `shelly_connected` or `sensors`.
 
+- Heater status, sensor frames and existing heating-session evidence are kept
+  permanently. Migration `20261014_0011` removes the known heater retention
+  trigger; bootstrap does not recreate it. Household retention remains separate.
+  See [preservation operations](../operations/heater-history-preservation.md)
+  for owner-controlled discovery, backup/restore and deployed migration in #12.
+
 ## AC, sleep, Hue, and temperatures
 
 Code: `app/services/ac/`, `app/services/hue/`,

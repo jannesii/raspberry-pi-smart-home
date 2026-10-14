@@ -157,6 +157,10 @@ See [app/config.py](app/config.py) for core parsing/defaults and
 integration options. AC behavior and other non-obvious feature rules are in
 [feature contracts](docs/development/feature-contracts.md).
 
+Heater readings are permanent evidence. Before first-frost collection, follow
+the [heater history discovery, backup/restore and migration guide](docs/operations/heater-history-preservation.md)
+under issue #12; software checks in #4 do not change the deployed database.
+
 ## Production
 
 Provision a PostgreSQL database and user, keep the required settings above,

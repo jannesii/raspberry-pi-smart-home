@@ -149,6 +149,7 @@ bmp_sensor_data = Table(
     Column("altitude", Float, nullable=False),
 )
 
+# Heater evidence has no age-based retention; see migration 20261014_0011.
 car_heater_status = Table(
     "car_heater_status",
     metadata,

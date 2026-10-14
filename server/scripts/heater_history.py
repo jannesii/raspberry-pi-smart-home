@@ -1,0 +1,136 @@
+"""Read-only heater evidence discovery and non-overwriting SQLite recovery.
+
+Does not import the application, bootstrap tables or load environment files.
+PostgreSQL backup/restore uses pg_dump/pg_restore; see the operating guide.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sqlite3
+from contextlib import closing
+from pathlib import Path
+
+from sqlalchemy import MetaData, Table, create_engine, func, inspect, select, text
+from sqlalchemy.engine import make_url
+
+
+def discover(database_url: str) -> dict:
+    """Count surviving evidence and inspect triggers in a read-only snapshot."""
+    url = make_url(database_url)
+    backend = url.get_backend_name()
+    if backend == "sqlite":
+        path = Path(url.database or "").resolve(strict=True)
+        engine = create_engine(
+            "sqlite://",
+            creator=lambda: sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True),
+        )
+    elif backend == "postgresql":
+        engine = create_engine(url)
+    else:
+        raise ValueError("Discovery supports SQLite and PostgreSQL only")
+    report = {"backend": backend, "tables": {}, "triggers": []}
+    try:
+        with engine.connect() as conn, conn.begin():
+            if backend == "postgresql":
+                conn.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
+            else:
+                conn.exec_driver_sql("PRAGMA query_only=ON")
+            inspector = inspect(conn)
+            for name in sorted(inspector.get_table_names()):
+                if not name.startswith("car_heater_"):
+                    continue
+                table = Table(name, MetaData(), autoload_with=conn)
+                time_col = next(
+                    (
+                        table.c[key]
+                        for key in ("timestamp", "received_at", "started_at", "created_at")
+                        if key in table.c
+                    ),
+                    None,
+                )
+                summary = {"count": conn.scalar(select(func.count()).select_from(table))}
+                if time_col is not None:
+                    summary.update(
+                        oldest=conn.scalar(select(func.min(time_col))),
+                        newest=conn.scalar(select(func.max(time_col))),
+                    )
+                report["tables"][name] = summary
+            if backend == "sqlite":
+                rows = conn.execute(
+                    text(
+                        "SELECT name, tbl_name AS table_name, sql AS definition "
+                        "FROM sqlite_master WHERE type='trigger' ORDER BY name"
+                    )
+                )
+            else:
+                rows = conn.execute(
+                    text("""
+                    SELECT t.tgname AS name, n.nspname AS schema_name,
+                           c.relname AS table_name, pg_get_triggerdef(t.oid) AS definition,
+                           pg_get_functiondef(t.tgfoid) AS function_definition
+                    FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid
+                    JOIN pg_namespace n ON n.oid=c.relnamespace
+                    WHERE NOT t.tgisinternal AND n.nspname NOT IN ('pg_catalog','information_schema')
+                    ORDER BY n.nspname,c.relname,t.tgname
+                """)
+                )
+            report["triggers"] = [dict(row) for row in rows.mappings()]
+            # This transaction performs only reads; commit cannot mutate data.
+        return report
+    finally:
+        engine.dispose()
+
+
+def sqlite_copy(source: Path, destination: Path) -> None:
+    """Snapshot an existing SQLite database into a new owner-only file.
+
+    The same command restores to a fresh path. SQLite's backup API includes WAL
+    data and never runs schema bootstrap or retention triggers.
+    """
+    source = source.resolve(strict=True)
+    destination = destination.resolve()
+    fd = os.open(destination, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    os.close(fd)
+    try:
+        with (
+            closing(sqlite3.connect(f"{source.as_uri()}?mode=ro", uri=True)) as original,
+            closing(sqlite3.connect(destination)) as copy,
+        ):
+            original.backup(copy)
+            if copy.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                raise RuntimeError("Snapshot integrity check failed")
+    except Exception:
+        destination.unlink(missing_ok=True)
+        raise
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("discover", help="Read DATABASE_URL, or SQLite DB_PATH, without bootstrap")
+    copy = sub.add_parser("sqlite-copy", help="Back up or restore into a new file")
+    copy.add_argument("source", type=Path)
+    copy.add_argument("destination", type=Path)
+    args = parser.parse_args()
+    try:
+        if args.command == "discover":
+            url = os.environ.get("DATABASE_URL")
+            if not url:
+                path = Path(os.environ["DB_PATH"]).resolve(strict=True)
+                url = f"sqlite:///{path}"
+            print(json.dumps(discover(url), indent=2, default=str))
+        else:
+            sqlite_copy(args.source, args.destination)
+            print("SQLite snapshot completed and integrity checked")
+    except Exception as exc:
+        # Driver exceptions can contain connection credentials. Do not print them.
+        parser.exit(
+            1, f"Operation failed ({type(exc).__name__}); check configuration and access.\n"
+        )
+
+
+if __name__ == "__main__":
+    main()
