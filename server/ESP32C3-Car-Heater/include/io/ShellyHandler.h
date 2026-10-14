@@ -10,8 +10,8 @@ public:
 
     // Returns true on success (HTTP 2xx), false on failure
     bool switchOn();
-    bool executeHeaterCommand(JsonObjectConst command);
-    bool postRelay(const std::string& command) override;
+    bool executeHeaterCommand(JsonObjectConst command, String* note = nullptr);
+    bool postRelay(const std::string& command, std::string* note = nullptr) override;
     void writeBoundedStatus(JsonObject target);
     bool switchOff();
     bool toggle();

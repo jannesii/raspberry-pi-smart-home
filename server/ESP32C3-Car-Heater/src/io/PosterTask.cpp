@@ -545,9 +545,10 @@ void PosterTask::processServerCommands(const String &respBody)
         }
 
         if (strcmp(action, "turn_on") == 0 || strcmp(action, "turn_off") == 0) {
-            bool success = shelly_.executeHeaterCommand(cmd);
+            String relayNote;
+            bool success = shelly_.executeHeaterCommand(cmd, &relayNote);
             if (!success && strcmp(action, "turn_off") == 0) shelly_.switchOff();
-            queueActionResult(action, success, success ? "relay accepted" : "relay failed or unsupported");
+            queueActionResult(action, success, relayNote);
             if (pendingActionCount_ > 0) pendingActions_[pendingActionCount_ - 1].sessionId = String(cmd["session_id"] | "");
         } else if (strcmp(action, "get_logs") == 0) {
             handleGetLogs();

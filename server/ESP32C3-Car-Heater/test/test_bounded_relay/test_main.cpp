@@ -6,8 +6,10 @@ struct FakeRelay : RelayTransport {
     bool rpc = true;
     int requests = 0;
     std::string last;
-    bool postRelay(const std::string& command) override {
-        ++requests; last = command; return wifi && rpc;
+    bool postRelay(const std::string& command, std::string* note = nullptr) override {
+        ++requests; last = command;
+        if (note) *note = !wifi ? "Wi-Fi unavailable" : (!rpc ? "Shelly HTTP 503: busy" : "relay accepted");
+        return wifi && rpc;
     }
 };
 void test_execution_preserves_identity_finish_and_transport_failure() {
@@ -44,11 +46,25 @@ void test_esp_restart_rejects_pre_restart_on_but_allows_off() {
     cmd["action"] = "turn_off";
     TEST_ASSERT_TRUE(RelayExecutor::execute(cmd.as<JsonObjectConst>(), 0, relay, "new-boot"));
 }
+void test_clock_lag_is_bounded_and_rejections_explain_the_failure() {
+    FakeRelay relay; JsonDocument cmd; std::string note;
+    deserializeJson(cmd, R"({"action":"turn_on","device_boot_id":"boot-one","session_id":"one","issued_at":1800000000,"expires_at":1800000030,"finish_at":1800003600})");
+    TEST_ASSERT_TRUE(RelayExecutor::execute(cmd.as<JsonObjectConst>(), 1799999999, relay, "boot-one", &note));
+    TEST_ASSERT_EQUAL_STRING("relay accepted", note.c_str());
+    TEST_ASSERT_FALSE(RelayExecutor::execute(cmd.as<JsonObjectConst>(), 1799999997, relay, "boot-one", &note));
+    TEST_ASSERT_EQUAL_STRING("device clock behind command issue time", note.c_str());
+    TEST_ASSERT_FALSE(RelayExecutor::execute(cmd.as<JsonObjectConst>(), 1800000029, relay, "boot-one", &note));
+    TEST_ASSERT_EQUAL_STRING("command lifetime expired or invalid", note.c_str());
+    relay.rpc = false;
+    TEST_ASSERT_FALSE(RelayExecutor::execute(cmd.as<JsonObjectConst>(), 1800000001, relay, "boot-one", &note));
+    TEST_ASSERT_EQUAL_STRING("Shelly HTTP 503: busy", note.c_str());
+}
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_execution_preserves_identity_finish_and_transport_failure);
     RUN_TEST(test_off_bypasses_clock_and_duplicate_cooldown);
     RUN_TEST(test_esp_restart_rejects_pre_restart_on_but_allows_off);
     RUN_TEST(test_obsolete_on_and_extension_are_rejected);
+    RUN_TEST(test_clock_lag_is_bounded_and_rejections_explain_the_failure);
     return UNITY_END();
 }

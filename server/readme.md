@@ -274,7 +274,7 @@ touch behavior on the actual iPhone before collection.
 
 The Heating page supports a selected duration (default 60 minutes, maximum 180),
 a stable latest finish and explicit Stop pending/failed-or-unknown/confirmed states.
-Timed starts require ESP32C3-Car-Heater **3.1.0**, a compatible **bounded-v1** Shelly
+Timed starts require ESP32C3-Car-Heater **3.1.1**, a compatible **bounded-v1** Shelly
 script and migration **20261014_0013**. Older/unsupported devices cannot authorize
 bounded heating. Both transports preserve the same session identity and deadline.
 See [setup and physical acceptance](docs/operations/bounded-car-heater.md) before

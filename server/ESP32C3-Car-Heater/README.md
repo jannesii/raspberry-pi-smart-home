@@ -176,3 +176,19 @@ of `shelly`; sensor readings are still sent and stored.
 - [ArduinoJson](https://github.com/bblanchon/ArduinoJson) — JSON parsing
 - [WebSockets](https://github.com/Links2004/arduinoWebSockets) — WebSocket client with SSL
 - [CarSensors](lib/CarSensors/) — in-repo SHT45/TMP117 drivers and status JSON (no vendor sensor library)
+
+## Bounded manual heating (firmware 3.1.1)
+
+Use firmware **3.1.1**, the current **bounded-v1** script at
+`shelly/bounded_heating.js`, and the server's bounded execution service together.
+See [commissioning and upgrade steps](../docs/operations/bounded-car-heater.md).
+The corrected script uses named callbacks to avoid Shelly's nested-function
+limit. Fresh ON tolerates up to two seconds of clock lag, while the relay timer
+finishes three seconds early to preserve the original deadline. Expiry also
+uses a conservative clock allowance. OFF remains independent of clock validation.
+
+HTTP and WebSocket results now include a rejection `note`, also persisted by the
+server. Serial `[BoundedRelay]` lines show the action, session, clock, issue,
+expiry, finish, and rejection reason. Shelly HTTP response notes identify device
+rejections without logging credentials or entire payloads. Build checks do not
+establish physical shutdown behavior; flashing and commissioning remain in #12.

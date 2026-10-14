@@ -175,8 +175,17 @@ bool ShellyHandler::ping() {
 }
 
 
-bool ShellyHandler::executeHeaterCommand(JsonObjectConst command) {
-    bool success = RelayExecutor::execute(command, timekeeper::nowEpochSeconds(), *this, bootId_.c_str());
+bool ShellyHandler::executeHeaterCommand(JsonObjectConst command, String* note) {
+    std::string resultNote;
+    time_t now = timekeeper::nowEpochSeconds();
+    bool success = RelayExecutor::execute(command, now, *this, bootId_.c_str(), &resultNote);
+    if (note) *note = String(resultNote.c_str());
+    if (!success) {
+        Serial.printf("[BoundedRelay] action=%s session=%s rejected: %s | now=%lld issued=%.0f expires=%.0f finish=%.0f\n",
+            command["action"] | "", command["session_id"] | "", resultNote.c_str(),
+            static_cast<long long>(now), command["issued_at"].as<double>(),
+            command["expires_at"].as<double>(), command["finish_at"].as<double>());
+    }
     if (!success && strcmp(command["action"] | "", "turn_on") == 0) {
         // Unsupported capability/invalid deadline is fail-closed, not successful ON.
         switchOff();
@@ -184,14 +193,29 @@ bool ShellyHandler::executeHeaterCommand(JsonObjectConst command) {
     return success;
 }
 
-bool ShellyHandler::postRelay(const std::string& command) {
-    if (WiFi.status() != WL_CONNECTED) return false;
+bool ShellyHandler::postRelay(const std::string& command, std::string* note) {
+    if (WiFi.status() != WL_CONNECTED) {
+        if (note) *note = "Wi-Fi unavailable";
+        return false;
+    }
     HTTPClient http;
     String url = "http://" + ip_ + "/script/" + String(SHELLY_BOUNDED_SCRIPT_ID) + "/bounded";
     http.setTimeout(5000);
     http.begin(url);
     http.addHeader("Content-Type", "application/json");
     int code = http.POST(String(command.c_str()));
+    String body = http.getString();
+    JsonDocument response;
+    String detail;
+    if (!deserializeJson(response, body)) detail = String(response["note"] | "");
+    if (detail.length() > 160) detail = detail.substring(0, 160);
+    String resultNote = "Shelly HTTP " + String(code);
+    if (detail.length()) resultNote += ": " + detail;
+    else if (code <= 0) resultNote += ": " + http.errorToString(code);
+    if (code != 200 && response["clock_epoch"].is<double>()) {
+        resultNote += " (Shelly clock " + String(response["clock_epoch"].as<double>(), 0) + ")";
+    }
+    if (note) *note = resultNote.c_str();
     http.end();
     return code == 200;
 }

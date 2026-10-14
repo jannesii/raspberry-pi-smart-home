@@ -292,16 +292,19 @@ void WebSocketTask::executeCommand(const char *action, const char *source, JsonO
 {
     bool success = false;
     const char *note = nullptr;
+    String relayNote;
     bool sendImmediateStatus = false;
 
     if (strcmp(action, "turn_on") == 0)
     {
-        success = shelly_.executeHeaterCommand(command);
+        success = shelly_.executeHeaterCommand(command, &relayNote);
+        note = relayNote.c_str();
         sendImmediateStatus = true;
     }
     else if (strcmp(action, "turn_off") == 0)
     {
-        success = shelly_.executeHeaterCommand(command);
+        success = shelly_.executeHeaterCommand(command, &relayNote);
+        note = relayNote.c_str();
         if (!success) shelly_.switchOff();
         sendImmediateStatus = true;
     }

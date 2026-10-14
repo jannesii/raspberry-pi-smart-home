@@ -2,7 +2,7 @@
 #include <iostream>
 #include "RelayExecutor.h"
 struct OutputTransport : RelayTransport {
-    bool postRelay(const std::string& command) override {
+    bool postRelay(const std::string& command, std::string* note = nullptr) override {
         std::cout << command; return true;
     }
 };

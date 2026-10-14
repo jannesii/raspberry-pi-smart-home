@@ -7,25 +7,25 @@ const {spawnSync} = require('node:child_process');
 function rig() {
   let epoch = 1800000000, uptime = 0, on = false, timer = null;
   let persistent = {}, endpoint, config = {initial_state: 'off', auto_on: false, auto_off: false};
-  let network = true, calls = [], failKvs = false, tick, deferKvs = false, callbacks = [];
+  let network = true, calls = [], failKvs = false, tick, deferKvs = false, callbacks = [], clockOffset = 0, espClockOffset = 0;
   function boot() {
     on = false; timer = null; uptime = 0;
     const context = {
       JSON, Math,
       Shelly: {
         getComponentConfig: () => config,
-        getComponentStatus: name => name === 'sys' ? {unixtime: Math.floor(epoch), uptime} : {output: on, apower: on ? 1400 : 0},
-        call(method, params, cb) {
+        getComponentStatus: name => name === 'sys' ? {unixtime: Math.floor(epoch + clockOffset), uptime} : {output: on, apower: on ? 1400 : 0},
+        call(method, params, cb, context) {
           calls.push([method, params]);
-          if (method === 'KVS.GetMany') return cb({items: persistent[params.match] ? [{value: persistent[params.match]}] : []}, 0);
+          if (method === 'KVS.GetMany') return cb({items: persistent[params.match] ? [{value: persistent[params.match]}] : []}, 0, null, context);
           if (method === 'KVS.Set') {
-            if (failKvs) return cb(null, 1);
-            if (deferKvs) { callbacks.push(() => {persistent[params.key] = params.value; cb({}, 0);}); return; }
-            persistent[params.key] = params.value; return cb({}, 0);
+            if (failKvs) return cb(null, 1, "storage failed", context);
+            if (deferKvs) { callbacks.push(() => {persistent[params.key] = params.value; cb({}, 0, null, context);}); return; }
+            persistent[params.key] = params.value; return cb({}, 0, null, context);
           }
           if (method === 'Switch.Set') {
             on = params.on; timer = on && params.toggle_after ? uptime + params.toggle_after : null;
-            if (cb) cb({was_on: false}, 0);
+            if (cb) cb({was_on: false}, 0, null, context);
           }
         }
       },
@@ -42,7 +42,7 @@ function rig() {
       if (!network) throw Error('Wi-Fi and Shelly RPC unavailable');
       if (process.env.RELAY_EXECUTOR_DRIVER) {
         const result = spawnSync(process.env.RELAY_EXECUTOR_DRIVER,
-          [JSON.stringify({...body, device_boot_id: body.device_boot_id || 'esp-one'}), String(epoch), 'esp-one'], {encoding: 'utf8'});
+          [JSON.stringify({...body, device_boot_id: body.device_boot_id || 'esp-one'}), String(Math.floor(epoch + espClockOffset)), 'esp-one'], {encoding: 'utf8'});
         if (result.status !== 0) { this.command({action: 'turn_off'}); return {code: 409, body: {note: 'firmware rejected ON'}}; }
         body = JSON.parse(result.stdout);
       }
@@ -60,6 +60,8 @@ function rig() {
     advance(seconds) {epoch += seconds; uptime += seconds; if (timer !== null && uptime >= timer) {on = false; timer = null;} if (tick) tick();},
     stopScript() {tick = null;},
     routerFailure() {network = false;}, restoreRouter() {network = true;}, boot,
+    set clockOffset(value) {clockOffset = value;},
+    set espClockOffset(value) {espClockOffset = value;},
     set deferKvs(value) {deferKvs = value;},
     flushKvs() {deferKvs = false; const pending = callbacks; callbacks = []; pending.forEach(fn => fn());},
     get on() {return on;}, get timer() {return timer;}, get calls() {return calls;},
@@ -85,7 +87,7 @@ test('HTTP/WS duplicate delivery never rearms the relay timer', () => {
   const r = rig(); const c = command();
   r.command(c); r.advance(10);
   assert.equal(r.command(c).code, 200);
-  assert.equal(r.timer, 3599);
+  assert.equal(r.timer, 3597);
   r.advance(3590);
   assert.equal(r.on, false);
 });
@@ -159,7 +161,7 @@ test('delayed storage uses remaining original allowance without extending finish
   const r = rig(); r.deferKvs = true;
   r.command(command()); r.advance(20); r.flushKvs();
   assert.equal(r.on, true);
-  assert.equal(r.timer, 3599);
+  assert.equal(r.timer, 3597);
   r.routerFailure(); r.advance(3580);
   assert.equal(r.on, false);
 });
@@ -171,4 +173,33 @@ test('whole-second Shelly clock cannot push timer finish past the original deadl
   assert.ok(r.timer <= 3600);
   r.routerFailure(); r.advance(3599.1);
   assert.equal(r.on, false);
+});
+
+test('fresh timed ON tolerates one-second device clock lag without extending finish', () => {
+  const r = rig(); r.clockOffset = -1; r.espClockOffset = -1;
+  assert.equal(r.command(command()).code, 200);
+  assert.equal(r.on, true);
+  assert.ok(r.timer <= 3600);
+  r.routerFailure(); r.advance(3600);
+  assert.equal(r.on, false);
+});
+test('Shelly callbacks use named top-level references to avoid device nesting crashes', () => {
+  const script = fs.readFileSync('ESP32C3-Car-Heater/shelly/bounded_heating.js', 'utf8');
+  assert.doesNotMatch(script, /\bfunction\s*\(/);
+});
+
+test('excessive relay clock lag is rejected with a usable reason', () => {
+  const r = rig(); r.clockOffset = -3;
+  const result = r.command(command());
+  assert.equal(result.code, 409);
+  assert.match(result.body.note, /clock.*behind/);
+  assert.equal(r.on, false);
+});
+test('cancellation during asynchronous authorization prevents relay ON', () => {
+  const r = rig(); r.deferKvs = true;
+  r.command(command());
+  r.command(command({action: 'turn_off'}));
+  r.flushKvs();
+  assert.equal(r.on, false);
+  assert.equal(r.command(command()).code, 409);
 });

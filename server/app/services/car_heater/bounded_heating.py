@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 
 class BoundedHeatingMixin:
     def _init_bounded(self):
+        self._next_off_retry_at = 0.0
         self._suspend_modes = None
         self._bounded = (
             self._controller.get_car_heater_execution()
@@ -144,6 +145,7 @@ class BoundedHeatingMixin:
         self._commands = [c for c in self._commands if c.get("source") != "bounded"]
         self._commands.append(command)
         self._command_status.turn_off = "queued"
+        self._next_off_retry_at = self._clock() + 5
         self._publish_command(command)
 
     def stop_bounded_session(self, reason="cancelled"):
@@ -171,10 +173,12 @@ class BoundedHeatingMixin:
             if (
                 self._bounded
                 and self._bounded["phase"] == "stopping"
-                and not any(c.get("source") == "bounded" for c in self._commands)
+                and self._clock() >= self._next_off_retry_at
             ):
                 cmd = self._bounded_command("turn_off", "off_retry")
+                self._commands = [c for c in self._commands if c.get("source") != "bounded"]
                 self._commands.append(cmd)
+                self._next_off_retry_at = self._clock() + 5
                 self._publish_command(cmd)
 
     def observe_bounded_status(self, data):
@@ -251,6 +255,7 @@ class BoundedHeatingMixin:
                 success=result.get("success") is True,
             )
             if result.get("success") is not True:
-                self._request_bounded_off("execution_failed")
+                if result.get("action") != "turn_off":
+                    self._request_bounded_off("execution_failed")
                 run["off_state"] = "failed_or_unknown"
                 self._controller.save_car_heater_execution(run)

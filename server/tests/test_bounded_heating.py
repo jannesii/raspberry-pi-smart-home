@@ -82,6 +82,8 @@ def test_cancel_retries_until_correlated_relay_off_and_preserves_history(service
     assert svc.get_bounded_session()["off_state"] == "pending"
     with pytest.raises(ValueError, match="confirmed stopped"):
         svc.turn_on("keep_at_temp", "competing")
+    assert svc.get_queued_commands() == []
+    _clock[0] += 5
     assert svc.get_queued_commands()[0]["action"] == "turn_off"
     svc.observe_bounded_status(
         {
@@ -249,3 +251,19 @@ def test_old_acknowledgements_do_not_confirm_new_commands(service):
     svc.start_bounded_session()
     svc.mark_command_success([{"action": "turn_on", "session_id": "old-session", "success": True}])
     assert svc.get_command_status().turn_on == "queued"
+
+
+def test_failed_off_waits_before_retry_and_keeps_original_finish(service):
+    svc, clock = service
+    ready(svc)
+    run = svc.start_bounded_session()
+    svc.stop_bounded_session()
+    assert [c["action"] for c in svc.get_queued_commands()] == ["turn_off"]
+    svc.mark_command_success(
+        [{"action": "turn_off", "session_id": run["session_id"], "success": False}]
+    )
+    assert svc.get_queued_commands() == []
+    clock[0] += 5
+    retry = svc.get_queued_commands()
+    assert [c["action"] for c in retry] == ["turn_off"]
+    assert retry[0]["finish_at"] == run["finish_at"]

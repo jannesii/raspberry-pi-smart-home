@@ -154,7 +154,7 @@ Tests: `tests/test_medicine_calculator.py`, `tests/test_medicine_alert_service.p
   JSON is separate from installation snapshots and driver outcomes.
 - Timed ON requires a fresh relay-local capability and confirmed OFF. The same
   envelope (session UUID, issue time, 30-second delivery lifetime, original finish,
-  Shelly boot token and ESP32 boot token) crosses HTTP and WS. Firmware 3.1.0 uses
+  Shelly boot token and ESP32 boot token) crosses HTTP and WS. Firmware 3.1.1 uses
   one `RelayExecutor`; OFF bypasses lifetime/cooldown and remains retryable.
 - The Shelly bounded-v1 script persists a high-water mark before ON, arms
   `Switch.Set(toggle_after)` once, and never rearms duplicates. Its native relay
@@ -163,7 +163,8 @@ Tests: `tests/test_medicine_calculator.py`, `tests/test_medicine_alert_service.p
   checked before authorization. ESP32 reboot rejects commands from its prior boot.
 - Server restart requests OFF with the existing UUID/finish. Expiry or an
   unconfirmed start past its delivery lifetime requests OFF. Lost/failed OFF stays
-  pending/failed-or-unknown; only matching relay-local stopped evidence confirms
+  pending/failed-or-unknown; retries are spaced five seconds apart, while explicit
+  Stop remains immediate. Only matching relay-local stopped evidence confirms
   shutdown. Stale relay evidence is shown unknown after 30 seconds.
 - Start suspends and persists disabled comfort, calibration and charge mode and
   cancels old Ready-by schedules. Starts through those public services are blocked
