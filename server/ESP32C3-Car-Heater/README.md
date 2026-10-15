@@ -197,6 +197,16 @@ relay OFF, restart the updated script and verify that `/script/<id>/bounded`
 still reports the previous session UUID/finish, `reason=shelly_restart`, and
 `relay_on=false`. Physical commissioning must then check replay rejection.
 
+The current script also reduces temporary allocations in control replies. Clock
+and relay checks return scalars, so full component-status objects are no longer
+retained by the control handler while its reply reads status and builds JSON.
+This addresses the allocation pattern found when a duplicate ON stopped a Gen 3
+script with `out_of_memory`; its native relay timer still shut the load down.
+Install this script update in place without clearing KVS. The Node tests check
+duplicate bursts and response semantics, but do not model the device's 7 KB
+scripting heap. Repeat the physical duplicate test and record running memory
+and unchanged native timer start/duration before accepting the memory correction.
+
 HTTP and WebSocket results now include a rejection `note`, also persisted by the
 server. Serial `[BoundedRelay]` lines show the action, session, clock, issue,
 expiry, finish, and rejection reason. Shelly HTTP response notes identify device

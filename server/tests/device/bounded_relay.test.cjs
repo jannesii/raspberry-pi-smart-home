@@ -8,13 +8,16 @@ function rig(kvsShape = 'object') {
   let epoch = 1800000000, uptime = 0, on = false, timer = null;
   let persistent = {}, endpoint, config = {initial_state: 'off', auto_on: false, auto_off: false};
   let network = true, calls = [], failKvs = false, tick, deferKvs = false, callbacks = [], clockOffset = 0, espClockOffset = 0;
+  let missingSys = false, missingSwitch = false;
   function boot() {
     on = false; timer = null; uptime = 0;
     const context = {
       JSON, Math,
       Shelly: {
         getComponentConfig: () => config,
-        getComponentStatus: name => name === 'sys' ? {unixtime: Math.floor(epoch + clockOffset), uptime} : {output: on, apower: on ? 1400 : 0},
+        getComponentStatus: name => name === 'sys'
+          ? (missingSys ? null : {unixtime: Math.floor(epoch + clockOffset), uptime})
+          : (missingSwitch ? null : {output: on, apower: on ? 1400 : 0, aenergy: {total: 0}}),
         call(method, params, cb, context) {
           calls.push([method, params]);
           if (method === 'KVS.GetMany') {
@@ -69,6 +72,8 @@ function rig(kvsShape = 'object') {
     routerFailure() {network = false;}, restoreRouter() {network = true;}, boot,
     set clockOffset(value) {clockOffset = value;},
     set espClockOffset(value) {espClockOffset = value;},
+    set missingSys(value) {missingSys = value;},
+    set missingSwitch(value) {missingSwitch = value;},
     set deferKvs(value) {deferKvs = value;},
     flushKvs() {deferKvs = false; const pending = callbacks; callbacks = []; pending.forEach(fn => fn());},
     get on() {return on;}, get timer() {return timer;}, get calls() {return calls;},
@@ -97,6 +102,41 @@ test('HTTP/WS duplicate delivery never rearms the relay timer', () => {
   assert.equal(r.command(c).code, 200);
   assert.equal(r.timer, 3597);
   r.advance(3590);
+  assert.equal(r.on, false);
+});
+test('duplicate bursts with interleaved status keep the original timer and payload', () => {
+  const r = rig(); const c = command();
+  r.command(c);
+  const timer = r.timer;
+  const relayCalls = r.calls.filter(([method]) => method === 'Switch.Set').length;
+  for (let i = 0; i < 100; i++) {
+    const duplicate = r.command(c);
+    assert.equal(duplicate.code, 200);
+    assert.equal(duplicate.body.note, 'duplicate; original timer retained');
+    const status = r.status();
+    assert.equal(status.session_id, c.session_id);
+    assert.equal(status.finish_at, c.finish_at);
+    assert.equal(status.relay_on, true);
+    assert.equal(status.power_w, 1400);
+    assert.equal(status.energy_wh, 0);
+    assert.equal(r.timer, timer);
+  }
+  assert.equal(r.calls.filter(([method]) => method === 'Switch.Set').length, relayCalls);
+});
+test('status preserves zero readings and missing components cannot authorize ON', () => {
+  const r = rig();
+  assert.equal(r.status().power_w, 0);
+  assert.equal(r.status().energy_wh, 0);
+  r.missingSys = true;
+  assert.equal(r.status().ready, false);
+  assert.equal(r.status().clock_epoch, null);
+  assert.equal(r.command(command()).code, 409);
+  r.missingSys = false; r.missingSwitch = true;
+  const status = r.status();
+  assert.equal(status.relay_on, null);
+  assert.equal(status.power_w, null);
+  assert.equal(status.energy_wh, null);
+  assert.equal(r.command(command()).code, 409);
   assert.equal(r.on, false);
 });
 test('changed finish, competing modes and delayed ON cannot extend allowance', () => {

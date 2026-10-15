@@ -9,13 +9,23 @@ let busy = false;
 let cancelled = false;
 let CLOCK_SKEW_S = 2;
 
-function reply(response, code, note) {
-  let sw = Shelly.getComponentStatus("switch:0");
+// Component status objects are large on a 7 KB scripting heap. Return scalars
+// so control handlers do not retain them while reply() allocates its response.
+function clockNow() {
   let sys = Shelly.getComponentStatus("sys");
+  return sys ? sys.unixtime : null;
+}
+function relayOn() {
+  let sw = Shelly.getComponentStatus("switch:0");
+  return sw ? sw.output : null;
+}
+function reply(response, code, note) {
+  let now = clockNow();
+  let sw = Shelly.getComponentStatus("switch:0");
   response.code = code;
   response.headers = [["Content-Type", "application/json"]];
-  response.body = JSON.stringify({protocol: 1, ready: ready && !!sys && !!sys.unixtime,
-    boot_id: bootId, note: note, clock_epoch: sys ? sys.unixtime : null, session_id: state ? state.session_id : null,
+  response.body = JSON.stringify({protocol: 1, ready: ready && !!now,
+    boot_id: bootId, note: note, clock_epoch: now, session_id: state ? state.session_id : null,
     finish_at: state ? state.finish_at : null,
     phase: state ? state.phase : "stopped", reason: state ? state.reason : null,
     relay_on: sw ? sw.output : null, power_w: sw ? sw.apower : null,
@@ -88,8 +98,7 @@ function authorized(result, error, message, context) {
     rejectPending(context, 503, error ? "storage_failed" : "cancelled", message);
     return;
   }
-  let sys = Shelly.getComponentStatus("sys");
-  let current = sys ? sys.unixtime : null;
+  let current = clockNow();
   // Account for bounded clock lag and whole-second reports. Neither can
   // grant a timer later than the server's original finish.
   let remaining = Math.floor(context.finish - current) - CLOCK_SKEW_S - 1;
@@ -123,8 +132,7 @@ function requestBounded(request, response) {
     } else { reply(response, 200, "OFF requested"); }
     return;
   }
-  let sys = Shelly.getComponentStatus("sys");
-  let now = sys ? sys.unixtime : null;
+  let now = clockNow();
   let bounded = typeof c.session_id === "string" && c.session_id.length > 0 && c.session_id.length <= 36;
   if (!c.session_id && c.session_id !== undefined && c.session_id !== null) {
     reply(response, 400, "invalid identity"); return;
@@ -156,8 +164,7 @@ function requestBounded(request, response) {
     } else { reply(response, 409, "obsolete ON"); }
     return;
   }
-  let sw = Shelly.getComponentStatus("switch:0");
-  if (!sw || sw.output !== false || (state && state.phase === "heating")) {
+  if (relayOn() !== false || (state && state.phase === "heating")) {
     reply(response, 409, "confirmed OFF required"); return;
   }
   let finish = bounded ? c.finish_at : c.issued_at + 10800;
@@ -175,8 +182,7 @@ function requestBounded(request, response) {
 function recordedStop(result, error) { if (error) ready = false; }
 function noteLocalExpiry() {
   if (!state || state.phase !== "heating" || busy) return;
-  let sw = Shelly.getComponentStatus("switch:0");
-  if (sw && sw.output === false) {
+  if (relayOn() === false) {
     state.phase = "stopped";
     state.reason = "relay_off_or_local_expiry";
     persist(recordedStop, null);
