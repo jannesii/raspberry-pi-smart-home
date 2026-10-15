@@ -87,6 +87,27 @@
     const dl = element('dl');
     Object.entries(values).forEach(([key, value]) => dl.append(element('dt', key), element('dd', value ?? '—')));
     detail.append(dl, element('p', 'Photos not available. Recorded times and duration are driver evidence.'));
+    if (row.departure_plan) {
+      const plan = row.departure_plan;
+      detail.append(element('h3', 'Departure plan'), element('p', `${plan.status.replaceAll('_', ' ')} · ${plan.preheat_minutes} min preheat · ${plan.grace_minutes} min grace`));
+      const times = element('dl');
+      [['Planned start', plan.planned_start_at], ['Departure', plan.departure_at], ['Latest finish', plan.finish_at], ['Actual start requested', plan.actual_start_requested_at]].forEach(([label, value]) => {
+        times.append(element('dt', label), element('dd', formatTime(value)));
+      });
+      detail.append(times);
+      if (plan.late_start_seconds > 0) detail.append(element('p', `Late start: ${Math.ceil(plan.late_start_seconds / 60)} minutes. Original finish unchanged.`));
+      const revisions = element('ol');
+      plan.events.forEach(event => revisions.append(element('li', `${formatTime(event.at)} · ${event.kind.replaceAll('_', ' ')} · ${event.reason}`)));
+      detail.append(revisions);
+      Object.entries(plan.weather_snapshots).forEach(([stage, weather]) => {
+        detail.append(element('h4', `${stage[0].toUpperCase() + stage.slice(1)} weather`),
+          element('p', `${weather.source} · ${weather.station_name || 'Station unknown'} · ${weather.fmisid || '—'} · ${weather.temperature_c == null ? '—' : weather.temperature_c + ' °C'} · observed ${formatTime(weather.observed_at)} · captured ${formatTime(weather.captured_at)} · ${weather.fallback_reason || 'Fresh observation'}`));
+      });
+      if (plan.supersedes) {
+        const previous = element('a', 'Review previous departure revision');
+        previous.href = '/car_heater/sessions/' + encodeURIComponent(plan.supersedes); detail.append(previous);
+      }
+    }
     if (row.execution) {
       detail.append(element('h3', 'Heating execution'), element('p', `Latest finish: ${formatTime(new Date(row.execution.finish_at * 1000).toISOString())}`));
       const milestones = element('ol');

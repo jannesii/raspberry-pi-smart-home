@@ -248,7 +248,11 @@ def test_migration_preserves_older_telemetry_and_exposes_permanent_sessions(
     from alembic.operations import Operations
 
     from app.core.models import CarHeaterStatus
-    from app.core.schema import car_heater_execution, car_heater_session
+    from app.core.schema import (
+        car_heater_departure_plan,
+        car_heater_execution,
+        car_heater_session,
+    )
 
     ctrl = session_app.ctrl
     ctrl.record_car_heater_status(
@@ -269,6 +273,7 @@ def test_migration_preserves_older_telemetry_and_exposes_permanent_sessions(
         )
     )
     engine = session_app.extensions["session_engine"]
+    car_heater_departure_plan.drop(engine, checkfirst=True)
     car_heater_execution.drop(engine, checkfirst=True)
     car_heater_session.drop(engine)
     migration = importlib.import_module("migrations.versions.20261014_0012_car_heater_sessions")
@@ -280,6 +285,11 @@ def test_migration_preserves_older_telemetry_and_exposes_permanent_sessions(
         )
         monkeypatch.setattr(execution_migration, "op", Operations(MigrationContext.configure(conn)))
         execution_migration.upgrade()
+        departure_migration = importlib.import_module(
+            "migrations.versions.20261015_0014_car_heater_departure"
+        )
+        monkeypatch.setattr(departure_migration, "op", Operations(MigrationContext.configure(conn)))
+        departure_migration.upgrade()
     assert (
         client.get("/api/car_heater/history?date=2020-01-15").get_json()["rows"][0]["ambient_temp"]
         == -10

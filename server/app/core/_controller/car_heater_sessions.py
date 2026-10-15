@@ -124,3 +124,62 @@ class CarHeaterSessionMixin:
         with self._sa_engine.connect() as conn:
             payload = conn.execute(stmt).scalar()
         return json.loads(payload) if payload else None
+
+    def get_departure_plan(self, session_id: str | None = None) -> dict | None:
+        from ..schema import car_heater_departure_plan as plans
+
+        stmt = select(plans.c.payload).where(
+            plans.c.session_id == session_id if session_id else plans.c.is_current.is_(True)
+        )
+        with self._sa_engine.connect() as conn:
+            payload = conn.execute(stmt).scalar()
+        return json.loads(payload) if payload else None
+
+    def create_departure_revision(self, plan: dict) -> None:
+        """Atomically retain the old revision and create the new session/plan."""
+        from ..schema import car_heater_departure_plan as plans
+
+        with self._sa_engine.begin() as conn:
+            previous = conn.execute(
+                select(plans.c.payload).where(plans.c.is_current.is_(True))
+            ).scalar()
+            if previous:
+                old = json.loads(previous)
+                if old["status"] in ("scheduled", "waiting_for_device"):
+                    old["status"] = "superseded"
+                    old["events"].append(
+                        {"at": plan["created_at"], "reason": "replaced", "kind": "superseded"}
+                    )
+                conn.execute(
+                    update(plans)
+                    .where(plans.c.session_id == old["session_id"])
+                    .values(is_current=False, payload=json.dumps(old))
+                )
+            conn.execute(
+                insert(car_heater_session).values(
+                    id=plan["session_id"],
+                    trigger="defrost",
+                    created_at=plan["created_at"],
+                    observed_at=plan["created_at"],
+                    requested_departure_at=plan["departure_at"],
+                    heating_duration_minutes=plan["preheat_minutes"],
+                    snapshot=json.dumps(
+                        {"planning_weather": plan["weather"], "software_version": "departure-v1"}
+                    ),
+                )
+            )
+            conn.execute(
+                insert(plans).values(
+                    session_id=plan["session_id"], is_current=True, payload=json.dumps(plan)
+                )
+            )
+
+    def save_departure_plan(self, plan: dict) -> None:
+        from ..schema import car_heater_departure_plan as plans
+
+        with self._sa_engine.begin() as conn:
+            conn.execute(
+                update(plans)
+                .where(plans.c.session_id == plan["session_id"])
+                .values(payload=json.dumps(plan))
+            )

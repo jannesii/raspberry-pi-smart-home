@@ -178,3 +178,35 @@ Tests: `tests/test_medicine_calculator.py`, `tests/test_medicine_alert_service.p
   cold-range suitability. No Shelly cold-ambient block is added. Owner-controlled
   setup and physical acceptance are in #12; see
   [bounded heating setup](../operations/bounded-car-heater.md).
+
+## Departure defrost planning
+
+- `/api/car_heater/departure` GET/POST/DELETE and POST `/departure/preview`
+  share authenticated browser CSRF controls. Preview does not persist or actuate;
+  explicit Save creates a permanent defrost session and revision. A partial unique
+  index permits one current plan; replacement retains historical plans/sessions.
+  Schema and Alembic revision `20261015_0014` must be deployed together.
+- Use existing FMI observations: 90 minutes at/above 0 °C, 120 at −5 °C,
+  150 at −10 °C, 180 at/below −15 °C. Linear interpolation is rounded up to
+  whole minutes. An observation is fresh at 0–1800 seconds inclusive, based
+  on its aware observation timestamp. Missing, nonfinite, outside −80…60 °C,
+  invalid-time, future or stale observations select 180 minutes and zero grace.
+- Departure uses Europe/Helsinki wall time or an explicit ISO offset. Reject
+  spring gaps and require fold 0/1 for repeated autumn wall time. Store UTC ISO
+  strings. Grace is 0–30 minutes, capped by unused allowance: preheat plus grace
+  never exceeds 180 minutes. Saved start/departure/finish do not drift with later
+  weather, device availability, delivery, recovery or zero off-state power.
+- The app-owned heater loop and shared HTTP/WS telemetry path tick the planner.
+  Execution reuses the saved session and #7's original-finish envelope, relay-local
+  enforcement, mode suspension and confirmed-OFF guards. An execution attempt is
+  durable before ON; restart requests OFF, never another ON allowance. Cabin or
+  experimental glass readings cannot shorten a defrost session or start comfort.
+- Cancel pending plans without actuator calls. Cancellation after a start requests
+  bounded OFF; Stop remains independent and retryable. Active bounded heating
+  blocks replacement until confirmed stopped. Save from the page compares the
+  expected preview and rejects a changed timeline. Field edits/blur do not save.
+- Retain planning, start and departure weather source/station, observation time,
+  capture time and fallback reason. Start/departure ticks read cached observations
+  without network waits. Capture after downtime is labelled with its actual time.
+  Session review exposes revisions, reasons, late requests and execution evidence;
+  a schedule or command request is never a readiness or relay-state confirmation.

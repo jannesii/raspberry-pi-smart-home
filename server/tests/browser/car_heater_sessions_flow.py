@@ -60,6 +60,7 @@ def record_label_reload_filter_and_navigation(browser_page, viewport):
     page.get_by_role("navigation", name="Car heater", exact=True).get_by_role(
         "link", name="Settings", exact=True
     ).click()
+    page.wait_for_load_state("domcontentloaded")
     page.get_by_role("button", name="Heating preferences & calibration", exact=True).click()
     expect(page.get_by_role("heading", name="Car Heater Settings", exact=True)).to_be_visible()
     page.get_by_role("button", name="Close", exact=True).first.click()

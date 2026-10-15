@@ -472,3 +472,18 @@ car_heater_execution = Table(
     Column("active", Boolean, nullable=False),
     Column("payload", Text, nullable=False),
 )
+
+car_heater_departure_plan = Table(
+    "car_heater_departure_plan",
+    metadata,
+    Column("session_id", Text, ForeignKey("car_heater_session.id"), primary_key=True),
+    Column("is_current", Boolean, nullable=False),
+    Column("payload", Text, nullable=False),
+)
+Index(
+    "uq_car_heater_departure_current",
+    car_heater_departure_plan.c.is_current,
+    unique=True,
+    sqlite_where=car_heater_departure_plan.c.is_current.is_(True),
+    postgresql_where=car_heater_departure_plan.c.is_current.is_(True),
+)

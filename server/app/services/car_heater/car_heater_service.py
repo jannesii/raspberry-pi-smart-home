@@ -70,6 +70,7 @@ class CarHeaterService(BoundedHeatingMixin):
         self._commands: list[dict[str, Any]] = []
         self._command_status = CommandStatus()
         self._controller = controller
+        self._departure_planner = None
 
         # Initialize Redis client for pub/sub
         try:
@@ -355,6 +356,7 @@ class CarHeaterService(BoundedHeatingMixin):
         Called from the car_heater status API to respond to the ESP.
         """
         self.tick_bounded()
+        self.tick_departure()
         with self._lock:
             self._commands = [
                 c
@@ -381,6 +383,17 @@ class CarHeaterService(BoundedHeatingMixin):
         """Signal the background thread to stop (best-effort)."""
         self._stop_event.set()
 
+    def bind_departure_planner(self, planner) -> None:
+        """Use the app-owned planner for both background and transport ticks."""
+        self._departure_planner = planner
+
+    def tick_departure(self) -> None:
+        if self._departure_planner is not None:
+            try:
+                self._departure_planner.tick()
+            except Exception:
+                logger.exception("Departure tick failed; retaining the original plan and finish")
+
     def _run(self) -> None:
         """
         Background loop.
@@ -393,6 +406,7 @@ class CarHeaterService(BoundedHeatingMixin):
             while not self._stop_event.is_set():
                 # Sleep with wake-up on stop_event for low CPU usage.
                 self.tick_bounded()
+                self.tick_departure()
                 self._stop_event.wait(timeout=1.0)
         except Exception:
             logger.exception("CarHeaterService thread crashed")

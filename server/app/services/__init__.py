@@ -316,6 +316,20 @@ def init_services(app: Flask) -> dict[str, Any]:
 
         car_heater_service.bind_mode_suspension(suspend_heater_modes)
 
+    # --- Departure scheduling through the bounded heater lifecycle ---
+    try:
+        from .car_heater.departure_service import DepartureService
+
+        if car_heater_service is None:
+            raise RuntimeError("Missing car_heater_service")
+        departure_service = DepartureService(app.ctrl, car_heater_service, weather_service)
+        app.departure_service = departure_service
+        services["departure_service"] = departure_service
+        car_heater_service.bind_departure_planner(departure_service)
+        logger.info("Departure planner initialized")
+    except Exception:
+        logger.exception("Failed to initialize departure planner; scheduling unavailable")
+
     # --- ESP32 Redis bridge (for WebSocket service communication) ---
     try:
         from .esp32_redis_bridge import init_esp32_redis_bridge

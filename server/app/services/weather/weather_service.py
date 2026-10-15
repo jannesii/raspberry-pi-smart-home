@@ -111,6 +111,10 @@ class WeatherService:
         """Return the latest cached weather data."""
         logger.debug("get_latest called")
         self._ensure_cache()
+        return self.get_cached()
+
+    def get_cached(self) -> WeatherData:
+        """Read available observations without network I/O in actuator ticks."""
         station = self._station or StationInfo(
             station_name=None,
             fmisid=self._fmisid,
@@ -122,10 +126,10 @@ class WeatherService:
             fmisid=station.fmisid or self._fmisid,
             lat=station.lat,
             lon=station.lon,
-            t2m=self.t2m,
-            ws_10min=self.ws_10min,
-            rh=self.rh,
-            n_man=self.n_man,
+            t2m=self._values.get("t2m"),
+            ws_10min=self._values.get("ws_10min"),
+            rh=self._values.get("rh"),
+            n_man=self._values.get("n_man"),
         )
         logger.debug(
             "get_latest station=%s fmisid=%s fields=%s",

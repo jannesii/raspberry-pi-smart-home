@@ -50,8 +50,26 @@ class BoundedHeatingMixin:
             or not 0 < duration_minutes <= 180
         ):
             raise ValueError("Manual duration must be positive and at most 180 minutes")
+        return self._start_bounded_session(duration_minutes)
+
+    def start_departure_session(self, session_id):
+        """Authorize an existing saved plan, never a new allowance on recovery."""
+        plan = self._controller.get_departure_plan(session_id)
+        if not plan or plan["status"] not in ("scheduled", "waiting_for_device"):
+            raise ValueError("A pending saved departure plan is required")
+        start = datetime.fromisoformat(plan["planned_start_at"]).timestamp()
+        finish = datetime.fromisoformat(plan["finish_at"]).timestamp()
+        if not start <= self._clock() < finish or not 0 < finish - start <= 10800:
+            raise ValueError("The original departure allowance is unavailable")
+        if self._controller.get_car_heater_execution(session_id):
+            raise ValueError("An execution attempt already exists; ON cannot resume")
+        return self._start_bounded_session(plan["preheat_minutes"], plan=plan)
+
+    def _start_bounded_session(self, duration_minutes, *, plan=None):
         with self._lock:
             self.require_mode_available()
+            if plan and self._controller.get_car_heater_execution(plan["session_id"]):
+                raise ValueError("An execution attempt already exists; ON cannot resume")
             now = self._clock()
             cap = self._bounded_capability
             if (
@@ -69,20 +87,28 @@ class BoundedHeatingMixin:
             if not self._controller:
                 raise ValueError("Durable session storage is required")
             # Finish rounds down, so fractions never grant extra allowance.
-            finish = math.floor(now + duration_minutes * 60)
+            finish = (
+                datetime.fromisoformat(plan["finish_at"]).timestamp()
+                if plan
+                else math.floor(now + duration_minutes * 60)
+            )
             if finish <= now:
                 raise ValueError("Duration must allow at least one second of heating")
-            attempt = self._controller.create_car_heater_session(
-                trigger="manual",
-                observed_at=datetime.fromtimestamp(now, UTC).isoformat(),
-                requested_departure_at=None,
-                heating_duration_minutes=duration_minutes,
-                snapshot={
-                    "execution_protocol": 1,
-                    "firmware_version": cap.get("firmware_version"),
-                    "software_version": "bounded-v1",
-                    "installation": cap.get("installation"),
-                },
+            attempt = (
+                self._controller.get_car_heater_session(plan["session_id"])
+                if plan
+                else self._controller.create_car_heater_session(
+                    trigger="manual",
+                    observed_at=datetime.fromtimestamp(now, UTC).isoformat(),
+                    requested_departure_at=None,
+                    heating_duration_minutes=duration_minutes,
+                    snapshot={
+                        "execution_protocol": 1,
+                        "firmware_version": cap.get("firmware_version"),
+                        "software_version": "bounded-v1",
+                        "installation": cap.get("installation"),
+                    },
+                )
             )
             self._bounded = {
                 "session_id": attempt.id,
@@ -96,7 +122,14 @@ class BoundedHeatingMixin:
                 "off_state": None,
                 "milestones": [],
             }
-            self._milestone("start_requested", "manual")
+            if plan:
+                self._bounded["configuration"] = {
+                    "execution_protocol": 1,
+                    "firmware_version": cap.get("firmware_version"),
+                    "software_version": "departure-v1",
+                    "installation": cap.get("installation"),
+                }
+            self._milestone("start_requested", "departure" if plan else "manual")
             self._commands = [c for c in self._commands if c.get("action") != "turn_on"]
         # Mode services may already hold their own locks while requesting relay
         # commands. Never call them under the command lock (lock inversion).
@@ -109,7 +142,7 @@ class BoundedHeatingMixin:
         with self._lock:
             if self._bounded["phase"] != "starting":
                 return self.get_bounded_session()
-            command = self._bounded_command("turn_on", "manual")
+            command = self._bounded_command("turn_on", "departure" if plan else "manual")
             self._commands.append(command)
             self._command_status.turn_on = "queued"
             self._publish_command(command)

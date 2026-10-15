@@ -247,8 +247,8 @@ Select an attempt to save **Clear**, **Wipers enough**, **Partial scrape** or
 fog/frost, actual observation and confirmed departure time. “Already clear when
 observation began” preserves that fact without assigning an exact clearing time.
 Leave confirmed departure blank for unplugging or telemetry gaps. Outcomes can
-be edited; saving them does not start/stop heating. Photos and command/relay
-milestones are not yet available in this view. Older telemetry is preserved,
+be edited; saving them does not start/stop heating. Command/relay milestones
+are available for bounded sessions; photos are not yet available. Older telemetry is preserved,
 without fabricating historical attempts or outcomes.
 
 Session list/detail/create and outcome endpoints are authenticated under
@@ -280,3 +280,69 @@ bounded heating. Both transports preserve the same session identity and deadline
 See [setup and physical acceptance](docs/operations/bounded-car-heater.md) before
 owner-controlled deployment/flashing in #12. Review the permanent session to see
 request, relay, actual draw and shutdown milestones; outcomes remain independent.
+
+### Departure defrost planning
+
+In **Car Heater → Heating**, edit **Next departure** in Europe/Helsinki time.
+**Tomorrow** selects the next Helsinki calendar date, including when the phone
+uses another timezone. **Preview departure** shows start, departure, latest
+finish, outside observation and any fallback reason. Only **Save departure**
+persists a revision; typing, blur and Preview do not schedule heating. Reload
+shows the saved plan. If weather changes the previewed timeline before Save,
+preview again. Each replacement keeps the previous session and its evidence.
+
+Initial preheat settings use FMI observations, without a forecast or cabin
+temperature model:
+
+| Outside temperature | Preheat |
+| --- | --- |
+| 0 °C or warmer | 90 minutes |
+| −5 °C | 120 minutes |
+| −10 °C | 150 minutes |
+| −15 °C or colder | 180 minutes |
+
+Between anchors, interpolate linearly at six minutes per degree below zero
+and round up to the next whole minute (−2.5 °C → 105; −0.1 °C → 91).
+These are initial experiment durations, not validated window-clearing times;
+warm weather does not skip heating. A valid outside observation must be finite,
+between −80 and +60 °C, and **0–30 minutes old, inclusive**, measured from its
+timezone-aware observation time. A recent cache retrieval cannot make an old
+observation fresh. Missing, invalid, future-dated or older observations select
+an explicit **180-minute fallback with no grace**.
+
+Request 0–30 minutes of departure grace within the original 180-minute limit:
+150 minutes before departure permits 30 afterward; 180 before permits none.
+Saving freezes this timeline. Late device availability or delayed execution
+reduces available preheat and never moves the finish. A late request is recorded
+separately from relay confirmation and actual power. After an execution attempt,
+server recovery requests OFF and never replays ON. Cabin/glass temperature does
+not shorten this mode; finish does not hand off to comfort.
+
+**Cancel upcoming departure** cancels a pending plan without controlling current
+heating. **Stop heating** requests OFF for active heating; confirmation may remain
+pending or unknown. If a cancellation races with a start, it requests OFF under
+the bounded contract. Active bounded heating must be confirmed stopped before
+a replacement plan can be saved. Spring clock-gap times are rejected; for a
+repeated autumn time, choose its occurrence under **Clock changes and departure
+grace**. Timelines show dates and timezone abbreviations across midnight/DST.
+
+**Review departure session** opens permanent revisions, planning/start/departure
+weather snapshots with source, observation and actual capture times, execution
+milestones and outcomes. Start/departure snapshots use available cached weather
+without blocking actuation on a network request; delayed snapshots retain their
+actual capture time. They do not silently change the saved finish.
+
+Apply migration **20261015_0014** using the normal backup/migration deployment
+procedure before enabling this workflow; restarting alone does not migrate.
+It needs the same bounded-v1 device setup as manual heating. The app-owned
+heater loop runs the saved plan without an open browser or incoming telemetry.
+Scheduling API: authenticated `GET/POST/DELETE /api/car_heater/departure` and
+`POST /api/car_heater/departure/preview`; mutations require browser CSRF.
+Optional `expected_preview` on Save rejects changes to the reviewed timeline.
+Only one upcoming departure is supported; this adds no recurring schedule.
+
+Run isolated planner, migration and phone/desktop checks with:
+
+```sh
+.venv/bin/pytest -q tests/test_departure_heating.py tests/test_departure_migration.py tests/test_car_heater_sessions_browser.py
+```

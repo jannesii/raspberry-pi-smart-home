@@ -12,6 +12,7 @@ Organizes car heater functionality by feature:
 from . import (
     bounded,
     control,
+    departure,
     kfactor,
     ready_by,
     sessions,

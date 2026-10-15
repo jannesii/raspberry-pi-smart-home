@@ -644,6 +644,8 @@ def process_car_heater_status_data(
     bounded_active = False
     if not is_test and heater_service and hasattr(heater_service, "observe_bounded_status"):
         heater_service.observe_bounded_status(data)
+        if hasattr(heater_service, "tick_departure"):
+            heater_service.tick_departure()
         run = heater_service.get_bounded_session()
         bounded_active = bool(run and run["phase"] != "stopped")
     car: CarHeaterStatus | None = None

@@ -120,6 +120,9 @@ def session_detail(session_id):
     execution = current_app.ctrl.get_car_heater_execution(session_id)
     if execution is not None:
         payload["execution"] = execution
+    plan = current_app.ctrl.get_departure_plan(session_id)
+    if plan is not None:
+        payload["departure_plan"] = plan
     return jsonify(payload)
 
 
