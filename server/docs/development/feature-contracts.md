@@ -53,6 +53,16 @@ Tests: `tests/test_car_heater*.py`, `tests/test_ready_by.py`.
   not confirmed power-on duration. Dates filter requested departure or observation
   time in Europe/Helsinki. Later capture/review work should reuse these UUIDs.
 
+- `car_heater_photo` stores observation JPEG content in the database with its
+  session, so whole-database backups keep the association. Clients choose the
+  photo UUID; an identical retry returns the saved row and different content is
+  refused. Only that acknowledgement means the image is persisted. Uploads are
+  raw bodies with query metadata so CSRF checks never parse large multipart
+  bodies. `captured_at` is the actual capture time; `due_at` is the scheduled
+  slot (none for manual photos). `car_heater_observation` merges capture windows
+  and missed slots without dropping misses or clearing a finish. Capture pages
+  never call heater controls except the separate Stop heating request.
+
 ## AC, sleep, Hue, and temperatures
 
 Code: `app/services/ac/`, `app/services/hue/`,

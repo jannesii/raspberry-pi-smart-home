@@ -102,7 +102,11 @@ def test_attempts_survive_another_attempt_and_controller_reload(session_app, cli
     session_app.ctrl._sa_engine = session_app.extensions["session_engine"]
     rows = client.get("/api/car_heater/sessions").get_json()
     assert [r["id"] for r in rows] == [second.get_json()["id"], attempt["id"]]
-    assert client.get("/api/car_heater/sessions/" + attempt["id"]).get_json() == attempt
+    assert client.get("/api/car_heater/sessions/" + attempt["id"]).get_json() == {
+        **attempt,
+        "photos": [],
+        "observations": [],
+    }
 
 
 @pytest.mark.parametrize("result", ["clear", "wipers_enough", "partial_scrape", "full_scrape"])
@@ -236,7 +240,11 @@ def test_firmware_snapshot_keeps_report_provenance_without_sensor_values(session
     ).get_json()
     assert second["snapshot"]["firmware_source"] == "driver_recorded"
     assert second["snapshot"]["firmware_reported_at"] is None
-    assert client.get("/api/car_heater/sessions/" + first["id"]).get_json() == first
+    assert client.get("/api/car_heater/sessions/" + first["id"]).get_json() == {
+        **first,
+        "photos": [],
+        "observations": [],
+    }
 
 
 def test_migration_preserves_older_telemetry_and_exposes_permanent_sessions(
@@ -251,6 +259,8 @@ def test_migration_preserves_older_telemetry_and_exposes_permanent_sessions(
     from app.core.schema import (
         car_heater_departure_plan,
         car_heater_execution,
+        car_heater_observation,
+        car_heater_photo,
         car_heater_session,
     )
 
@@ -273,6 +283,8 @@ def test_migration_preserves_older_telemetry_and_exposes_permanent_sessions(
         )
     )
     engine = session_app.extensions["session_engine"]
+    car_heater_photo.drop(engine, checkfirst=True)
+    car_heater_observation.drop(engine, checkfirst=True)
     car_heater_departure_plan.drop(engine, checkfirst=True)
     car_heater_execution.drop(engine, checkfirst=True)
     car_heater_session.drop(engine)
@@ -290,6 +302,11 @@ def test_migration_preserves_older_telemetry_and_exposes_permanent_sessions(
         )
         monkeypatch.setattr(departure_migration, "op", Operations(MigrationContext.configure(conn)))
         departure_migration.upgrade()
+        photo_migration = importlib.import_module(
+            "migrations.versions.20261015_0015_car_heater_photos"
+        )
+        monkeypatch.setattr(photo_migration, "op", Operations(MigrationContext.configure(conn)))
+        photo_migration.upgrade()
     assert (
         client.get("/api/car_heater/history?date=2020-01-15").get_json()["rows"][0]["ambient_temp"]
         == -10

@@ -144,6 +144,17 @@ def car_heater_sessions_page(session_id=None):
     )
 
 
+@web_bp.route("/car_heater/sessions/<session_id>/capture")
+@login_required
+def car_heater_capture_page(session_id):
+    """Observation capture for one session; it never operates the heater itself."""
+    if get_ctrl().get_car_heater_session(session_id) is None:
+        from flask import abort
+
+        abort(404)
+    return render_template("car_heater_capture.html", heater_view="sessions", session_id=session_id)
+
+
 @web_bp.route("/car_heater/settings")
 @login_required
 def car_heater_settings_page():

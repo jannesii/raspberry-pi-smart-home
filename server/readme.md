@@ -248,12 +248,48 @@ fog/frost, actual observation and confirmed departure time. “Already clear whe
 observation began” preserves that fact without assigning an exact clearing time.
 Leave confirmed departure blank for unplugging or telemetry gaps. Outcomes can
 be edited; saving them does not start/stop heating. Command/relay milestones
-are available for bounded sessions; photos are not yet available. Older telemetry is preserved,
-without fabricating historical attempts or outcomes.
+are available for bounded sessions. Older telemetry is preserved, without
+fabricating historical attempts or outcomes.
+
+### Observation photos
+
+From a session, choose **Observe windshield** on the phone in its holder inside
+the car. Open the app's **HTTPS** address (browsers block cameras otherwise),
+choose **Enable camera** and allow access. The page tries the ultra-wide rear
+camera when the browser lists one and otherwise uses the regular rear camera;
+the **Camera** menu switches lens and is remembered on that phone. Frame the
+driver's viewing area inside the guide, then choose **Start observation**: it
+takes a photo now and every 10 minutes while the page stays visible. Use the
+agreed 30–60-minute window before departure and the existing holder/lighting.
+
+- Keep the page open and the screen on. The page requests a screen wake lock
+  where supported; otherwise set Auto-Lock to Never. Locked or background
+  capture is not possible.
+- A hidden page, stopped camera or withdrawn permission pauses capture. A
+  scheduled photo more than 2 minutes late is recorded as **missed**; missed
+  intervals never get catch-up photos. **Capture now** takes an extra manual photo.
+- Each photo shows **Saved** only after the server confirms it is stored.
+  **Not saved** photos stay on the page until **Retry failed uploads** succeeds;
+  they are not evidence and are lost if you leave. Finishing without them
+  records those scheduled slots as missed (upload failed).
+- **Finish observation** stops capture, records the observation window and opens
+  the outcome form. **Stop heating** on the same page only requests OFF and
+  keeps capturing. Neither Finish nor saving an outcome changes heating.
+
+Session review lists photos with actual capture time, scheduled time and lens,
+plus each observation window and its missed or unsaved scheduled photos. An
+already-clear first photo bounds clearing time; it does not give an exact time.
+Photos are JPEG, at most 8 MB each and 200 per session, stored in the database
+with the session. A reverse proxy in front of the app must accept 8 MB request
+bodies. See the [backup/restore guide](docs/operations/heater-history-preservation.md).
+Actual iPhone ultra-wide, wake-lock and framing behaviour is a commissioning check.
 
 Session list/detail/create and outcome endpoints are authenticated under
 `/api/car_heater/sessions`; browser mutations require the normal CSRF token.
-Migration `20261014_0012` adds permanent session storage. Follow the existing
+Photo upload/retrieval (`PUT`/`GET .../photos/<uuid>`) and observation windows
+(`PUT .../observations/<uuid>`) use the same authentication and CSRF rules.
+Migration `20261014_0012` adds permanent session storage; `20261015_0015` adds
+photos and observation windows. Follow the existing
 backup/migration deployment procedure before using the workflow; a restart
 alone does not apply the migration. No automated retention deletes sessions.
 
@@ -262,7 +298,7 @@ Optional isolated browser checks use Playwright without production devices:
 ```sh
 .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/python -m playwright install chromium
-.venv/bin/pytest -q tests/test_car_heater_sessions.py tests/test_car_heater_sessions_browser.py
+.venv/bin/pytest -q tests/test_car_heater_sessions.py tests/test_car_heater_photos.py tests/test_car_heater_sessions_browser.py
 ```
 
 The browser driver runs separately from the Eventlet-patched app host. These

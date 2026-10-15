@@ -1,5 +1,8 @@
 """Read-only heater evidence discovery and non-overwriting SQLite recovery.
 
+Observation photo content lives in the database, so these backups include it;
+discovery recomputes photo checksums and reports photos without a session.
+
 Does not import the application, bootstrap tables or load environment files.
 PostgreSQL backup/restore uses pg_dump/pg_restore; see the operating guide.
 """
@@ -7,6 +10,7 @@ PostgreSQL backup/restore uses pg_dump/pg_restore; see the operating guide.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sqlite3
@@ -46,7 +50,13 @@ def discover(database_url: str) -> dict:
                 time_col = next(
                     (
                         table.c[key]
-                        for key in ("timestamp", "received_at", "started_at", "created_at")
+                        for key in (
+                            "timestamp",
+                            "captured_at",
+                            "received_at",
+                            "started_at",
+                            "created_at",
+                        )
                         if key in table.c
                     ),
                     None,
@@ -58,6 +68,8 @@ def discover(database_url: str) -> dict:
                         newest=conn.scalar(select(func.max(time_col))),
                     )
                 report["tables"][name] = summary
+            if "car_heater_photo" in report["tables"]:
+                report["photo_integrity"] = _photo_integrity(conn)
             if backend == "sqlite":
                 rows = conn.execute(
                     text(
@@ -82,6 +94,29 @@ def discover(database_url: str) -> dict:
         return report
     finally:
         engine.dispose()
+
+
+def _photo_integrity(conn) -> dict:
+    """Recompute stored photo checksums and find photos without a session.
+
+    Reads one image at a time so restored archives can be verified on a Pi.
+    """
+    photos = Table("car_heater_photo", MetaData(), autoload_with=conn)
+    sessions = Table("car_heater_session", MetaData(), autoload_with=conn)
+    result = {"checked": 0, "mismatched": [], "orphaned": []}
+    ids = conn.execute(select(photos.c.id).order_by(photos.c.id)).scalars().all()
+    for photo_id in ids:
+        row = conn.execute(
+            select(photos.c.sha256, photos.c.content, sessions.c.id.label("session"))
+            .outerjoin(sessions, sessions.c.id == photos.c.session_id)
+            .where(photos.c.id == photo_id)
+        ).one()
+        result["checked"] += 1
+        if hashlib.sha256(bytes(row.content)).hexdigest() != row.sha256:
+            result["mismatched"].append(photo_id)
+        if row.session is None:
+            result["orphaned"].append(photo_id)
+    return result
 
 
 def sqlite_copy(source: Path, destination: Path) -> None:

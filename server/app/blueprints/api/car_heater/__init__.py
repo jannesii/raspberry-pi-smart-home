@@ -14,6 +14,7 @@ from . import (
     control,
     departure,
     kfactor,
+    photos,
     ready_by,
     sessions,
     status,

@@ -12,6 +12,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     MetaData,
     Table,
     Text,
@@ -487,3 +488,41 @@ Index(
     sqlite_where=car_heater_departure_plan.c.is_current.is_(True),
     postgresql_where=car_heater_departure_plan.c.is_current.is_(True),
 )
+
+# Observation photos are permanent evidence. Content stays in the database so the
+# whole-database backup keeps each image with its session association.
+car_heater_photo = Table(
+    "car_heater_photo",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("session_id", Text, ForeignKey("car_heater_session.id"), nullable=False),
+    Column("captured_at", Text, nullable=False),
+    Column("due_at", Text),
+    Column("capture_kind", Text, nullable=False),
+    Column("sequence", Integer),
+    Column("observation_started_at", Text),
+    Column("camera_label", Text),
+    Column("received_at", Text, nullable=False),
+    Column("content_type", Text, nullable=False),
+    Column("byte_size", Integer, nullable=False),
+    Column("sha256", Text, nullable=False),
+    Column("content", LargeBinary, nullable=False),
+)
+Index(
+    "idx_car_heater_photo_session_captured",
+    car_heater_photo.c.session_id,
+    car_heater_photo.c.captured_at,
+)
+
+# One supervised capture run: its window and the scheduled photos it missed.
+car_heater_observation = Table(
+    "car_heater_observation",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("session_id", Text, ForeignKey("car_heater_session.id"), nullable=False),
+    Column("started_at", Text, nullable=False),
+    Column("finished_at", Text),
+    Column("missed", Text, nullable=False),
+    Column("updated_at", Text, nullable=False),
+)
+Index("idx_car_heater_observation_session", car_heater_observation.c.session_id)

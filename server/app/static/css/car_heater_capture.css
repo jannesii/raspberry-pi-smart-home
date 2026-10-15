@@ -1,0 +1,32 @@
+/* Observation capture; builds on the evidence workspace tokens. */
+.heater-capture { max-width: 1200px; }
+.heater-capture .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.capture-layout { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(280px, 1fr); gap: 32px; margin-top: 16px; }
+.camera-preview { position: relative; aspect-ratio: 4 / 3; min-height: 280px; background: #0b1119; border: 1px solid var(--evidence-border); border-radius: 10px; overflow: hidden; }
+.camera-preview video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.camera-guide { position: absolute; inset: 20% 12%; border: 2px dashed #eef3f899; border-radius: 35% 35% 8% 8%; pointer-events: none; }
+.heater-capture .camera-empty { position: absolute; inset: auto 16px 16px; margin: 0; text-align: center; color: var(--evidence-text); }
+.capture-actions { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 16px 0; }
+.capture-actions > .evidence-button { flex: 1 1 160px; }
+.camera-choice { display: grid; gap: 6px; flex: 1 1 200px; }
+.heater-capture .capture-support { font-size: .9rem; }
+.capture-sidebar h2 { font-size: 1.6rem; margin: 4px 0 8px; }
+.heater-capture .countdown-label { margin: 16px 0 0; }
+.heater-capture .countdown { margin: 0; font-size: clamp(2.5rem, 9vw, 3.25rem); line-height: 1.1; color: var(--evidence-text); font-variant-numeric: tabular-nums; }
+#captureSummary { color: var(--evidence-text); font-weight: 650; }
+.heater-capture .capture-alert { padding: 12px 14px; border-left: 3px solid #f2c48d; background: #2a2620; color: #f6dcbc; }
+.capture-log { margin: 0 0 16px; padding-left: 20px; }
+.capture-log li { padding: 6px 0; color: var(--evidence-muted); }
+.capture-log .capture-saved { color: var(--evidence-accent); }
+.capture-log .capture-failed, .capture-log .capture-missed { color: #f4b4ad; }
+.capture-finish { width: 100%; }
+.capture-stop { width: 100%; color: #f4b4ad; border-color: #8f5b56; }
+.heater-capture dialog { max-width: min(460px, calc(100% - 32px)); padding: 24px; color: var(--evidence-text); background: var(--evidence-surface); border: 1px solid var(--evidence-border); border-radius: 12px; }
+.heater-capture dialog::backdrop { background: #000a; }
+@media (max-width: 800px) {
+  .capture-layout { grid-template-columns: 1fr; gap: 16px; }
+  .camera-preview { aspect-ratio: 3 / 4; max-height: 70vh; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .heater-capture * { transition: none !important; animation: none !important; }
+}

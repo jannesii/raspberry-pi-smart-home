@@ -341,3 +341,21 @@ class CarHeaterSession:
     heating_duration_minutes: float | None
     snapshot: dict
     outcome: dict | None
+
+
+@dataclass
+class CarHeaterPhoto:
+    """Saved observation photo metadata; content is served separately."""
+
+    id: str
+    session_id: str
+    captured_at: str
+    due_at: str | None
+    capture_kind: str
+    sequence: int | None
+    observation_started_at: str | None
+    camera_label: str | None
+    received_at: str
+    content_type: str
+    byte_size: int
+    sha256: str

@@ -9,8 +9,10 @@
   const retry = document.getElementById('sessionRetry');
   const outcomeLabels = {clear: 'Clear', wipers_enough: 'Wipers enough', partial_scrape: 'Partial scrape', full_scrape: 'Full scrape'};
   let loadGeneration = 0;
+  let finishedShown = false;
   const timeZone = 'Europe/Helsinki';
   const formatTime = value => value ? new Date(value).toLocaleString('en-GB', {hour12: false, timeZone}) : '—';
+  const shortTime = value => value ? new Date(value).toLocaleTimeString('en-GB', {hour12: false, timeZone, hour: '2-digit', minute: '2-digit'}) : '—';
   const localInput = value => {
     if (!value) return '';
     const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
@@ -60,8 +62,63 @@
       link.href = '/car_heater/sessions/' + encodeURIComponent(row.id);
       article.append(link, element('p', outcomeLabels[row.outcome?.result] || 'Outcome not recorded'),
         element('p', `${row.trigger.replaceAll('_', ' ')} · Recorded heating duration: ${row.heating_duration_minutes == null ? '—' : row.heating_duration_minutes + ' min'}`),
-        element('p', 'Photos not available'));
+        element('p', photoSummary(row.photos)));
       list.append(article);
+    });
+  }
+  function photoSummary(photos) {
+    if (!photos?.saved) return 'No photos saved';
+    const range = photos.saved > 1 ? ` · ${shortTime(photos.first_captured_at)}–${shortTime(photos.last_captured_at)}` : ` · ${shortTime(photos.first_captured_at)}`;
+    return `${photos.saved} photo${photos.saved === 1 ? '' : 's'} saved${range}`;
+  }
+  function renderPhotos(photos, observations) {
+    const section = document.getElementById('sessionPhotos');
+    if (!section) return;
+    const grid = document.getElementById('sessionPhotoGrid');
+    const windows = document.getElementById('sessionObservations');
+    grid.replaceChildren();
+    windows.replaceChildren();
+    observations.forEach(run => {
+      const saved = new Set(photos.filter(p => p.observation_started_at === run.started_at && p.sequence != null).map(p => p.sequence));
+      const missed = new Map(run.missed.map(m => [m.sequence, m]));
+      // A finished window also accounts for slots after the last saved photo.
+      const lastDue = run.finished_at ? Math.floor((Date.parse(run.finished_at) - Date.parse(run.started_at)) / 600000) : -1;
+      const highest = Math.max(lastDue, ...saved, ...missed.keys());
+      const item = element('li', run.finished_at
+        ? `Observation ${shortTime(run.started_at)}–${shortTime(run.finished_at)} · ${Math.round((Date.parse(run.finished_at) - Date.parse(run.started_at)) / 60000)} min · ${saved.size} scheduled photo${saved.size === 1 ? '' : 's'} saved`
+        : `Observation started ${shortTime(run.started_at)} · finish not recorded · ${saved.size} scheduled photo${saved.size === 1 ? '' : 's'} saved`);
+      const gaps = element('ul');
+      for (let n = 0; n <= highest; n++) {
+        if (saved.has(n)) continue;
+        const due = shortTime(missed.get(n)?.due_at || new Date(Date.parse(run.started_at) + n * 600000).toISOString());
+        gaps.append(element('li', missed.has(n)
+          ? `${due} scheduled photo missed (${missed.get(n).reason.replaceAll('_', ' ')})`
+          : `${due} scheduled photo not saved`));
+      }
+      if (gaps.children.length) item.append(gaps);
+      windows.append(item);
+    });
+    if (!photos.length) {
+      grid.append(element('p', 'No photos saved for this session. Unsaved or missed captures are not evidence.'));
+      return;
+    }
+    photos.forEach(photo => {
+      const figure = element('figure');
+      figure.className = 'evidence-photo';
+      const image = element('img');
+      image.loading = 'lazy';
+      image.decoding = 'async';
+      image.src = `${base}/${encodeURIComponent(sessionId)}/photos/${encodeURIComponent(photo.id)}`;
+      image.alt = `Windshield photo captured ${formatTime(photo.captured_at)}`;
+      const link = element('a');
+      link.href = image.src;
+      link.append(image);
+      const late = photo.due_at ? Math.round((Date.parse(photo.captured_at) - Date.parse(photo.due_at)) / 1000) : null;
+      const caption = photo.capture_kind === 'manual'
+        ? 'Manual capture'
+        : `Scheduled ${shortTime(photo.due_at)}${late > 0 ? ` · ${late} s late` : ''}`;
+      figure.append(link, element('figcaption', `Captured ${formatTime(photo.captured_at)} · ${caption}${photo.camera_label ? ' · ' + photo.camera_label : ''}`));
+      grid.append(figure);
     });
   }
   function renderDetail(row, populate = true) {
@@ -86,7 +143,8 @@
     };
     const dl = element('dl');
     Object.entries(values).forEach(([key, value]) => dl.append(element('dt', key), element('dd', value ?? '—')));
-    detail.append(dl, element('p', 'Photos not available. Recorded times and duration are driver evidence.'));
+    detail.append(dl, element('p', 'Recorded times and duration are driver evidence.'));
+    renderPhotos(row.photos || [], row.observations || []);
     if (row.departure_plan) {
       const plan = row.departure_plan;
       detail.append(element('h3', 'Departure plan'), element('p', `${plan.status.replaceAll('_', ' ')} · ${plan.preheat_minutes} min preheat · ${plan.grace_minutes} min grace`));
@@ -141,6 +199,11 @@
       if (generation !== loadGeneration) return;
       if (sessionId) renderDetail(data); else renderList(data);
       feedback.textContent = '';
+      if (sessionId && new URLSearchParams(location.search).get('observation') === 'finished' && !finishedShown) {
+        finishedShown = true;
+        feedback.textContent = 'Observation finished. Record the departure outcome; heating is unchanged.';
+        document.getElementById('outcomeHeading').focus();
+      }
     } catch (error) {
       if (generation !== loadGeneration) return;
       feedback.textContent = error.message;

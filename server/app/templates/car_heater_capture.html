@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+{% block title %}Observe windshield{% endblock %}
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_sessions.css', v='20261015-2') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_capture.css', v='20261015-1') }}">
+{% endblock %}
+{% block content %}
+<main class="heater-evidence heater-capture" lang="en" data-session-id="{{ session_id }}">
+  <header><p class="evidence-eyebrow">CAR HEATER · OBSERVATION</p><h1>Watch the windshield</h1></header>
+  {% include 'car_heater_navigation.html' %}
+  <a class="evidence-back" href="{{ url_for('web.car_heater_sessions_page', session_id=session_id) }}">← Session review</a>
+  <p id="captureSessionContext">Loading session…</p>
+  <div class="capture-layout">
+    <section class="capture-camera" aria-labelledby="cameraHeading">
+      <h2 id="cameraHeading" class="visually-hidden">Inside-windshield preview</h2>
+      <div class="camera-preview">
+        <video id="capturePreview" playsinline muted autoplay aria-label="Live inside-windshield camera preview"></video>
+        <div class="camera-guide" aria-hidden="true"></div>
+        <p id="cameraEmpty" class="camera-empty">Camera off. Choose Enable camera to frame the inside view.</p>
+      </div>
+      <div class="capture-actions">
+        <button id="cameraEnable" class="evidence-button" type="button">Enable camera</button>
+        <label for="cameraSelect" class="camera-choice">Camera<select id="cameraSelect" disabled><option value="">Rear camera</option></select></label>
+      </div>
+      <p id="cameraStatus" role="status">Camera access needs HTTPS and your permission.</p>
+      <p class="capture-support">Keep the driver’s viewing area inside the guide. The page tries the ultra-wide rear camera when the browser exposes it and falls back to the regular rear camera. Keep this page open and visible: locked or background capture is not possible.</p>
+    </section>
+    <aside class="capture-sidebar" aria-labelledby="captureHeading">
+      <p id="captureState" class="evidence-eyebrow">READY TO OBSERVE</p>
+      <h2 id="captureHeading">A photo every 10 minutes</h2>
+      <p>Suggested window: 30–60 minutes before departure.</p>
+      <p class="countdown-label">Next photo in</p>
+      <p id="captureCountdown" class="countdown">—</p>
+      <p id="captureElapsed" class="capture-support">Start to take the first photo now.</p>
+      <div class="capture-actions">
+        <button id="captureStart" class="evidence-button evidence-primary" type="button" disabled>Start observation</button>
+        <button id="captureNow" class="evidence-button" type="button" disabled>Capture now</button>
+      </div>
+      <p id="captureSummary" role="status" aria-atomic="true">No photos taken yet.</p>
+      <p id="captureInterruption" class="capture-alert" role="alert" hidden></p>
+      <p id="wakeLockStatus" class="capture-support"></p>
+      <button id="captureRetry" class="evidence-button" type="button" hidden>Retry failed uploads</button>
+      <h3>This observation</h3>
+      <ol id="captureLog" class="capture-log"><li>No photos yet.</li></ol>
+      <button id="captureFinish" class="evidence-button capture-finish" type="button">Finish observation</button>
+      <p class="capture-support">Ends capture and opens outcome entry. Heating keeps its planned finish.</p>
+      <section class="evidence-section" aria-labelledby="captureHeatingHeading">
+        <h3 id="captureHeatingHeading">Heating</h3>
+        <p id="captureHeating" role="status">Heating status loading…</p>
+        <button id="captureStopHeating" class="evidence-button capture-stop" type="button">Stop heating</button>
+        <p class="capture-support">Stop heating requests OFF only. Capture continues until you finish observation.</p>
+      </section>
+    </aside>
+  </div>
+  <dialog id="captureFinishDialog" aria-labelledby="finishDialogHeading">
+    <h2 id="finishDialogHeading">Some photos are not saved</h2>
+    <p id="finishDialogText"></p>
+    <div class="capture-actions">
+      <button id="finishRetry" class="evidence-button evidence-primary" type="button">Retry uploads</button>
+      <button id="finishAnyway" class="evidence-button" type="button">Finish without them</button>
+      <button id="finishCancel" class="evidence-button" type="button">Keep observing</button>
+    </div>
+  </dialog>
+</main>
+<meta name="csrf-token" content="{{ csrf_token() }}">
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/car_heater_capture.js', v='20261015-2') }}"></script>
+{% endblock %}

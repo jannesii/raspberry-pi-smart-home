@@ -57,7 +57,10 @@ def list_sessions():
             end = (local + timedelta(days=1)).astimezone(UTC).isoformat()
     except ValueError:
         return jsonify(error="Invalid date"), 400
-    return jsonify([asdict(s) for s in current_app.ctrl.list_car_heater_sessions(start, end)])
+    rows = current_app.ctrl.list_car_heater_sessions(start, end)
+    photos = current_app.ctrl.summarize_car_heater_photos([s.id for s in rows])
+    no_photos = {"saved": 0, "first_captured_at": None, "last_captured_at": None}
+    return jsonify([{**asdict(s), "photos": photos.get(s.id, no_photos)} for s in rows])
 
 
 @car_bp.post("/sessions")
@@ -117,6 +120,8 @@ def session_detail(session_id):
     if attempt is None:
         return jsonify(error="Session not found"), 404
     payload = asdict(attempt)
+    payload["photos"] = [asdict(p) for p in current_app.ctrl.list_car_heater_photos(session_id)]
+    payload["observations"] = current_app.ctrl.list_car_heater_observations(session_id)
     execution = current_app.ctrl.get_car_heater_execution(session_id)
     if execution is not None:
         payload["execution"] = execution

@@ -6,9 +6,11 @@ first-frost collection. These commands are instructions, not evidence that
 production has been inspected or changed. Use the shared [domain terms](../../GLOSSARY.md).
 
 Raw heater status, glass/cabin sensor frames and existing kFactor heating
-sessions/results are evidence. Keep them permanently. The session identities,
-photos and departure outcomes introduced by later tickets must follow the same
-policy; this ticket does not introduce those tables or photo storage.
+sessions/results are evidence. Keep them permanently. Session identities,
+departure outcomes, observation photos and observation windows follow the same
+policy. Photo content is stored in the `car_heater_photo` table with its session
+identity, so the database backups below include image content and association;
+there is no separate photo directory to archive.
 
 ## 1. Discover without starting the app
 
@@ -77,11 +79,10 @@ pg_restore --list /private/backup/heater-before.dump > /private/backup/heater-be
 sha256sum /private/backup/heater-before.dump
 ```
 
-This is a whole-database backup so related heating sessions/results and their
-relationships stay together. `--no-owner --no-acl` makes isolated restoration
-portable; capture roles/grants separately for disaster recovery. A database dump
-does not include future photo files: once capture is implemented, archive its
-storage with the database and session associations. Keep an off-host copy,
+This is a whole-database backup so related heating sessions/results, photos
+and their relationships stay together. `--no-owner --no-acl` makes isolated
+restoration portable; capture roles/grants separately for disaster recovery.
+Photos add up to 8 MB each, so check free space for the dump. Keep an off-host copy,
 restrict access, and retain dated snapshots rather than replacing the sole copy.
 
 ## 3. Restore into isolation and verify
@@ -101,7 +102,11 @@ For PostgreSQL the owner creates an empty isolated database and configures a
 pg_restore --dbname='service=heater_restore_check' --no-owner --no-acl --exit-on-error /private/backup/heater-before.dump
 ```
 
-Use the restored target's `DATABASE_URL` for migration and discovery. Alembic
+Use the restored target's `DATABASE_URL` for migration and discovery. Once
+photos exist, discovery also reports `photo_integrity`: each stored photo's
+checksum is recomputed (`mismatched` lists damaged images) and `orphaned` lists
+photos without their session. Both lists must be empty. In the isolated app,
+open a session with photos and confirm each image loads with its capture time. Alembic
 does **not** read `DB_PATH`: for SQLite set an explicit URL such as
 `sqlite:////private/restore-check/heater.db`; `DB_PATH` selects only the legacy
 app bootstrap file and the discovery fallback when no `DATABASE_URL` is set.
@@ -165,6 +170,9 @@ since that snapshot and requires a separately approved recovery plan.
 .venv/bin/pytest -q tests/test_car_heater_history_preservation.py
 ```
 
+`tests/test_car_heater_photos.py` also restores SQLite and PostgreSQL backups
+containing a photo, checks discovery integrity, and serves the same image and
+session association from a fresh Controller that still accepts new photos.
 Checks exercise read-only discovery, old authenticated history after new
 telemetry and fresh-process SQLite bootstrap, migration preservation, unrelated
 household cleanup, non-overwriting SQLite backup/restore and restored history.

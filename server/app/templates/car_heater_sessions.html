@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}Car heater sessions{% endblock %}
 {% block styles %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_sessions.css', v='20261014-2') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_sessions.css', v='20261015-2') }}">
 {% endblock %}
 {% block content %}
 <main class="heater-evidence" lang="en" data-session-id="{{ session_id or '' }}">
@@ -37,8 +37,15 @@
   {% else %}
   <a class="evidence-back" href="{{ url_for('web.car_heater_sessions_page') }}">Back to sessions</a>
   <section id="sessionDetail" aria-busy="true" aria-labelledby="sessionDetailHeading"><h2 id="sessionDetailHeading">Heating attempt</h2><p>Loading session…</p></section>
+  <a class="evidence-button evidence-primary evidence-observe" href="{{ url_for('web.car_heater_capture_page', session_id=session_id) }}">Observe windshield</a>
+  <section class="evidence-section" id="sessionPhotos" aria-labelledby="photosHeading">
+    <h2 id="photosHeading">Photos</h2>
+    <p>Times are actual capture times. A photo that is already clear gives an upper bound on clearing time, not an exact time.</p>
+    <ul id="sessionObservations" class="evidence-observations"></ul>
+    <div id="sessionPhotoGrid" class="evidence-photos"><p>Loading photos…</p></div>
+  </section>
   <section class="evidence-section" aria-labelledby="outcomeHeading">
-    <h2 id="outcomeHeading">Departure outcome</h2>
+    <h2 id="outcomeHeading" tabindex="-1">Departure outcome</h2>
     <p>Saving an outcome does not change heating. Leave departure time empty unless departure was confirmed; unplugging or missing readings do not confirm it.</p>
     <form id="sessionOutcome" class="evidence-form" hidden>
       <fieldset><legend>Windshield condition</legend>
@@ -64,5 +71,5 @@
 <meta name="csrf-token" content="{{ csrf_token() }}">
 {% endblock %}
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/car_heater_sessions.js', v='20261015-1') }}"></script>
+<script src="{{ url_for('static', filename='js/car_heater_sessions.js', v='20261015-3') }}"></script>
 {% endblock %}

@@ -54,6 +54,14 @@
 .heater-evidence :focus-visible, .heater-navigation :focus-visible { outline: 3px solid var(--evidence-accent); outline-offset: 3px; }
 .car-heater-page [hidden], .heater-evidence [hidden] { display: none !important; }
 .heater-settings { margin-top: 16px; }
+.heater-evidence a.evidence-observe { display: inline-flex; align-items: center; justify-content: center; margin-top: 16px; color: var(--evidence-bg); text-decoration: none; }
+.evidence-observations { padding-left: 20px; }
+.evidence-observations li { margin: 6px 0; color: var(--evidence-muted); }
+.evidence-photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.evidence-photos > p { grid-column: 1 / -1; margin: 0; }
+.evidence-photo { margin: 0; background: var(--evidence-surface); border-radius: 8px; overflow: hidden; }
+.evidence-photo img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: #0b1119; }
+.evidence-photo figcaption { padding: 8px 10px; font-size: .85rem; color: var(--evidence-muted); }
 @media (max-width: 600px) {
   .heater-evidence { margin: 8px; padding: 16px; border-radius: 10px; }
   .heater-evidence dl { grid-template-columns: 1fr; gap: 4px; }
