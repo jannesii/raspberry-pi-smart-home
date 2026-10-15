@@ -1883,6 +1883,121 @@ relationships and 25 native blocking edges; the graph was acyclic and each
 visible Blocked by section matched its native links. The parent spec's body,
 title and state were not changed during ticket publication.
 
+## Weather-evidence collection discussion (2026-10-15)
+
+The owner requested preserving the strategy's broader FMI weather context from
+the first measurements, even while the initial heating controller continues to
+use the agreed observed-temperature duration table. The owner selected
+`/grill-with-docs` to resolve the collection amendment before updating the spec
+or tickets. This section records settled choices; the interview is ongoing and
+no production collection changes have been authorized by these notes.
+
+The owner confirmed Q1–Q11:
+
+- **Observations and forecasts:** preserve relevant observed conditions and
+  forecasts as received, with forecast issue/origin and valid-time information,
+  so later evaluation can distinguish actual conditions from information
+  available beforehand. Collection does not activate forecast-based control.
+- **Between-session collection:** collect whenever the server is running, from
+  commissioning onward, including nights with no scheduled departure or
+  connected DEFA cable. Overnight context and non-heating periods belong to the
+  evidence, not only planning/start/departure snapshots.
+- **Initial observation fields:** retain air temperature, relative humidity,
+  dew point, wind speed/direction/gusts, cloud cover, precipitation
+  amount/intensity, reported weather type, snow depth and visibility where the
+  chosen sources provide them. Preserve units, source identity, timestamps and
+  explicit missing values. Missing supplementary evidence must not prevent
+  heating or discard other measurements.
+- **Sources:** request the agreed observation fields from both Pelmaa (101486)
+  and the airport station (137188), retaining their readings separately,
+  including overlaps. Use point forecasts for the parking coordinates already
+  recorded in this strategy. The planner retains its existing temperature
+  source; collection does not blend station readings into control inputs.
+- **Forecast coverage:** preserve the complete hourly forecast returned for the
+  parking point: temperature, humidity, dew point, wind speed/direction/gusts,
+  cloud cover, long-wave and global radiation, hourly precipitation and weather
+  symbol. Preserve the returned horizon and original parameter meanings; do not
+  assume the physical direction of `RadiationLW` from its name.
+- **Collection cadence:** check observations every ten minutes with a two-hour
+  overlapping request window to catch delayed readings. Check forecasts every
+  thirty minutes, preserving each distinct version actually received and its
+  retrieval times while avoiding duplicate numerical records for unchanged
+  replies. This is independent of heater telemetry and session activity.
+- **Recovery:** on initial startup, fetch the preceding 24 hours of observations.
+  After an outage, automatically repair observation gaps up to seven days back.
+  Mark backfilled evidence and its retrieval time; it must not appear to have
+  been available earlier. Older gaps remain visible and may be addressed
+  separately. Unreceived forecast versions remain explicit gaps rather than
+  invented historical forecasts.
+- **Permanent archive:** retain structured weather records and compressed
+  original successful FMI replies permanently, including them in the evidence
+  backup/restore process. Deduplicate unchanged content where appropriate while
+  preserving retrieval history and the association between records and replies.
+- **Corrections and revisions:** retain earlier observations and forecast
+  versions alongside later provider corrections/revisions, with retrieval times.
+  Preserve the distinction between evidence available at an earlier decision
+  and the corrected historical record. Backfilled observations follow the same
+  rule; later data must not overwrite what was known earlier.
+- **Minimum access and visibility:** add collection health in Diagnostics,
+  including last successful collection per source, failures and gaps. Add
+  weather-evidence coverage to session review and authenticated date-range
+  CSV/JSON export, with explicit access to original replies. Missing values in
+  a successfully collected source are distinct from a stopped/failed collector.
+  New weather charts and analytical dashboards remain later work.
+- **First-frost acceptance:** make weather-evidence collection a requirement of
+  first-frost commissioning. Verify observation/forecast preservation,
+  restart/recovery and backup restoration into usable evidence before winter
+  measurement collection. Supplementary collection failures remain visible and
+  must not delay Stop, extend heating or change the existing duration/fallback
+  rules.
+
+Facts checked read-only on 2026-10-15 inform these decisions:
+
+- The current weather service requests temperature, wind speed, RH and cloud
+  cover but reduces each returned series to its latest valid value. The
+  departure planner's snapshots retain temperature and provenance/freshness,
+  not the broader weather series.
+- In a six-hour API sample, Pelmaa (101486) supplied temperature, dew point, RH,
+  wind speed/direction/gusts, precipitation intensity and snow depth; hourly
+  precipitation had hourly values. Cloud cover, weather type and visibility
+  were missing throughout that sample. Airport station 137188 supplied those
+  last three plus overlapping temperature/humidity/wind fields, but its sampled
+  precipitation and snow-depth values were missing. This is dated availability
+  evidence, not a guarantee for future readings.
+- Forecasts expose model origin/analysis time, result time, forecast-valid times
+  and location/model/parameter identity; local retrieval time is a separate
+  fact. Preserve those distinctions instead of using one ambiguous issue time.
+- FMI says the forecast interface provides the latest model run and does not
+  provide older runs. Preserving forecasts as received therefore matters for
+  later planning-time evaluation. Observation backfill cannot substitute for a
+  missing historical forecast version
+  ([FMI forecast data](https://www.ilmatieteenlaitos.fi/avoin-data-saaennustedata)).
+- Source codes and units need explicit interpretation: observed cloud amount and
+  forecast cloud percentage differ, precipitation parameters have their own
+  intervals/conventions, and the forecast `RadiationLW` metadata labels it
+  simply long-wave radiation. Directional/physical meaning must not be invented
+  from the parameter name. Preserve original identifiers and units
+  ([FMI observation guidance](https://en.ilmatieteenlaitos.fi/guidance-to-observations),
+  [FMI observation FAQ](https://en.ilmatieteenlaitos.fi/download-observations-questions)).
+
+Additional integration facts checked on 2026-10-15:
+
+- Existing evidence tooling supports whole-database backup and isolated restore;
+  photos already use that boundary. Compressed weather replies could reuse it
+  if stored there, while filesystem replies would need coordinated backup.
+  Weather-specific checksum/provenance verification is not implemented yet.
+- Authenticated session detail already displays the departure planner's
+  temperature snapshots. There is no broader weather archive, export or
+  collection-health interface. These would be new collection capabilities.
+- Existing isolated API/database tests with fake clock/weather/device responses,
+  plus evidence restore/retrieval tests, provide high-level verification seams.
+  A prototype or new control algorithm is not necessary to test this amendment.
+
+All eleven interview choices are settled. Final shared-understanding
+confirmation is pending. After confirmation, the owner selects the next workflow;
+no spec, ticket or production implementation changes are part of this interview.
+Spec #2 and its tickets have not yet been amended for this collection scope.
+
 ## Open Questions
 
 ### Answered by the owner (2026-09-29)

@@ -39,3 +39,15 @@ wipers or scraping were needed.
 **Observation window**:
 A period during a heating session when the driver records windshield condition
 repeatedly to compare visible clearing with measured temperatures.
+
+**Weather evidence**:
+Preserved weather observations and forecasts describing the conditions around
+heating attempts, including overnight conditions and periods without heating.
+
+**Forecast version**:
+A particular issue or revision of a forecast, distinct from the times its
+predictions describe.
+
+**Backfilled weather evidence**:
+Weather observations retrieved after the intended collection time, distinguished
+from evidence available when an earlier heating decision was made.
