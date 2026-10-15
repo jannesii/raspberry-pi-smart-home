@@ -7,25 +7,16 @@ Do not treat simulation results as confirmation of installed hardware behavior.
 ## Compatible components
 
 Use the server containing migration `20261014_0013`, ESP32C3-Car-Heater firmware
-**3.1.1**, and the repository's `shelly/bounded_heating.js` (**bounded-v1**) together.
+**3.1.0**, and the repository's `shelly/bounded_heating.js` (**bounded-v1**) together.
 Firmware 3.0.0 can still report sensor data but cannot authorize bounded heating.
-Firmware 3.1.1 deliberately rejects bare/replayed ON, including old-server ON;
+Firmware 3.1.0 deliberately rejects bare/replayed ON, including old-server ON;
 update the server before using it. Older sensor firmware remains a separate target.
-
-Firmware 3.1.1 and the corrected script replace the initial 3.1.0 implementation:
-callbacks now use named top-level references compatible with Shelly's interpreter.
-A small clock lag no longer rejects fresh commands, and action results carry the
-validation reason or Shelly HTTP rejection. Do not use the older nested-callback
-script with 3.1.1. Keep the existing script ID and persistent KVS key when updating.
-The server retries unresolved OFF at five-second intervals rather than feeding a
-failed acknowledgement into an immediate retry loop; explicit Stop remains immediate.
 
 The server requires fresh relay-local capability, confirmed OFF and both boot
 identifiers. Missing script, clock, storage, configuration or relay reachability
 blocks timed ON. The relay's local flip-back timer is armed once with remaining
-original allowance, rather than rearmed on every retry. A three-second early
-margin covers up to two seconds of clock lag plus whole-second rounding. Delivery
-expiry is judged two seconds early, so lag never extends command lifetime. A script restart requests
+original allowance, rather than rearmed on every retry. A one-second early
+margin prevents whole-second clock reports from extending the finish. A script restart requests
 OFF; a relay restart starts OFF and persists the old session as stopped. Recovery
 never attempts to resume an old timed session.
 
@@ -51,7 +42,7 @@ never attempts to resume an old timed session.
    needed, fill the existing network/API configuration and set
    `SHELLY_BOUNDED_SCRIPT_ID` to that ID. Build with
    `pio run -e seeed_xiao_esp32c3` from `ESP32C3-Car-Heater/`. Only the owner flashes
-   with `pio run -e seeed_xiao_esp32c3 -t upload`. Confirm firmware 3.1.1, both
+   with `pio run -e seeed_xiao_esp32c3 -t upload`. Confirm firmware 3.1.0, both
    sensors/telemetry paths, relay reachability and the capability report.
 5. Use a safe test load for physical acceptance. Start a short timed run through
    the authenticated Heating page. Record the session UUID, original finish,
@@ -109,5 +100,4 @@ only the physical commissioning tests can validate those assumptions on the load
 
 API references: [local switch timer and startup configuration](https://shelly-api-docs.shelly.cloud/gen2/ComponentsAndServices/Switch/),
 [persistent KVS limits](https://shelly-api-docs.shelly.cloud/gen2/ComponentsAndServices/KVS/),
-[script endpoint API](https://shelly-api-docs.shelly.cloud/gen2/Scripts/APIs/HTTPServer/),
-[callback nesting limitations](https://shelly-api-docs.shelly.cloud/gen2/Scripts/LanguageReference/#limited-levels-of-nested-anonymous-functions).
+[script endpoint API](https://shelly-api-docs.shelly.cloud/gen2/Scripts/APIs/HTTPServer/).
