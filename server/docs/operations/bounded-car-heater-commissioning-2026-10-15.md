@@ -30,7 +30,7 @@ switch-off time.
 | Running ESP32 firmware | `3.1.1`, independently read from a live `esp32:status` frame on 15 October at 17:35:15 Helsinki time |
 | Deployed database revision | PostgreSQL `alembic_version` reported `20261014_0013` in a read-only metadata transaction after the final manual check |
 | Server deployment | Owner reported setup steps 1–4 complete. Exact running server source revision was not independently established |
-| Conditions and placement | Ambient temperature, location and installation layout not recorded |
+| Conditions and placement | Owner's work desk, about 24.5°C, as confirmed by the owner after reviewing this record. Final vehicle installation layout not recorded |
 
 Source revision identifies the correction the owner was instructed to install;
 no independent hash of the script retrieved from the device was collected.
@@ -150,12 +150,13 @@ after both script corrections. No complete commissioning sign-off is made here.
 ### Version and execution evidence still to capture
 
 - Deployed server source revision and a retrieved hash of the installed script.
-- Ambient conditions and exact installed heater/sensor/electronics placement.
+- Exact installed heater/sensor/electronics placement for the final vehicle setup.
 - Common external-cable disconnect/reconnect with ESP32 and router together.
 - Physical end-to-end duplicate delivery across both transports, and explicit
   checks that previously enabled automatic modes cannot resume after recovery.
-- Publish this record in #12 after owner review; issue state and acceptance boxes
-  have not been changed by preparing it.
+- Owner reviewed and approved this record and authorized publication, evidence-based
+  checklist updates and closure of #7 if its criteria are met. Full #12 completion
+  remains deferred until its blocking issues are complete.
 
 ### Wider #12 requirements not established by the charger tests
 

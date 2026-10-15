@@ -7,16 +7,17 @@ Do not treat simulation results as confirmation of installed hardware behavior.
 ## Compatible components
 
 Use the server containing migration `20261014_0013`, ESP32C3-Car-Heater firmware
-**3.1.0**, and the repository's `shelly/bounded_heating.js` (**bounded-v1**) together.
+**3.1.1**, and the repository's `shelly/bounded_heating.js` (**bounded-v1**) together.
 Firmware 3.0.0 can still report sensor data but cannot authorize bounded heating.
-Firmware 3.1.0 deliberately rejects bare/replayed ON, including old-server ON;
+Firmware 3.1.1 deliberately rejects bare/replayed ON, including old-server ON;
 update the server before using it. Older sensor firmware remains a separate target.
 
 The server requires fresh relay-local capability, confirmed OFF and both boot
 identifiers. Missing script, clock, storage, configuration or relay reachability
 blocks timed ON. The relay's local flip-back timer is armed once with remaining
-original allowance, rather than rearmed on every retry. A one-second early
-margin prevents whole-second clock reports from extending the finish. A script restart requests
+original allowance, rather than rearmed on every retry. A three-second early
+margin covers up to two seconds of clock lag plus whole-second rounding. Delivery
+expiry is judged two seconds early, so lag does not extend command lifetime. A script restart requests
 OFF; a relay restart starts OFF and persists the old session as stopped. Recovery
 never attempts to resume an old timed session.
 
@@ -42,7 +43,7 @@ never attempts to resume an old timed session.
    needed, fill the existing network/API configuration and set
    `SHELLY_BOUNDED_SCRIPT_ID` to that ID. Build with
    `pio run -e seeed_xiao_esp32c3` from `ESP32C3-Car-Heater/`. Only the owner flashes
-   with `pio run -e seeed_xiao_esp32c3 -t upload`. Confirm firmware 3.1.0, both
+   with `pio run -e seeed_xiao_esp32c3 -t upload`. Confirm firmware 3.1.1, both
    sensors/telemetry paths, relay reachability and the capability report.
 5. Use a safe test load for physical acceptance. Start a short timed run through
    the authenticated Heating page. Record the session UUID, original finish,
@@ -53,6 +54,11 @@ never attempts to resume an old timed session.
    initial OFF after a Shelly power cycle and no timer extension or old-mode resume.
    Record actual Shelly model/firmware, timings and power evidence in #12 before
    declaring the installation commissioned. No cold-range validation is claimed.
+
+See the [14–15 October 2026 commissioning record](bounded-car-heater-commissioning-2026-10-15.md)
+for the owner's supervised relay checks on a work desk at about 24.5°C. It records
+the subsequent script storage/memory corrections and successful retests, while
+keeping full vehicle/collection commissioning in #12 open.
 
 The script endpoint follows Shelly device authentication settings. The existing
 firmware uses unauthenticated LAN HTTP; enabling Shelly authentication without a
