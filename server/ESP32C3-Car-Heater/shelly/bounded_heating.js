@@ -32,12 +32,31 @@ function safeConfig() {
     && c.autorecover_voltage_errors !== true;
 }
 function restored(result, error) { ready = !error && safeConfig(); }
+function validStoredState(saved) {
+  if (!saved || typeof saved.session_id !== "string" || !saved.session_id.length ||
+      saved.session_id.length > 36 || typeof saved.issued_at !== "number" ||
+      saved.issued_at <= 0 || typeof saved.finish_at !== "number" ||
+      (saved.phase !== "heating" && saved.phase !== "stopped")) return false;
+  // Arithmetic rejects non-finite values without relying on optional built-ins.
+  if (saved.issued_at - saved.issued_at !== 0 || saved.finish_at - saved.finish_at !== 0) return false;
+  // A standalone OFF may leave a zero-finish tombstone, but never a heating run.
+  if (saved.finish_at === 0) return saved.phase === "stopped";
+  return saved.finish_at > saved.issued_at && saved.finish_at <= saved.issued_at + 10800;
+}
 function loaded(result, error) {
   // GetMany distinguishes an empty store from a storage failure.
-  if (error || !result || !result.items) return;
-  if (result.items.length > 0) {
-    try { state = JSON.parse(result.items[0].value); } catch (e) { return; }
-    if (!state || typeof state.issued_at !== "number" || !state.session_id) return;
+  if (error || !result || !result.items || typeof result.items !== "object") return;
+  // Installed Gen 3 firmware returns a keyed object. Some API examples use
+  // an array: accept both without mistaking an existing key for empty storage.
+  let item = result.items[KEY];
+  if (typeof result.items.length === "number") {
+    if (result.items.length > 1) return;
+    item = result.items.length === 1 ? result.items[0] : undefined;
+  }
+  if (item !== undefined) {
+    if (!item || typeof item.value !== "string") return;
+    try { state = JSON.parse(item.value); } catch (e) { return; }
+    if (!validStoredState(state)) return;
     state.phase = "stopped";
     state.reason = "shelly_restart";
     persist(restored, null);

@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const {spawnSync} = require('node:child_process');
 
-function rig() {
+function rig(kvsShape = 'object') {
   let epoch = 1800000000, uptime = 0, on = false, timer = null;
   let persistent = {}, endpoint, config = {initial_state: 'off', auto_on: false, auto_off: false};
   let network = true, calls = [], failKvs = false, tick, deferKvs = false, callbacks = [], clockOffset = 0, espClockOffset = 0;
@@ -17,7 +17,14 @@ function rig() {
         getComponentStatus: name => name === 'sys' ? {unixtime: Math.floor(epoch + clockOffset), uptime} : {output: on, apower: on ? 1400 : 0},
         call(method, params, cb, context) {
           calls.push([method, params]);
-          if (method === 'KVS.GetMany') return cb({items: persistent[params.match] ? [{value: persistent[params.match]}] : []}, 0, null, context);
+          if (method === 'KVS.GetMany') {
+            if (failKvs) return cb(null, 1, "storage failed", context);
+            const item = {key: params.match, value: persistent[params.match]};
+            const items = kvsShape === 'array'
+              ? (item.value === undefined ? [] : [item])
+              : (item.value === undefined ? {} : {[params.match]: item});
+            return cb({items}, 0, null, context);
+          }
           if (method === 'KVS.Set') {
             if (failKvs) return cb(null, 1, "storage failed", context);
             if (deferKvs) { callbacks.push(() => {persistent[params.key] = params.value; cb({}, 0, null, context);}); return; }
@@ -65,6 +72,7 @@ function rig() {
     set deferKvs(value) {deferKvs = value;},
     flushKvs() {deferKvs = false; const pending = callbacks; callbacks = []; pending.forEach(fn => fn());},
     get on() {return on;}, get timer() {return timer;}, get calls() {return calls;},
+    set stored(value) {persistent.car_heater_bound_v1 = value;},
     set failKvs(v) {failKvs = v;}, set config(v) {config = v;}
   };
 }
@@ -125,6 +133,54 @@ test('Shelly restart cannot resume a session or rearm its timer', () => {
   assert.equal(r.command(c).code, 409);
   assert.equal(r.command(command()).code, 409);
   assert.equal(r.timer, null);
+});
+for (const shape of ['object', 'array']) {
+  test(`restart restores session identity and replay guard from ${shape} KVS items`, () => {
+    const r = rig(shape);
+    r.command(command()); r.advance(5); r.boot();
+    const status = r.status();
+    assert.equal(status.ready, true);
+    assert.equal(status.session_id, 'session-1');
+    assert.equal(status.finish_at, 1800003600);
+    assert.equal(status.phase, 'stopped');
+    assert.equal(status.reason, 'shelly_restart');
+    const replay = r.command(command());
+    assert.equal(replay.code, 409);
+    assert.equal(replay.body.note, 'obsolete ON');
+    assert.equal(r.on, false);
+    assert.equal(r.timer, null);
+  });
+}
+test('malformed saved state and startup storage failure block authorization', () => {
+  const valid = {session_id: 'session-1', issued_at: 1800000000, finish_at: 1800003600, phase: 'stopped', reason: 'cancelled'};
+  const malformed = ['not JSON', '{}', '{"issued_at":0,"session_id":"x"}',
+    '{"session_id":"session-1","issued_at":1e999,"finish_at":0,"phase":"stopped"}',
+    '{"session_id":"session-1","issued_at":1800000000,"finish_at":1e999,"phase":"stopped"}',
+    JSON.stringify({...valid, session_id: 1}), JSON.stringify({...valid, finish_at: '1800003600'}),
+    JSON.stringify({...valid, finish_at: 1800010801}), JSON.stringify({...valid, finish_at: -1}),
+    JSON.stringify({...valid, phase: 'unknown'}), JSON.stringify({...valid, finish_at: 0, phase: 'heating'})];
+  for (const stored of malformed) {
+    const r = rig(); r.stored = stored; r.boot();
+    assert.equal(r.status().ready, false);
+    assert.equal(r.command(command()).code, 409);
+    assert.equal(r.on, false);
+  }
+  const r = rig(); r.failKvs = true; r.boot();
+  assert.equal(r.status().ready, false);
+  assert.equal(r.command(command()).code, 409);
+  assert.equal(r.on, false);
+});
+test('standalone OFF tombstone survives restart and permits only newer sessions', () => {
+  const r = rig();
+  r.command({action: 'turn_off', issued_at: 1800000000}); r.boot();
+  assert.equal(r.status().ready, true);
+  assert.equal(r.status().session_id, 'off-1800000000');
+  assert.equal(r.status().finish_at, 0);
+  assert.equal(r.command(command()).code, 409);
+  assert.equal(r.on, false);
+  r.advance(2);
+  assert.equal(r.command(command({session_id: 'session-2', issued_at: 1800000002,
+    expires_at: 1800000032, finish_at: 1800003602})).code, 200);
 });
 test('storage failure and unsafe relay startup configuration block ON', () => {
   const r = rig(); r.failKvs = true;

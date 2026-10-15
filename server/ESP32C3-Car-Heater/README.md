@@ -187,6 +187,16 @@ limit. Fresh ON tolerates up to two seconds of clock lag, while the relay timer
 finishes three seconds early to preserve the original deadline. Expiry also
 uses a conservative clock allowance. OFF remains independent of clock validation.
 
+The Shelly script must also include the KVS startup-loader correction: Gen 3
+devices can return `KVS.GetMany.items` as an object keyed by the storage key.
+The loader accepts that response and the array format shown in API examples,
+preserving the stopped session and replay guard after script/device restart.
+Update the existing script in place and retain `car_heater_bound_v1`; this
+script-only correction does not require another ESP32 firmware flash. With the
+relay OFF, restart the updated script and verify that `/script/<id>/bounded`
+still reports the previous session UUID/finish, `reason=shelly_restart`, and
+`relay_on=false`. Physical commissioning must then check replay rejection.
+
 HTTP and WebSocket results now include a rejection `note`, also persisted by the
 server. Serial `[BoundedRelay]` lines show the action, session, clock, issue,
 expiry, finish, and rejection reason. Shelly HTTP response notes identify device
