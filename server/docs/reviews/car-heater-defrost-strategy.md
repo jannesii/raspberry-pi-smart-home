@@ -1889,8 +1889,9 @@ The owner requested preserving the strategy's broader FMI weather context from
 the first measurements, even while the initial heating controller continues to
 use the agreed observed-temperature duration table. The owner selected
 `/grill-with-docs` to resolve the collection amendment before updating the spec
-or tickets. This section records settled choices; the interview is ongoing and
-no production collection changes have been authorized by these notes.
+or tickets. After settling Q1–Q11 and reviewing the shared-understanding
+summary, the owner selected `/to-spec` on 2026-10-15. This section records the
+approved collection choices; specification publication does not deploy them.
 
 The owner confirmed Q1–Q11:
 
@@ -1993,10 +1994,34 @@ Additional integration facts checked on 2026-10-15:
   plus evidence restore/retrieval tests, provide high-level verification seams.
   A prototype or new control algorithm is not necessary to test this amendment.
 
-All eleven interview choices are settled. Final shared-understanding
-confirmation is pending. After confirmation, the owner selects the next workflow;
-no spec, ticket or production implementation changes are part of this interview.
-Spec #2 and its tickets have not yet been amended for this collection scope.
+All eleven interview choices are settled. The owner confirmed the shared
+understanding by selecting `/to-spec` on 2026-10-15. The amendment was published
+in [spec #2](https://github.com/jannesii/raspberry-pi-smart-home/issues/2), titled
+"First-frost heating, weather evidence and car-heater redesign", with 110 user
+stories and the `ready-for-agent` label. It preserves the original 84 stories
+and adds 26 weather-evidence stories, while explicitly distinguishing forecast
+archiving from deferred forecast-driven control. The owner explicitly confirmed
+the testing extension on 2026-10-15: controlled FMI HTTP/XML responses, real
+parsing/persistence and authenticated evidence/export retrieval, existing
+backup/restore checks and browser coverage;
+archive-failure regressions preserve the existing heating/Stop contracts.
+
+The owner approved the `/to-tickets` breakdown and publication on 2026-10-15.
+Four `ready-for-agent` weather-evidence sub-issues were published under spec #2:
+
+- [#24 — Continuously preserve station weather observations](https://github.com/jannesii/raspberry-pi-smart-home/issues/24), with no blockers.
+- [#25 — Archive parking-point forecast versions as received](https://github.com/jannesii/raspberry-pi-smart-home/issues/25), blocked by #24.
+- [#26 — Recover observation history and expose collection gaps](https://github.com/jannesii/raspberry-pi-smart-home/issues/26), blocked by #24.
+- [#27 — Export and restore weather evidence with session coverage](https://github.com/jannesii/raspberry-pi-smart-home/issues/27), blocked by #25 and #26.
+
+Commissioning #12 and full-redesign completion #18 now also depend on #27;
+weather collection does not wait for the full advanced UI. The publication
+preserved #12's three checked criteria and left completed issues untouched.
+Verification mapped all 110 stories, confirmed native sub-issue links, and
+checked that all 31 native blocking edges matched visible Blocked by sections
+in an acyclic graph. Parent #2's body, title, state and labels were unchanged.
+No production collection code or deployment changed during specification or
+ticket publication.
 
 ## Open Questions
 
