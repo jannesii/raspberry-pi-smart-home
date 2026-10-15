@@ -206,6 +206,9 @@ Install this script update in place without clearing KVS. The Node tests check
 duplicate bursts and response semantics, but do not model the device's 7 KB
 scripting heap. Repeat the physical duplicate test and record running memory
 and unchanged native timer start/duration before accepting the memory correction.
+See the [14–15 October commissioning observations](../docs/operations/bounded-car-heater-commissioning-2026-10-15.md)
+for the owner-reported physical checks and successful duplicate/expiry retests
+after the corrections, with outstanding installation checks kept explicit.
 
 HTTP and WebSocket results now include a rejection `note`, also persisted by the
 server. Serial `[BoundedRelay]` lines show the action, session, clock, issue,
