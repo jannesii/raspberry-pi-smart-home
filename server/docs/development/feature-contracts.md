@@ -63,6 +63,15 @@ Tests: `tests/test_car_heater*.py`, `tests/test_ready_by.py`.
   and missed slots without dropping misses or clearing a finish. Capture pages
   never call heater controls except the separate Stop heating request.
 
+- Session review (`GET /api/car_heater/sessions/<id>/measurements`) is
+  read-only and never calls heater services. Raw frames stay session-independent;
+  a review window derived from execution/plan/session evidence selects them.
+  Failed reads and gaps over the sensor freshness limit stay gaps, and Shelly-less
+  frames add no power points. The +3 °C/ten-minute reference-glass indicator counts
+  only `ok` samples, breaks on gaps over a fixed 60 s (not the live freshness
+  setting, so candidate times stay reproducible) and is display-only: never a control, comfort or readiness
+  input. An already-clear outcome is only an upper bound on clearing time.
+
 ## AC, sleep, Hue, and temperatures
 
 Code: `app/services/ac/`, `app/services/hue/`,

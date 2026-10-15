@@ -121,18 +121,79 @@
       grid.append(figure);
     });
   }
-  function renderDetail(row, populate = true) {
-    const detail = document.getElementById('sessionDetail');
+  const minutes = value => value == null ? '—' : `${value} min`;
+  const label = value => value ? value.replaceAll('_', ' ') : '—';
+  let lastDetail = null;
+  let measurementGeneration = 0;
+  const clearingText = clearing => {
+    if (!clearing) return '';
+    if (clearing.interpretation === 'upper_bound') {
+      const basis = {first_photo: 'first photo', observation_start: 'start of observation', outcome_observation: 'outcome observation'}[clearing.basis];
+      return clearing.clear_no_later_than
+        ? `Already clear at the ${basis} (${formatTime(clearing.clear_no_later_than)}): clearing happened at or before this time; the exact clearing time is unknown. This shortened observation is not a fully observed clearing trajectory.`
+        : 'Already clear when observation began; no observation time was recorded, so clearing time is unknown.';
+    }
+    if (clearing.interpretation === 'outcome_not_recorded') return 'Outcome not recorded; no clearing time is inferred.';
+    return 'Exact clearing time not recorded. Observation windows are not fully observed clearing trajectories.';
+  };
+  function renderHead(row, clearing) {
+    const head = document.getElementById('sessionHead');
     const heading = element('h2', outcomeLabels[row.outcome?.result] || 'Outcome not recorded');
     heading.id = 'sessionDetailHeading';
-    detail.replaceChildren(heading);
-    detail.append(element('p', row.outcome?.already_clear_at_observation ? 'Already clear when observation began; exact clearing time unknown.' : 'Exact clearing time not recorded.'));
+    const when = row.requested_departure_at ? `Departure · ${formatTime(row.requested_departure_at)}` : `${label(row.trigger)} · ${formatTime(row.observed_at)}`;
+    const eyebrow = element('p', when);
+    eyebrow.className = 'evidence-eyebrow';
+    const fallback = row.outcome?.already_clear_at_observation
+      ? 'Already clear when observation began; exact clearing time unknown.'
+      : row.outcome ? 'Exact clearing time not recorded.' : 'Outcome not recorded; no clearing time is inferred.';
+    const interpretation = element('p', clearing ? clearingText(clearing) : fallback);
+    interpretation.id = 'sessionClearing';
+    head.replaceChildren(eyebrow, heading, interpretation);
+  }
+  function renderTimeline(row) {
+    const body = document.getElementById('sessionTimelineBody');
+    body.replaceChildren();
+    const plan = row.departure_plan;
+    if (plan) {
+      body.append(element('p', `Planned: start ${formatTime(plan.planned_start_at)} → departure ${formatTime(plan.departure_at)} → latest finish ${formatTime(plan.finish_at)}`));
+      body.append(element('h4', 'Departure plan'), element('p', `${label(plan.status)} · ${plan.preheat_minutes} min preheat · ${plan.grace_minutes} min grace`));
+      const times = element('dl');
+      [['Planned start', plan.planned_start_at], ['Departure', plan.departure_at], ['Latest finish', plan.finish_at], ['Actual start requested', plan.actual_start_requested_at]].forEach(([name, value]) => {
+        times.append(element('dt', name), element('dd', formatTime(value)));
+      });
+      body.append(times);
+      if (plan.late_start_seconds > 0) body.append(element('p', `Late start: ${Math.ceil(plan.late_start_seconds / 60)} minutes. Original finish unchanged.`));
+      const revisions = element('ol');
+      plan.events.forEach(event => revisions.append(element('li', `${formatTime(event.at)} · ${label(event.kind)} · ${event.reason}`)));
+      body.append(revisions);
+      Object.entries(plan.weather_snapshots).forEach(([stage, weather]) => {
+        body.append(element('h5', `${stage[0].toUpperCase() + stage.slice(1)} weather`),
+          element('p', `${weather.source} · ${weather.station_name || 'Station unknown'} · ${weather.fmisid || '—'} · ${weather.temperature_c == null ? '—' : weather.temperature_c + ' °C'} · observed ${formatTime(weather.observed_at)} · captured ${formatTime(weather.captured_at)} · ${weather.fallback_reason || 'Fresh observation'}`));
+      });
+      if (plan.supersedes) {
+        const previous = element('a', 'Review previous departure revision');
+        previous.href = '/car_heater/sessions/' + encodeURIComponent(plan.supersedes); body.append(previous);
+      }
+    }
+    if (row.execution) {
+      body.append(element('h4', 'Heating execution'), element('p', `Latest finish: ${formatTime(new Date(row.execution.finish_at * 1000).toISOString())}`));
+      const milestones = element('ol');
+      row.execution.milestones.forEach(item => milestones.append(element('li',
+        `${formatTime(new Date(item.at * 1000).toISOString())} · ${label(item.kind)} · ${item.reason || '—'}${item.power_w == null ? '' : ' · ' + item.power_w + ' W'}`)));
+      body.append(milestones);
+    }
+    if (!plan && !row.execution) {
+      body.append(element('p', `${label(row.trigger)} · began ${formatTime(row.observed_at)} · recorded heating duration ${minutes(row.heating_duration_minutes)}`),
+        element('p', 'No device execution was recorded for this session; these times are driver evidence, not confirmed heating.'));
+    }
+  }
+  function renderFacts(row, configuration) {
     const values = {
-      'Session identity': row.id, 'Trigger': row.trigger.replaceAll('_', ' '),
+      'Session identity': row.id, 'Trigger': label(row.trigger),
       'Observation began': formatTime(row.observed_at), 'Record created': formatTime(row.created_at),
       'Requested departure': formatTime(row.requested_departure_at),
       'Confirmed departure': formatTime(row.outcome?.actual_departure_at),
-      'Recorded heating duration': row.heating_duration_minutes == null ? '—' : row.heating_duration_minutes + ' min',
+      'Recorded heating duration': minutes(row.heating_duration_minutes),
       'Outcome observation': formatTime(row.outcome?.observed_at),
       'Frost or ice type': row.outcome?.frost_type, 'Other windows': row.outcome?.other_windows,
       'Interior fog or frost': row.outcome?.interior_condition,
@@ -141,38 +202,21 @@
       'Firmware report time': formatTime(row.snapshot.firmware_reported_at),
       'App version': row.snapshot.software_version, 'App revision': row.snapshot.software_revision,
     };
+    if (configuration) {
+      values['Firmware reported during review'] = configuration.reported_firmware_versions.join(', ') || null;
+      values['Execution firmware'] = configuration.execution?.firmware_version;
+      values['Execution installation'] = configuration.execution?.installation;
+    }
     const dl = element('dl');
     Object.entries(values).forEach(([key, value]) => dl.append(element('dt', key), element('dd', value ?? '—')));
-    detail.append(dl, element('p', 'Recorded times and duration are driver evidence.'));
+    document.getElementById('sessionFactsBody').replaceChildren(dl, element('p', 'Recorded times and duration are driver evidence.'));
+  }
+  function renderDetail(row, populate = true) {
+    lastDetail = row;
+    renderHead(row);
+    renderTimeline(row);
+    renderFacts(row);
     renderPhotos(row.photos || [], row.observations || []);
-    if (row.departure_plan) {
-      const plan = row.departure_plan;
-      detail.append(element('h3', 'Departure plan'), element('p', `${plan.status.replaceAll('_', ' ')} · ${plan.preheat_minutes} min preheat · ${plan.grace_minutes} min grace`));
-      const times = element('dl');
-      [['Planned start', plan.planned_start_at], ['Departure', plan.departure_at], ['Latest finish', plan.finish_at], ['Actual start requested', plan.actual_start_requested_at]].forEach(([label, value]) => {
-        times.append(element('dt', label), element('dd', formatTime(value)));
-      });
-      detail.append(times);
-      if (plan.late_start_seconds > 0) detail.append(element('p', `Late start: ${Math.ceil(plan.late_start_seconds / 60)} minutes. Original finish unchanged.`));
-      const revisions = element('ol');
-      plan.events.forEach(event => revisions.append(element('li', `${formatTime(event.at)} · ${event.kind.replaceAll('_', ' ')} · ${event.reason}`)));
-      detail.append(revisions);
-      Object.entries(plan.weather_snapshots).forEach(([stage, weather]) => {
-        detail.append(element('h4', `${stage[0].toUpperCase() + stage.slice(1)} weather`),
-          element('p', `${weather.source} · ${weather.station_name || 'Station unknown'} · ${weather.fmisid || '—'} · ${weather.temperature_c == null ? '—' : weather.temperature_c + ' °C'} · observed ${formatTime(weather.observed_at)} · captured ${formatTime(weather.captured_at)} · ${weather.fallback_reason || 'Fresh observation'}`));
-      });
-      if (plan.supersedes) {
-        const previous = element('a', 'Review previous departure revision');
-        previous.href = '/car_heater/sessions/' + encodeURIComponent(plan.supersedes); detail.append(previous);
-      }
-    }
-    if (row.execution) {
-      detail.append(element('h3', 'Heating execution'), element('p', `Latest finish: ${formatTime(new Date(row.execution.finish_at * 1000).toISOString())}`));
-      const milestones = element('ol');
-      row.execution.milestones.forEach(item => milestones.append(element('li',
-        `${formatTime(new Date(item.at * 1000).toISOString())} · ${item.kind.replaceAll('_', ' ')} · ${item.reason || '—'}${item.power_w == null ? '' : ' · ' + item.power_w + ' W'}`)));
-      detail.append(milestones);
-    }
     const form = document.getElementById('sessionOutcome');
     if (populate) {
       form.reset();
@@ -187,6 +231,90 @@
     }
     form.hidden = false;
   }
+  const indicatorStatus = {
+    reached: result => `Reference glass held at or above +${result.threshold_c} °C for ${result.dwell_s / 60} minutes of valid readings at ${formatTime(result.first_reached_at)} (candidate time).`,
+    not_reached: result => `Reference glass did not hold at or above +${result.threshold_c} °C for ${result.dwell_s / 60} minutes of valid readings.`,
+    no_valid_evidence: () => 'No valid reference-glass readings in this window, so the indicator cannot be evaluated.',
+  };
+  const endReasons = {
+    fell_below: 'fell below the threshold', gap: 'readings stopped for longer than the freshness limit',
+    missing: 'sensor reported missing', invalid: 'invalid reading', cached: 'sensor read failed (repeated value)',
+    stale: 'late reading', window_end: 'still at or above the threshold at the end of the window',
+  };
+  function renderIndicator(result) {
+    const body = document.getElementById('glassIndicatorBody');
+    const status = element('p', indicatorStatus[result.status](result));
+    status.className = 'review-indicator-status';
+    body.replaceChildren(status, element('p', `Missing, late, invalid or repeated readings and gaps over ${result.max_gap_s} s restart the ${result.dwell_s / 60}-minute dwell (definition ${result.definition_version}).`));
+    if (result.runs.length) {
+      const runs = element('ul');
+      result.runs.forEach(run => runs.append(element('li',
+        `${shortTime(run.started_at)}–${shortTime(run.ended_at || run.last_valid_at)} at or above +${result.threshold_c} °C${run.reached_at ? ` · ten minutes held at ${shortTime(run.reached_at)}` : ''} · ended: ${endReasons[run.end_reason] || label(run.end_reason)}`)));
+      body.append(runs);
+    }
+  }
+  function renderMeasurements(data) {
+    const ms = value => Date.parse(value);
+    const start = ms(data.window.start);
+    const end = ms(data.window.end);
+    const gapMs = data.gap_after_s * 1000;
+    const anchorLabel = {execution: 'heating start request', departure_plan: 'planned heating start', session: 'recorded session start'}[data.window.anchor_source] || 'session start';
+    document.getElementById('measurementWindow').textContent =
+      `Showing ${formatTime(data.window.start)}–${shortTime(data.window.end)}, around the ${anchorLabel} and ${data.window.end_recorded ? 'the session\'s last recorded time' : 'the heating limit (no finish recorded)'}. Readings outside this window remain in history. Missing values are shown as gaps, never as zero; hollow markers are late readings.`;
+    const series = data.series || {};
+    const points = (rows, key) => (rows || []).map(p => ({x: ms(p.t), y: p[key], late: p.state === 'stale'}));
+    const markers = [{x: ms(data.window.heating_anchor), label: data.window.anchor_source === 'departure_plan' ? 'Planned start' : 'Start'}];
+    const row = lastDetail || {};
+    if (row.requested_departure_at) markers.push({x: ms(row.requested_departure_at), label: 'Departure'});
+    const finish = row.execution ? row.execution.finish_at * 1000 : row.departure_plan ? ms(row.departure_plan.finish_at) : null;
+    if (finish) markers.push({x: finish, label: 'Latest finish'});
+    const timeMarkers = markers.slice();
+    const indicator = data.glass_indicator;
+    if (indicator?.first_reached_at) markers.push({x: ms(indicator.first_reached_at), label: 'Indicator (experimental)'});
+    if (data.clearing?.clear_no_later_than) markers.push({x: ms(data.clearing.clear_no_later_than), label: 'Clear by'});
+    const charts = window.CarHeaterSessionCharts;
+    if (!charts) return;
+    charts.render(document.getElementById('temperatureChart'), {start, end, gapMs, markers, series: [
+      {label: 'Glass reference', color: '#64d2ff', points: points(series.glass_reference, 'temperature_c')},
+      {label: 'Glass comparison', color: '#d0a2ff', dash: '7 4', points: points(series.glass_comparison, 'temperature_c')},
+      {label: 'Cabin temperature', color: '#6ee7a0', dash: '2 4', points: points(series.cabin, 'temperature_c')},
+    ], thresholds: indicator ? [{y: indicator.threshold_c, label: `Experimental +${indicator.threshold_c} °C candidate threshold`}] : [],
+    emptyText: 'No glass or cabin temperature measurements available for this session. Missing data is not shown as zero.'});
+    charts.render(document.getElementById('humidityChart'), {start, end, gapMs, markers: timeMarkers, series: [
+      {label: 'Cabin humidity', color: '#f0c674', points: points(series.cabin, 'humidity_pct')},
+    ]});
+    charts.render(document.getElementById('powerChart'), {start, end, gapMs, markers: timeMarkers, zero: true, series: [
+      {label: 'Heater power', color: '#ff9f5a', points: points(series.power, 'power_w')},
+    ], emptyText: 'No heater power measurements available for this session (Shelly data missing). Unknown power is not shown as 0 W.'});
+    const energy = data.energy?.used_wh == null ? '—' : `${data.energy.used_wh} Wh`;
+    const relay = series.power || [];
+    const on = relay.filter(p => p.relay_on === true);
+    const relayText = relay.length
+      ? `Shelly relay reported ON in ${on.length} and OFF in ${relay.length - on.length} of ${relay.length} reports${on.length ? `, first ON ${shortTime(on[0].t)}, last ON ${shortTime(on[on.length - 1].t)}` : ''}. Between reports the relay state is unknown.`
+      : 'Relay state unknown: no Shelly reports in this window.';
+    document.getElementById('powerChart').append(element('p', relayText), element('p', `Energy from the Shelly counter in this window: ${energy}.`));
+    if (indicator) renderIndicator(indicator);
+    renderHead(row, data.clearing);
+    renderFacts(row, data.configuration);
+  }
+  async function loadMeasurements() {
+    const generation = ++measurementGeneration;
+    const section = document.getElementById('sessionMeasurements');
+    const retryButton = document.getElementById('measurementRetry');
+    section.setAttribute('aria-busy', 'true');
+    retryButton.hidden = true;
+    try {
+      const data = await api(`${base}/${encodeURIComponent(sessionId)}/measurements`);
+      if (generation !== measurementGeneration) return;
+      renderMeasurements(data);
+    } catch (error) {
+      if (generation !== measurementGeneration) return;
+      document.getElementById('measurementWindow').textContent = `Measurements could not be loaded: ${error.message}`;
+      retryButton.hidden = false;
+    } finally {
+      if (generation === measurementGeneration) section.setAttribute('aria-busy', 'false');
+    }
+  }
   async function load() {
     const generation = ++loadGeneration;
     const target = document.getElementById(sessionId ? 'sessionDetail' : 'sessionList');
@@ -197,7 +325,7 @@
       const date = document.getElementById('sessionDate')?.value;
       const data = await api(sessionId ? `${base}/${encodeURIComponent(sessionId)}` : base + (date ? '?date=' + encodeURIComponent(date) : ''));
       if (generation !== loadGeneration) return;
-      if (sessionId) renderDetail(data); else renderList(data);
+      if (sessionId) { renderDetail(data); loadMeasurements(); } else renderList(data);
       feedback.textContent = '';
       if (sessionId && new URLSearchParams(location.search).get('observation') === 'finished' && !finishedShown) {
         finishedShown = true;
@@ -207,13 +335,14 @@
     } catch (error) {
       if (generation !== loadGeneration) return;
       feedback.textContent = error.message;
-      target.replaceChildren(element('p', 'Session data could not be loaded.'));
+      (sessionId ? document.getElementById('sessionHead') : target).replaceChildren(element('p', 'Session data could not be loaded.'));
       retry.hidden = false;
     } finally {
       if (generation === loadGeneration) target.setAttribute('aria-busy', 'false');
     }
   }
   retry.addEventListener('click', load);
+  document.getElementById('measurementRetry')?.addEventListener('click', loadMeasurements);
   const filter = document.getElementById('sessionFilter');
   if (filter) {
     filter.elements.date.value = new URLSearchParams(location.search).get('date') || '';
@@ -243,7 +372,11 @@
         else data.already_clear_at_observation = form.elements.already_clear_at_observation.checked;
         const row = await api(form === create ? base : `${base}/${encodeURIComponent(sessionId)}/outcome`, form === create ? 'POST' : 'PUT', data);
         if (form === create) location.assign('/car_heater/sessions/' + encodeURIComponent(row.id));
-        else { renderDetail(row, false); status.textContent = 'Outcome saved. Heating unchanged.'; }
+        else {
+          renderDetail({...lastDetail, ...row}, false);
+          loadMeasurements();
+          status.textContent = 'Outcome saved. Heating unchanged.';
+        }
       } catch (error) { status.textContent = error.message; }
       finally { button.disabled = false; }
     });

@@ -284,10 +284,36 @@ with the session. A reverse proxy in front of the app must accept 8 MB request
 bodies. See the [backup/restore guide](docs/operations/heater-history-preservation.md).
 Actual iPhone ultra-wide, wake-lock and framing behaviour is a commissioning check.
 
+### Measurement review
+
+A session review opens with the departure outcome and the planned/actual heating
+timeline, then charts the reference glass, comparison glass and cabin
+temperature together, with cabin humidity and heater power in separate charts.
+Photos and session facts sit beside the charts on desktop and follow them on a
+phone. Each chart has a legend with units, a text summary and a per-minute value
+table; late readings appear as hollow markers. Missing, invalid or repeated sensor reads, reporting gaps over
+`CAR_HEATER_SENSOR_MAX_AGE_S` and frames without Shelly data are drawn as gaps,
+never as zero.
+
+The review window runs from 30 minutes before heating started (device start
+request, else planned start, else the recorded session time) until 15 minutes
+after the latest recorded finish, departure, outcome, observation or photo
+(the 180-minute limit when none is recorded), at most 6 hours after the start.
+Raw readings stay in the permanent history whether or not a session covers them.
+
+The **experimental glass indicator** reports when the reference glass first
+held at or above +3 °C for ten minutes of valid, on-time readings. Missing,
+invalid, repeated or late readings, gaps over 60 s and any reading below +3 °C
+restart the dwell. These rules are fixed (definition 1), so recomputing from the
+permanent readings gives the same candidate time. It is a candidate time for later comparison with observed clearing:
+it never stops heating, hands off to comfort or confirms defrost readiness.
+Detailed diagnostic charts remain under **Settings → View Charts**.
+
 Session list/detail/create and outcome endpoints are authenticated under
 `/api/car_heater/sessions`; browser mutations require the normal CSRF token.
 Photo upload/retrieval (`PUT`/`GET .../photos/<uuid>`) and observation windows
 (`PUT .../observations/<uuid>`) use the same authentication and CSRF rules.
+`GET .../sessions/<uuid>/measurements` returns the read-only review data.
 Migration `20261014_0012` adds permanent session storage; `20261015_0015` adds
 photos and observation windows. Follow the existing
 backup/migration deployment procedure before using the workflow; a restart
@@ -298,7 +324,7 @@ Optional isolated browser checks use Playwright without production devices:
 ```sh
 .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/python -m playwright install chromium
-.venv/bin/pytest -q tests/test_car_heater_sessions.py tests/test_car_heater_photos.py tests/test_car_heater_sessions_browser.py
+.venv/bin/pytest -q tests/test_car_heater_sessions.py tests/test_car_heater_photos.py tests/test_car_heater_session_review.py tests/test_car_heater_sessions_browser.py
 ```
 
 The browser driver runs separately from the Eventlet-patched app host. These

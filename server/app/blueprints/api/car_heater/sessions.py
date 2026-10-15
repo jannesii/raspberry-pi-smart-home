@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from flask import current_app, jsonify, request
 from flask_login import login_required
 
+from ....services.car_heater.session_review import build_session_review
 from ._blueprint import car_bp
 
 OUTCOMES = ("clear", "wipers_enough", "partial_scrape", "full_scrape")
@@ -157,3 +158,12 @@ def save_outcome(session_id):
     if attempt is None:
         return jsonify(error="Session not found"), 404
     return jsonify(asdict(attempt))
+
+
+@car_bp.get("/sessions/<session_id>/measurements")
+@login_required
+def session_measurements(session_id):
+    review = build_session_review(current_app.ctrl, session_id)
+    if review is None:
+        return jsonify(error="Session not found"), 404
+    return jsonify(review)
