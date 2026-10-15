@@ -12,6 +12,12 @@
     const p = Object.fromEntries(parts.map(part => [part.type, part.value]));
     return {date: `${p.year}-${p.month}-${p.day}`, time: `${p.hour}:${p.minute}`};
   }
+  function tomorrowDate() {
+    const today = localParts(new Date()).date;
+    const tomorrow = new Date(today + 'T12:00:00Z');
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    return tomorrow.toISOString().slice(0, 10);
+  }
   function node(tag, value) { const el = document.createElement(tag); el.textContent = value; return el; }
   async function request(method = 'GET', body, suffix = '') {
     const response = await fetch('/api/car_heater/departure' + suffix, {
@@ -89,9 +95,7 @@
     }
     fields.forEach(id => byId(id).addEventListener('input', invalidate));
     byId('departureTomorrow').addEventListener('click', () => {
-      const today = localParts(new Date()).date;
-      const tomorrow = new Date(today + 'T12:00:00Z'); tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-      byId('departureDate').value = tomorrow.toISOString().slice(0, 10); invalidate();
+      byId('departureDate').value = tomorrowDate(); invalidate();
     });
     byId('departureForm').addEventListener('submit', async event => {
       event.preventDefault(); if (busy || activeRun) return;
@@ -136,7 +140,7 @@
         loaded = false; byId('departureFeedback').textContent = error.message + ' Reload to check departure status.'; controls();
       }
     }
-    byId('departureDate').value = localParts(new Date()).date;
+    byId('departureDate').value = tomorrowDate();
     refresh(true); window.setInterval(() => refresh(), 5000);
   });
 })();

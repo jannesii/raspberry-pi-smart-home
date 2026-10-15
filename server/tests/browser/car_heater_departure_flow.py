@@ -20,6 +20,7 @@ with sync_playwright() as pw:
     page.goto(host["origin"] + "/car_heater")
     form = page.locator("#departureForm")
     expect(form).to_be_visible()
+    expect(page.get_by_label("Departure date", exact=True)).to_have_value("2027-01-17")
     workspace = page.get_by_role("region", name="Next departure", exact=True).bounding_box()
     controls = page.get_by_role(
         "complementary", name="Heater controls and conditions", exact=True
@@ -43,6 +44,7 @@ with sync_playwright() as pw:
     page.get_by_label("Departure time", exact=True).fill("09:00")
     expect(page.get_by_role("button", name="Save departure", exact=True)).to_be_disabled()
     page.reload()
+    expect(page.get_by_label("Departure date", exact=True)).to_have_value("2027-01-16")
     expect(page.get_by_label("Departure time", exact=True)).to_have_value("08:00")
     page.get_by_label("Departure time", exact=True).fill("09:00")
     page.get_by_role("button", name="Preview departure", exact=True).click()

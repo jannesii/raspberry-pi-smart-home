@@ -284,6 +284,8 @@ request, relay, actual draw and shutdown milestones; outcomes remain independent
 ### Departure defrost planning
 
 In **Car Heater → Heating**, edit **Next departure** in Europe/Helsinki time.
+A new departure defaults to tomorrow at 08:00; reloading a saved plan restores
+its saved date and time.
 **Tomorrow** selects the next Helsinki calendar date, including when the phone
 uses another timezone. **Preview departure** shows start, departure, latest
 finish, outside observation and any fallback reason. Only **Save departure**
