@@ -18,6 +18,7 @@ from . import (
     ready_by,
     sessions,
     status,
+    weather,
 )
 from ._blueprint import car_bp
 

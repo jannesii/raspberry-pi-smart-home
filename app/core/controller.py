@@ -13,6 +13,7 @@ from ._controller import (
     MigrationMixin,
     SensorsMixin,
     ThreeDMixin,
+    WeatherArchiveMixin,
     YnabCategorizerMixin,
 )
 
@@ -32,6 +33,7 @@ class Controller(
     MigrationMixin,
     SensorsMixin,
     ThreeDMixin,
+    WeatherArchiveMixin,
     YnabCategorizerMixin,
 ):
     pass

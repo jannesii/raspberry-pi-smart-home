@@ -262,6 +262,20 @@ def init_services(app: Flask) -> dict[str, Any]:
     except Exception as e:
         logger.exception("Failed to initialize weather service: %s", e)
 
+    # --- Weather observation archive (independent of heating and devices) ---
+    if _env_bool("WEATHER_ARCHIVE_ENABLED", True):
+        try:
+            from .weather.observation_archive import ObservationCollector
+
+            weather_collector = ObservationCollector(app.ctrl)  # type: ignore[attr-defined]
+            app.weather_collector = weather_collector
+            services["weather_collector"] = weather_collector
+            weather_collector.start()
+        except Exception:
+            logger.exception("Failed to start weather observation collector")
+    else:
+        logger.info("Weather observation archive disabled by WEATHER_ARCHIVE_ENABLED")
+
     # --- KFactor calibration (Ready-by model) ---
     kfactor_calibrator = None
     try:

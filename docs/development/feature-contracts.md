@@ -229,3 +229,33 @@ Tests: `tests/test_medicine_calculator.py`, `tests/test_medicine_alert_service.p
   without network waits. Capture after downtime is labelled with its actual time.
   Session review exposes revisions, reasons, late requests and execution evidence;
   a schedule or command request is never a readiness or relay-state confirmation.
+
+## Weather observation archive
+
+Code: `app/services/weather/observation_archive.py`,
+`app/core/_controller/weather_archive.py`, `app/blueprints/api/car_heater/weather.py`.
+Tests: `tests/test_weather_observation_archive.py`, `tests/test_weather_archive_migration.py`.
+
+- `ObservationCollector` is app-owned and runs on its own thread, independently
+  of sessions, telemetry, browsers and departures. It never reads or refreshes
+  the planner's `WeatherService` cache and never calls heater services.
+  Fetch/parse/archive failures stay inside the collector and remain visible.
+- Each aligned ten-minute slot requests both stations (101486, 137188) for the
+  preceding two hours at `timestep=10`. Each station succeeds or fails alone.
+  Restart re-collects the current slot; deduplication prevents duplicate rows.
+- Keep the source text and per-field time. `NaN` is `missing` with value `None`;
+  non-numeric text is `invalid`. Zero and special codes are stored unchanged.
+  NaN padding between hours in `r_1h` is not a reading. Units and periods come
+  from a table copied from FMI parameter metadata; `property_href` keeps the
+  source metadata link. Do not infer meanings from parameter names.
+- Readings are keyed by station, parameter and source time. A differing value or
+  status inserts the next `revision`; never update or delete earlier revisions.
+  Every attempt is a `weather_retrieval` row. Successful replies are stored
+  gzip-compressed once per SHA-256 of the original bytes; a failed or malformed
+  reply stores no content. FMI stamps each reply, so nearly every retrieval
+  stores its own reply (about 4 KB compressed); reading revisions are the main
+  deduplication.
+- APIs are authenticated GETs. Observation/retrieval/health JSON references
+  replies by id; only `/weather/replies/<id>` returns content, after a checksum
+  check. Health distinguishes received-but-empty fields from failed, stale (no
+  attempt for 25 minutes) or not-running collection.

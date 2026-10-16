@@ -1,7 +1,8 @@
 """Read-only heater evidence discovery and non-overwriting SQLite recovery.
 
-Observation photo content lives in the database, so these backups include it;
-discovery recomputes photo checksums and reports photos without a session.
+Observation photo content and original weather replies live in the database, so
+these backups include them; discovery recomputes photo and reply checksums and
+reports photos without a session and broken weather provenance links.
 
 Does not import the application, bootstrap tables or load environment files.
 PostgreSQL backup/restore uses pg_dump/pg_restore; see the operating guide.
@@ -10,6 +11,7 @@ PostgreSQL backup/restore uses pg_dump/pg_restore; see the operating guide.
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import json
 import os
@@ -44,7 +46,7 @@ def discover(database_url: str) -> dict:
                 conn.exec_driver_sql("PRAGMA query_only=ON")
             inspector = inspect(conn)
             for name in sorted(inspector.get_table_names()):
-                if not name.startswith("car_heater_"):
+                if not name.startswith(("car_heater_", "weather_")):
                     continue
                 table = Table(name, MetaData(), autoload_with=conn)
                 time_col = next(
@@ -56,6 +58,9 @@ def discover(database_url: str) -> dict:
                             "received_at",
                             "started_at",
                             "created_at",
+                            "observed_at",
+                            "retrieved_at",
+                            "first_retrieved_at",
                         )
                         if key in table.c
                     ),
@@ -70,6 +75,8 @@ def discover(database_url: str) -> dict:
                 report["tables"][name] = summary
             if "car_heater_photo" in report["tables"]:
                 report["photo_integrity"] = _photo_integrity(conn)
+            if "weather_reply" in report["tables"]:
+                report["weather_integrity"] = _weather_integrity(conn)
             if backend == "sqlite":
                 rows = conn.execute(
                     text(
@@ -117,6 +124,55 @@ def _photo_integrity(conn) -> dict:
         if row.session is None:
             result["orphaned"].append(photo_id)
     return result
+
+
+def _weather_integrity(conn) -> dict:
+    """Recompute original-reply checksums and find broken provenance links.
+
+    Reads one compressed reply at a time to keep memory bounded on a Pi.
+    """
+    replies = Table("weather_reply", MetaData(), autoload_with=conn)
+    retrievals = Table("weather_retrieval", MetaData(), autoload_with=conn)
+    readings = Table("weather_observation", MetaData(), autoload_with=conn)
+    checked = 0
+    mismatched: list[int] = []
+    for reply_id in conn.execute(select(replies.c.id).order_by(replies.c.id)).scalars().all():
+        row = conn.execute(
+            select(replies.c.sha256, replies.c.content).where(replies.c.id == reply_id)
+        ).one()
+        checked += 1
+        try:
+            content = gzip.decompress(bytes(row.content))
+        except (OSError, EOFError):
+            content = None
+        if content is None or hashlib.sha256(content).hexdigest() != row.sha256:
+            mismatched.append(reply_id)
+    without_reply = (
+        conn.execute(
+            select(retrievals.c.id)
+            .outerjoin(replies, replies.c.id == retrievals.c.reply_id)
+            .where(retrievals.c.reply_id.is_not(None), replies.c.id.is_(None))
+            .order_by(retrievals.c.id)
+        )
+        .scalars()
+        .all()
+    )
+    without_retrieval = (
+        conn.execute(
+            select(readings.c.id)
+            .outerjoin(retrievals, retrievals.c.id == readings.c.retrieval_id)
+            .where(retrievals.c.id.is_(None))
+            .order_by(readings.c.id)
+        )
+        .scalars()
+        .all()
+    )
+    return {
+        "replies_checked": checked,
+        "mismatched_replies": mismatched,
+        "retrievals_without_reply": without_reply,
+        "readings_without_retrieval": without_retrieval,
+    }
 
 
 def sqlite_copy(source: Path, destination: Path) -> None:

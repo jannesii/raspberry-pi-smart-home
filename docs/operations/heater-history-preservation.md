@@ -10,7 +10,10 @@ sessions/results are evidence. Keep them permanently. Session identities,
 departure outcomes, observation photos and observation windows follow the same
 policy. Photo content is stored in the `car_heater_photo` table with its session
 identity, so the database backups below include image content and association;
-there is no separate photo directory to archive.
+there is no separate photo directory to archive. The permanent weather archive
+(`weather_reply`, `weather_retrieval`, `weather_observation`) follows the same
+rule: compressed original FMI replies live in the database with the retrievals
+and readings that reference them.
 
 ## 1. Discover without starting the app
 
@@ -105,7 +108,10 @@ pg_restore --dbname='service=heater_restore_check' --no-owner --no-acl --exit-on
 Use the restored target's `DATABASE_URL` for migration and discovery. Once
 photos exist, discovery also reports `photo_integrity`: each stored photo's
 checksum is recomputed (`mismatched` lists damaged images) and `orphaned` lists
-photos without their session. Both lists must be empty. In the isolated app,
+photos without their session. Both lists must be empty. Once weather is
+collected, `weather_integrity` recomputes each original reply's checksum
+(`mismatched_replies`) and lists retrievals whose reply is missing and readings
+whose retrieval is missing. All three lists must be empty. In the isolated app,
 open a session with photos and confirm each image loads with its capture time. Alembic
 does **not** read `DB_PATH`: for SQLite set an explicit URL such as
 `sqlite:////private/restore-check/heater.db`; `DB_PATH` selects only the legacy
@@ -170,6 +176,9 @@ since that snapshot and requires a separately approved recovery plan.
 .venv/bin/pytest -q tests/test_car_heater_history_preservation.py
 ```
 
+`tests/test_weather_observation_archive.py` restores a SQLite backup containing
+weather replies, readings and revisions, checks `weather_integrity`, and serves
+the same readings and original replies through the authenticated API.
 `tests/test_car_heater_photos.py` also restores SQLite and PostgreSQL backups
 containing a photo, checks discovery integrity, and serves the same image and
 session association from a fresh Controller that still accepts new photos.

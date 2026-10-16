@@ -162,6 +162,7 @@ Configure only the integrations you use:
 | YNAB | `YNAB_API_KEY`, `YNAB_BUDGET_ID`; [review workflow](docs/features/ynab.md) |
 | ESP32 | `ESP32_WS_LOG_LEVEL` (default `INFO`); [gateway setup](esp32_ws/README.md), [temperature firmware](ESP32_temperature/README.md), and [car-heater firmware](ESP32C3-Car-Heater/README.md) |
 | Car-heater sensors | `CAR_HEATER_SENSOR_MAX_AGE_S` (default `60`): glass/cabin samples older than this are shown and stored as stale, never current. Requires car-heater firmware 3.0.0+ and migration `20261013_0010` |
+| Weather archive | `WEATHER_ARCHIVE_ENABLED` (default `true`): archive FMI station observations every ten minutes. Needs outbound HTTPS to `opendata.fmi.fi` and migration `20261016_0016`; see [weather observation archive](#weather-observation-archive) |
 | Sodexo | `SODEXO_WEBHOOK_URL`, `SODEXO_POST_HOUR`, `SODEXO_POST_MINUTE` |
 | Alerts | `ALERT_WEBHOOK_URL`, `ALERT_WEBHOOK_BATCH_SECONDS` |
 
@@ -422,4 +423,51 @@ Run isolated planner, migration and phone/desktop checks with:
 
 ```sh
 .venv/bin/pytest -q tests/test_departure_heating.py tests/test_departure_migration.py tests/test_car_heater_sessions_browser.py
+```
+
+### Weather observation archive
+
+While the server runs, it archives FMI observations from Seinäjoki Pelmaa
+(101486) and Ilmajoki Seinäjoki airport (137188) every ten minutes. This happens
+with or without heating, a connected DEFA cable, a browser or telemetry. Each
+request covers an aligned two-hour window, so delayed readings arrive later.
+The archive keeps:
+
+- every returned reading at its own source time, with unit and aggregation
+  period (hourly precipitation stays hourly), and the original source text
+- received missing values (`NaN`), recorded as missing rather than zero
+- each later correction as a new revision; earlier values are never overwritten
+- every attempt, with its retrieval time and outcome
+- each original successful reply, compressed (about 4 KB, roughly 430 MB a year
+  for both stations) and stored once per checksum
+
+Station readings stay separate. The departure planner keeps using its own
+cached temperature observation. Collection runs on its own thread, so a slow
+or failing FMI request or archive write cannot delay Stop or change a plan.
+
+**Settings & diagnostics → Weather collection** shows each station's last
+collection and last failure. It also shows which fields had values, which came
+back empty and which the station did not return. A missing field is a source
+limitation; a failed or stale collector is shown separately. **Download
+original reply** retrieves the source XML explicitly.
+
+Authenticated read-only API (ranges are ISO timestamps with offsets, at most
+seven days apart; default the last 24 hours):
+
+- `GET /api/car_heater/weather/observations?start=&end=&fmisid=`: all revisions,
+  each linked to its `retrieval_id` and `reply_id`
+- `GET /api/car_heater/weather/retrievals?start=&end=`: collection attempts
+- `GET /api/car_heater/weather/health`: per-station collection health
+- `GET /api/car_heater/weather/replies/<id>`: the original reply as an XML
+  attachment, verified against its checksum. Other responses never embed it.
+
+Apply migration **20261016_0016** with the normal backup/migration procedure
+before relying on the archive. The tables are covered by the whole-database
+backup in the [preservation guide](docs/operations/heater-history-preservation.md),
+and `scripts/heater_history.py discover` reports `weather_integrity`.
+First-collection backfill and gap repair come in #26, and cross-source export
+in #27. Run the isolated checks with:
+
+```sh
+.venv/bin/pytest -q tests/test_weather_observation_archive.py tests/test_weather_archive_migration.py
 ```

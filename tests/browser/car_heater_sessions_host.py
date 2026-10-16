@@ -161,6 +161,39 @@ if __name__ == "__main__":
                 )
             return {"session_id": attempt.id}
 
+    if len(sys.argv) > 2 and sys.argv[2] == "weather":
+        from datetime import timedelta
+
+        import requests
+        import test_weather_observation_archive as weather
+
+        from app.services.weather.observation_archive import ObservationCollector
+
+        fmi = weather.FakeFMI()
+        clock = [weather.START.timestamp()]
+        fmi.replies[weather.PELMAA] = weather.fmi_reply(
+            weather.PELMAA,
+            {
+                "t2m": weather.every_ten(weather.START, ["-6.0", "-6.2"]),
+                "n_man": weather.every_ten(weather.START, ["NaN", "NaN"]),
+            },
+        )
+        fmi.replies[weather.AIRPORT] = requests.Timeout("slow")
+        collector = ObservationCollector(flask_app.ctrl, http=fmi, clock=lambda: clock[0])
+        flask_app.weather_collector = collector
+        collector.run_pending()
+        # The fixed clock keeps the running thread from collecting again on its own.
+        collector.start()
+
+        @flask_app.post("/test/weather-recover")
+        def weather_recover():
+            clock[0] += timedelta(minutes=10).total_seconds()
+            fmi.replies[weather.AIRPORT] = weather.fmi_reply(
+                weather.AIRPORT, {"vis": weather.every_ten(weather.START, ["5590.0"])}
+            )
+            collector.run_pending()
+            return {"ok": True}
+
     authenticated = client.__wrapped__(flask_app)
     server = make_server("127.0.0.1", 0, flask_app, threaded=False)
     (work / "host.json").write_text(

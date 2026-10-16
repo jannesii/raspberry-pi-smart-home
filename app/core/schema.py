@@ -526,3 +526,71 @@ car_heater_observation = Table(
     Column("updated_at", Text, nullable=False),
 )
 Index("idx_car_heater_observation_session", car_heater_observation.c.session_id)
+
+# Permanent weather evidence. Original successful FMI replies are stored once per
+# content checksum, compressed, so whole-database backups keep them with the
+# retrievals and readings that reference them.
+weather_reply = Table(
+    "weather_reply",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("sha256", Text, nullable=False, unique=True),
+    Column("byte_size", Integer, nullable=False),
+    Column("content_type", Text, nullable=False),
+    Column("compression", Text, nullable=False),
+    Column("content", LargeBinary, nullable=False),
+    Column("first_retrieved_at", Text, nullable=False),
+)
+
+# Every collection attempt per source, successful or failed: the retrieval history.
+weather_retrieval = Table(
+    "weather_retrieval",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("kind", Text, nullable=False),
+    Column("source_id", Text, nullable=False),
+    Column("intended_at", Text, nullable=False),
+    Column("requested_start", Text, nullable=False),
+    Column("requested_end", Text, nullable=False),
+    Column("started_at", Text, nullable=False),
+    Column("retrieved_at", Text, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("http_status", Integer),
+    Column("error", Text),
+    Column("reply_id", Integer, ForeignKey("weather_reply.id")),
+    Column("location", Text),
+    Column("summary", Text, nullable=False),
+)
+Index(
+    "idx_weather_retrieval_source_retrieved",
+    weather_retrieval.c.kind,
+    weather_retrieval.c.source_id,
+    weather_retrieval.c.retrieved_at,
+)
+
+# Station readings at their source time. A changed value for the same station,
+# field and time is a new revision; earlier revisions are never overwritten.
+weather_observation = Table(
+    "weather_observation",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("fmisid", Text, nullable=False),
+    Column("parameter", Text, nullable=False),
+    Column("observed_at", Text, nullable=False),
+    Column("revision", Integer, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("value", Float),
+    Column("source_value", Text, nullable=False),
+    Column("unit", Text),
+    Column("period", Text),
+    Column("property_href", Text),
+    Column("retrieval_id", Integer, ForeignKey("weather_retrieval.id"), nullable=False),
+    UniqueConstraint(
+        "fmisid", "parameter", "observed_at", "revision", name="uq_weather_observation_revision"
+    ),
+)
+Index(
+    "idx_weather_observation_time",
+    weather_observation.c.observed_at,
+    weather_observation.c.fmisid,
+)

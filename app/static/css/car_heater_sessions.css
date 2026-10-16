@@ -6,6 +6,7 @@
   --evidence-muted: #b4c2d1;
   --evidence-border: #63758a;
   --evidence-accent: #92dac7;
+  --evidence-warning: #ffd479;
 }
 .heater-evidence {
   box-sizing: border-box;
@@ -105,3 +106,13 @@
   .heater-evidence dl { grid-template-columns: 1fr; gap: 4px; }
   .heater-evidence dd { margin-bottom: 12px; }
 }
+.weather-health { margin-top: 24px; }
+.weather-health h3 { font-size: 1.1rem; margin: 0 0 8px; }
+.weather-health-list { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 12px; }
+.weather-health-item { border: 1px solid var(--evidence-border); border-radius: 8px; padding: 12px; background: var(--evidence-surface); min-width: 0; }
+.weather-health-item strong { display: block; overflow-wrap: anywhere; }
+.weather-health-state { display: block; margin-top: 4px; font-weight: 650; }
+.weather-health-problem { color: var(--evidence-warning); }
+.weather-health-item dl { grid-template-columns: minmax(120px, 1fr) 2fr; margin: 12px 0 0; }
+.weather-health-item dd { overflow-wrap: anywhere; }
+@media (min-width: 900px) { .weather-health-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
