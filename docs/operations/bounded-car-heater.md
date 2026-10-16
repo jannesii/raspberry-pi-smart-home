@@ -81,7 +81,7 @@ when the timed session ends; select comfort explicitly after confirmed shutdown.
 
 ## Isolated checks
 
-From `server/`:
+From the repository root:
 
 ```sh
 .venv/bin/pytest -q tests/test_bounded_heating.py

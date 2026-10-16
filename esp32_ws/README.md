@@ -7,7 +7,7 @@ main app's Eventlet runtime. Implementation: [main.py](main.py).
 ## Run locally
 
 Install the [main server dependencies](../readme.md#local-setup), then the
-additional gateway dependencies. From `server/`, with its environment active:
+additional gateway dependencies. From the repository root, with its environment active:
 
 ```bash
 python -m pip install -r esp32_ws/requirements.txt
@@ -39,7 +39,7 @@ twice the device count; a full pool makes new handshakes time out. Connections s
 for `ESP32_WS_IDLE_TIMEOUT_S` (default 90; devices heartbeat every 30 s) are
 closed to free their thread. Edit its user,
 group, working directory, executable, and environment-file paths for your host,
-then install it from `server/esp32_ws/`:
+then install it from `esp32_ws/`:
 
 ```bash
 sudo cp esp32_ws.service /etc/systemd/system/
@@ -119,5 +119,5 @@ check of current Redis connectivity or main-app persistence.
 
 The custom WebSocket server logs protocol PING/PONG frames below the JSON route.
 Check both transport activity and fresh measurements when diagnosing a stale
-sensor. From `server/`, isolated regression tests are
+sensor. From the repository root, isolated regression tests are
 `.venv/bin/pytest -q tests/test_esp32_ws_manager.py tests/test_esp32_api.py`.

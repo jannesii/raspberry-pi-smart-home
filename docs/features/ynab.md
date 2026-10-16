@@ -71,5 +71,5 @@ YNAB. Configuration saves and bootstrap still change local data.
 - [Controller](../../app/core/_controller/ynab_categorizer.py): config, statistics,
   bootstrap state, and idempotent apply-event recording
 
-From `server/`, run `.venv/bin/pytest -q tests/test_ynab_categorizer_*.py`.
+From the repository root, run `.venv/bin/pytest -q tests/test_ynab_categorizer_*.py`.
 Use mocked requests and an isolated database; production YNAB is not a test fixture.

@@ -14,9 +14,7 @@ from urllib.request import Request, urlopen
 
 LABEL = "unblocked"
 LABEL_COLOR = "0e8a16"
-LABEL_DESCRIPTION = (
-    "Open issue with no open blocking issue dependencies; managed automatically"
-)
+LABEL_DESCRIPTION = "Open issue with no open blocking issue dependencies; managed automatically"
 API_VERSION = "2022-11-28"
 
 
@@ -58,9 +56,7 @@ class GitHub:
             if missing_ok and exc.code == 404:
                 return None
             details = exc.read(500).decode("utf-8", errors="replace")
-            raise APIError(
-                f"GitHub API {method} {path}: HTTP {exc.code}: {details}"
-            ) from exc
+            raise APIError(f"GitHub API {method} {path}: HTTP {exc.code}: {details}") from exc
         except URLError as exc:
             raise APIError(f"GitHub API {method} {path}: {exc.reason}") from exc
 
@@ -70,9 +66,7 @@ class GitHub:
             query = urlencode({**params, "per_page": 100, "page": page})
             result = self.request("GET", f"{path}?{query}")
             if not isinstance(result, list):
-                raise APIError(
-                    f"Expected API list at {path}, got {type(result).__name__}"
-                )
+                raise APIError(f"Expected API list at {path}, got {type(result).__name__}")
             yield from result
             if len(result) < 100:
                 return
@@ -107,19 +101,13 @@ class GitHub:
                 yield issue
 
     def blocked_by(self, number):
-        return list(
-            self.paginated(f"{self.root}/issues/{int(number)}/dependencies/blocked_by")
-        )
+        return list(self.paginated(f"{self.root}/issues/{int(number)}/dependencies/blocked_by"))
 
     def blocking(self, number):
-        return list(
-            self.paginated(f"{self.root}/issues/{int(number)}/dependencies/blocking")
-        )
+        return list(self.paginated(f"{self.root}/issues/{int(number)}/dependencies/blocking"))
 
     def add_label(self, number):
-        self.request(
-            "POST", f"{self.root}/issues/{int(number)}/labels", {"labels": [LABEL]}
-        )
+        self.request("POST", f"{self.root}/issues/{int(number)}/labels", {"labels": [LABEL]})
 
     def remove_label(self, number):
         self.request(
@@ -139,17 +127,13 @@ def has_label(issue):
 def should_be_unblocked(issue, dependencies):
     if issue["state"] != "open":
         if issue["state"] != "closed":
-            raise APIError(
-                f"Unknown state {issue['state']!r} on issue #{issue['number']}"
-            )
+            raise APIError(f"Unknown state {issue['state']!r} on issue #{issue['number']}")
         return False
     for dependency in dependencies:
         state = dependency.get("state")
         if state not in ("open", "closed"):
             # Never label an issue as actionable if dependency visibility is partial.
-            raise APIError(
-                f"Missing/unknown dependency state for issue #{issue['number']}"
-            )
+            raise APIError(f"Missing/unknown dependency state for issue #{issue['number']}")
         if state == "open":
             return False
     return True

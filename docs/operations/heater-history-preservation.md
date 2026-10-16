@@ -14,7 +14,7 @@ there is no separate photo directory to archive.
 
 ## 1. Discover without starting the app
 
-From `server/`, use the configured backend: `DATABASE_URL` takes precedence over
+From the repository root, use the configured backend: `DATABASE_URL` takes precedence over
 `DB_PATH`. Supply connection settings through the owner's environment or secret
 manager; do not paste passwords into commands, issues, reports or logs. The
 script does not load `.env` files or import/initialize the application.

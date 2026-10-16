@@ -1,8 +1,0 @@
-POST http://192.168.10.50:8080/temperature
-Content-Type: application/json
-
-{
-  "location": "Keittiö",
-  "temperature_c": 27.8,
-  "humidity_pct": 52.8
-}

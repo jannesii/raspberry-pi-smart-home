@@ -42,7 +42,7 @@ repos:
     hooks:
       - id: agent-instruction-budget
         name: Check agent instruction budgets
-        entry: python3 server/scripts/check_agent_instructions.py
+        entry: python3 scripts/check_agent_instructions.py
         language: system
         pass_filenames: false
         always_run: true

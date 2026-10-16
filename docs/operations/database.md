@@ -3,14 +3,14 @@
 ## Connections and migrations
 
 Follow [production setup](../../readme.md#production) to configure PostgreSQL
-and apply `alembic upgrade head` from `server/`. `DATABASE_URL` is the SQLAlchemy
+and apply `alembic upgrade head` from the repository root. `DATABASE_URL` is the SQLAlchemy
 connection URL. `DB_PATH` must also identify a writable SQLite file because
 bootstrap still constructs the legacy manager.
 
 [migrations/env.py](../../migrations/env.py) loads `../jannenkoti.env` with
 `override=True`, then chooses `DATABASE_URL` before the `alembic.ini` URL.
-This differs from `run.py`, which loads `server/jannenkoti.env` when launched
-from `server/`. Check the parent environment file before migration commands;
+This differs from `run.py`, which loads the repository-root `jannenkoti.env` when launched
+from the repository root. Check the parent environment file before migration commands;
 an exported connection can otherwise be overridden.
 
 The real `alembic.ini` is ignored. Copy [the example](../../alembic.ini.example)
@@ -20,7 +20,7 @@ For a schema change, update [schema.py](../../app/core/schema.py), generate a
 revision, and review its upgrade/downgrade operations before applying it:
 
 ```bash
-# From server/, with the virtual environment active and DATABASE_URL set.
+# From the repository root, with the virtual environment active and DATABASE_URL set.
 alembic revision --autogenerate -m "describe schema change"
 alembic heads
 alembic current
