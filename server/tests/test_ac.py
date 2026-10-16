@@ -485,6 +485,8 @@ class TestSleepManagerSleepFor:
     def test_sleep_for_cancels_disable_override(self, monkeypatch):
         manager = SleepManager(self._cfg(), UTC, lambda: None)
         monkeypatch.setattr(sleep_manager_module.time, "time", lambda: 1000.0)
+        # Outside the 22:00-07:00 window, which would itself clear sleep_for.
+        monkeypatch.setattr(sleep_manager_module, "now_minutes_local", lambda: 12 * 60)
 
         manager.disable_for(5)
         manager.sleep_for(10)
