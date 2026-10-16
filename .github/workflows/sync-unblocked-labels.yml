@@ -1,0 +1,30 @@
+name: Synchronize unblocked issue labels
+
+on:
+  issues:
+    types: [opened, reopened, closed, deleted, transferred]
+  schedule:
+    # Dependency-change webhooks do not natively trigger GitHub Actions.
+    # Offset from the top of the hour to reduce scheduled-run delays.
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: sync-unblocked-labels
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out default-branch workflow code
+        uses: actions/checkout@v4
+      - name: Synchronize labels
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 .github/scripts/sync-unblocked-labels.py

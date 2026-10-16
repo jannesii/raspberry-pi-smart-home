@@ -33,6 +33,35 @@ Home automation and monitoring stack built around a Raspberry Pi. The project cu
 - `esp32_server/` - deprecated ESP32-side helper scripts. Retained for archival purposes.
 - `device_watcher/requirements.txt`, `server/requirements.txt` - per-component Python dependencies.
 
+## Issue dependency labels
+
+The `Synchronize unblocked issue labels` GitHub Actions workflow maintains
+`unblocked` on every open issue with no open native GitHub issue blockers,
+regardless of its triage labels. It removes the label from blocked or closed
+issues, skips pull requests, and preserves unrelated labels. Dependency API
+errors fail the run rather than treating unavailable dependencies as absent.
+
+The workflow reacts to issue lifecycle events and reconciles all issues at
+minutes 7, 22, 37, and 52 UTC each hour. Dependency additions/removals and
+cross-repository blocker changes are picked up by reconciliation; scheduled
+runs can be delayed. It uses the built-in `GITHUB_TOKEN` with `issues: write`
+and `contents: read`; no additional secret is required for normal use.
+
+After committing and pushing the workflow and script to the default branch,
+open **Actions → Synchronize unblocked issue labels → Run workflow** once to
+backfill existing issues, then check the run log. Local installation alone
+does not enable the automation.
+
+VS Code issue queries:
+
+- Ready for an agent: `is:issue is:open label:ready-for-agent label:unblocked repo:jannesii/raspberry-pi-smart-home`
+- All unblocked issues: `is:issue is:open label:unblocked repo:jannesii/raspberry-pi-smart-home`
+
+Implementation: [workflow](.github/workflows/sync-unblocked-labels.yml) and
+[Python runner](.github/scripts/sync-unblocked-labels.py). GitHub references:
+[issue dependency API](https://docs.github.com/en/rest/issues/issue-dependencies)
+and [workflow events](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows).
+
 ## Deprecated components
 
 `client/` and `esp32_server/` are no longer in use. They remain in the repository so existing installations can refer to the historical code, but new work should target `server/` and `device_watcher/`.
