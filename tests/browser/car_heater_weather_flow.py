@@ -33,6 +33,23 @@ with sync_playwright() as pw:
     reply = context.request.get(host["origin"] + link.get_attribute("href"))
     assert reply.status == 200
     assert b"FeatureCollection" in reply.body()
+    expect(status).to_contain_text("Parking-point forecast (62.8000 N, 22.8260 E): Collecting.")
+    point = section.get_by_role("listitem").filter(has_text="Parking-point forecast")
+    # Model run and received hours are shown in Helsinki time.
+    expect(point).to_contain_text("15/01, 02:00 · revision 1")
+    expect(point).to_contain_text("15/01, 02:00 \u2013 15/01, 04:00")
+    expect(point.locator("dt", has_text="Received without values").locator("+ dd")).to_have_text(
+        "Long-wave radiation"
+    )
+    expect(point.locator("dt", has_text="Not returned").locator("+ dd")).to_have_text("Gusts")
+    # Before its first check the archive holds nothing: an explicit unchecked stretch.
+    expect(point.locator("dt", has_text="Unchecked stretches (24 h)").locator("+ dd")).to_have_text(
+        "1 \u00b7 latest 14/01, 05:00 \u2013 15/01, 05:00"
+    )
+    forecast_link = point.get_by_role("link", name="Download original reply", exact=True)
+    forecast_reply = context.request.get(host["origin"] + forecast_link.get_attribute("href"))
+    assert forecast_reply.status == 200
+    assert b"harmonie_scandinavia_surface" in forecast_reply.body()
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
     assert (

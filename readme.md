@@ -162,7 +162,7 @@ Configure only the integrations you use:
 | YNAB | `YNAB_API_KEY`, `YNAB_BUDGET_ID`; [review workflow](docs/features/ynab.md) |
 | ESP32 | `ESP32_WS_LOG_LEVEL` (default `INFO`); [gateway setup](esp32_ws/README.md), [temperature firmware](ESP32_temperature/README.md), and [car-heater firmware](ESP32C3-Car-Heater/README.md) |
 | Car-heater sensors | `CAR_HEATER_SENSOR_MAX_AGE_S` (default `60`): glass/cabin samples older than this are shown and stored as stale, never current. Requires car-heater firmware 3.0.0+ and migration `20261013_0010` |
-| Weather archive | `WEATHER_ARCHIVE_ENABLED` (default `true`): archive FMI station observations every ten minutes. Needs outbound HTTPS to `opendata.fmi.fi` and migration `20261016_0016`; see [weather observation archive](#weather-observation-archive) |
+| Weather archive | `WEATHER_ARCHIVE_ENABLED` (default `true`): archive FMI station observations every ten minutes and the parking-point forecast every thirty minutes. `WEATHER_FORECAST_POINT` (default `62.8000,22.8260`): forecast point as `lat,lon`; an invalid value leaves forecast collection off. Needs outbound HTTPS to `opendata.fmi.fi` and migrations `20261016_0016`/`20261016_0017`; see [weather observation archive](#weather-observation-archive) and [parking-point forecast archive](#parking-point-forecast-archive) |
 | Sodexo | `SODEXO_WEBHOOK_URL`, `SODEXO_POST_HOUR`, `SODEXO_POST_MINUTE` |
 | Alerts | `ALERT_WEBHOOK_URL`, `ALERT_WEBHOOK_BATCH_SECONDS` |
 
@@ -469,4 +469,62 @@ in #27. Run the isolated checks with:
 
 ```sh
 .venv/bin/pytest -q tests/test_weather_observation_archive.py tests/test_weather_archive_migration.py
+```
+
+### Parking-point forecast archive
+
+Every thirty minutes the server also requests FMI's HARMONIE point forecast
+for the parking point (default 62.8000 N, 22.8260 E). It asks for Temperature,
+DewPoint, Humidity, WindSpeedMS, WindDirection, WindGust, TotalCloudCover,
+RadiationLW, RadiationGlobal, Precipitation1h and WeatherSymbol3 at an hourly
+step. No end time is requested, so the archive keeps whatever horizon FMI
+returns. The archive keeps:
+
+- each distinct forecast version received, with model (procedure), model
+  origin (analysis time), source result time, requested and returned location,
+  and the request configuration
+- every returned hourly value at its own valid time, with FMI's parameter name,
+  source text, unit and the original metadata link. `NaN` is kept as missing
+  and true zero stays zero. RadiationLW is FMI's "long wave radiation"; its
+  direction is not stated by FMI and is not inferred
+- every check, with its retrieval time and outcome. A version received again
+  adds a receipt, not new values. Changed values or a new result time for the
+  same origin become the next revision; earlier versions are never altered
+- each original successful reply, compressed (about 8 KB, roughly 140 MB a
+  year)
+
+Only versions actually received are kept. Runs FMI published and replaced
+between checks, or while the server was down, are not reconstructed. The
+forecasts API lists every stretch without a successful check as `unobserved`.
+A field FMI returned without values is shown apart from a field it did not
+return and from a failed check. Forecasts are evidence only: the departure
+planner keeps its observed-temperature source, and no forecast or radiation
+field controls heating. A different point or configuration is a separate
+source and never merges with earlier evidence.
+
+**Settings & diagnostics → Weather collection** shows the forecast's last
+check and last failure, plus the model run, hours received and any stretches
+in the last 24 hours without a successful check. It also shows which fields
+had values, which came back empty and which FMI did not return.
+
+Authenticated read-only API (same range rules as above):
+
+- `GET /api/car_heater/weather/forecasts?start=&end=&source_id=`: versions
+  received in the range, each with its receipts and `reply_id`s but no values,
+  plus `unobserved` stretches
+- `GET /api/car_heater/weather/forecasts/<id>`: one version with its complete
+  returned hourly horizon
+- `GET /api/car_heater/weather/retrievals?kind=forecast`: forecast checks
+- `GET /api/car_heater/weather/health`: the `forecast` block holds forecast
+  collection health
+- Original replies use `GET /api/car_heater/weather/replies/<id>` as above
+
+Apply migration **20261016_0017** after 0016 with the normal backup/migration
+procedure. It makes `weather_retrieval.requested_start/end` nullable, because
+forecast checks have no requested window. Discovery reports
+`weather_integrity.forecast_links`. Downgrading drops the forecast tables but
+keeps forecast retrievals and replies; back up first. Run the isolated checks with:
+
+```sh
+.venv/bin/pytest -q tests/test_weather_forecast_archive.py tests/test_weather_forecast_migration.py
 ```

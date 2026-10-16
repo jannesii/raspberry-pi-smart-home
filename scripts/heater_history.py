@@ -61,6 +61,7 @@ def discover(database_url: str) -> dict:
                             "observed_at",
                             "retrieved_at",
                             "first_retrieved_at",
+                            "valid_at",
                         )
                         if key in table.c
                     ),
@@ -167,11 +168,46 @@ def _weather_integrity(conn) -> dict:
         .scalars()
         .all()
     )
-    return {
+    result = {
         "replies_checked": checked,
         "mismatched_replies": mismatched,
         "retrievals_without_reply": without_reply,
         "readings_without_retrieval": without_retrieval,
+    }
+    if inspect(conn).has_table("weather_forecast_version"):
+        result["forecast_links"] = _forecast_links(conn, retrievals)
+    return result
+
+
+def _forecast_links(conn, retrievals) -> dict:
+    """Forecast values, versions and receipts whose referenced row is missing."""
+    contents = Table("weather_forecast_content", MetaData(), autoload_with=conn)
+    values = Table("weather_forecast_value", MetaData(), autoload_with=conn)
+    versions = Table("weather_forecast_version", MetaData(), autoload_with=conn)
+    receipts = Table("weather_forecast_receipt", MetaData(), autoload_with=conn)
+
+    def orphans(column, link, target):
+        stmt = (
+            select(column)
+            .outerjoin(target, target.c.id == link)
+            .where(target.c.id.is_(None))
+            .order_by(column)
+        )
+        return conn.execute(stmt).scalars().all()
+
+    return {
+        "values_without_content": orphans(values.c.id, values.c.content_id, contents),
+        "versions_without_content": orphans(versions.c.id, versions.c.content_id, contents),
+        "versions_without_first_retrieval": orphans(
+            versions.c.id, versions.c.first_retrieval_id, retrievals
+        ),
+        "contents_without_first_retrieval": orphans(
+            contents.c.id, contents.c.first_retrieval_id, retrievals
+        ),
+        "receipts_without_retrieval": orphans(
+            receipts.c.retrieval_id, receipts.c.retrieval_id, retrievals
+        ),
+        "receipts_without_version": orphans(receipts.c.version_id, receipts.c.version_id, versions),
     }
 
 

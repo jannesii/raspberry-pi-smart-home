@@ -273,8 +273,20 @@ def init_services(app: Flask) -> dict[str, Any]:
             weather_collector.start()
         except Exception:
             logger.exception("Failed to start weather observation collector")
+        try:
+            from .weather.forecast_archive import ForecastCollector, parse_point
+
+            point = parse_point(os.getenv("WEATHER_FORECAST_POINT"))
+            forecast_collector = ForecastCollector(app.ctrl, point=point)  # type: ignore[attr-defined]
+            app.weather_forecast_collector = forecast_collector
+            services["weather_forecast_collector"] = forecast_collector
+            forecast_collector.start()
+        except ValueError as exc:
+            logger.error("Weather forecast archive not started: WEATHER_FORECAST_POINT %s", exc)
+        except Exception:
+            logger.exception("Failed to start weather forecast collector")
     else:
-        logger.info("Weather observation archive disabled by WEATHER_ARCHIVE_ENABLED")
+        logger.info("Weather observation and forecast archive disabled by WEATHER_ARCHIVE_ENABLED")
 
     # --- KFactor calibration (Ready-by model) ---
     kfactor_calibrator = None

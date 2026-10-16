@@ -378,7 +378,7 @@
 
   <section class="weather-health" aria-labelledby="weatherHealthHeading">
     <h3 id="weatherHealthHeading">Weather collection</h3>
-    <p>Station observations are archived every ten minutes, with or without heating. Values a station did not report are source limitations, not collector failures.</p>
+    <p>Station observations are archived every ten minutes and the parking-point forecast is checked every thirty minutes, with or without heating. Only forecast versions actually received are kept; forecasts never control heating. Values a source did not report are source limitations, not collector failures.</p>
     <ul id="weatherHealthList" class="weather-health-list"></ul>
     <p id="weatherHealthStatus" role="status" aria-atomic="true">Loading collection status…</p>
     <button id="btnRefreshWeatherHealth" class="evidence-button" type="button">Refresh collection status</button>
@@ -404,7 +404,7 @@
 {% block scripts %}
 <script defer src="{{ url_for('static', filename='js/car_heater_bounded.js', v='20261014-7') }}"></script>
 <script defer src="{{ url_for('static', filename='js/car_heater_departure.js', v='20261015-2') }}"></script>
-<script defer src="{{ url_for('static', filename='js/car_heater_weather_health.js', v='20261016-1') }}"></script>
+<script defer src="{{ url_for('static', filename='js/car_heater_weather_health.js', v='20261016-3') }}"></script>
 <script src="{{ url_for('static', filename='js/init_sio.js', v='20260504-1') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater.js', v='20261014-7') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater_logs.js', v='20260323-1') }}"></script>

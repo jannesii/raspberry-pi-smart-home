@@ -200,35 +200,52 @@ def parse_observation_reply(content: bytes) -> list[Series]:
     return series
 
 
-class ObservationCollector:
-    """Collect both stations every ten minutes on a server-owned thread."""
+def fetch_reply(http, params, timeout_s, parse, retrieval: dict, now) -> tuple:
+    """Fetch and parse one FMI reply, recording the outcome on ``retrieval``.
 
-    def __init__(
-        self,
-        ctrl,
-        *,
-        http=None,
-        clock: Callable[[], float] = time.time,
-        stations: tuple[str, ...] = STATIONS,
-        interval_s: int = INTERVAL_S,
-        window: timedelta = WINDOW,
-        timeout_s: float = TIMEOUT_S,
-    ) -> None:
-        self._ctrl = ctrl
-        self._http = http or requests
+    Returns ``(content, parsed)`` for a successful reply and ``(None, None)``
+    otherwise; failed or malformed replies keep no content.
+    """
+    content = parsed = None
+    try:
+        response = http.get(FMI_WFS_URL, params=params, timeout=timeout_s)
+        retrieval["http_status"] = response.status_code
+        response.raise_for_status()
+        content = response.content or b""
+        parsed = parse(content)
+        retrieval["status"] = "ok"
+    except requests.Timeout:
+        retrieval.update(status="failed", error="timeout")
+    except requests.HTTPError:
+        retrieval.update(status="failed", error="http_error")
+    except requests.RequestException as exc:
+        retrieval.update(status="failed", error=f"request_failed:{type(exc).__name__}")
+    except MalformedReply:
+        retrieval.update(status="failed", error="malformed_reply")
+    retrieval["retrieved_at"] = now().isoformat()
+    if retrieval["status"] != "ok":
+        return None, None
+    return content, parsed
+
+
+class AlignedCollector:
+    """Run ``collect`` once per aligned interval slot on a server-owned thread."""
+
+    thread_name = "WeatherCollector"
+
+    def __init__(self, *, clock: Callable[[], float], interval_s: int) -> None:
         self._clock = clock
-        self.stations = tuple(str(s) for s in stations)
         self.interval_s = int(interval_s)
-        self.window = window
-        self._timeout_s = timeout_s
         self._last_slot: float | None = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.archive_errors: dict[str, dict] = {}
 
-    # --- scheduling -------------------------------------------------------
+    def collect(self, slot: datetime) -> None:
+        raise NotImplementedError
+
     def run_pending(self) -> bool:
-        """Collect once per aligned ten-minute slot. Returns True when collected."""
+        """Collect once per aligned slot. Returns True when collected."""
         now = self._clock()
         slot = now - (now % self.interval_s)
         if self._last_slot is not None and slot <= self._last_slot:
@@ -240,13 +257,8 @@ class ObservationCollector:
     def start(self) -> None:
         if self._thread is not None:
             return
-        self._thread = threading.Thread(target=self._run, name="WeatherCollector", daemon=True)
+        self._thread = threading.Thread(target=self._run, name=self.thread_name, daemon=True)
         self._thread.start()
-        logger.info(
-            "Weather observation collector started stations=%s interval_s=%s",
-            ",".join(self.stations),
-            self.interval_s,
-        )
 
     def stop(self) -> None:
         self._stop.set()
@@ -264,10 +276,42 @@ class ObservationCollector:
             try:
                 self.run_pending()
             except Exception:
-                logger.exception("Weather collection cycle failed")
+                logger.exception("%s cycle failed", self.thread_name)
             now = self._clock()
             wait = self.interval_s - (now % self.interval_s)
             self._stop.wait(max(1.0, min(wait, self.interval_s)))
+
+
+class ObservationCollector(AlignedCollector):
+    """Collect both stations every ten minutes on a server-owned thread."""
+
+    def __init__(
+        self,
+        ctrl,
+        *,
+        http=None,
+        clock: Callable[[], float] = time.time,
+        stations: tuple[str, ...] = STATIONS,
+        interval_s: int = INTERVAL_S,
+        window: timedelta = WINDOW,
+        timeout_s: float = TIMEOUT_S,
+    ) -> None:
+        super().__init__(clock=clock, interval_s=interval_s)
+        self._ctrl = ctrl
+        self._http = http or requests
+        self.stations = tuple(str(s) for s in stations)
+        self.window = window
+        self._timeout_s = timeout_s
+
+    def start(self) -> None:
+        if self._thread is not None:
+            return
+        super().start()
+        logger.info(
+            "Weather observation collector started stations=%s interval_s=%s",
+            ",".join(self.stations),
+            self.interval_s,
+        )
 
     # --- collection -------------------------------------------------------
     def collect(self, slot: datetime) -> None:
@@ -305,25 +349,9 @@ class ObservationCollector:
             "started_at": self.now().isoformat(),
             "request": {k: params[k] for k in ("storedquery_id", "timestep", "parameters")},
         }
-        content = None
-        series = None
-        try:
-            response = self._http.get(FMI_WFS_URL, params=params, timeout=self._timeout_s)
-            retrieval["http_status"] = response.status_code
-            response.raise_for_status()
-            content = response.content or b""
-            series = parse_observation_reply(content)
-            retrieval["status"] = "ok"
-        except requests.Timeout:
-            retrieval.update(status="failed", error="timeout")
-        except requests.HTTPError:
-            retrieval.update(status="failed", error="http_error")
-        except requests.RequestException as exc:
-            retrieval.update(status="failed", error=f"request_failed:{type(exc).__name__}")
-        except MalformedReply:
-            retrieval.update(status="failed", error="malformed_reply")
-            content = None
-        retrieval["retrieved_at"] = self.now().isoformat()
+        content, series = fetch_reply(
+            self._http, params, self._timeout_s, parse_observation_reply, retrieval, self.now
+        )
         if retrieval["status"] != "ok":
             logger.warning(
                 "Weather observation collection failed station=%s error=%s http_status=%s",
@@ -331,7 +359,6 @@ class ObservationCollector:
                 retrieval.get("error"),
                 retrieval.get("http_status"),
             )
-            content = series = None
         self._ctrl.record_weather_observation_retrieval(
             retrieval, content, series, requested=PARAMETERS, meta=PARAMETER_META
         )

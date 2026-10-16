@@ -550,8 +550,9 @@ weather_retrieval = Table(
     Column("kind", Text, nullable=False),
     Column("source_id", Text, nullable=False),
     Column("intended_at", Text, nullable=False),
-    Column("requested_start", Text, nullable=False),
-    Column("requested_end", Text, nullable=False),
+    # Observation windows; forecast checks take the source's default horizon (NULL).
+    Column("requested_start", Text),
+    Column("requested_end", Text),
     Column("started_at", Text, nullable=False),
     Column("retrieved_at", Text, nullable=False),
     Column("status", Text, nullable=False),
@@ -594,3 +595,66 @@ Index(
     weather_observation.c.observed_at,
     weather_observation.c.fmisid,
 )
+
+# Point-forecast numerical content, stored once per checksum of its values.
+weather_forecast_content = Table(
+    "weather_forecast_content",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("sha256", Text, nullable=False, unique=True),
+    Column("value_count", Integer, nullable=False),
+    Column("first_retrieval_id", Integer, ForeignKey("weather_retrieval.id"), nullable=False),
+)
+
+# Every returned hourly value of a forecast content, at its own valid time.
+weather_forecast_value = Table(
+    "weather_forecast_value",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("content_id", Integer, ForeignKey("weather_forecast_content.id"), nullable=False),
+    Column("parameter", Text, nullable=False),
+    Column("valid_at", Text, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("value", Float),
+    Column("source_value", Text, nullable=False),
+    Column("unit", Text),
+    Column("period", Text),
+    Column("statistic", Text),
+    Column("property_href", Text),
+)
+Index("idx_weather_forecast_value_content", weather_forecast_value.c.content_id)
+
+# A distinct forecast version as received: request configuration, model and
+# source times, returned location and content. A change in any of them is a new
+# version; a repeated origin with different content or result time is a revision.
+weather_forecast_version = Table(
+    "weather_forecast_version",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("source_id", Text, nullable=False),
+    Column("request", Text, nullable=False),
+    Column("procedure", Text),
+    Column("analysis_time", Text),
+    Column("result_time", Text),
+    Column("phenomenon_start", Text),
+    Column("phenomenon_end", Text),
+    Column("location", Text),
+    Column("content_id", Integer, ForeignKey("weather_forecast_content.id"), nullable=False),
+    Column("revision", Integer, nullable=False),
+    Column("first_retrieval_id", Integer, ForeignKey("weather_retrieval.id"), nullable=False),
+    Column("first_retrieved_at", Text, nullable=False),
+)
+Index(
+    "idx_weather_forecast_version_origin",
+    weather_forecast_version.c.source_id,
+    weather_forecast_version.c.analysis_time,
+)
+
+# Every retrieval that received a version, so repeats keep their own reply.
+weather_forecast_receipt = Table(
+    "weather_forecast_receipt",
+    metadata,
+    Column("retrieval_id", Integer, ForeignKey("weather_retrieval.id"), primary_key=True),
+    Column("version_id", Integer, ForeignKey("weather_forecast_version.id"), primary_key=True),
+)
+Index("idx_weather_forecast_receipt_version", weather_forecast_receipt.c.version_id)

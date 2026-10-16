@@ -467,6 +467,14 @@ def test_sqlite_backup_restore_keeps_readings_replies_and_provenance(
         "mismatched_replies": [],
         "retrievals_without_reply": [],
         "readings_without_retrieval": [],
+        "forecast_links": {
+            "values_without_content": [],
+            "versions_without_content": [],
+            "versions_without_first_retrieval": [],
+            "contents_without_first_retrieval": [],
+            "receipts_without_retrieval": [],
+            "receipts_without_version": [],
+        },
     }
 
     engine = create_engine(f"sqlite:///{restored}")

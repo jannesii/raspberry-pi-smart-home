@@ -185,6 +185,22 @@ if __name__ == "__main__":
         # The fixed clock keeps the running thread from collecting again on its own.
         collector.start()
 
+        import test_weather_forecast_archive as forecast
+
+        from app.services.weather.forecast_archive import ForecastCollector
+
+        forecast_fmi = forecast.FakeForecastFMI()
+        series = {
+            p: forecast.hourly(forecast.ORIGIN, ["1.0", "2.0", "3.0"]) for p in forecast.FIELDS
+        }
+        series["RadiationLW"] = forecast.hourly(forecast.ORIGIN, ["NaN", "NaN", "NaN"])
+        del series["WindGust"]
+        forecast_fmi.reply = forecast.forecast_reply(series)
+        forecaster = ForecastCollector(flask_app.ctrl, http=forecast_fmi, clock=lambda: clock[0])
+        flask_app.weather_forecast_collector = forecaster
+        forecaster.run_pending()
+        forecaster.start()
+
         @flask_app.post("/test/weather-recover")
         def weather_recover():
             clock[0] += timedelta(minutes=10).total_seconds()

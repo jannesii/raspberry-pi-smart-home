@@ -14,6 +14,7 @@ from ._controller import (
     SensorsMixin,
     ThreeDMixin,
     WeatherArchiveMixin,
+    WeatherForecastMixin,
     YnabCategorizerMixin,
 )
 
@@ -34,6 +35,7 @@ class Controller(
     SensorsMixin,
     ThreeDMixin,
     WeatherArchiveMixin,
+    WeatherForecastMixin,
     YnabCategorizerMixin,
 ):
     pass

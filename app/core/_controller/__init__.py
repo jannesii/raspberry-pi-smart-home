@@ -13,6 +13,7 @@ from .migrations import MigrationMixin
 from .sensors import SensorsMixin
 from .ThreeD import ThreeDMixin
 from .weather_archive import WeatherArchiveMixin
+from .weather_forecast import WeatherForecastMixin
 from .ynab_categorizer import YnabCategorizerMixin
 
 __all__ = [
@@ -31,5 +32,6 @@ __all__ = [
     "SensorsMixin",
     "ThreeDMixin",
     "WeatherArchiveMixin",
+    "WeatherForecastMixin",
     "YnabCategorizerMixin",
 ]

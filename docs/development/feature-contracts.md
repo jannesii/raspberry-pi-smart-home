@@ -259,3 +259,32 @@ Tests: `tests/test_weather_observation_archive.py`, `tests/test_weather_archive_
   replies by id; only `/weather/replies/<id>` returns content, after a checksum
   check. Health distinguishes received-but-empty fields from failed, stale (no
   attempt for 25 minutes) or not-running collection.
+
+## Parking-point forecast archive
+
+Code: `app/services/weather/forecast_archive.py`,
+`app/core/_controller/weather_forecast.py`, `app/blueprints/api/car_heater/weather.py`.
+Tests: `tests/test_weather_forecast_archive.py`, `tests/test_weather_forecast_migration.py`.
+
+- `ForecastCollector` has its own thread, with the same isolation as
+  observations. It requests HARMONIE point timevaluepair for one point at
+  `timestep=60` every aligned thirty-minute slot. Never send an end time or
+  horizon: store what FMI returns. Retrievals use `kind="forecast"`,
+  `source_id` is the `lat,lon` point and `requested_start/end` are NULL.
+- Analysis time (`om:parameter` analysisTime), `resultTime`, each value's valid
+  time and the local retrieval time are separate fields. Units, periods and
+  statistics come from a table copied from FMI forecast metadata, and
+  `property_href` keeps the link. Never infer RadiationLW direction.
+- Series sharing procedure, analysis time, result time and returned location
+  form one version. Values are stored once per SHA-256 of their source text
+  (`weather_forecast_content`). A version is unique by source, request JSON,
+  model/times, location and content. A reply matching the origin's latest
+  revision adds only a `weather_forecast_receipt`; anything else, including
+  content reverting to an earlier revision, inserts the next `revision`.
+  Never update or delete versions, values or receipts. Bump
+  `METADATA_VERSION` with any `PARAMETER_META` change: it is part of the
+  stored request, so new units start a new configuration, not a revision.
+- `unobserved` is derived from successful forecast retrievals (gap > 1.5 ×
+  interval). It never claims a run was received. Forecast health is stale
+  after 2.5 × interval and summarises the last 24 hours' `unobserved_24h`.
+  Version JSON never embeds reply content.
