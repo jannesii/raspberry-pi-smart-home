@@ -270,9 +270,12 @@ Tests: `tests/test_weather_forecast_archive.py`, `tests/test_weather_forecast_mi
 
 - `ForecastCollector` has its own thread, with the same isolation as
   observations. It requests HARMONIE point timevaluepair for one point at
-  `timestep=60` every aligned thirty-minute slot. Never send an end time or
-  horizon: store what FMI returns. Retrievals use `kind="forecast"`,
-  `source_id` is the `lat,lon` point and `requested_start/end` are NULL.
+  `timestep=60` every aligned thirty-minute slot. It requests a window far
+  wider than any run (`WINDOW_BEFORE`/`WINDOW_AFTER`), because FMI's default
+  window moves hourly and would turn every check into a new revision. NaN filler
+  outside the run's first..last real value is counted (`outside_run_points`),
+  not stored; missing values inside the run are kept. Retrievals use
+  `kind="forecast"` with `source_id` = the `lat,lon` point.
 - Analysis time (`om:parameter` analysisTime), `resultTime`, each value's valid
   time and the local retrieval time are separate fields. Units, periods and
   statistics come from a table copied from FMI forecast metadata, and

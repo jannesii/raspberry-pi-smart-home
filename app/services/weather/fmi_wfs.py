@@ -30,6 +30,10 @@ NS = {
 XLINK_HREF = "{http://www.w3.org/1999/xlink}href"
 
 
+def iso_z(dt: datetime) -> str:
+    return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 class MalformedReply(ValueError):
     """The reply is not a parsable WFS observation collection."""
 

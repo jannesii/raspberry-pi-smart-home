@@ -477,8 +477,11 @@ Every thirty minutes the server also requests FMI's HARMONIE point forecast
 for the parking point (default 62.8000 N, 22.8260 E). It asks for Temperature,
 DewPoint, Humidity, WindSpeedMS, WindDirection, WindGust, TotalCloudCover,
 RadiationLW, RadiationGlobal, Precipitation1h and WeatherSymbol3 at an hourly
-step. No end time is requested, so the archive keeps whatever horizon FMI
-returns. The archive keeps:
+step. Each check asks for 24 hours back to 10 days ahead, far wider than any
+run. FMI's default reply is a 50-hour window that moves with the clock and cuts
+runs short. FMI fills hours outside the run with `NaN`. That filler is counted
+in the retrieval summary (`outside_run_points`) but not stored, so the archive
+keeps exactly the hours the run holds. The archive keeps:
 
 - each distinct forecast version received, with model (procedure), model
   origin (analysis time), source result time, requested and returned location,
@@ -490,7 +493,7 @@ returns. The archive keeps:
 - every check, with its retrieval time and outcome. A version received again
   adds a receipt, not new values. Changed values or a new result time for the
   same origin become the next revision; earlier versions are never altered
-- each original successful reply, compressed (about 8 KB, roughly 140 MB a
+- each original successful reply, compressed (about 30 KB, roughly 530 MB a
   year)
 
 Only versions actually received are kept. Runs FMI published and replaced
@@ -520,8 +523,8 @@ Authenticated read-only API (same range rules as above):
 - Original replies use `GET /api/car_heater/weather/replies/<id>` as above
 
 Apply migration **20261016_0017** after 0016 with the normal backup/migration
-procedure. It makes `weather_retrieval.requested_start/end` nullable, because
-forecast checks have no requested window. Discovery reports
+procedure. It makes `weather_retrieval.requested_start/end` nullable; forecast
+checks archived before the wide window was introduced have none. Discovery reports
 `weather_integrity.forecast_links`. Downgrading drops the forecast tables but
 keeps forecast retrievals and replies; back up first. Run the isolated checks with:
 

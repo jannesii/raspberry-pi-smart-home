@@ -187,8 +187,11 @@ def test_thirty_minute_check_archives_the_full_returned_horizon_with_source_time
     assert request["latlon"] == POINT
     assert request["parameters"].split(",") == list(FIELDS)
     assert request["timestep"] == "60"
-    # The response horizon is the source default, not one hardcoded here.
-    assert "endtime" not in request and "forecasthours" not in request
+    # A window wider than any run, so FMI returns the whole run, not its 50-hour default.
+    assert (request["starttime"], request["endtime"]) == (
+        "2027-01-14T03:00:00Z",
+        "2027-01-25T03:00:00Z",
+    )
 
     listing = versions(client)
     [version] = listing["versions"]
@@ -401,7 +404,10 @@ def test_failures_missing_fields_and_unobserved_periods_are_told_apart(forecasts
     history = retrievals(client)
     assert [r["status"] for r in history] == ["ok", "failed", "failed", "ok"]
     assert [r["reply_id"] is None for r in history] == [False, True, True, False]
-    assert history[1]["requested_start"] is None and history[1]["requested_end"] is None
+    assert (history[1]["requested_start"], history[1]["requested_end"]) == (
+        "2027-01-14T03:30:00+00:00",
+        "2027-01-25T03:30:00+00:00",
+    )
 
     # Coverage names every stretch without a successful check, never a captured run.
     clock[0] += 2 * 3600
@@ -728,3 +734,54 @@ def test_content_reverting_for_one_origin_is_the_latest_revision(forecasts, clie
     # What came back is the same content as revision 1, now received after revision 2.
     assert detail(client, listing[2]["id"])["values"] == detail(client, listing[0]["id"])["values"]
     assert len(listing[2]["receipts"]) == 1
+
+
+def padded(first, values, *, before, after):
+    """Hourly ``values`` from ``first`` with FMI's NaN filler around the run."""
+    start = first - timedelta(hours=before)
+    return hourly(start, ["NaN"] * before + values + ["NaN"] * after)
+
+
+def test_wide_window_keeps_the_whole_run_once_and_drops_filler_outside_it(forecasts, client):
+    collector, fmi, clock = forecasts
+    origin_hour = ORIGIN
+
+    def run(before, after):
+        series = {
+            p: padded(origin_hour, ["1.0", "2.0", "3.0"], before=before, after=after)
+            for p in FIELDS
+        }
+        # A genuine missing value inside the run is kept, even at the run's first hour.
+        series["Precipitation1h"] = padded(
+            origin_hour, ["NaN", "0.0", "0.4"], before=before, after=after
+        )
+        return forecast_reply(series)
+
+    fmi.reply = run(before=21, after=240)
+    collector.run_pending()
+    # Thirty minutes later FMI pads the same run differently around a moved window.
+    clock[0] += 1800
+    fmi.reply = run(before=22, after=239)
+    collector.run_pending()
+
+    [version] = versions(client)["versions"]
+    assert (version["revision"], version["value_count"]) == (1, 3 * len(FIELDS))
+    assert (version["valid_start"], version["valid_end"]) == (
+        "2027-01-15T00:00:00+00:00",
+        "2027-01-15T02:00:00+00:00",
+    )
+    assert len(version["receipts"]) == 2
+    rain = [
+        v for v in detail(client, version["id"])["values"] if v["parameter"] == "Precipitation1h"
+    ]
+    assert [(v["status"], v["source_value"]) for v in rain] == [
+        ("missing", "NaN"),
+        ("valid", "0.0"),
+        ("valid", "0.4"),
+    ]
+    first, second = retrievals(client)
+    assert first["summary"]["outside_run_points"] == (21 + 240) * len(FIELDS)
+    assert second["summary"]["outside_run_points"] == (22 + 239) * len(FIELDS)
+    assert (second["summary"]["new_versions"], second["summary"]["repeated_versions"]) == (0, 1)
+    assert first["requested_start"] == "2027-01-14T03:00:00+00:00"
+    assert first["requested_end"] == "2027-01-25T03:00:00+00:00"

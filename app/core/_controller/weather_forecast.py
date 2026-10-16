@@ -118,6 +118,8 @@ class WeatherForecastMixin:
                 fields_without_values=sorted(p for p, st in by_param.items() if "valid" not in st),
                 fields_absent=[p for p in requested if p not in by_param],
                 skipped_points=sum(s.skipped for s in series),
+                # NaN filler FMI returns for requested hours outside the run.
+                outside_run_points=sum(s.outside_run for s in series),
                 valid_start=min(times, default=None),
                 valid_end=max(times, default=None),
             )

@@ -4,9 +4,12 @@ Runs on its own thread like the observation collector and shares none of the
 planner's state: it never reads or refreshes ``WeatherService`` and never calls
 heater services. No forecast or radiation field is a control input.
 
-Every thirty minutes the latest point forecast is requested without an explicit
-end time, so the archive keeps whatever horizon FMI returns rather than a
-horizon or model update cycle hardcoded here. Each distinct version actually
+Every thirty minutes the latest point forecast is requested for a window far
+wider than any run (FMI's default reply is a 50-hour window that moves with the
+clock and cuts the run short). FMI fills the window outside the run with NaN;
+that filler is counted, not stored, so the archive keeps exactly the hours the
+run holds without hardcoding a horizon or model update cycle. Each distinct
+version actually
 received is kept with its model origin (analysis time), source result time,
 per-value valid times and the retrievals that delivered it. Runs published and
 replaced between checks are never received and are not reconstructed.
@@ -19,12 +22,12 @@ import math
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import requests
 
-from .fmi_wfs import NS, XLINK_HREF, AlignedCollector, MalformedReply, fetch_reply
+from .fmi_wfs import NS, XLINK_HREF, AlignedCollector, MalformedReply, fetch_reply, iso_z
 from .observation_archive import TIMEOUT_S
 
 if TYPE_CHECKING:
@@ -74,6 +77,11 @@ INTERVAL_S = 1800
 UNOBSERVED_AFTER = 1.5
 STALE_AFTER_INTERVALS = 2.5
 TIMESTEP_MINUTES = "60"
+# Requested around each check: wide enough to hold a whole run, which starts
+# hours before it is published and ends a few days later.
+WINDOW_BEFORE = timedelta(hours=24)
+WINDOW_AFTER = timedelta(days=10)
+WINDOW_LABEL = f"-PT{WINDOW_BEFORE // timedelta(hours=1)}H/P{WINDOW_AFTER.days}D"
 _ANALYSIS_TIME = "analysisTime"
 
 
@@ -97,6 +105,7 @@ class ForecastSeries:
     location: dict[str, Any]
     values: list[ForecastValue] = field(default_factory=list)
     skipped: int = 0
+    outside_run: int = 0
 
 
 @dataclass(frozen=True)
@@ -267,6 +276,24 @@ def parse_forecast_reply(content: bytes) -> list[ForecastSeries]:
             else:
                 entry.values.append(value)
         series.append(entry)
+    return _trim_to_run(series)
+
+
+def _trim_to_run(series: list[ForecastSeries]) -> list[ForecastSeries]:
+    """Drop the NaN filler FMI returns for requested hours outside the run.
+
+    The run spans its earliest to latest real value across the reply; every
+    point inside, including a missing value, is kept. With no real value at all
+    nothing can be told apart, so everything is kept.
+    """
+    times = [v.valid_at for s in series for v in s.values if v.status != "missing"]
+    if not times:
+        return series
+    first, last = min(times), max(times)
+    for entry in series:
+        kept = [v for v in entry.values if first <= v.valid_at <= last]
+        entry.outside_run = len(entry.values) - len(kept)
+        entry.values = kept
     return series
 
 
@@ -322,17 +349,20 @@ class ForecastCollector(AlignedCollector):
             "latlon": self.source_id,
             "timestep": TIMESTEP_MINUTES,
             "parameters": ",".join(PARAMETERS),
+            "starttime": iso_z(slot - WINDOW_BEFORE),
+            "endtime": iso_z(slot + WINDOW_AFTER),
         }
         retrieval: dict[str, Any] = {
             "kind": "forecast",
             "source_id": self.source_id,
             "intended_at": slot.isoformat(),
-            "requested_start": None,
-            "requested_end": None,
+            "requested_start": (slot - WINDOW_BEFORE).isoformat(),
+            "requested_end": (slot + WINDOW_AFTER).isoformat(),
             "started_at": self.now().isoformat(),
             "request": {
                 **{k: params[k] for k in ("storedquery_id", "latlon", "timestep", "parameters")},
                 "metadata": METADATA_VERSION,
+                "window": WINDOW_LABEL,
             },
         }
         content, series = fetch_reply(

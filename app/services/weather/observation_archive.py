@@ -26,7 +26,7 @@ import requests
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-from .fmi_wfs import NS, XLINK_HREF, AlignedCollector, MalformedReply, fetch_reply
+from .fmi_wfs import NS, XLINK_HREF, AlignedCollector, MalformedReply, fetch_reply, iso_z
 from .weather_service import PELMAA_ID, RENKO_ID, STOREDQUERY_ID
 
 logger = logging.getLogger(__name__)
@@ -92,10 +92,6 @@ class Series:
     location: dict[str, Any]
     readings: list[Reading] = field(default_factory=list)
     skipped: int = 0
-
-
-def _iso_z(dt: datetime) -> str:
-    return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _reading(param: str, time_text: str, value_text: str) -> Reading | None:
@@ -240,8 +236,8 @@ class ObservationCollector(AlignedCollector):
             "request": "getFeature",
             "storedquery_id": STOREDQUERY_ID,
             "fmisid": fmisid,
-            "starttime": _iso_z(start),
-            "endtime": _iso_z(slot),
+            "starttime": iso_z(start),
+            "endtime": iso_z(slot),
             "timestep": "10",
             "parameters": ",".join(PARAMETERS),
         }
