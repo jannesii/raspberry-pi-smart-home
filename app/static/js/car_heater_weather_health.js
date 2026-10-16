@@ -24,6 +24,40 @@
     if (attempt.error === 'malformed_reply') return 'reply could not be read';
     return 'connection failed';
   }
+  const GAP_KINDS = {
+    failed: 'collection failed, repair pending',
+    not_collected: 'not collected, repair pending',
+    source_empty: 'FMI returned no values',
+    unrepaired: 'older than the repair limit, not repaired'
+  };
+  function limitDays(history) {
+    return Math.round((history.repair_limit_s || 0) / 86400);
+  }
+  function historyState(history) {
+    if (!history) return 'History not started yet';
+    if (!history.initialized_at) return `Initializing history from ${format(history.history_start)}`;
+    const pending = (history.pending_repair || {}).count || 0;
+    if (pending) return `Repairing ${pending} ${pending === 1 ? 'gap' : 'gaps'}`;
+    return `History from ${format(history.history_start)}`;
+  }
+  function gapSummary(history) {
+    const counts = history.gap_counts || {};
+    const parts = [];
+    const pending = (history.pending_repair || {}).count || 0;
+    if (pending) parts.push(`${pending} waiting for repair`);
+    if (counts.source_empty) parts.push(`${counts.source_empty} without source values`);
+    if (counts.unrepaired) parts.push(`${counts.unrepaired} older than ${limitDays(history)} days, not repaired`);
+    return parts.length ? parts.join(' · ') : 'None';
+  }
+  function historyRows(details, history) {
+    row(details, 'History', historyState(history));
+    if (!history) return;
+    if (history.origin === 'upgraded') row(details, 'Backfill', '24 h before the first live-only collection');
+    row(details, `Gaps since ${format(history.checked_since)}`, gapSummary(history));
+    const latest = (history.recent_gaps || [])[0];
+    if (latest) row(details, 'Latest gap', `${format(latest.start)} – ${format(latest.end)} · ${GAP_KINDS[latest.kind] || latest.kind}`);
+    row(details, 'Last repair request', format(history.last_repair_at));
+  }
   function state(source) {
     const last = source.last_attempt;
     if (!last) return 'No collection yet';
@@ -65,6 +99,7 @@
     row(details, 'Fields with values', fieldList(summary.fields_with_values));
     row(details, 'Received without values', fieldList(summary.fields_without_values));
     row(details, 'Not returned', fieldList(summary.fields_absent));
+    if (kind === 'observation') historyRows(details, source.history);
     if (source.archive_error) row(details, 'Archive write failed', `${format(source.archive_error.at)} · retrying next cycle`);
     if (success && success.reply_id) {
       const link = node('a', 'Download original reply');
@@ -74,7 +109,7 @@
     }
     el.append(details);
     target.append(el);
-    sentences.push(`${name}: ${text}.`);
+    sentences.push(kind === 'observation' ? `${name}: ${text}. ${historyState(source.history)}.` : `${name}: ${text}.`);
   }
   function pointName(source) {
     const at = source.requested_location;

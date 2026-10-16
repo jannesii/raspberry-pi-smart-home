@@ -20,8 +20,12 @@ with sync_playwright() as pw:
     section = page.get_by_role("region", name="Weather collection", exact=True)
     expect(section).to_be_visible()
     status = section.get_by_role("status")
-    expect(status).to_contain_text("Seinäjoki Pelmaa (101486): Collecting.")
-    expect(status).to_contain_text("(137188): Last collection failed: FMI timed out.")
+    expect(status).to_contain_text(
+        "Seinäjoki Pelmaa (101486): Collecting. History from 14/01, 05:00."
+    )
+    expect(status).to_contain_text(
+        "(137188): Last collection failed: FMI timed out. Initializing history from 14/01, 05:00."
+    )
     expect(status).not_to_contain_text("not running")
     pelmaa = section.get_by_role("listitem").filter(has_text="101486")
     # A station's missing cloud cover is a source limitation, shown apart from failures.
@@ -29,6 +33,13 @@ with sync_playwright() as pw:
     expect(pelmaa).to_contain_text("Cloud cover")
     expect(pelmaa).to_contain_text("Temperature")
     expect(pelmaa).to_contain_text("Visibility")
+    # Source times FMI answered without values are a gap, not a recovery.
+    expect(pelmaa.locator("dt", has_text="Gaps since").locator("+ dd")).to_have_text(
+        "1 without source values"
+    )
+    expect(pelmaa.locator("dt", has_text="Latest gap").locator("+ dd")).to_have_text(
+        "14/01, 05:00 \u2013 15/01, 04:50 \u00b7 FMI returned no values"
+    )
     link = pelmaa.get_by_role("link", name="Download original reply", exact=True)
     reply = context.request.get(host["origin"] + link.get_attribute("href"))
     assert reply.status == 200
@@ -62,7 +73,9 @@ with sync_playwright() as pw:
         == 200
     )
     page.get_by_role("button", name="Refresh collection status", exact=True).click()
-    expect(status).to_contain_text("Seinäjoki airport (137188): Collecting.")
+    expect(status).to_contain_text(
+        "Seinäjoki airport (137188): Collecting. History from 14/01, 05:00."
+    )
     airport = section.get_by_role("listitem").filter(has_text="137188")
     expect(airport).to_contain_text("FMI timed out")
     # The weather readout does not appear on the everyday Heating view.

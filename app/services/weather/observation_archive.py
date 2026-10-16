@@ -9,6 +9,13 @@ Every ten minutes each station is asked for a two-hour window aligned to the
 ten-minute source interval. The whole returned series is parsed losslessly
 (source text, per-field times, missing markers) and persisted through the
 Controller together with the compressed original reply.
+
+After a successful live request the station's history is recovered: the first
+start fetches the preceding 24 hours, and any stretch of the last seven days
+without a successful reply is re-requested in bounded six-hour windows aligned
+to UTC, through the same parser and archive path. Coverage derives from the
+retrieval history, so restarts resume and nothing older than the repair limit
+is ever claimed recovered.
 """
 
 from __future__ import annotations
@@ -74,6 +81,13 @@ REPORTING_MINUTES = {"r_1h": 60}
 INTERVAL_S = 600
 WINDOW = timedelta(hours=2)
 TIMEOUT_S = 30
+INITIAL_HISTORY = timedelta(hours=24)
+REPAIR_LIMIT = timedelta(days=7)
+REPAIR_CHUNK = timedelta(hours=6)
+# Recovery requests per station per slot: a full seven-day repair takes about
+# five slots and never pushes the next live request out of its slot.
+REPAIR_REQUESTS_PER_SLOT = 6
+PENDING_KINDS = ("failed", "not_collected")
 
 
 @dataclass
@@ -196,6 +210,8 @@ class ObservationCollector(AlignedCollector):
         interval_s: int = INTERVAL_S,
         window: timedelta = WINDOW,
         timeout_s: float = TIMEOUT_S,
+        repair_limit: timedelta = REPAIR_LIMIT,
+        repair_requests: int = REPAIR_REQUESTS_PER_SLOT,
     ) -> None:
         super().__init__(clock=clock, interval_s=interval_s)
         self._ctrl = ctrl
@@ -203,6 +219,8 @@ class ObservationCollector(AlignedCollector):
         self.stations = tuple(str(s) for s in stations)
         self.window = window
         self._timeout_s = timeout_s
+        self.repair_limit = repair_limit
+        self._repair_requests = repair_requests
 
     def start(self) -> None:
         if self._thread is not None:
@@ -216,20 +234,116 @@ class ObservationCollector(AlignedCollector):
 
     # --- collection -------------------------------------------------------
     def collect(self, slot: datetime) -> None:
-        """Collect every station for one slot; each station succeeds or fails alone."""
+        """Collect every station live, then recover history for those that answered.
+
+        Each station succeeds or fails alone, and no station's recovery delays
+        another station's live request.
+        """
+        answered = []
         for fmisid in self.stations:
+            progress = None
             try:
-                self._collect_station(fmisid, slot)
+                # Before the live attempt, so a new archive's own first failure
+                # cannot later pass for live-only history from an upgrade.
+                progress = self._ctrl.ensure_weather_collection_progress(
+                    "observation",
+                    fmisid,
+                    anchor_iso=slot.isoformat(),
+                    now_iso=self.now().isoformat(),
+                    lookback_s=INITIAL_HISTORY.total_seconds(),
+                )
+            except Exception as exc:
+                self._archive_failed(fmisid, exc, "progress")
+            try:
+                live_ok = self._fetch(fmisid, slot, slot - self.window, slot, "live")
             except Exception as exc:
                 # Persistence failed; the next overlapping window retries.
-                self.archive_errors[fmisid] = {
-                    "at": self.now().isoformat(),
-                    "error": type(exc).__name__,
-                }
-                logger.exception("Weather archive write failed station=%s", fmisid)
+                self._archive_failed(fmisid, exc, "live")
+                continue
+            if progress is None:
+                continue  # Without recorded progress there is no history to recover.
+            self.archive_errors.pop(fmisid, None)
+            if live_ok:
+                answered.append((fmisid, progress))
+            # Otherwise the source is failing now; recovery waits for a later slot.
+        for fmisid, progress in answered:
+            try:
+                self._recover(fmisid, slot, progress)
+            except Exception as exc:
+                self._archive_failed(fmisid, exc, "recovery")
 
-    def _collect_station(self, fmisid: str, slot: datetime) -> None:
-        start = slot - self.window
+    def _archive_failed(self, fmisid: str, exc: Exception, stage: str) -> None:
+        self.archive_errors[fmisid] = {
+            "at": self.now().isoformat(),
+            "error": type(exc).__name__,
+            "stage": stage,
+        }
+        logger.exception("Weather archive write failed station=%s stage=%s", fmisid, stage)
+
+    def coverage(self, fmisid: str, start: datetime, end: datetime) -> list[dict]:
+        return self._ctrl.get_weather_observation_coverage(
+            fmisid,
+            start.isoformat(),
+            end.isoformat(),
+            step_s=self.interval_s,
+            repair_from_iso=(self.now() - self.repair_limit).isoformat(),
+        )
+
+    def _recover(self, fmisid: str, slot: datetime, progress: dict) -> None:
+        """Initialize or repair the station's history within the repair limit."""
+        lo = max(datetime.fromisoformat(progress["history_start"]), slot - self.repair_limit)
+        hi = slot + timedelta(seconds=self.interval_s)
+        if lo >= hi:
+            return
+        pending = [s for s in self.coverage(fmisid, lo, hi) if s["kind"] in PENDING_KINDS]
+        chunks = sorted({c for gap in pending for c in self._chunks(gap)})
+        initializing = progress["initialized_at"] is None
+        created = datetime.fromisoformat(progress["created_at"])
+        if chunks:
+            logger.info(
+                "Weather observation recovery station=%s pending_windows=%d requesting=%d",
+                fmisid,
+                len(chunks),
+                min(len(chunks), self._repair_requests),
+            )
+        attempted = 0
+        for chunk in chunks[: self._repair_requests]:
+            start, end = max(chunk, lo), min(chunk + REPAIR_CHUNK, slot)
+            purpose = "initialization" if initializing and start < created else "repair"
+            attempted += 1
+            if not self._fetch(fmisid, slot, start, end, purpose):
+                break  # Leave the rest for a later slot instead of pressing a failing source.
+        updates: dict[str, Any] = {}
+        if attempted:
+            updates["last_repair_at"] = self.now().isoformat()
+        if initializing:
+            done = lo >= created or not any(
+                s["kind"] in PENDING_KINDS for s in self.coverage(fmisid, lo, created)
+            )
+            if done:
+                updates["initialized_at"] = self.now().isoformat()
+                logger.info("Weather observation history initialized station=%s", fmisid)
+        if updates:
+            self._ctrl.update_weather_collection_progress(
+                "observation", fmisid, now_iso=self.now().isoformat(), **updates
+            )
+
+    @staticmethod
+    def _chunks(gap: dict) -> list[datetime]:
+        """UTC-aligned repair windows overlapping one gap."""
+        size = REPAIR_CHUNK.total_seconds()
+        lo = datetime.fromisoformat(gap["start"]).timestamp()
+        hi = datetime.fromisoformat(gap["end"]).timestamp()
+        first = lo - (lo % size)
+        return [
+            datetime.fromtimestamp(first + i * size, UTC)
+            for i in range(int((hi - first + size - 1) // size))
+        ]
+
+    def _fetch(
+        self, fmisid: str, slot: datetime, start: datetime, end: datetime, purpose: str
+    ) -> bool:
+        """Request, parse and archive one window. True when the reply was usable."""
         params = {
             "service": "WFS",
             "version": "2.0.0",
@@ -237,16 +351,17 @@ class ObservationCollector(AlignedCollector):
             "storedquery_id": STOREDQUERY_ID,
             "fmisid": fmisid,
             "starttime": iso_z(start),
-            "endtime": iso_z(slot),
+            "endtime": iso_z(end),
             "timestep": "10",
             "parameters": ",".join(PARAMETERS),
         }
         retrieval: dict[str, Any] = {
             "kind": "observation",
             "source_id": fmisid,
+            "purpose": purpose,
             "intended_at": slot.isoformat(),
             "requested_start": start.isoformat(),
-            "requested_end": slot.isoformat(),
+            "requested_end": end.isoformat(),
             "started_at": self.now().isoformat(),
             "request": {k: params[k] for k in ("storedquery_id", "timestep", "parameters")},
         }
@@ -255,12 +370,14 @@ class ObservationCollector(AlignedCollector):
         )
         if retrieval["status"] != "ok":
             logger.warning(
-                "Weather observation collection failed station=%s error=%s http_status=%s",
+                "Weather observation collection failed station=%s purpose=%s error=%s "
+                "http_status=%s",
                 fmisid,
+                purpose,
                 retrieval.get("error"),
                 retrieval.get("http_status"),
             )
         self._ctrl.record_weather_observation_retrieval(
             retrieval, content, series, requested=PARAMETERS, meta=PARAMETER_META
         )
-        self.archive_errors.pop(fmisid, None)
+        return retrieval["status"] == "ok"

@@ -6,6 +6,9 @@ import gzip
 import hashlib
 import json
 import logging
+from bisect import bisect_right
+from datetime import datetime, timedelta
+from itertools import pairwise
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import and_, func, insert, select
@@ -13,7 +16,12 @@ from sqlalchemy import and_, func, insert, select
 if TYPE_CHECKING:
     from sqlalchemy import Engine
 
-from ..schema import weather_observation, weather_reply, weather_retrieval
+from ..schema import (
+    weather_collection_progress,
+    weather_observation,
+    weather_reply,
+    weather_retrieval,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +32,21 @@ def _same(row, reading) -> bool:
     if reading.status == "invalid":
         return row.source_value == reading.source_value
     return row.value == reading.value
+
+
+def _union(intervals: list[tuple[datetime, datetime]]) -> list[list[datetime]]:
+    merged: list[list[datetime]] = []
+    for lo, hi in sorted(intervals):
+        if merged and lo <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], hi)
+        else:
+            merged.append([lo, hi])
+    return merged
+
+
+def _inside(merged: list[list[datetime]], starts: list[datetime], t: datetime) -> bool:
+    i = bisect_right(starts, t) - 1
+    return i >= 0 and merged[i][0] <= t < merged[i][1]
 
 
 def _first_retrieval(conn, stmt) -> dict | None:
@@ -102,6 +125,7 @@ class WeatherArchiveMixin:
                     reply_id=reply_id,
                     location=json.dumps(location) if location else None,
                     summary="{}",
+                    purpose=retrieval.get("purpose", "live"),
                 )
                 .returning(weather_retrieval.c.id)
             ).scalar_one()
@@ -198,9 +222,19 @@ class WeatherArchiveMixin:
         return {row.observed_at: row for row in conn.execute(stmt)}
 
     def list_weather_observations(
-        self, start_iso: str, end_iso: str, *, fmisid: str | None = None
+        self,
+        start_iso: str,
+        end_iso: str,
+        *,
+        fmisid: str | None = None,
+        as_of_iso: str | None = None,
     ) -> list[dict]:
-        """Every archived revision with source time in [start, end], oldest first."""
+        """Every archived revision with source time in [start, end], oldest first.
+
+        With ``as_of`` only revisions retrieved by then are returned and
+        ``current`` is judged among them: what an earlier decision could see,
+        whatever was backfilled or corrected afterwards.
+        """
         obs, ret = weather_observation, weather_retrieval
         stmt = (
             select(
@@ -208,6 +242,7 @@ class WeatherArchiveMixin:
                 ret.c.retrieved_at,
                 ret.c.reply_id,
                 ret.c.location,
+                ret.c.purpose,
             )
             .join(ret, ret.c.id == obs.c.retrieval_id)
             .where(obs.c.observed_at >= start_iso, obs.c.observed_at <= end_iso)
@@ -215,6 +250,8 @@ class WeatherArchiveMixin:
         )
         if fmisid:
             stmt = stmt.where(obs.c.fmisid == fmisid)
+        if as_of_iso:
+            stmt = stmt.where(ret.c.retrieved_at <= as_of_iso)
         with self._sa_engine.connect() as conn:
             rows = [dict(row) for row in conn.execute(stmt).mappings()]
         names: dict[str, str | None] = {}
@@ -230,7 +267,152 @@ class WeatherArchiveMixin:
             row["station_name"] = names[row["fmisid"]]
             key = (row["fmisid"], row["parameter"], row["observed_at"])
             row["current"] = row["revision"] == latest[key]
+            row["backfill"] = row["purpose"] != "live"
         return rows
+
+    # --- history initialization and coverage ------------------------------
+    def ensure_weather_collection_progress(
+        self, kind: str, source_id: str, *, anchor_iso: str, now_iso: str, lookback_s: float
+    ) -> dict:
+        """The source's progress row, created on first sight.
+
+        History starts ``lookback_s`` before the first collection. When
+        retrievals from before ``anchor`` already exist (a live-only archive
+        upgraded to recovery), it starts before the earliest of them: those
+        rows alone do not prove the history was ever initialized.
+        """
+        prog, ret = weather_collection_progress, weather_retrieval
+        key = (prog.c.kind == kind, prog.c.source_id == source_id)
+        with self._sa_engine.begin() as conn:
+            row = conn.execute(select(prog).where(*key)).mappings().first()
+            if row is not None:
+                return dict(row)
+            earliest = conn.scalar(
+                select(func.min(ret.c.intended_at)).where(
+                    ret.c.kind == kind, ret.c.source_id == source_id, ret.c.intended_at < anchor_iso
+                )
+            )
+            origin = "upgraded" if earliest else "new"
+            start = datetime.fromisoformat(earliest or anchor_iso) - timedelta(seconds=lookback_s)
+            values = {
+                "kind": kind,
+                "source_id": source_id,
+                "origin": origin,
+                "history_start": start.isoformat(),
+                "created_at": now_iso,
+                "initialized_at": None,
+                "last_repair_at": None,
+                "updated_at": now_iso,
+            }
+            conn.execute(insert(prog).values(**values))
+        logger.info(
+            "Weather %s history initialization begins source=%s origin=%s history_start=%s",
+            kind,
+            source_id,
+            origin,
+            values["history_start"],
+        )
+        return values
+
+    def update_weather_collection_progress(
+        self, kind: str, source_id: str, *, now_iso: str, **values: Any
+    ) -> None:
+        prog = weather_collection_progress
+        with self._sa_engine.begin() as conn:
+            conn.execute(
+                prog.update()
+                .where(prog.c.kind == kind, prog.c.source_id == source_id)
+                .values(**values, updated_at=now_iso)
+            )
+
+    def list_weather_collection_progress(self, kind: str = "observation") -> dict[str, dict]:
+        prog = weather_collection_progress
+        with self._sa_engine.connect() as conn:
+            rows = conn.execute(select(prog).where(prog.c.kind == kind)).mappings()
+            return {row["source_id"]: dict(row) for row in rows}
+
+    def get_weather_observation_coverage(
+        self,
+        source_id: str,
+        start_iso: str,
+        end_iso: str,
+        *,
+        step_s: float,
+        repair_from_iso: str | None = None,
+    ) -> list[dict]:
+        """Classify the source times in [start, end) from retrieval history.
+
+        A retrieval spans the source times of its requested window,
+        ``[requested_start, requested_end + step)``. A source time a successful
+        reply answered is ``collected`` when any field has a valid value
+        there, else ``source_empty``. Unanswered times are ``unrepaired``
+        before ``repair_from``, ``failed`` (only failed attempts) or
+        ``not_collected`` (no attempt).
+        """
+        start, end = datetime.fromisoformat(start_iso), datetime.fromisoformat(end_iso)
+        if end <= start:
+            return []
+        step = timedelta(seconds=step_s)
+        ret, obs = weather_retrieval, weather_observation
+        attempts = select(ret.c.requested_start, ret.c.requested_end, ret.c.status).where(
+            ret.c.kind == "observation",
+            ret.c.source_id == source_id,
+            ret.c.requested_start < end_iso,
+            ret.c.requested_end >= (start - step).isoformat(),
+        )
+        valid_times = (
+            select(obs.c.observed_at)
+            .where(obs.c.fmisid == source_id, obs.c.status == "valid")
+            .where(obs.c.observed_at >= start_iso, obs.c.observed_at < end_iso)
+            .distinct()
+        )
+        ok: list[tuple[datetime, datetime]] = []
+        failed: list[tuple[datetime, datetime]] = []
+        with self._sa_engine.connect() as conn:
+            for row in conn.execute(attempts):
+                window = (
+                    datetime.fromisoformat(row.requested_start),
+                    datetime.fromisoformat(row.requested_end) + step,
+                )
+                (ok if row.status == "ok" else failed).append(window)
+            seconds = step.total_seconds()
+            with_values = {
+                (at := datetime.fromisoformat(value).timestamp()) - at % seconds
+                for value in conn.execute(valid_times).scalars()
+            }
+        answered, unanswered_failed = _union(ok), _union(failed)
+        answered_starts = [lo for lo, _ in answered]
+        failed_starts = [lo for lo, _ in unanswered_failed]
+        repair_from = datetime.fromisoformat(repair_from_iso) if repair_from_iso else None
+        cuts = {start, end}
+        if repair_from and start < repair_from < end:
+            cuts.add(repair_from)
+        for lo, hi in unanswered_failed:
+            cuts.update(t for t in (lo, hi) if start < t < end)
+        for lo, hi in answered:
+            # Each answered source time is judged on its own values.
+            sample = max(lo, start)
+            while sample < min(hi, end):
+                cuts.add(sample)
+                sample += step
+            if start < hi < end:
+                cuts.add(hi)
+        segments: list[dict] = []
+        for lo, hi in pairwise(sorted(cuts)):
+            if _inside(answered, answered_starts, lo):
+                at = lo.timestamp()
+                kind = "collected" if at - at % seconds in with_values else "source_empty"
+            elif repair_from and lo < repair_from:
+                kind = "unrepaired"
+            elif _inside(unanswered_failed, failed_starts, lo):
+                kind = "failed"
+            else:
+                kind = "not_collected"
+            if segments and segments[-1]["kind"] == kind:
+                segments[-1]["end"] = hi.isoformat()
+            else:
+                segments.append({"start": lo.isoformat(), "end": hi.isoformat(), "kind": kind})
+        return segments
 
     def list_weather_retrievals(
         self, start_iso: str, end_iso: str, *, kind: str = "observation"

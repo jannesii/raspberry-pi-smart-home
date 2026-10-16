@@ -561,12 +561,32 @@ weather_retrieval = Table(
     Column("reply_id", Integer, ForeignKey("weather_reply.id")),
     Column("location", Text),
     Column("summary", Text, nullable=False),
+    # live | initialization | repair: backfilled readings keep their real
+    # retrieval time and never look previously available.
+    Column("purpose", Text, nullable=False, server_default="live"),
 )
 Index(
     "idx_weather_retrieval_source_retrieved",
     weather_retrieval.c.kind,
     weather_retrieval.c.source_id,
     weather_retrieval.c.retrieved_at,
+)
+
+# Per-source history initialization. Coverage and gaps derive from retrievals;
+# this row fixes where collection history starts (new: 24 hours before the
+# first collection; upgraded: 24 hours before the first live-only retrieval)
+# and when that history was fully attempted, so restarts resume, not restart.
+weather_collection_progress = Table(
+    "weather_collection_progress",
+    metadata,
+    Column("kind", Text, primary_key=True),
+    Column("source_id", Text, primary_key=True),
+    Column("origin", Text, nullable=False),
+    Column("history_start", Text, nullable=False),
+    Column("created_at", Text, nullable=False),
+    Column("initialized_at", Text),
+    Column("last_repair_at", Text),
+    Column("updated_at", Text, nullable=False),
 )
 
 # Station readings at their source time. A changed value for the same station,

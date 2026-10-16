@@ -20,6 +20,8 @@ departure = test_departure_heating.departure
 PELMAA, AIRPORT = "101486", "137188"
 NAMES = {PELMAA: "Seinäjoki Pelmaa", AIRPORT: "Seinäjoki airport"}
 START = datetime(2027, 1, 15, 3, 0, tzinfo=UTC)
+# These tests pin the live two-hour path; history recovery has its own suite.
+LIVE_ONLY = {"repair_requests": 0}
 
 
 def _stamp(t):
@@ -105,7 +107,9 @@ def archive(session_app):
 
     fmi = FakeFMI()
     clock = [START.timestamp()]
-    collector = ObservationCollector(session_app.ctrl, http=fmi, clock=lambda: clock[0])
+    collector = ObservationCollector(
+        session_app.ctrl, http=fmi, clock=lambda: clock[0], **LIVE_ONLY
+    )
     session_app.weather_collector = collector
     yield collector, fmi, clock
 
@@ -278,7 +282,9 @@ def test_ten_minute_cadence_overlap_corrections_and_restart_keep_history(
     # Restart: a new Controller and collector re-collect the same content.
     session_app.ctrl = Controller(db_path=session_app.config["DB_PATH"])
     session_app.ctrl._sa_engine = session_app.extensions["session_engine"]
-    restarted = ObservationCollector(session_app.ctrl, http=fmi, clock=lambda: clock[0])
+    restarted = ObservationCollector(
+        session_app.ctrl, http=fmi, clock=lambda: clock[0], **LIVE_ONLY
+    )
     session_app.weather_collector = restarted
     assert restarted.run_pending() is True
     assert len(readings(client)) == before
@@ -489,7 +495,9 @@ def test_sqlite_backup_restore_keeps_readings_replies_and_provenance(
         from app.services.weather.observation_archive import ObservationCollector
 
         clock[0] += 600
-        resumed = ObservationCollector(session_app.ctrl, http=fmi, clock=lambda: clock[0])
+        resumed = ObservationCollector(
+            session_app.ctrl, http=fmi, clock=lambda: clock[0], **LIVE_ONLY
+        )
         resumed.run_pending()
         assert len(retrievals(client)) == 6
     finally:
@@ -533,7 +541,9 @@ def test_collector_thread_runs_without_a_browser_or_telemetry(session_app):
     fmi = FakeFMI()
     fmi.replies[PELMAA] = fmi_reply(PELMAA, {"t2m": every_ten(START, ["-6.0"])})
     fmi.replies[AIRPORT] = fmi_reply(AIRPORT, {"t2m": every_ten(START, ["-7.0"])})
-    collector = ObservationCollector(session_app.ctrl, http=fmi, clock=lambda: START.timestamp())
+    collector = ObservationCollector(
+        session_app.ctrl, http=fmi, clock=lambda: START.timestamp(), **LIVE_ONLY
+    )
     collector.start()
     try:
         deadline = time.monotonic() + 4
@@ -566,7 +576,9 @@ def test_hung_or_failing_collection_never_delays_stop_or_changes_departure_timin
             return Response(200, b"<not-xml")
 
     fmi = HungFMI()
-    collector = ObservationCollector(session_app.ctrl, http=fmi, clock=lambda: clock[0])
+    collector = ObservationCollector(
+        session_app.ctrl, http=fmi, clock=lambda: clock[0], **LIVE_ONLY
+    )
     collector.start()
     auth = headers(session_app, client)
     try:

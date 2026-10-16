@@ -16,7 +16,12 @@ from ....services.weather.forecast_archive import (
     UNOBSERVED_AFTER,
     ForecastPoint,
 )
-from ....services.weather.observation_archive import STATION_LABELS
+from ....services.weather.observation_archive import (
+    INTERVAL_S as OBSERVATION_INTERVAL_S,
+    PENDING_KINDS,
+    REPAIR_LIMIT,
+    STATION_LABELS,
+)
 from ._blueprint import car_bp
 from .sessions import _time
 
@@ -26,6 +31,9 @@ MAX_RANGE = timedelta(days=7)
 KINDS = ("observation", "forecast")
 # A healthy collector attempts every ten minutes; allow for one slow cycle.
 STALE_AFTER = timedelta(minutes=25)
+# Health summarises observation gaps this far back; /weather/coverage shows any range.
+HISTORY_LOOKBACK = timedelta(days=30)
+RECENT_GAPS = 20
 
 
 def _range():
@@ -55,9 +63,13 @@ def weather_observations():
         start, end = _range()
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
+    try:
+        as_of = _time(request.args.get("as_of"), "as_of")
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
     fmisid = request.args.get("fmisid") or None
-    rows = current_app.ctrl.list_weather_observations(start, end, fmisid=fmisid)
-    return jsonify(start=start, end=end, readings=rows)
+    rows = current_app.ctrl.list_weather_observations(start, end, fmisid=fmisid, as_of_iso=as_of)
+    return jsonify(start=start, end=end, as_of=as_of, readings=rows)
 
 
 @car_bp.get("/weather/retrievals")
@@ -86,8 +98,12 @@ def weather_health():
     now = _now()
     stations = collector.stations if collector is not None else ()
     result = _source_health("observation", stations, collector, STALE_AFTER, now)
+    progress = current_app.ctrl.list_weather_collection_progress("observation")
     for entry in result:
         entry["station_name"] = entry["station_name"] or STATION_LABELS.get(entry["source_id"])
+        entry["history"] = _observation_history(
+            entry["source_id"], progress.get(entry["source_id"]), collector, now
+        )
     points = (forecaster.source_id,) if forecaster is not None else ()
     interval = forecaster.interval_s if forecaster is not None else FORECAST_INTERVAL_S
     forecast = _source_health(
@@ -120,6 +136,95 @@ def weather_health():
             "sources": forecast,
         },
     )
+
+
+def _observation_settings(collector):
+    if collector is None:
+        return OBSERVATION_INTERVAL_S, REPAIR_LIMIT
+    return collector.interval_s, collector.repair_limit
+
+
+def _coverage(source_id, start, end, collector, now):
+    step, limit = _observation_settings(collector)
+    return current_app.ctrl.get_weather_observation_coverage(
+        source_id,
+        start.isoformat(),
+        end.isoformat(),
+        step_s=step,
+        repair_from_iso=(now - limit).isoformat(),
+    )
+
+
+def _observation_history(source_id, progress, collector, now):
+    """Durable initialization progress and recent gaps for one station."""
+    if progress is None:
+        return None
+    step, limit = _observation_settings(collector)
+    # Source times up to the current slot; the slot itself is still being collected.
+    until = datetime.fromtimestamp(now.timestamp() - now.timestamp() % step, UTC)
+    since = max(datetime.fromisoformat(progress["history_start"]), now - HISTORY_LOOKBACK)
+    gaps = [
+        s for s in _coverage(source_id, since, until, collector, now) if s["kind"] != "collected"
+    ]
+    pending = [g for g in gaps if g["kind"] in PENDING_KINDS]
+    counts: dict[str, int] = {}
+    for gap in gaps:
+        counts[gap["kind"]] = counts.get(gap["kind"], 0) + 1
+    return {
+        "origin": progress["origin"],
+        "history_start": progress["history_start"],
+        "created_at": progress["created_at"],
+        "initialized_at": progress["initialized_at"],
+        "last_repair_at": progress["last_repair_at"],
+        "repair_limit_s": int(limit.total_seconds()),
+        "checked_since": since.isoformat(),
+        "pending_repair": {
+            "count": len(pending),
+            "oldest": pending[0]["start"] if pending else None,
+        },
+        "gap_counts": counts,
+        "recent_gaps": gaps[-RECENT_GAPS:][::-1],
+    }
+
+
+@car_bp.get("/weather/coverage")
+@login_required
+def weather_coverage():
+    """Per-station collected stretches and gaps, derived from retrieval history."""
+    try:
+        start, end = _range()
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    collector = getattr(current_app, "weather_collector", None)
+    now = _now()
+    progress = current_app.ctrl.list_weather_collection_progress("observation")
+    wanted = request.args.get("fmisid") or None
+    configured = collector.stations if collector is not None else ()
+    stations = []
+    for source_id in dict.fromkeys([*configured, *progress]):
+        if wanted and source_id != wanted:
+            continue
+        lo, hi = datetime.fromisoformat(start), min(datetime.fromisoformat(end), now)
+        segments = []
+        entry = progress.get(source_id)
+        history_start = datetime.fromisoformat(entry["history_start"]) if entry else hi
+        if lo < min(history_start, hi):
+            segments.append(
+                {
+                    "start": lo.isoformat(),
+                    "end": min(history_start, hi).isoformat(),
+                    "kind": "before_history",
+                }
+            )
+        segments += _coverage(source_id, max(lo, history_start), hi, collector, now)
+        stations.append(
+            {
+                "source_id": source_id,
+                "history_start": entry["history_start"] if entry else None,
+                "segments": segments,
+            }
+        )
+    return jsonify(start=start, end=end, checked_at=now.isoformat(), stations=stations)
 
 
 def _source_health(kind, configured, collector, stale_after, now):

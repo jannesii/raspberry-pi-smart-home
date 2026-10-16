@@ -162,7 +162,7 @@ Configure only the integrations you use:
 | YNAB | `YNAB_API_KEY`, `YNAB_BUDGET_ID`; [review workflow](docs/features/ynab.md) |
 | ESP32 | `ESP32_WS_LOG_LEVEL` (default `INFO`); [gateway setup](esp32_ws/README.md), [temperature firmware](ESP32_temperature/README.md), and [car-heater firmware](ESP32C3-Car-Heater/README.md) |
 | Car-heater sensors | `CAR_HEATER_SENSOR_MAX_AGE_S` (default `60`): glass/cabin samples older than this are shown and stored as stale, never current. Requires car-heater firmware 3.0.0+ and migration `20261013_0010` |
-| Weather archive | `WEATHER_ARCHIVE_ENABLED` (default `true`): archive FMI station observations every ten minutes and the parking-point forecast every thirty minutes. `WEATHER_FORECAST_POINT` (default `62.8000,22.8260`): forecast point as `lat,lon`; an invalid value leaves forecast collection off. Needs outbound HTTPS to `opendata.fmi.fi` and migrations `20261016_0016`/`20261016_0017`; see [weather observation archive](#weather-observation-archive) and [parking-point forecast archive](#parking-point-forecast-archive) |
+| Weather archive | `WEATHER_ARCHIVE_ENABLED` (default `true`): archive FMI station observations every ten minutes and the parking-point forecast every thirty minutes. `WEATHER_FORECAST_POINT` (default `62.8000,22.8260`): forecast point as `lat,lon`; an invalid value leaves forecast collection off. Needs outbound HTTPS to `opendata.fmi.fi` and migrations `20261016_0016`/`20261016_0017`/`20261017_0018`; see [weather observation archive](#weather-observation-archive) and [parking-point forecast archive](#parking-point-forecast-archive) |
 | Sodexo | `SODEXO_WEBHOOK_URL`, `SODEXO_POST_HOUR`, `SODEXO_POST_MINUTE` |
 | Alerts | `ALERT_WEBHOOK_URL`, `ALERT_WEBHOOK_BATCH_SECONDS` |
 
@@ -442,21 +442,44 @@ The archive keeps:
 
 Station readings stay separate. The departure planner keeps using its own
 cached temperature observation. Collection runs on its own thread, so a slow
-or failing FMI request or archive write cannot delay Stop or change a plan.
+or failing FMI request or archive write, including history recovery, cannot
+delay Stop or change a plan.
+
+**History recovery.** On its first start the archive also fetches the
+preceding 24 hours for each station. An archive upgraded from live-only
+collection fetches the 24 hours before its first live collection instead,
+as far as the repair limit allows. After an outage, any stretch of the last
+seven days without a successful reply is re-requested in six-hour windows
+aligned to UTC, at most six per station per ten-minute slot, through the same
+parser and archive. A station whose live request fails gets no recovery
+requests in that slot. Older gaps are never repaired and stay visible.
+Backfilled readings keep their actual retrieval time and purpose
+(`initialization` or `repair`); a changed value is a new revision beside the
+original. A restart resumes from the recorded history start and the
+retrieval history; it never re-initializes.
 
 **Settings & diagnostics → Weather collection** shows each station's last
 collection and last failure. It also shows which fields had values, which came
 back empty and which the station did not return. A missing field is a source
-limitation; a failed or stale collector is shown separately. **Download
-original reply** retrieves the source XML explicitly.
+limitation; a failed or stale collector is shown separately. It also shows
+the station's history state and its gaps over the last 30 days: stretches
+waiting for repair (failed or never collected), source times FMI answered
+without any value, and gaps older than the repair limit that were not repaired.
+**Download original reply** retrieves the source XML explicitly.
 
 Authenticated read-only API (ranges are ISO timestamps with offsets, at most
 seven days apart; default the last 24 hours):
 
-- `GET /api/car_heater/weather/observations?start=&end=&fmisid=`: all revisions,
-  each linked to its `retrieval_id` and `reply_id`
+- `GET /api/car_heater/weather/observations?start=&end=&fmisid=&as_of=`: all
+  revisions, each linked to its `retrieval_id` and `reply_id`, with
+  `purpose`/`backfill`. `as_of` keeps only revisions retrieved by then, which
+  is what an earlier decision could have seen.
 - `GET /api/car_heater/weather/retrievals?start=&end=`: collection attempts
-- `GET /api/car_heater/weather/health`: per-station collection health
+- `GET /api/car_heater/weather/health`: per-station collection health, with
+  `history` progress, pending repairs and recent gaps
+- `GET /api/car_heater/weather/coverage?start=&end=&fmisid=`: per-station
+  segments: `collected`, `source_empty`, `failed`, `not_collected`,
+  `unrepaired` or `before_history`
 - `GET /api/car_heater/weather/replies/<id>`: the original reply as an XML
   attachment, verified against its checksum. Other responses never embed it.
 
@@ -464,11 +487,14 @@ Apply migration **20261016_0016** with the normal backup/migration procedure
 before relying on the archive. The tables are covered by the whole-database
 backup in the [preservation guide](docs/operations/heater-history-preservation.md),
 and `scripts/heater_history.py discover` reports `weather_integrity`.
-First-collection backfill and gap repair come in #26, and cross-source export
-in #27. Run the isolated checks with:
+Apply migration **20261017_0018** after 0017 before starting the recovering
+collector. It labels existing retrievals `live` and adds per-station progress;
+it creates no progress rows, so the next start initializes the history.
+Downgrading drops progress and the purpose label but keeps backfilled
+readings. Cross-source export comes in #27. Run the isolated checks with:
 
 ```sh
-.venv/bin/pytest -q tests/test_weather_observation_archive.py tests/test_weather_archive_migration.py
+.venv/bin/pytest -q tests/test_weather_observation_archive.py tests/test_weather_observation_recovery.py tests/test_weather_archive_migration.py
 ```
 
 ### Parking-point forecast archive

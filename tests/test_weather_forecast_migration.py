@@ -7,8 +7,8 @@ from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from sqlalchemy import inspect
 from test_car_heater_history_preservation import isolated_postgres as isolated_postgres
+from test_weather_archive_migration import insert_live_only_readings
 from test_weather_forecast_archive import START, FakeForecastFMI, full_run
-from test_weather_observation_archive import AIRPORT, PELMAA, FakeFMI, every_ten, fmi_reply
 
 from app.core.schema import car_heater_session, metadata
 
@@ -34,32 +34,33 @@ def test_migration_matches_schema_keeps_observations_and_accepts_forecasts(
     from app.core import Controller
     from app.core.database import DatabaseManager
     from app.services.weather.forecast_archive import ForecastCollector
-    from app.services.weather.observation_archive import ObservationCollector
 
     engine = migration_engine
     metadata.create_all(engine, tables=[car_heater_session])
     with engine.begin() as conn:
         _run(conn, monkeypatch, "20261016_0016_weather_observations", "upgrade")
-    monkeypatch.setattr(DatabaseManager, "_instance", None)
-    ctrl = Controller(db_path=str(tmp_path / "legacy.db"))
-    ctrl._sa_engine = engine
-    stations = FakeFMI()
-    stations.replies[PELMAA] = fmi_reply(PELMAA, {"t2m": every_ten(START, ["-5.0"])})
-    stations.replies[AIRPORT] = fmi_reply(AIRPORT, {"vis": every_ten(START, ["5590.0"])})
-    ObservationCollector(ctrl, http=stations, clock=lambda: START.timestamp()).run_pending()
+    with engine.begin() as conn:
+        insert_live_only_readings(conn, [START])
 
     with engine.begin() as conn:
         _run(conn, monkeypatch, "20261016_0017_weather_forecasts", "upgrade")
     inspector = inspect(engine)
     for name in (*FORECAST_TABLES, "weather_retrieval"):
         migrated = {c["name"] for c in inspector.get_columns(name)}
-        assert migrated == {c.name for c in metadata.tables[name].c}, name
+        later = {"purpose"} if name == "weather_retrieval" else set()
+        assert migrated == {c.name for c in metadata.tables[name].c} - later, name
     nullable = {c["name"]: c["nullable"] for c in inspector.get_columns("weather_retrieval")}
     assert nullable["requested_start"] and nullable["requested_end"]
     assert not nullable["source_id"]
     assert {i["name"] for i in inspector.get_indexes("weather_retrieval")} >= {
         "idx_weather_retrieval_source_retrieved"
     }
+    # The current Controller reads the head schema.
+    with engine.begin() as conn:
+        _run(conn, monkeypatch, "20261017_0018_weather_observation_recovery", "upgrade")
+    monkeypatch.setattr(DatabaseManager, "_instance", None)
+    ctrl = Controller(db_path=str(tmp_path / "legacy.db"))
+    ctrl._sa_engine = engine
     window = ("2027-01-15T00:00:00+00:00", "2027-01-16T00:00:00+00:00")
     # Observation evidence from before the migration is intact.
     assert len(ctrl.list_weather_observations(*window)) == 2
@@ -74,6 +75,7 @@ def test_migration_matches_schema_keeps_observations_and_accepts_forecasts(
     ctrl.db.conn.close()
 
     with engine.begin() as conn:
+        _run(conn, monkeypatch, "20261017_0018_weather_observation_recovery", "downgrade")
         _run(conn, monkeypatch, "20261016_0017_weather_forecasts", "downgrade")
     inspector = inspect(engine)
     assert not set(FORECAST_TABLES) & set(inspector.get_table_names())

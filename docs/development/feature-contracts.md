@@ -235,7 +235,8 @@ Tests: `tests/test_medicine_calculator.py`, `tests/test_medicine_alert_service.p
 Code: `app/services/weather/observation_archive.py`, `app/services/weather/fmi_wfs.py`
 (shared fetch, namespaces, aligned scheduler),
 `app/core/_controller/weather_archive.py`, `app/blueprints/api/car_heater/weather.py`.
-Tests: `tests/test_weather_observation_archive.py`, `tests/test_weather_archive_migration.py`.
+Tests: `tests/test_weather_observation_archive.py`, `tests/test_weather_observation_recovery.py`,
+`tests/test_weather_archive_migration.py`.
 
 - `ObservationCollector` is app-owned and runs on its own thread, independently
   of sessions, telemetry, browsers and departures. It never reads or refreshes
@@ -260,6 +261,19 @@ Tests: `tests/test_weather_observation_archive.py`, `tests/test_weather_archive_
   replies by id; only `/weather/replies/<id>` returns content, after a checksum
   check. Health distinguishes received-but-empty fields from failed, stale (no
   attempt for 25 minutes) or not-running collection.
+- Recovery runs after a successful live request, on the collector thread.
+  `weather_collection_progress` fixes `history_start` (24 h before the first
+  attempt, or before the earliest pre-existing retrieval: `origin=upgraded`)
+  and `initialized_at`. Coverage derives only from retrievals: a window spans
+  `[requested_start, requested_end + step)`. A source time an ok reply
+  answered is `collected` when any field has a valid value there, otherwise
+  `source_empty` (not re-requested); unanswered time is `failed`/
+  `not_collected` (repairable) or `unrepaired` (older than seven days). Live
+  requests for all stations precede any recovery. Repairs use UTC-aligned
+  six-hour windows, oldest first, budgeted per slot, stopping at the first
+  failure. Retrieval `purpose` is `live`, `initialization` (the history the
+  progress row set out to fill, including an upgrade's) or `repair`; `as_of`
+  filters by retrieval time.
 
 ## Parking-point forecast archive
 
