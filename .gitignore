@@ -19,3 +19,7 @@ log
 stop
 commit.txt
 alembic.ini
+
+# Local Claude Code session archive (may contain secrets)
+.claude/session-archive/
+.claude/hooks/
