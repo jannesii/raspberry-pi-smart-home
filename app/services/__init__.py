@@ -274,9 +274,9 @@ def init_services(app: Flask) -> dict[str, Any]:
         except Exception:
             logger.exception("Failed to start weather observation collector")
         try:
-            from .weather.forecast_archive import ForecastCollector, parse_point
+            from .weather.forecast_archive import ForecastCollector, ForecastPoint
 
-            point = parse_point(os.getenv("WEATHER_FORECAST_POINT"))
+            point = ForecastPoint.parse(os.getenv("WEATHER_FORECAST_POINT"))
             forecast_collector = ForecastCollector(app.ctrl, point=point)  # type: ignore[attr-defined]
             app.weather_forecast_collector = forecast_collector
             services["weather_forecast_collector"] = forecast_collector

@@ -14,6 +14,7 @@ from ....services.weather.forecast_archive import (
     INTERVAL_S as FORECAST_INTERVAL_S,
     STALE_AFTER_INTERVALS,
     UNOBSERVED_AFTER,
+    ForecastPoint,
 )
 from ....services.weather.observation_archive import STATION_LABELS
 from ._blueprint import car_bp
@@ -95,7 +96,8 @@ def weather_health():
     day_ago = (now - timedelta(days=1)).isoformat()
     for entry in forecast:
         entry.pop("station_name", None)
-        entry["requested_location"] = _point(entry["source_id"])
+        point = ForecastPoint.from_id(entry["source_id"])
+        entry["requested_location"] = point.as_dict() if point else None
         gaps = current_app.ctrl.list_weather_forecast_unobserved(
             entry["source_id"], day_ago, now.isoformat(), max_gap_s=interval * UNOBSERVED_AFTER
         )
@@ -141,14 +143,6 @@ def _source_health(kind, configured, collector, stale_after, now):
             entry["archive_error"] = collector.archive_errors[source_id]
         result.append(entry)
     return result
-
-
-def _point(source_id):
-    try:
-        lat, lon = (float(part) for part in source_id.split(","))
-    except ValueError:
-        return None
-    return {"lat": lat, "lon": lon}
 
 
 @car_bp.get("/weather/replies/<int:reply_id>")

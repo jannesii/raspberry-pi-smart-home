@@ -24,14 +24,8 @@ from typing import TYPE_CHECKING, Any
 
 import requests
 
-from .observation_archive import (
-    _NS,
-    _XLINK_HREF,
-    TIMEOUT_S,
-    AlignedCollector,
-    MalformedReply,
-    fetch_reply,
-)
+from .fmi_wfs import NS, XLINK_HREF, AlignedCollector, MalformedReply, fetch_reply
+from .observation_archive import TIMEOUT_S
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -39,9 +33,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 STOREDQUERY_ID = "fmi::forecast::harmonie::surface::point::timevaluepair"
-# The recorded parking point (WGS84 lat, lon). Configuration changes become a
-# new source identity, so evidence from different points never merges.
-PARKING_POINT = (62.8000, 22.8260)
 PARAMETERS = (
     "Temperature",
     "DewPoint",
@@ -108,21 +99,47 @@ class ForecastSeries:
     skipped: int = 0
 
 
-def point_id(point: tuple[float, float]) -> str:
-    return f"{point[0]:.4f},{point[1]:.4f}"
+@dataclass(frozen=True)
+class ForecastPoint:
+    """A WGS84 forecast point; its ``lat,lon`` text is the archive source identity."""
+
+    lat: float
+    lon: float
+
+    @classmethod
+    def parse(cls, text: str | None) -> ForecastPoint:
+        """``"lat,lon"`` in decimal degrees; empty means the recorded parking point."""
+        if not text or not text.strip():
+            return PARKING_POINT
+        point = cls.from_id(text)
+        if point is None:
+            raise ValueError("Use decimal degrees as lat,lon within range")
+        return point
+
+    @classmethod
+    def from_id(cls, text: str | None) -> ForecastPoint | None:
+        """The point a source id or request ``latlon`` names; None when unusable."""
+        try:
+            lat, lon = (float(part) for part in (text or "").split(","))
+        except ValueError:
+            return None
+        if not (math.isfinite(lat) and math.isfinite(lon)):
+            return None
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            return None
+        return cls(lat, lon)
+
+    @property
+    def id(self) -> str:
+        return f"{self.lat:.4f},{self.lon:.4f}"
+
+    def as_dict(self) -> dict[str, float]:
+        return {"lat": self.lat, "lon": self.lon}
 
 
-def parse_point(text: str | None) -> tuple[float, float]:
-    """``"lat,lon"`` in WGS84 degrees; empty means the recorded parking point."""
-    if not text or not text.strip():
-        return PARKING_POINT
-    try:
-        lat, lon = (float(part) for part in text.split(","))
-    except ValueError:
-        raise ValueError("Use decimal degrees as lat,lon") from None
-    if not (math.isfinite(lat) and math.isfinite(lon) and -90 <= lat <= 90 and -180 <= lon <= 180):
-        raise ValueError("Latitude or longitude is out of range")
-    return lat, lon
+# The recorded parking point. A different point is a different source identity,
+# so evidence from different points never merges.
+PARKING_POINT = ForecastPoint(62.8000, 22.8260)
 
 
 def _utc(text: str | None) -> str | None:
@@ -160,32 +177,32 @@ def _value(time_text: str, value_text: str) -> ForecastValue | None:
 def _location(obs: ET.Element) -> dict[str, Any]:
     """Returned forecast location: identifier with its code space, names, position."""
     info: dict[str, Any] = {}
-    loc = obs.find(".//target:Location", _NS)
+    loc = obs.find(".//target:Location", NS)
     if loc is not None:
-        ident = loc.find("gml:identifier", _NS)
+        ident = loc.find("gml:identifier", NS)
         if ident is not None and ident.text:
             kind = ident.attrib.get("codeSpace", "").rsplit("/", 1)[-1] or "identifier"
             info[kind] = ident.text.strip()
-        for name in loc.findall("gml:name", _NS):
+        for name in loc.findall("gml:name", NS):
             kind = name.attrib.get("codeSpace", "").rsplit("/", 1)[-1]
             if kind and name.text:
                 info.setdefault(kind, name.text.strip())
         for tag in ("region", "country", "timezone"):
-            value = _text(loc.find(f"target:{tag}", _NS))
+            value = _text(loc.find(f"target:{tag}", NS))
             if value:
                 info[tag] = value
-    pos = obs.find(".//gml:Point/gml:pos", _NS)
+    pos = obs.find(".//gml:Point/gml:pos", NS)
     if pos is not None and pos.text and len(pos.text.split()) == 2:
         info["pos"] = " ".join(pos.text.split())
     return info
 
 
 def _analysis_time(obs: ET.Element) -> str | None:
-    for named in obs.findall("om:parameter/om:NamedValue", _NS):
-        name = named.find("om:name", _NS)
-        href = name.attrib.get(_XLINK_HREF, "") if name is not None else ""
+    for named in obs.findall("om:parameter/om:NamedValue", NS):
+        name = named.find("om:name", NS)
+        href = name.attrib.get(XLINK_HREF, "") if name is not None else ""
         if href.rsplit("/", 1)[-1] == _ANALYSIS_TIME:
-            return _utc(_text(named.find(".//gml:timePosition", _NS)))
+            return _utc(_text(named.find(".//gml:timePosition", NS)))
     return None
 
 
@@ -199,34 +216,34 @@ def parse_forecast_reply(content: bytes) -> list[ForecastSeries]:
         root = ET.fromstring(content)
     except ET.ParseError as exc:
         raise MalformedReply("XML parse failed") from exc
-    if root.tag != f"{{{_NS['wfs']}}}FeatureCollection":
+    if root.tag != f"{{{NS['wfs']}}}FeatureCollection":
         raise MalformedReply(f"Unexpected root element {root.tag!r}")
     series: list[ForecastSeries] = []
-    for member in root.findall("wfs:member", _NS):
+    for member in root.findall("wfs:member", NS):
         obs = next(iter(member), None)
         if obs is None:
             continue
-        prop = obs.find("om:observedProperty", _NS)
-        href = prop.attrib.get(_XLINK_HREF) if prop is not None else None
+        prop = obs.find("om:observedProperty", NS)
+        href = prop.attrib.get(XLINK_HREF) if prop is not None else None
         param = None
         if href and "param=" in href:
             param = href.split("param=", 1)[1].split("&", 1)[0].strip() or None
         if param is None:
             logger.warning("FMI forecast member without a parameter identity; skipped")
             continue
-        procedure = obs.find("om:procedure", _NS)
+        procedure = obs.find("om:procedure", NS)
         entry = ForecastSeries(
             parameter=param,
             property_href=href,
-            procedure=procedure.attrib.get(_XLINK_HREF) if procedure is not None else None,
+            procedure=procedure.attrib.get(XLINK_HREF) if procedure is not None else None,
             analysis_time=_analysis_time(obs),
-            result_time=_utc(_text(obs.find("om:resultTime//gml:timePosition", _NS))),
-            phenomenon_start=_utc(_text(obs.find("om:phenomenonTime//gml:beginPosition", _NS))),
-            phenomenon_end=_utc(_text(obs.find("om:phenomenonTime//gml:endPosition", _NS))),
+            result_time=_utc(_text(obs.find("om:resultTime//gml:timePosition", NS))),
+            phenomenon_start=_utc(_text(obs.find("om:phenomenonTime//gml:beginPosition", NS))),
+            phenomenon_end=_utc(_text(obs.find("om:phenomenonTime//gml:endPosition", NS))),
             location=_location(obs),
         )
-        for tvp in obs.findall(".//wml2:MeasurementTVP", _NS):
-            t_el, v_el = tvp.find("wml2:time", _NS), tvp.find("wml2:value", _NS)
+        for tvp in obs.findall(".//wml2:MeasurementTVP", NS):
+            t_el, v_el = tvp.find("wml2:time", NS), tvp.find("wml2:value", NS)
             time_text = (t_el.text or "").strip() if t_el is not None else ""
             value_text = (v_el.text or "").strip() if v_el is not None else ""
             value = _value(time_text, value_text)
@@ -249,15 +266,15 @@ class ForecastCollector(AlignedCollector):
         *,
         http=None,
         clock: Callable[[], float] = time.time,
-        point: tuple[float, float] = PARKING_POINT,
+        point: ForecastPoint = PARKING_POINT,
         interval_s: int = INTERVAL_S,
         timeout_s: float = TIMEOUT_S,
     ) -> None:
         super().__init__(clock=clock, interval_s=interval_s)
         self._ctrl = ctrl
         self._http = http or requests
-        self.point = (float(point[0]), float(point[1]))
-        self.source_id = point_id(self.point)
+        self.point = point
+        self.source_id = point.id
         self._timeout_s = timeout_s
 
     def start(self) -> None:

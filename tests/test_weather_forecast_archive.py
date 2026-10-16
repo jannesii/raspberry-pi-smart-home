@@ -648,17 +648,17 @@ def test_discovery_reports_broken_forecast_links(forecasts, session_app, tmp_pat
 
 
 def test_parking_point_configuration_is_validated_and_kept_distinct():
-    from app.services.weather.forecast_archive import parse_point, point_id
+    from app.services.weather.forecast_archive import ForecastPoint
 
-    assert point_id(parse_point(None)) == POINT
-    assert point_id(parse_point(" 62.81, 22.9 ")) == "62.8100,22.9000"
+    assert ForecastPoint.parse(None).id == POINT
+    assert ForecastPoint.parse(" 62.81, 22.9 ").id == "62.8100,22.9000"
     for bad in ("62.8", "north,east", "91,22", "62.8,nan"):
         with pytest.raises(ValueError):
-            parse_point(bad)
+            ForecastPoint.parse(bad)
 
 
 def test_other_points_and_returned_locations_never_merge(forecasts, session_app, client):
-    from app.services.weather.forecast_archive import ForecastCollector
+    from app.services.weather.forecast_archive import ForecastCollector, ForecastPoint
 
     collector, fmi, clock = forecasts
     reply = full_run(2)
@@ -666,7 +666,7 @@ def test_other_points_and_returned_locations_never_merge(forecasts, session_app,
     collector.run_pending()
     # The same reply bytes at a reconfigured point are evidence for that point only.
     moved = ForecastCollector(
-        session_app.ctrl, http=fmi, clock=lambda: clock[0], point=(62.81, 22.9)
+        session_app.ctrl, http=fmi, clock=lambda: clock[0], point=ForecastPoint(62.81, 22.9)
     )
     moved.run_pending()
     # FMI snapping the default point to another grid position is a different version.

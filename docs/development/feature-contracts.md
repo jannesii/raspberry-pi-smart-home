@@ -232,7 +232,8 @@ Tests: `tests/test_medicine_calculator.py`, `tests/test_medicine_alert_service.p
 
 ## Weather observation archive
 
-Code: `app/services/weather/observation_archive.py`,
+Code: `app/services/weather/observation_archive.py`, `app/services/weather/fmi_wfs.py`
+(shared fetch, namespaces, aligned scheduler),
 `app/core/_controller/weather_archive.py`, `app/blueprints/api/car_heater/weather.py`.
 Tests: `tests/test_weather_observation_archive.py`, `tests/test_weather_archive_migration.py`.
 
@@ -262,7 +263,8 @@ Tests: `tests/test_weather_observation_archive.py`, `tests/test_weather_archive_
 
 ## Parking-point forecast archive
 
-Code: `app/services/weather/forecast_archive.py`,
+Code: `app/services/weather/forecast_archive.py` (`ForecastPoint` owns the
+`lat,lon` source identity),
 `app/core/_controller/weather_forecast.py`, `app/blueprints/api/car_heater/weather.py`.
 Tests: `tests/test_weather_forecast_archive.py`, `tests/test_weather_forecast_migration.py`.
 

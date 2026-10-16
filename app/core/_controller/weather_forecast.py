@@ -13,6 +13,7 @@ from sqlalchemy import func, insert, select
 if TYPE_CHECKING:
     from sqlalchemy import Engine
 
+from ...services.weather.forecast_archive import ForecastPoint
 from ..schema import (
     weather_forecast_content,
     weather_forecast_receipt,
@@ -72,12 +73,9 @@ def _content_digest(rows: list[dict]) -> str:
     return hashlib.sha256(_canonical(material).encode()).hexdigest()
 
 
-def _requested_location(request: dict) -> dict | None:
-    try:
-        lat, lon = (float(part) for part in request["latlon"].split(","))
-    except (KeyError, ValueError, AttributeError):
-        return None
-    return {"lat": lat, "lon": lon}
+def _point_dict(text: str | None) -> dict | None:
+    point = ForecastPoint.from_id(text)
+    return point.as_dict() if point else None
 
 
 class WeatherForecastMixin:
@@ -423,7 +421,7 @@ class WeatherForecastMixin:
                     "id": row["id"],
                     "source_id": row["source_id"],
                     "request": request,
-                    "requested_location": _requested_location(request),
+                    "requested_location": _point_dict(request.get("latlon")),
                     "location": json.loads(row["location"]) if row["location"] else None,
                     "procedure": row["procedure"],
                     "analysis_time": row["analysis_time"],

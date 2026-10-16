@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import logging
 import math
-import threading
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -27,7 +26,8 @@ import requests
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-from .weather_service import FMI_WFS_URL, PELMAA_ID, RENKO_ID, STOREDQUERY_ID
+from .fmi_wfs import NS, XLINK_HREF, AlignedCollector, MalformedReply, fetch_reply
+from .weather_service import PELMAA_ID, RENKO_ID, STOREDQUERY_ID
 
 logger = logging.getLogger(__name__)
 
@@ -74,19 +74,6 @@ REPORTING_MINUTES = {"r_1h": 60}
 INTERVAL_S = 600
 WINDOW = timedelta(hours=2)
 TIMEOUT_S = 30
-
-_NS = {
-    "wfs": "http://www.opengis.net/wfs/2.0",
-    "om": "http://www.opengis.net/om/2.0",
-    "gml": "http://www.opengis.net/gml/3.2",
-    "wml2": "http://www.opengis.net/waterml/2.0",
-    "target": "http://xml.fmi.fi/namespace/om/atmosphericfeatures/1.1",
-}
-_XLINK_HREF = "{http://www.w3.org/1999/xlink}href"
-
-
-class MalformedReply(ValueError):
-    """The reply is not a parsable WFS observation collection."""
 
 
 @dataclass
@@ -136,19 +123,19 @@ def _reading(param: str, time_text: str, value_text: str) -> Reading | None:
 
 def _location(obs: ET.Element) -> dict[str, Any]:
     info: dict[str, Any] = {}
-    loc = obs.find(".//target:Location", _NS)
+    loc = obs.find(".//target:Location", NS)
     if loc is not None:
-        ident = loc.find("gml:identifier", _NS)
+        ident = loc.find("gml:identifier", NS)
         if ident is not None and ident.text:
             info["fmisid"] = ident.text.strip()
-        for name in loc.findall("gml:name", _NS):
+        for name in loc.findall("gml:name", NS):
             kind = name.attrib.get("codeSpace", "").rsplit("/", 1)[-1]
             if kind and name.text:
                 info[kind] = name.text.strip()
-        region = loc.find("target:region", _NS)
+        region = loc.find("target:region", NS)
         if region is not None and region.text:
             info["region"] = region.text.strip()
-    pos = obs.find(".//gml:Point/gml:pos", _NS)
+    pos = obs.find(".//gml:Point/gml:pos", NS)
     if pos is not None and pos.text:
         parts = pos.text.split()
         if len(parts) == 2:
@@ -166,29 +153,29 @@ def parse_observation_reply(content: bytes) -> list[Series]:
         root = ET.fromstring(content)
     except ET.ParseError as exc:
         raise MalformedReply("XML parse failed") from exc
-    if root.tag != f"{{{_NS['wfs']}}}FeatureCollection":
+    if root.tag != f"{{{NS['wfs']}}}FeatureCollection":
         raise MalformedReply(f"Unexpected root element {root.tag!r}")
     series: list[Series] = []
-    for member in root.findall("wfs:member", _NS):
+    for member in root.findall("wfs:member", NS):
         obs = next(iter(member), None)
         if obs is None:
             continue
-        prop = obs.find("om:observedProperty", _NS)
-        href = prop.attrib.get(_XLINK_HREF) if prop is not None else None
+        prop = obs.find("om:observedProperty", NS)
+        href = prop.attrib.get(XLINK_HREF) if prop is not None else None
         param = None
         if href and "param=" in href:
             param = href.split("param=", 1)[1].split("&", 1)[0].strip() or None
         if param is None:
-            gml_id = obs.find(".//wml2:MeasurementTimeseries", _NS)
-            raw_id = gml_id.attrib.get(f"{{{_NS['gml']}}}id", "") if gml_id is not None else ""
+            gml_id = obs.find(".//wml2:MeasurementTimeseries", NS)
+            raw_id = gml_id.attrib.get(f"{{{NS['gml']}}}id", "") if gml_id is not None else ""
             param = raw_id.rsplit("-", 1)[-1] or None
         if param is None:
             logger.warning("FMI observation member without a parameter identity; skipped")
             continue
         location = _location(obs)
         entry = Series(location.get("fmisid"), param, href, location)
-        for tvp in obs.findall(".//wml2:MeasurementTVP", _NS):
-            t_el, v_el = tvp.find("wml2:time", _NS), tvp.find("wml2:value", _NS)
+        for tvp in obs.findall(".//wml2:MeasurementTVP", NS):
+            t_el, v_el = tvp.find("wml2:time", NS), tvp.find("wml2:value", NS)
             time_text = (t_el.text or "").strip() if t_el is not None else ""
             value_text = (v_el.text or "").strip() if v_el is not None else ""
             reading = _reading(param, time_text, value_text)
@@ -198,88 +185,6 @@ def parse_observation_reply(content: bytes) -> list[Series]:
                 entry.readings.append(reading)
         series.append(entry)
     return series
-
-
-def fetch_reply(http, params, timeout_s, parse, retrieval: dict, now) -> tuple:
-    """Fetch and parse one FMI reply, recording the outcome on ``retrieval``.
-
-    Returns ``(content, parsed)`` for a successful reply and ``(None, None)``
-    otherwise; failed or malformed replies keep no content.
-    """
-    content = parsed = None
-    try:
-        response = http.get(FMI_WFS_URL, params=params, timeout=timeout_s)
-        retrieval["http_status"] = response.status_code
-        response.raise_for_status()
-        content = response.content or b""
-        parsed = parse(content)
-        retrieval["status"] = "ok"
-    except requests.Timeout:
-        retrieval.update(status="failed", error="timeout")
-    except requests.HTTPError:
-        retrieval.update(status="failed", error="http_error")
-    except requests.RequestException as exc:
-        retrieval.update(status="failed", error=f"request_failed:{type(exc).__name__}")
-    except MalformedReply:
-        retrieval.update(status="failed", error="malformed_reply")
-    retrieval["retrieved_at"] = now().isoformat()
-    if retrieval["status"] != "ok":
-        return None, None
-    return content, parsed
-
-
-class AlignedCollector:
-    """Run ``collect`` once per aligned interval slot on a server-owned thread."""
-
-    thread_name = "WeatherCollector"
-
-    def __init__(self, *, clock: Callable[[], float], interval_s: int) -> None:
-        self._clock = clock
-        self.interval_s = int(interval_s)
-        self._last_slot: float | None = None
-        self._stop = threading.Event()
-        self._thread: threading.Thread | None = None
-        self.archive_errors: dict[str, dict] = {}
-
-    def collect(self, slot: datetime) -> None:
-        raise NotImplementedError
-
-    def run_pending(self) -> bool:
-        """Collect once per aligned slot. Returns True when collected."""
-        now = self._clock()
-        slot = now - (now % self.interval_s)
-        if self._last_slot is not None and slot <= self._last_slot:
-            return False
-        self._last_slot = slot
-        self.collect(datetime.fromtimestamp(slot, UTC))
-        return True
-
-    def start(self) -> None:
-        if self._thread is not None:
-            return
-        self._thread = threading.Thread(target=self._run, name=self.thread_name, daemon=True)
-        self._thread.start()
-
-    def stop(self) -> None:
-        self._stop.set()
-
-    def now(self) -> datetime:
-        """Current time on the collector's clock (controllable in tests)."""
-        return datetime.fromtimestamp(self._clock(), UTC)
-
-    @property
-    def running(self) -> bool:
-        return self._thread is not None and self._thread.is_alive() and not self._stop.is_set()
-
-    def _run(self) -> None:
-        while not self._stop.is_set():
-            try:
-                self.run_pending()
-            except Exception:
-                logger.exception("%s cycle failed", self.thread_name)
-            now = self._clock()
-            wait = self.interval_s - (now % self.interval_s)
-            self._stop.wait(max(1.0, min(wait, self.interval_s)))
 
 
 class ObservationCollector(AlignedCollector):
