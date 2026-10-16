@@ -190,11 +190,10 @@ gunicorn --worker-class eventlet --workers 1 --bind 127.0.0.1:5555 run:app
 ```
 
 Replace the example database credentials with your own. `alembic.ini` is
-ignored; its tracked example is credential-free. The migration loader currently
-also reads `../jannenkoti.env` with override enabled: ensure that file does not
-supply a conflicting `DATABASE_URL`. It does not load the repository-root
-`jannenkoti.env` in the same way as `run.py`; export the migration connection
-explicitly.
+ignored; its tracked example is credential-free. The migration loader reads the
+same repository-root `jannenkoti.env` as the service, wherever Alembic is run
+from. An exported `DATABASE_URL` takes precedence over that file, then the
+`alembic.ini` URL is the fallback.
 
 Run the app behind an HTTPS reverse proxy with WebSocket support and set
 `ALLOWED_WS_ORIGINS` to the public origin. Use **one main-app worker** because

@@ -7,11 +7,10 @@ and apply `alembic upgrade head` from the repository root. `DATABASE_URL` is the
 connection URL. `DB_PATH` must also identify a writable SQLite file because
 bootstrap still constructs the legacy manager.
 
-[migrations/env.py](../../migrations/env.py) loads `../jannenkoti.env` with
-`override=True`, then chooses `DATABASE_URL` before the `alembic.ini` URL.
-This differs from `run.py`, which loads the repository-root `jannenkoti.env` when launched
-from the repository root. Check the parent environment file before migration commands;
-an exported connection can otherwise be overridden.
+[migrations/env.py](../../migrations/env.py) loads the repository-root
+`jannenkoti.env` (the service's environment file) without overriding the process
+environment, then chooses `DATABASE_URL` before the `alembic.ini` URL. Export
+`DATABASE_URL` to target another database, such as an isolated restore.
 
 The real `alembic.ini` is ignored. Copy [the example](../../alembic.ini.example)
 once and keep actual credentials in the environment.

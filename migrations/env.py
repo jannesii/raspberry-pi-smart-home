@@ -4,12 +4,16 @@ import logging
 import os
 import sys
 from logging.config import fileConfig
+from pathlib import Path
 
 from alembic import context
 from dotenv import load_dotenv
 from sqlalchemy import engine_from_config, pool
 
-load_dotenv("../jannenkoti.env", override=True)
+# Same file the service loads (run.py, systemd EnvironmentFile), independent of
+# the working directory. An exported DATABASE_URL wins, so restore checks can
+# target an isolated database explicitly.
+load_dotenv(Path(__file__).resolve().parents[1] / "jannenkoti.env", override=False)
 
 # Alembic Config object, provides access to values in alembic.ini
 config = context.config

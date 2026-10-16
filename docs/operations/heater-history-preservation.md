@@ -136,10 +136,11 @@ Resolve any differently named heater-deletion rule found during discovery with
 an owner-reviewed migration/job change before resuming collection; this revision
 cannot remove unknown deployment-specific jobs safely.
 
-Use the existing credential-free `alembic.ini.example` configuration. The current
-migration loader reads `../jannenkoti.env` with **override enabled**. The owner
-must ensure it cannot replace the intended target `DATABASE_URL`, especially
-when validating a restored database. Never print the effective secret URL.
+Use the existing credential-free `alembic.ini.example` configuration. The
+migration loader reads the repository-root `jannenkoti.env`, which points at the
+deployed database. An exported `DATABASE_URL` takes precedence, so always export
+the restored target's URL when validating a restore. Never print the effective
+secret URL.
 
 ```sh
 .venv/bin/alembic current
