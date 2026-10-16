@@ -197,12 +197,25 @@ def _location(obs: ET.Element) -> dict[str, Any]:
     return info
 
 
-def _analysis_time(obs: ET.Element) -> str | None:
+def _resolve(el: ET.Element | None, by_id: dict[str, ET.Element]) -> ET.Element | None:
+    """Follow a local ``xlink:href="#id"`` reference; FMI states shared times once."""
+    if el is None or len(el):
+        return el
+    href = el.attrib.get(XLINK_HREF, "")
+    return by_id.get(href[1:]) if href.startswith("#") else el
+
+
+def _time_in(obs: ET.Element, path: str, tag: str, by_id: dict[str, ET.Element]) -> str | None:
+    holder = _resolve(obs.find(path, NS), by_id)
+    return _utc(_text(holder.find(f".//gml:{tag}", NS))) if holder is not None else None
+
+
+def _analysis_time(obs: ET.Element, by_id: dict[str, ET.Element]) -> str | None:
     for named in obs.findall("om:parameter/om:NamedValue", NS):
         name = named.find("om:name", NS)
         href = name.attrib.get(XLINK_HREF, "") if name is not None else ""
         if href.rsplit("/", 1)[-1] == _ANALYSIS_TIME:
-            return _utc(_text(named.find(".//gml:timePosition", NS)))
+            return _time_in(named, "om:value", "timePosition", by_id)
     return None
 
 
@@ -218,6 +231,8 @@ def parse_forecast_reply(content: bytes) -> list[ForecastSeries]:
         raise MalformedReply("XML parse failed") from exc
     if root.tag != f"{{{NS['wfs']}}}FeatureCollection":
         raise MalformedReply(f"Unexpected root element {root.tag!r}")
+    gml_id = f"{{{NS['gml']}}}id"
+    by_id = {el.attrib[gml_id]: el for el in root.iter() if gml_id in el.attrib}
     series: list[ForecastSeries] = []
     for member in root.findall("wfs:member", NS):
         obs = next(iter(member), None)
@@ -236,10 +251,10 @@ def parse_forecast_reply(content: bytes) -> list[ForecastSeries]:
             parameter=param,
             property_href=href,
             procedure=procedure.attrib.get(XLINK_HREF) if procedure is not None else None,
-            analysis_time=_analysis_time(obs),
-            result_time=_utc(_text(obs.find("om:resultTime//gml:timePosition", NS))),
-            phenomenon_start=_utc(_text(obs.find("om:phenomenonTime//gml:beginPosition", NS))),
-            phenomenon_end=_utc(_text(obs.find("om:phenomenonTime//gml:endPosition", NS))),
+            analysis_time=_analysis_time(obs, by_id),
+            result_time=_time_in(obs, "om:resultTime", "timePosition", by_id),
+            phenomenon_start=_time_in(obs, "om:phenomenonTime", "beginPosition", by_id),
+            phenomenon_end=_time_in(obs, "om:phenomenonTime", "endPosition", by_id),
             location=_location(obs),
         )
         for tvp in obs.findall(".//wml2:MeasurementTVP", NS):

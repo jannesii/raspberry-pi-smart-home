@@ -64,15 +64,23 @@ def forecast_reply(
             f"<wml2:value>{value}</wml2:value></wml2:MeasurementTVP></wml2:point>"
             for t, value in points
         )
-        members.append(f"""
-  <wfs:member><omso:PointTimeSeriesObservation gml:id="WFS-{i}--{param}">
-    <om:phenomenonTime><gml:TimePeriod gml:id="time-interval-1-{i}">
-      <gml:beginPosition>{_stamp(min(times))}</gml:beginPosition>
-      <gml:endPosition>{_stamp(max(times))}</gml:endPosition>
+        if i == 1:
+            span, stamps = min(times), max(times)
+            times_xml = f"""
+    <om:phenomenonTime><gml:TimePeriod gml:id="time-interval-1-1">
+      <gml:beginPosition>{_stamp(span)}</gml:beginPosition>
+      <gml:endPosition>{_stamp(stamps)}</gml:endPosition>
     </gml:TimePeriod></om:phenomenonTime>
-    <om:resultTime><gml:TimeInstant gml:id="time-1-{i}">
+    <om:resultTime><gml:TimeInstant gml:id="time-1-1">
       <gml:timePosition>{_stamp(result)}</gml:timePosition>
-    </gml:TimeInstant></om:resultTime>
+    </gml:TimeInstant></om:resultTime>"""
+        else:
+            # Like live FMI replies, later members refer to the first member's times.
+            times_xml = """
+    <om:phenomenonTime xlink:href="#time-interval-1-1"/>
+    <om:resultTime xlink:href="#time-1-1"/>"""
+        members.append(f"""
+  <wfs:member><omso:PointTimeSeriesObservation gml:id="WFS-{i}--{param}">{times_xml}
     <om:procedure xlink:href="{procedure}"/>
     <om:parameter><om:NamedValue>
       <om:name xlink:href="https://inspire.ec.europa.eu/codeList/ProcessParameterValue/value/numericalModel/analysisTime"/>
