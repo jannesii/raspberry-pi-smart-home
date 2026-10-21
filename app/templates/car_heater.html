@@ -11,7 +11,8 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_logs.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_sessions.css', v='20261021-1') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_departure.css', v='20261021-2') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_heating.css', v='20261021-2') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_heating.css', v='20261021-3') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_preferences.css', v='20261021-1') }}">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 {% endblock %}
@@ -103,116 +104,98 @@
         </div>
         <p id="modeLockReason" class="heating-lock-reason"></p>
         <a id="boundedSessionLink" hidden>Review this heating session</a>
-        <details class="comfort-tools">
-          <summary>Comfort heating</summary>
-          <p class="heating-support">Existing comfort and Ready-by controls. They are unavailable while a timed session runs and never resume on their own after it ends.</p>
+        <details class="comfort-tools" id="comfortSection">
+          <summary>
+            <span>Comfort heating</span>
+            <span id="comfortSummaryState" class="comfort-summary-state">—</span>
+          </summary>
+          <p class="heating-support">Keeps cabin air near a target. It is separate from departure defrost and does not mean the windows are clear. It cannot start during timed heating and never resumes on its own afterwards.</p>
+          <p id="comfortState" class="comfort-state" aria-live="polite" aria-atomic="true">Loading comfort heating…</p>
+          <form id="comfortForm" class="comfort-form" novalidate>
+            <label for="comfortTarget">Target cabin temperature (°C)</label>
+            <input id="comfortTarget" type="number" inputmode="decimal" step="0.5" min="-50" max="50" autocomplete="off" aria-describedby="comfortTargetHelp">
+            <p id="comfortTargetHelp" class="heating-support">Saved target: <span id="comfortSavedTarget">—</span>. Edits stay unsaved until Save target or Start comfort heating.</p>
+            <p class="heating-support">Hysteresis <span id="comfortHysteresis">—</span> · <a href="{{ url_for('web.car_heater_settings_page') }}#heatingPreferences">Change in Settings</a></p>
+            <div class="comfort-actions">
+              <button type="submit" id="comfortStart" class="heating-primary" aria-describedby="comfortLockReason">Start comfort heating</button>
+              <button type="button" id="comfortSave">Save target</button>
+              <button type="button" id="comfortStop">Stop comfort heating</button>
+            </div>
+          </form>
           <p id="comfortLockReason" class="heating-lock-reason"></p>
-      <section class="ios-card">
-        <div class="temp-control-section">
-          <div class="temp-control-header">
-            <span class="temp-control-title">Keep at Temperature</span>
-            <label class="ios-toggle">
-              <input type="checkbox" id="keepAtTempToggle" name="keepAtTempToggle" aria-label="Keep at Temperature" aria-describedby="comfortLockReason">
-              <span class="ios-toggle-track"></span>
-              <span class="ios-toggle-thumb"></span>
-            </label>
-          </div>
-          <p class="temp-control-subtitle">Automatically maintain target temperature</p>
-          <div class="temp-inputs-row">
-            <div class="temp-input-group">
-              <label class="temp-input-label" for="targetTempInput">Target</label>
-              <div class="temp-input-wrapper">
-                <input type="number" id="targetTempInput" name="targetTempInput"
-                       inputmode="decimal" step="0.5" min="-40" max="40"
-                       placeholder="-5" autocomplete="off">
-                <span class="temp-input-unit">°C</span>
+          <p id="comfortFeedback" class="comfort-feedback" role="status" aria-live="polite"></p>
+          <p class="heating-support">Stopping comfort heating leaves the relay as it is. If the heater reports ON, use Stop heating.</p>
+          <details class="legacy-ready-by">
+            <summary>Ready by (legacy cabin target)</summary>
+            <p class="heating-support">The earlier cabin-temperature schedule, kept until its replacement. Use Departure plan for defrost.</p>
+            <div class="ready-by-section">
+              <div class="ready-by-header">
+                <div class="ready-by-title-row">
+                  <div class="ready-by-icon">🎯</div>
+                  <div class="ready-by-title-info">
+                    <h4>Ready by Time</h4>
+                    <p id="readyByStatusText" class="ready-by-status">No schedule</p>
+                  </div>
+                </div>
+              </div>
+              <!-- Progress bar (shown when scheduled/running) -->
+              <div id="readyByProgress" class="ready-by-progress" style="display: none;">
+                <div class="progress-bar">
+                  <div id="readyByProgressFill" class="progress-fill"></div>
+                </div>
+                <div class="progress-labels">
+                  <span id="readyByProgressStart">Start</span>
+                  <span id="readyByProgressEnd">Target time</span>
+                </div>
+              </div>
+              <div class="ready-by-inputs">
+                <div class="ready-by-input-group">
+                  <label class="ready-by-input-label" for="readyByTimeInput">Ready by</label>
+                  <input type="datetime-local" id="readyByTimeInput" name="readyByTimeInput"
+                         autocomplete="off">
+                </div>
+                <div class="ready-by-input-group">
+                  <label class="ready-by-input-label" for="readyByTargetInput">Target</label>
+                  <div class="temp-input-wrapper">
+                    <input type="number" id="readyByTargetInput" name="readyByTargetInput"
+                           inputmode="decimal" step="0.5" min="-40" max="40"
+                           placeholder="-5" value="-5" autocomplete="off">
+                    <span class="temp-input-unit">°C</span>
+                  </div>
+                </div>
+              </div>
+              <div class="ready-by-info" id="readyByInfoPanel" style="display: none;">
+                <div class="ready-by-info-row">
+                  <span class="ready-by-info-label">ETA:</span>
+                  <span id="readyByEtaText" class="ready-by-info-value">—</span>
+                </div>
+                <div class="ready-by-info-row">
+                  <span class="ready-by-info-label">Planned start:</span>
+                  <span id="readyByPlannedStart" class="ready-by-info-value">—</span>
+                </div>
+                <div class="ready-by-info-row">
+                  <span class="ready-by-info-label">Current cabin:</span>
+                  <span id="readyByCabinTemp" class="ready-by-info-value">—</span>
+                </div>
+                <div class="ready-by-info-row">
+                  <span class="ready-by-info-label">Outside:</span>
+                  <span id="readyByOutsideTemp" class="ready-by-info-value">—</span>
+                </div>
+                <div class="ready-by-info-row">
+                  <span class="ready-by-info-label">Model params:</span>
+                  <span id="readyByModelParams" class="ready-by-info-value ready-by-params">—</span>
+                </div>
+              </div>
+              <div class="ready-by-actions">
+                <button id="btnReadyBySchedule" class="ready-by-btn schedule-btn" type="button">
+                  <span class="btn-icon">📅</span> Schedule
+                </button>
+                <button id="btnReadyByCancel" class="ready-by-btn cancel-btn" type="button" disabled>
+                  <span class="btn-icon">✕</span> Cancel
+                </button>
               </div>
             </div>
-            <div class="temp-input-group">
-              <label class="temp-input-label" for="hysteresisInput">Hysteresis</label>
-              <div class="temp-input-wrapper">
-                <input type="number" id="hysteresisInput" name="hysteresisInput"
-                       inputmode="decimal" step="0.1" min="0.1" max="10"
-                       placeholder="1" autocomplete="off">
-                <span class="temp-input-unit">°C</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Ready by Time -->
-    <div class="ready-by-section">
-      <div class="ready-by-header">
-        <div class="ready-by-title-row">
-          <div class="ready-by-icon">🎯</div>
-          <div class="ready-by-title-info">
-            <h4>Ready by Time</h4>
-            <p id="readyByStatusText" class="ready-by-status">No schedule</p>
-          </div>
-        </div>
-
-      </div>
-
-      <!-- Progress bar (shown when scheduled/running) -->
-      <div id="readyByProgress" class="ready-by-progress" style="display: none;">
-        <div class="progress-bar">
-          <div id="readyByProgressFill" class="progress-fill"></div>
-        </div>
-        <div class="progress-labels">
-          <span id="readyByProgressStart">Start</span>
-          <span id="readyByProgressEnd">Target time</span>
-        </div>
-      </div>
-
-      <div class="ready-by-inputs">
-        <div class="ready-by-input-group">
-          <label class="ready-by-input-label" for="readyByTimeInput">Ready by</label>
-          <input type="datetime-local" id="readyByTimeInput" name="readyByTimeInput"
-                 autocomplete="off">
-        </div>
-        <div class="ready-by-input-group">
-          <label class="ready-by-input-label" for="readyByTargetInput">Target</label>
-          <div class="temp-input-wrapper">
-            <input type="number" id="readyByTargetInput" name="readyByTargetInput"
-                   inputmode="decimal" step="0.5" min="-40" max="40"
-                   placeholder="-5" value="-5" autocomplete="off">
-            <span class="temp-input-unit">°C</span>
-          </div>
-        </div>
-      </div>
-      <div class="ready-by-info" id="readyByInfoPanel" style="display: none;">
-        <div class="ready-by-info-row">
-          <span class="ready-by-info-label">ETA:</span>
-          <span id="readyByEtaText" class="ready-by-info-value">—</span>
-        </div>
-        <div class="ready-by-info-row">
-          <span class="ready-by-info-label">Planned start:</span>
-          <span id="readyByPlannedStart" class="ready-by-info-value">—</span>
-        </div>
-        <div class="ready-by-info-row">
-          <span class="ready-by-info-label">Current cabin:</span>
-          <span id="readyByCabinTemp" class="ready-by-info-value">—</span>
-        </div>
-        <div class="ready-by-info-row">
-          <span class="ready-by-info-label">Outside:</span>
-          <span id="readyByOutsideTemp" class="ready-by-info-value">—</span>
-        </div>
-        <div class="ready-by-info-row">
-          <span class="ready-by-info-label">Model params:</span>
-          <span id="readyByModelParams" class="ready-by-info-value ready-by-params">—</span>
-        </div>
-      </div>
-      <div class="ready-by-actions">
-        <button id="btnReadyBySchedule" class="ready-by-btn schedule-btn" type="button">
-          <span class="btn-icon">📅</span> Schedule
-        </button>
-        <button id="btnReadyByCancel" class="ready-by-btn cancel-btn" type="button" disabled>
-          <span class="btn-icon">✕</span> Cancel
-        </button>
-      </div>
-    </div>
-
-  </section>
+          </details>
         </details>
       </section>
 
@@ -267,10 +250,82 @@
     </aside>
   </div><!-- /heating-layout -->
   <section class="heater-evidence heater-settings" {% if heater_view != 'settings' %}hidden{% endif %} aria-labelledby="heaterSettingsHeading">
-    <h2 id="heaterSettingsHeading">Settings &amp; diagnostics</h2>
-    <p>Existing heating preferences, calibration, charts and logs remain available here.</p>
-    <button id="btnOpenReadyBySettings" class="evidence-button" type="button">Heating preferences &amp; calibration</button>
-    <h3 class="heater-details-heading">Latest device telemetry</h3>
+    <h2 id="heaterSettingsHeading">Settings</h2>
+    <nav class="settings-groups" aria-label="Settings groups">
+      <a href="#heatingPreferences">Heating preferences</a>
+      <a href="#installationDevices">Installation &amp; devices</a>
+      <a href="#calibration">Calibration</a>
+      <a href="#diagnostics">Diagnostics</a>
+    </nav>
+
+    <section id="heatingPreferences" class="settings-group" aria-labelledby="heatingPreferencesHeading">
+      <h3 id="heatingPreferencesHeading">Heating preferences</h3>
+      <form id="preferencesForm" class="settings-form" novalidate>
+        <label for="prefHysteresis">Comfort hysteresis (°C)</label>
+        <input id="prefHysteresis" type="number" inputmode="decimal" step="0.1" min="0.1" max="10" autocomplete="off" aria-describedby="prefHysteresisHelp">
+        <p id="prefHysteresisHelp" class="settings-help">The band around the comfort target. With a -5 °C target and 1 °C, comfort heating switches on below -5.5 °C and off above -4.5 °C. A wider band switches the relay less often. 0.1–10 °C.</p>
+        <div class="settings-actions">
+          <button type="submit" id="preferencesSave" class="evidence-button evidence-primary">Save preferences</button>
+        </div>
+        <p id="preferencesFeedback" class="settings-feedback" role="status" aria-live="polite"></p>
+      </form>
+      <dl class="settings-facts">
+        <dt>Comfort target</dt><dd id="prefComfortTarget">—</dd>
+        <dt>Comfort heating</dt><dd id="prefComfortState">—</dd>
+        <dt>Manual heating</dt><dd>Defaults to 60 minutes; each session is limited to 180 minutes. Not a saved preference.</dd>
+      </dl>
+    </section>
+
+    <section id="installationDevices" class="settings-group" aria-labelledby="installationHeading">
+      <h3 id="installationHeading">Installation &amp; devices</h3>
+      <p>Record what is installed and where. Each save is kept as history and copied into heating sessions created afterwards; earlier sessions keep what they recorded.</p>
+      <form id="installationForm" class="settings-form" novalidate>
+        <label for="instHeater">Heater</label>
+        <input id="instHeater" name="heater" type="text" maxlength="500" autocomplete="off" placeholder="For example: cabin heater model and power" aria-describedby="instHeaterHelp">
+        <p id="instHeaterHelp" class="settings-help">The appliance the relay switches. Battery charging is not controlled here.</p>
+        <label for="instPower">Power topology</label>
+        <textarea id="instPower" name="power_topology" maxlength="500" rows="2" placeholder="For example: mains → Shelly relay (switch 0) → heater cable" aria-describedby="instPowerHelp"></textarea>
+        <p id="instPowerHelp" class="settings-help">How power reaches the heater, including the relay and any cable or socket.</p>
+        <label for="instGlassReference">Glass reference sensor position</label>
+        <input id="instGlassReference" name="glass_reference_position" type="text" maxlength="500" autocomplete="off" placeholder="For example: lower middle of the driver's viewing area" aria-describedby="instGlassReferenceHelp">
+        <p id="instGlassReferenceHelp" class="settings-help">Where the reference TMP117 touches the windshield. Its reading drives the experimental glass indicator.</p>
+        <label for="instGlassComparison">Glass comparison sensor position</label>
+        <input id="instGlassComparison" name="glass_comparison_position" type="text" maxlength="500" autocomplete="off" placeholder="For example: lower driver-side band above the black border" aria-describedby="instGlassComparisonHelp">
+        <p id="instGlassComparisonHelp" class="settings-help">Where the second TMP117 touches the glass, for comparison only.</p>
+        <label for="instCabin">Cabin sensor position</label>
+        <input id="instCabin" name="cabin_position" type="text" maxlength="500" autocomplete="off" placeholder="For example: shaded, away from heater airflow and electronics" aria-describedby="instCabinHelp">
+        <p id="instCabinHelp" class="settings-help">Where the SHT45 measures cabin air temperature and humidity.</p>
+        <div class="settings-actions">
+          <button type="submit" id="installationSave" class="evidence-button evidence-primary">Save installation</button>
+        </div>
+        <p id="installationFeedback" class="settings-feedback" role="status" aria-live="polite"></p>
+      </form>
+      <p id="installationSaved" class="settings-help">Loading installation record…</p>
+      <details id="installationHistory" class="settings-history" hidden>
+        <summary>Earlier records (<span id="installationHistoryCount">0</span>)</summary>
+        <ol id="installationHistoryList"></ol>
+      </details>
+
+      <h4>Reported by devices</h4>
+      <p class="settings-help">Only what the devices last reported. Missing reports stay unavailable; nothing here needs winter measurements.</p>
+      <dl id="deviceFacts" class="settings-facts">
+        <dt>Firmware</dt><dd id="factFirmware">—</dd>
+        <dt>Relay control</dt><dd id="factRelay">—</dd>
+      </dl>
+      <ul id="deviceSensors" class="device-sensors"></ul>
+      <button id="btnRefreshDevices" class="evidence-button" type="button">Refresh device facts</button>
+      <p id="deviceFactsStatus" class="settings-feedback" role="status" aria-live="polite"></p>
+    </section>
+
+    <section id="calibration" class="settings-group" aria-labelledby="calibrationHeading">
+      <h3 id="calibrationHeading">Calibration</h3>
+      <p>Existing Ready-by and kFactor calibration tools, unchanged until their redesign. Calibration never controls departure heating.</p>
+      <button id="btnOpenReadyBySettings" class="evidence-button" type="button">Open calibration tools</button>
+    </section>
+
+    <section id="diagnostics" class="settings-group" aria-labelledby="diagnosticsHeading">
+    <h3 id="diagnosticsHeading">Diagnostics</h3>
+    <h4 class="heater-details-heading">Latest device telemetry</h4>
   <section class="ios-card">
     <div class="ios-card-header">
       <h3>Details</h3>
@@ -386,6 +441,7 @@
       <p>Observations are selected by source time and include every revision; forecasts by valid time and include every version received; coverage lists collected stretches, gaps and unchecked forecast stretches. Exports keep source text, units, received missing values and backfill labels. Original replies remain separate downloads.</p>
     </form>
   </section>
+    </section>
   </section>
 
 </div>
@@ -394,7 +450,6 @@
   window.CAR_HEATER_LAST_STATUS = {{ last_status | tojson }};
   window.CAR_HEATER_CMD_STATUS = {{ command_status | tojson }};
   window.CAR_HEATER_CHARGE_STATE = {{ charge_mode_state | tojson }};
-  window.CAR_HEATER_KEEP_AT_TEMP = {{ keep_at_temp_settings | tojson }};
   window.CAR_HEATER_READY_BY = {{ ready_by_schedule | tojson }};
   window.CAR_HEATER_KFACTOR = {{ kfactor_status | tojson }};
   window.CAR_HEATER_WEATHER = {{ weather_data | tojson }};
@@ -405,11 +460,12 @@
 {% endblock %}
 
 {% block scripts %}
-<script defer src="{{ url_for('static', filename='js/car_heater_bounded.js', v='20261021-2') }}"></script>
+<script defer src="{{ url_for('static', filename='js/car_heater_bounded.js', v='20261021-3') }}"></script>
 <script defer src="{{ url_for('static', filename='js/car_heater_departure.js', v='20261021-2') }}"></script>
 <script defer src="{{ url_for('static', filename='js/car_heater_weather_health.js', v='20261021-1') }}"></script>
+<script defer src="{{ url_for('static', filename='js/car_heater_preferences.js', v='20261021-2') }}"></script>
 <script src="{{ url_for('static', filename='js/init_sio.js', v='20260504-1') }}"></script>
-<script src="{{ url_for('static', filename='js/car_heater.js', v='20261021-2') }}"></script>
+<script src="{{ url_for('static', filename='js/car_heater.js', v='20261021-3') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater_logs.js', v='20260323-1') }}"></script>
 <script src="{{ url_for('static', filename='js/flash.js') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater_chart.js', v='20261014-2') }}"></script>

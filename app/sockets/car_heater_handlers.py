@@ -14,7 +14,7 @@ from flask import current_app
 from flask_login import current_user
 
 if TYPE_CHECKING:
-    from ..services.car_heater import CarHeaterService
+    from ..services.car_heater import CarHeaterService, KeepAtTempService
     from ._handlers import SocketEventHandler
 
 logger = logging.getLogger(__name__)
@@ -154,10 +154,20 @@ def handle_car_heater_charge_mode(handler: SocketEventHandler, data: dict[str, A
 
 
 def handle_car_heater_keep_at_temp(handler: SocketEventHandler, data: dict[str, Any]) -> None:
-    """Handle car heater keep-at-temperature settings from the web UI."""
+    """Save comfort settings from the web UI; same contract as PATCH /comfort."""
     if data is None or not isinstance(data, dict):
         handler.socketio.emit("error", {"message": "Invalid keep-at-temp payload"})
-        logger.warning("Bad keep_at_temp payload: %s", data)
+        logger.warning("Bad keep_at_temp payload type: %s", type(data).__name__)
+        return
+
+    from flask_wtf.csrf import ValidationError, validate_csrf
+
+    try:
+        if not current_user.is_authenticated:
+            raise ValueError("Authentication required")
+        validate_csrf(data.get("csrf_token"))
+    except (ValidationError, ValueError) as exc:
+        handler.socketio.emit("error", {"message": str(exc)})
         return
 
     # Permission check
@@ -165,7 +175,7 @@ def handle_car_heater_keep_at_temp(handler: SocketEventHandler, data: dict[str, 
         handler.flash("Permission denied for keep-at-temp settings.", "error")
         return
 
-    from ..services.car_heater import KeepAtTempService, KeepAtTempSettings
+    from ..blueprints.api.car_heater.comfort import comfort_payload
 
     try:
         svc: KeepAtTempService | None = getattr(current_app, "keep_at_temp_service", None)
@@ -175,55 +185,15 @@ def handle_car_heater_keep_at_temp(handler: SocketEventHandler, data: dict[str, 
         handler.socketio.emit("error", {"message": "Keep-at-temp service not initialized"})
         return
 
+    changes = {k: v for k, v in data.items() if k != "csrf_token"}
     try:
-        # Build partial update - only set fields that were provided
-        current_settings = svc.get_settings() or KeepAtTempSettings()
-        settings = KeepAtTempSettings(
-            target_temperature_c=current_settings.target_temperature_c,
-            hysteresis_c=current_settings.hysteresis_c,
-            enabled=current_settings.enabled,
-        )
-
-        if "enabled" in data:
-            settings.enabled = bool(data["enabled"])
-
-        target_key = "target_temperature_c" if "target_temperature_c" in data else "target_temp_c"
-        if target_key in data:
-            temp = float(data[target_key])
-            if not -50 <= temp <= 50:
-                raise ValueError("Target temp out of range (-50 to 50°C)")
-            settings.target_temperature_c = temp
-
-        if "hysteresis_c" in data:
-            hyst = float(data["hysteresis_c"])
-            if not 0.1 <= hyst <= 10:
-                raise ValueError("Hysteresis out of range (0.1 to 10°C)")
-            settings.hysteresis_c = hyst
-
-        svc.update_settings(settings)
-        settings_new = svc.get_settings()
-
-        handler.emit_to_views(
-            "keep_at_temp_settings",
-            {
-                "enabled": settings_new.enabled,
-                "target_temperature_c": settings_new.target_temperature_c,
-                "hysteresis_c": settings_new.hysteresis_c,
-            },
-        )
+        svc.apply_changes(changes)
     except ValueError as e:
+        # Includes ownership refusals; the saved state lets the page drop
+        # its unsaved edit.
         handler.socketio.emit("error", {"message": str(e)})
-        logger.warning("Invalid keep-at-temp value: %s", e)
-        if svc:
-            current_settings = svc.get_settings()
-            handler.emit_to_views(
-                "keep_at_temp_settings",
-                {
-                    "enabled": current_settings.enabled,
-                    "target_temperature_c": current_settings.target_temperature_c,
-                    "hysteresis_c": current_settings.hysteresis_c,
-                },
-            )
+        logger.warning("Comfort settings refused: %s", e)
     except Exception as e:
         logger.exception("keep_at_temp_settings error: %s", e)
-        handler.socketio.emit("error", {"message": "Keep-at-temp settings error"})
+        handler.socketio.emit("error", {"message": "Comfort settings were not saved"})
+    handler.emit_to_views("keep_at_temp_settings", comfort_payload(svc))

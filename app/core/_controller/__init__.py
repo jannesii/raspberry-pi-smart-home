@@ -2,6 +2,7 @@ from ._base import ControllerBase
 from .ac import ACMixin
 from .auth import AuthMixin
 from .car_heater import CarHeaterMixin
+from .car_heater_installation import CarHeaterInstallationMixin
 from .car_heater_kfactor import CarHeaterKFactorMixin
 from .car_heater_ready_by import CarHeaterReadyByMixin
 from .car_heater_sensors import CarHeaterSensorMixin
@@ -19,6 +20,7 @@ from .ynab_categorizer import YnabCategorizerMixin
 __all__ = [
     "ACMixin",
     "AuthMixin",
+    "CarHeaterInstallationMixin",
     "CarHeaterKFactorMixin",
     "CarHeaterMixin",
     "CarHeaterReadyByMixin",

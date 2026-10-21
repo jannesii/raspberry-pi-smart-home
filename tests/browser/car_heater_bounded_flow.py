@@ -40,7 +40,14 @@ if __name__ == "__main__":
         start = page.get_by_role("button", name="Start timed heating", exact=True)
         stop = page.locator("#btnTurnOff")
         duration = page.get_by_label("Manual heating duration (minutes)", exact=True)
-        comfort = page.get_by_label("Keep at Temperature", exact=True)
+        comfort = page.get_by_role("button", name="Start comfort heating", exact=True)
+        saved = context.request.patch(
+            origin + "/api/car_heater/comfort",
+            headers=auth,
+            data={"target_temperature_c": -5, "hysteresis_c": 1},
+        )
+        assert saved.status == 200, saved.text()
+        page.reload()
         nav = page.get_by_role("navigation", name="Car heater", exact=True)
         expect(nav.get_by_role("link", name="Heating", exact=True)).to_have_attribute(
             "aria-current", "page"
@@ -106,7 +113,7 @@ if __name__ == "__main__":
         expect(start).to_be_disabled()
         expect(duration).to_be_disabled()
         expect(page.locator("#modeLockReason")).to_have_text(reason)
-        page.get_by_text("Comfort heating", exact=True).click()
+        page.locator("#comfortSection > summary").click()
         expect(comfort).to_be_disabled()
         expect(page.locator("#comfortLockReason")).to_have_text(reason)
         bypass = context.request.post(
@@ -185,6 +192,8 @@ if __name__ == "__main__":
         frame(transport="ws", relay=False, power=0, session="current", phase="stopped")
         expect(state).to_contain_text("OFF confirmed", timeout=12000)
         expect(start).to_be_enabled()
+        # The reload above collapsed Comfort heating again.
+        page.locator("#comfortSection > summary").click()
         expect(comfort).to_be_enabled()
         expect(page.locator("#modeLockReason")).to_have_text("")
         expect(page.locator("#boundedRemaining")).to_have_text("—")

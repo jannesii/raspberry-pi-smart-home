@@ -367,6 +367,31 @@ See [setup and physical acceptance](docs/operations/bounded-car-heater.md) befor
 owner-controlled deployment/flashing in #12. Review the permanent session to see
 request, relay, actual draw and shutdown milestones; outcomes remain independent.
 
+### Comfort heating and Settings
+
+**Heating → Comfort heating** (collapsed by default) keeps cabin air near a
+target using the saved hysteresis. It is separate from departure defrost and
+never means the windows are clear. Editing the target saves nothing until
+**Save target** or **Start comfort heating**; the shown state and saved target
+come from the server's persisted reply. Starting is unavailable, with the reason
+shown, while a timed session runs or until its OFF is confirmed, and the server
+refuses such a start too. A timed start switches comfort off; it never resumes on
+its own. **Stop comfort heating** leaves the relay as it is; use **Stop heating**
+if the heater reports ON. The legacy cabin-target **Ready by** stays inside this
+section until it is retired.
+
+**Settings** groups **Heating preferences** (comfort hysteresis, with an
+explanation and an explicit **Save preferences**), **Installation & devices**,
+**Calibration** (the existing Ready-by/kFactor tools) and **Diagnostics**
+(telemetry, command status, charts, logs and weather collection). Installation &
+devices records the heater, power topology and the three sensor positions. Each
+save is kept as history and copied into heating sessions created afterwards;
+earlier sessions keep their own snapshot. Below it, firmware, relay capability
+and each sensor's state show only what the devices last reported; sensor models
+and I2C addresses are labelled as firmware defaults because the device does not
+report them. The record needs migration **20261021_0019**; without it heating
+still works and the page says the record cannot be read.
+
 ### Departure defrost planning
 
 In **Car Heater → Heating**, edit **Next departure** in Europe/Helsinki time.
@@ -469,7 +494,7 @@ Backfilled readings keep their actual retrieval time and purpose
 original. A restart resumes from the recorded history start and the
 retrieval history; it never re-initializes.
 
-**Settings & diagnostics → Weather collection** shows each station's last
+**Settings → Diagnostics → Weather collection** shows each station's last
 collection and last failure. It also shows which fields had values, which came
 back empty and which the station did not return. A missing field is a source
 limitation; a failed or stale collector is shown separately. It also shows
@@ -543,7 +568,7 @@ planner keeps its observed-temperature source, and no forecast or radiation
 field controls heating. A different point or configuration is a separate
 source and never merges with earlier evidence.
 
-**Settings & diagnostics → Weather collection** shows the forecast's last
+**Settings → Diagnostics → Weather collection** shows the forecast's last
 check and last failure, plus the model run, hours received and any stretches
 in the last 24 hours without a successful check. It also shows which fields
 had values, which came back empty and which FMI did not return.
@@ -583,7 +608,7 @@ began, versions received during the window and stretches without a successful
 check. Collection failures, a stale collector and automatic repair are
 explained in the same place. Links download the window's exports.
 
-**Settings & diagnostics → Weather collection → Export archived weather**
+**Settings → Diagnostics → Weather collection → Export archived weather**
 exports other dates (Europe/Helsinki calendar days): station observations for
 up to 7 days, forecast values for up to 2 days, or coverage and gaps for up to
 7 days, as CSV or JSON. Rows keep source text, units, revisions (`current`),

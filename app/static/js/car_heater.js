@@ -424,25 +424,6 @@ function updateChargeModeUI(state) {
 }
 
 // ============================================
-// Keep at Temperature
-// ============================================
-
-function updateKeepAtTempUI(settings) {
-  const toggle = document.getElementById('keepAtTempToggle');
-  const targetInput = document.getElementById('targetTempInput');
-  const hysteresisInput = document.getElementById('hysteresisInput');
-  if (!toggle || !targetInput || !hysteresisInput) return;
-
-  toggle.checked = !!(settings && settings.enabled);
-  targetInput.value = settings && settings.target_temperature_c != null
-    ? String(settings.target_temperature_c)
-    : '';
-  hysteresisInput.value = settings && settings.hysteresis_c != null
-    ? String(settings.hysteresis_c)
-    : '';
-}
-
-// ============================================
 // Queue Status Banner
 // ============================================
 
@@ -563,10 +544,6 @@ document.addEventListener('DOMContentLoaded', () => {
     updateChargeModeUI(null);
   }
 
-  if (typeof window.CAR_HEATER_KEEP_AT_TEMP !== 'undefined') {
-    updateKeepAtTempUI(window.CAR_HEATER_KEEP_AT_TEMP);
-  }
-
   // Weather display
   if (typeof window.CAR_HEATER_WEATHER !== 'undefined') {
     updateWeatherDisplay(window.CAR_HEATER_WEATHER);
@@ -627,44 +604,6 @@ document.addEventListener('DOMContentLoaded', () => {
         queueCommand('turn_on');
       }
     });
-  }
-
-  // Keep at temp controls
-  const keepAtTempToggle = document.getElementById('keepAtTempToggle');
-  const keepAtTempTarget = document.getElementById('targetTempInput');
-  const keepAtTempHysteresis = document.getElementById('hysteresisInput');
-
-  function sendKeepAtTempSettings() {
-    try {
-      const enabled = keepAtTempToggle ? keepAtTempToggle.checked : false;
-      const targetTemp = keepAtTempTarget ? Number(keepAtTempTarget.value) : null;
-      const hysteresis = keepAtTempHysteresis ? Number(keepAtTempHysteresis.value) : null;
-
-      const settings = {
-        enabled: enabled,
-        target_temperature_c: targetTemp,
-        hysteresis_c: hysteresis,
-      };
-
-      if (window.socket) {
-        window.socket.emit('keep_at_temp_settings', settings);
-      }
-    } catch (err) {
-      console.warn('Socket emit failed for keep-at-temp settings:', err);
-    }
-  }
-
-  if (keepAtTempToggle) {
-    keepAtTempToggle.addEventListener('change', sendKeepAtTempSettings);
-  }
-  if (keepAtTempTarget) {
-    keepAtTempTarget.addEventListener('change', sendKeepAtTempSettings);
-    // Also send on blur for better mobile UX
-    keepAtTempTarget.addEventListener('blur', sendKeepAtTempSettings);
-  }
-  if (keepAtTempHysteresis) {
-    keepAtTempHysteresis.addEventListener('change', sendKeepAtTempSettings);
-    keepAtTempHysteresis.addEventListener('blur', sendKeepAtTempSettings);
   }
 
   // Socket.IO event handlers
@@ -729,13 +668,6 @@ document.addEventListener('DOMContentLoaded', () => {
       console.log('📡 car_heater_charge_mode:', data);
       if (data) {
         updateChargeModeUI(data);
-      }
-    });
-
-    window.socket.on('keep_at_temp_settings', data => {
-      console.log('📡 keep_at_temp_settings:', data);
-      if (data) {
-        updateKeepAtTempUI(data);
       }
     });
   } else {

@@ -46,6 +46,20 @@ class BoundedHeatingMixin:
             )
             return run
 
+    def get_device_capability(self):
+        """Latest relay-local capability report with its age, or None if none arrived."""
+        with self._lock:
+            if self._bounded_capability is None:
+                return None
+            return {
+                **copy.deepcopy(self._bounded_capability),
+                "age_s": max(0, math.floor(self._clock() - self._capability_seen_at)),
+            }
+
+    def _installation(self, cap):
+        """The owner's saved installation record; devices do not report one."""
+        return self._controller.get_car_heater_installation_snapshot()
+
     def require_mode_available(self):
         with self._lock:
             if self._bounded and self._bounded["phase"] != "stopped":
@@ -117,7 +131,7 @@ class BoundedHeatingMixin:
                         "execution_protocol": 1,
                         "firmware_version": cap.get("firmware_version"),
                         "software_version": "bounded-v1",
-                        "installation": cap.get("installation"),
+                        "installation": self._installation(cap),
                     },
                 )
             )
@@ -138,7 +152,7 @@ class BoundedHeatingMixin:
                     "execution_protocol": 1,
                     "firmware_version": cap.get("firmware_version"),
                     "software_version": "departure-v1",
-                    "installation": cap.get("installation"),
+                    "installation": self._installation(cap),
                 }
             self._milestone("start_requested", "departure" if plan else "manual")
             self._commands = [c for c in self._commands if c.get("action") != "turn_on"]

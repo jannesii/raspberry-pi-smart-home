@@ -31,6 +31,16 @@ if __name__ == "__main__":
         patch.setattr("redis.from_url", lambda *a, **kw: (_ for _ in ()).throw(OSError("isolated")))
         heater = CarHeaterService(flask_app.ctrl)
         flask_app.car_heater_service = heater
+        from app.services.car_heater import KeepAtTempService
+
+        comfort = KeepAtTempService(heater, flask_app.ctrl)
+        flask_app.keep_at_temp_service = comfort
+
+        def suspend_heater_modes():
+            # As app.services wires it for bounded starts.
+            comfort.enabled = False
+
+        heater.bind_mode_suspension(suspend_heater_modes)
         heater.observe_bounded_status(
             {
                 "bounded": {

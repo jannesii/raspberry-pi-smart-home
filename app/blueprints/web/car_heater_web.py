@@ -21,7 +21,6 @@ if TYPE_CHECKING:
     from ...core import CarHeaterStatus, Controller
     from ...services.car_heater import (
         CarHeaterService,
-        KeepAtTempSettings,
         KFactorCalibrator,
         ReadyByService,
     )
@@ -70,9 +69,6 @@ def get_car_heater_page():
     except Exception as e:
         logger.exception("Failed to get car heater command status: %s", e)
 
-    # Keep-at-temp settings from database
-    keep_at_temp_settings: KeepAtTempSettings = ctrl.get_keep_at_temp_settings()
-    logger.debug("Keep-at-temp settings: %s", keep_at_temp_settings)
     # Ready-by schedule (if available)
     ready_by_data = None
     try:
@@ -120,7 +116,6 @@ def get_car_heater_page():
         last_status=last_status,
         command_status=command_status,
         charge_mode_state=charge_mode_state,
-        keep_at_temp_settings=asdict(keep_at_temp_settings),
         ready_by_schedule=ready_by_data,
         kfactor_status=kfactor_status,
         weather_data=weather_data,

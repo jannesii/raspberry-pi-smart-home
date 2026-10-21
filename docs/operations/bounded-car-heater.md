@@ -55,8 +55,8 @@ never attempts to resume an old timed session.
    Record actual Shelly model/firmware, timings and power evidence in #12 before
    declaring the installation commissioned. No cold-range validation is claimed.
 6. Before first-frost measurements, verify weather evidence on the deployed
-   server: apply migrations through `20261017_0018`, then confirm **Settings &
-   diagnostics → Weather collection** shows both stations and the parking-point
+   server: apply migrations through `20261021_0019`, then confirm **Settings →
+   Diagnostics → Weather collection** shows both stations and the parking-point
    forecast collecting, with history initialized. Open a recent session's
    **Weather evidence**, download one original reply and one window export.
    Then make a whole-database backup and restore it into a separate target only
@@ -64,6 +64,11 @@ never attempts to resume an old timed session.
    [preservation guide](heater-history-preservation.md#3-restore-into-isolation-and-verify):
    compare `weather_fingerprints`, require empty integrity lists and check the
    same session, export and reply in the isolated app. Record both in #12.
+7. After mounting the sensors, record the heater, power topology and each sensor
+   position in **Settings → Installation & devices** and save. Check that its
+   device facts show firmware 3.1.1, relay control ready and each sensor's
+   reading. Save again whenever anything is moved: new sessions copy the current
+   record, and earlier records stay as history.
 
 See the [14–15 October 2026 commissioning record](bounded-car-heater-commissioning-2026-10-15.md)
 for the owner's supervised relay checks on a work desk at about 24.5°C. It records
@@ -93,6 +98,12 @@ reading show their own age; missing values show —.
 execution, relay, draw and OFF milestones. Saving a departure outcome still does
 not control heating. Old comfort/calibration/Ready-by intentions do not resume
 when the timed session ends; select comfort explicitly after confirmed shutdown.
+
+**Comfort heating** below manual heating keeps cabin air near its target with the
+hysteresis saved in **Settings → Heating preferences**. Start, Save target and
+Stop are the only actions that save; a start during a timed session or before its
+OFF is confirmed is refused with the reason. Stopping comfort does not switch the
+relay off.
 
 ## Isolated checks
 

@@ -132,9 +132,15 @@
         : relayOn ? 'The relay reports ON. Stop heating and wait for OFF before starting timed heating.' : '';
     const lock = byId('modeLockReason');
     if (lock) lock.textContent = reason;
-    const comfortLock = byId('comfortLockReason');
-    if (comfortLock) comfortLock.textContent = active || pending ? LOCK_REASON : '';
-    ['keepAtTempToggle', 'btnReadyBySchedule', 'kfactorEnabled'].forEach(id => {
+    // Comfort heating renders its own controls from this ownership signal.
+    window.dispatchEvent(new CustomEvent('car_heater_mode_lock', {
+      detail: {
+        locked: active || pending,
+        reason: active || pending ? LOCK_REASON : '',
+        phase: pending ? 'requested' : active ? run.phase : 'none'
+      }
+    }));
+    ['btnReadyBySchedule', 'kfactorEnabled'].forEach(id => {
       const control = byId(id);
       if (control) { control.disabled = active || pending; control.title = active || pending ? LOCK_REASON : ''; }
     });

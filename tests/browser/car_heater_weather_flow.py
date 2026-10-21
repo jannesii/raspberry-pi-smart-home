@@ -1,4 +1,4 @@
-"""Collection health in Settings & diagnostics with a real collector and archive."""
+"""Collection health in Settings → Diagnostics with a real collector and archive."""
 
 import json
 import sys

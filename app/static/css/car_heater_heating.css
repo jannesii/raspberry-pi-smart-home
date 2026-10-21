@@ -97,7 +97,26 @@
 .comfort-tools > summary::-webkit-details-marker { display: none; }
 .comfort-tools > summary::after { content: '+'; font-size: 22px; color: var(--heat-muted); }
 .comfort-tools[open] > summary::after { content: '−'; }
-.comfort-tools .ios-card { background: transparent; border: 0; box-shadow: none; padding: 0; margin: 16px 0 0; }
+.comfort-tools > summary { gap: 12px; }
+.comfort-tools > summary > span:first-child { flex: 1; }
+.comfort-summary-state { color: var(--heat-muted); font-weight: 500; font-size: 14px; }
+.comfort-tools > .heating-support, .comfort-tools > .comfort-state { margin-top: 8px !important; }
+.comfort-state { font-weight: 600; }
+.comfort-form label { display: block; color: var(--heat-muted); font-size: 14px; margin: 16px 0 6px; }
+.comfort-form input { width: 100%; max-width: 12rem; padding: 10px 12px; background: #15181a; border: 1px solid #5a6168; color-scheme: dark; }
+.comfort-form .heating-support { margin-top: 6px !important; }
+.comfort-form .heating-support a { padding: 12px 0; }
+.comfort-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.heating-layout .comfort-actions button { flex: 1 1 140px; }
+.comfort-feedback { color: var(--heat-muted); font-size: 14px; overflow-wrap: anywhere; }
+.comfort-feedback:empty { display: none; }
+.legacy-ready-by { margin: 16px 0 8px; border-top: 1px solid var(--heat-line); }
+.legacy-ready-by > summary { min-height: 48px; display: flex; align-items: center; cursor: pointer; color: var(--heat-muted); font-weight: 550; }
+.legacy-ready-by > summary { justify-content: space-between; list-style: none; }
+.legacy-ready-by > summary::-webkit-details-marker { display: none; }
+.legacy-ready-by > summary::after { content: '+'; font-size: 22px; }
+.legacy-ready-by[open] > summary::after { content: '−'; }
+.legacy-ready-by .ready-by-section { margin-top: 12px; }
 .weather-reading { display: flex; justify-content: space-between; align-items: end; gap: 16px; flex-wrap: wrap; margin: 8px 0 12px; }
 .weather-value { font-size: 30px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .heating-layout .condition-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 14px; margin: 20px 0 16px; padding: 0; list-style: none; }

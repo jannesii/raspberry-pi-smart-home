@@ -22,6 +22,15 @@ Tests: `tests/test_car_heater*.py`, `tests/test_ready_by.py`.
   kFactor, alert, and persistence work as HTTP status.
 - Ready-by reaching its target enables Keep at Temperature, persists
   `completed`, and ends that tick before start-time logic can run again.
+- Comfort (Keep at Temperature) changes go through
+  `KeepAtTempService.apply_changes` from both `PATCH /api/car_heater/comfort`
+  and the CSRF-checked `keep_at_temp_settings` event: partial, validated,
+  persisted before the in-memory copy, and refused (nothing saved) while a
+  bounded session is not confirmed stopped. Stopping comfort never sends OFF.
+- `car_heater_installation` is append-only owner configuration; new manual and
+  departure sessions copy the newest row into their snapshot. Snapshotting
+  tolerates the table being unreadable so a lagging migration never blocks
+  heating. Device facts are live reports only; never invent missing ones.
 - Use `KFactorCalibrator.update_config()` so physics/session/snapshot modules
   stay synchronized. Preserve DB refresh of persisted config in workers.
 - Imported explicit IDs can leave PostgreSQL sequences behind. Preserve the

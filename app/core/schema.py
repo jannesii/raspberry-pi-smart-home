@@ -465,6 +465,21 @@ car_heater_session = Table(
 )
 Index("idx_car_heater_session_observed_at", car_heater_session.c.observed_at)
 
+# Owner-recorded installation, append-only: the newest row is current and earlier
+# rows are configuration history. Sessions copy the current row into their snapshot.
+car_heater_installation = Table(
+    "car_heater_installation",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("saved_at", Text, nullable=False),
+    Column("saved_by", Text),
+    Column("heater", Text),
+    Column("power_topology", Text),
+    Column("glass_reference_position", Text),
+    Column("glass_comparison_position", Text),
+    Column("cabin_position", Text),
+)
+
 # Execution evidence is separate from driver observations and immutable snapshots.
 car_heater_execution = Table(
     "car_heater_execution",

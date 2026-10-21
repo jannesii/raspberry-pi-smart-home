@@ -17,6 +17,7 @@ from sqlalchemy.exc import IntegrityError
 
 from ..models import CarHeaterPhoto, CarHeaterSession
 from ..schema import car_heater_observation, car_heater_photo, car_heater_session
+from .car_heater_installation import installation_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -173,7 +174,11 @@ class CarHeaterSessionMixin:
                     requested_departure_at=plan["departure_at"],
                     heating_duration_minutes=plan["preheat_minutes"],
                     snapshot=json.dumps(
-                        {"planning_weather": plan["weather"], "software_version": "departure-v1"}
+                        {
+                            "planning_weather": plan["weather"],
+                            "software_version": "departure-v1",
+                            "installation": installation_snapshot(conn),
+                        }
                     ),
                 )
             )

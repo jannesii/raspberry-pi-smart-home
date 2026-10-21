@@ -1,0 +1,29 @@
+/* Settings view groups: Heating preferences, Installation & devices,
+   Calibration and Diagnostics. Uses the evidence workspace tokens. */
+.heater-settings .settings-groups { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 8px; }
+.heater-settings .settings-groups a {
+  display: inline-flex; align-items: center; min-height: 44px; padding: 8px 14px;
+  border: 1px solid var(--evidence-border); border-radius: 999px; color: var(--evidence-text);
+  text-decoration: none; font-size: .95rem;
+}
+.settings-group { padding: 24px 0 8px; border-top: 1px solid var(--evidence-border); margin-top: 16px; scroll-margin-top: calc(var(--nav-height, 56px) + 16px); }
+.settings-group > h3 { font-size: 1.25rem; margin: 0 0 8px; }
+.settings-form { display: grid; gap: 6px; max-width: 640px; margin-top: 16px; }
+.settings-form label { font-weight: 600; color: var(--evidence-text); margin-top: 12px; }
+.settings-form label:first-child { margin-top: 0; }
+.settings-form input[type="number"] { max-width: 12rem; }
+.heater-evidence .settings-help { font-size: .9rem; margin: 0; }
+.settings-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.heater-evidence .settings-feedback { margin: 4px 0 0; color: var(--evidence-text); }
+.settings-feedback:empty { display: none; }
+.heater-evidence .settings-facts { margin: 20px 0 8px; }
+.settings-history ol { margin: 0; padding-left: 20px; color: var(--evidence-muted); }
+.settings-history li { margin: 6px 0; }
+.device-sensors { list-style: none; padding: 0; margin: 8px 0 16px; display: grid; gap: 12px; }
+.device-sensors li { display: grid; gap: 2px; }
+.device-sensors span { color: var(--evidence-muted); }
+.evidence-primary:disabled { opacity: .6; cursor: not-allowed; }
+@media (max-width: 600px) {
+  .heater-evidence .settings-facts { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .heater-evidence .settings-facts dd { margin-bottom: 10px; }
+}
