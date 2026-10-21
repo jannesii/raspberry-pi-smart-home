@@ -77,12 +77,17 @@ car LAN; do not expose its RPC/script endpoints to the Internet.
 
 ## Using the app
 
-Open **Heating**, choose a positive manual duration (default 60, maximum 180
-minutes), and press **Start timed heating**. The app shows queued start, confirmed
-relay state, remaining original allowance and latest finish in Helsinki time.
-Other starts cannot replace the attempt. **Stop heating** submits OFF; pending,
-failed-or-unknown and confirmed shutdown remain distinct. If telemetry is absent,
-the relay state is unknown even after OFF was requested.
+Open **Heating**, pick 30/60/120/180 minutes or type a positive duration (default
+60, maximum 180), and press **Start timed heating**. The heater state under the
+next departure reads Start requested, then confirmed ON only from relay evidence.
+Manual heating shows the mode, original finish (Helsinki time) and remaining time
+judged by the server clock; a new selection cannot extend it, and other starts
+show why they are unavailable. **Stop heating**, beside **Observe windshield**,
+submits OFF immediately. Stopping, Stop not confirmed (with **Request OFF again**)
+and OFF confirmed remain distinct; acknowledgements alone never confirm OFF. If
+device telemetry is absent or older than 30 seconds, the relay state is unknown
+even after OFF was requested. Device report, FMI observation and each sensor
+reading show their own age; missing values show —.
 
 **Review this heating session** opens the permanent session and its request,
 execution, relay, draw and OFF milestones. Saving a departure outcome still does

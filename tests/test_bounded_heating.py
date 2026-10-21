@@ -51,6 +51,85 @@ def test_manual_start_has_permanent_identity_and_original_finish(service, sessio
     assert svc.get_bounded_session()["finish_at"] == 1800003600
 
 
+def test_session_reports_mode_and_remaining_original_allowance(service, client):
+    svc, clock = service
+    ready(svc)
+    svc.start_bounded_session(45)
+    clock[0] += 600.4
+    run = client.get("/api/car_heater/bounded").get_json()
+    assert run["mode"] == "manual"
+    assert run["remaining_s"] == 2099
+    clock[0] += 3600
+    assert client.get("/api/car_heater/bounded").get_json()["remaining_s"] == 0
+
+
+def test_weather_conditions_carry_observation_time_over_http_and_websocket(session_app, client):
+    from app.services.weather.weather_service import WeatherData, WeatherValue
+    from app.sockets.car_heater_handlers import emit_car_heater_status_to_views
+
+    observed = "2026-10-21T03:50:00Z"
+
+    class Weather:
+        def get_latest(self):
+            return WeatherData(
+                station_name="Pelmaa",
+                fmisid="100968",
+                lat=None,
+                lon=None,
+                t2m=WeatherValue(0.0, observed),
+                ws_10min=None,
+                rh=WeatherValue(91.0, observed),
+                n_man=None,
+            )
+
+    class Views:
+        def __init__(self):
+            self.events = []
+
+        def emit(self, event, payload):
+            self.events.append(payload)
+
+    session_app.weather_service = Weather()
+    expected = {
+        "outside_temp_c": 0.0,
+        "wind_speed_mps": None,
+        "humidity_pct": 91.0,
+        "station_name": "Pelmaa",
+        "observed_at": observed,
+    }
+    assert client.get("/api/car_heater/status").get_json()["weather"] == expected
+    views = Views()
+    with session_app.app_context():
+        emit_car_heater_status_to_views(views, {"timestamp": observed}, None, None)
+    assert views.events[0]["weather"] == expected
+
+
+def test_device_report_age_is_judged_by_server_receipt_not_device_clock(
+    session_app, client, monkeypatch
+):
+    from datetime import UTC, datetime, timedelta
+
+    from test_car_heater_sensors import _DummySIOHandler
+
+    from app.blueprints.api.car_heater import status as car_status
+
+    now = [datetime(2026, 10, 21, 4, 0, tzinfo=UTC)]
+    monkeypatch.setattr(car_status, "_utc_now", lambda: now[0])
+    session_app.sio_handler = _DummySIOHandler()
+    # The device clock runs ten minutes fast; receipt time is what counts.
+    frame = {
+        "timestamp": (now[0] + timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S"),
+        "shelly_connected": True,
+        "shelly": '{"output": false, "apower": 0}',
+    }
+    with session_app.app_context():
+        car_status.handle_status_update_request(frame, commands_enabled=False)
+    now[0] += timedelta(seconds=45)
+    status = client.get("/api/car_heater/status").get_json()["status"]
+    assert status["report_age_s"] == 45
+    assert status["is_heater_on"] is False
+
+
 @pytest.mark.parametrize("duration", [0, -1, 181, True, "60", None, float("inf")])
 def test_invalid_manual_duration_is_rejected(service, duration):
     svc, _ = service

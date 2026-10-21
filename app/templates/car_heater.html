@@ -4,13 +4,14 @@
 
 {% block styles %}
 <meta name="csrf-token" content="{{ csrf_token() }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater.css', v='20261014-7') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater.css', v='20261021-2') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/flash.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_chart.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_settings.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_logs.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_sessions.css', v='20261021-1') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_departure.css', v='20261015-1') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_departure.css', v='20261021-2') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_heating.css', v='20261021-2') }}">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 {% endblock %}
@@ -31,13 +32,27 @@
   </div>
 
   <!-- Desktop Grid Layout -->
-  <div class="desktop-grid" {% if heater_view == 'settings' %}hidden{% endif %}>
-    <section class="departure-planner ios-card" aria-labelledby="departureHeading">
-      <p class="departure-eyebrow">DEFROST · EUROPE/HELSINKI</p>
-      <h2 id="departureHeading">Next departure</h2>
-      <p>Plan from outside observations. These initial durations do not guarantee clear windows.</p>
-      <div id="departureSaved" aria-live="polite">Loading saved departure…</div>
+  <div class="heating-layout" {% if heater_view == 'settings' %}hidden{% endif %}>
+    <section class="heating-principal departure-planner" aria-labelledby="departureHeading">
+      <h2 id="departureHeading" class="heating-eyebrow">Next departure</h2>
+      <p id="departureBigTime" class="heating-big-time">—</p>
+      <p id="departureBigDate" class="heating-big-date">Loading saved departure…</p>
+      <div id="heaterState" class="heater-state state-unknown" aria-live="polite" aria-atomic="true">
+        <p class="heater-state-title"><span class="heater-state-dot" aria-hidden="true"></span><span id="heaterStateTitle">Heater state unknown</span></p>
+        <p id="heaterStateDetail" class="heater-state-detail">Checking heating status…</p>
+      </div>
+      <p id="deviceFreshness" class="heating-support">No device report yet.</p>
+      <div id="departureSaved" aria-live="polite"></div>
       <a id="departureSessionLink" hidden>Review departure session</a>
+      <div id="activeSession" class="active-session">
+        <p id="activeNotice" class="active-notice" hidden></p>
+        <div class="active-actions">
+          <button id="btnTurnOff" class="heating-stop" type="button">Stop heating</button>
+          <a id="observeLink" class="heating-secondary-action" hidden>Observe windshield</a>
+        </div>
+      </div>
+      <h3 class="heating-section-title">Departure plan</h3>
+      <p class="heating-support">Plan from outside observations. These initial durations do not guarantee clear windows.</p>
       <form id="departureForm">
         <div class="departure-fields">
           <label for="departureDate">Departure date<input id="departureDate" type="date" required></label>
@@ -57,77 +72,47 @@
           <button type="button" id="departureCancel" disabled>Cancel upcoming departure</button>
         </div>
       </form>
+      <p id="departureLockReason" class="heating-lock-reason"></p>
       <div id="departurePreview" hidden></div>
       <p id="departureFeedback" role="status" aria-live="polite"></p>
-      <p class="departure-hint">Use 24-hour time (HH:MM). Edits stay unsaved until Save departure. Cancelling an upcoming plan does not stop current heating. Use Stop heating below to request OFF.</p>
-    </section>
-    <aside class="departure-secondary" aria-label="Heater controls and conditions">
-    <!-- Hero Status Card - spans full width on desktop -->
-    <section class="hero-status">
-      <div class="hero-status-main">
-        <div class="hero-state">
-          <div id="stateIndicator" class="state-indicator state-unknown">
-            <span id="stateIcon">❓</span>
-          </div>
-          <div class="state-text">
-            <h3 id="stateTitle">Unknown</h3>
-            <span class="state-label">Heater Status</span>
-          </div>
-        </div>
-        <div class="hero-power">
-          <span id="heroPowerValue" class="power-value">—</span>
-          <span class="power-unit">W</span>
-        </div>
-      </div>
-      <div class="hero-stats">
-        <div class="hero-stat">
-          <div id="heroOutsideTemp" class="hero-stat-value">—</div>
-          <div class="hero-stat-label">Outside</div>
-        </div>
-        <div class="hero-stat">
-          <div id="heroWind" class="hero-stat-value">—</div>
-          <div class="hero-stat-label">Wind</div>
-        </div>
-        <div class="hero-stat">
-          <div id="heroAmbient" class="hero-stat-value">—</div>
-          <div class="hero-stat-label">Cabin</div>
-        </div>
-        <div class="hero-stat">
-          <div id="heroEnergy" class="hero-stat-value">—</div>
-          <div class="hero-stat-label">Today</div>
-        </div>
-      </div>
+      <p class="departure-hint">Use 24-hour time (HH:MM). Edits stay unsaved until Save departure. Cancelling an upcoming plan does not stop current heating. Use Stop heating to request OFF.</p>
     </section>
 
-    <!-- Left Column on Desktop -->
-    <div class="desktop-column">
-      <!-- Quick Actions -->
-      <section class="ios-card">
+    <aside class="heating-secondary" aria-label="Heater controls and conditions">
+      <section class="heating-panel" aria-labelledby="manualHeading">
+        <h2 id="manualHeading">Manual heating</h2>
+        <p class="heating-support">Choose a duration. Heating stops at the original finish; a new selection never extends it.</p>
         <div class="bounded-manual-controls">
-        <label for="manualDuration">Manual heating duration (minutes)</label>
-        <input id="manualDuration" type="number" min="1" max="180" step="1" value="60" inputmode="numeric">
-        <p id="boundedHeatingStatus" role="status" aria-live="polite">Checking bounded heating…</p>
-        <a id="boundedSessionLink" hidden>Review this heating session</a>
+          <div class="duration-presets" role="group" aria-label="Duration presets">
+            <button type="button" data-duration="30" aria-pressed="false">30 min</button>
+            <button type="button" data-duration="60" aria-pressed="true">60 min</button>
+            <button type="button" data-duration="120" aria-pressed="false">120 min</button>
+            <button type="button" data-duration="180" aria-pressed="false">180 min</button>
+          </div>
+          <label for="manualDuration">Manual heating duration (minutes)</label>
+          <input id="manualDuration" type="number" min="1" max="180" step="1" value="60" inputmode="numeric" aria-describedby="modeLockReason">
+          <dl class="session-facts">
+            <div><dt>Mode</dt><dd id="boundedMode">—</dd></div>
+            <div><dt>Original finish</dt><dd id="boundedFinish">—</dd></div>
+            <div><dt>Remaining</dt><dd id="boundedRemaining">—</dd></div>
+          </dl>
+          <p id="boundedHeatingStatus" role="status" aria-live="polite"></p>
         </div>
         <div class="quick-actions">
-          <button id="btnTurnOn" class="quick-action-btn action-on" type="button">
-            <span class="icon">🔥</span>
-            <span class="label">Start timed heating</span>
-          </button>
-          <button id="btnTurnOff" class="quick-action-btn action-off" type="button">
-            <span class="icon">❄️</span>
-            <span class="label">Stop heating</span>
-          </button>
+          <button id="btnTurnOn" class="heating-primary" type="button" aria-describedby="modeLockReason">Start timed heating</button>
         </div>
-      </section>
-
-      <!-- Keep at Temperature -->
+        <p id="modeLockReason" class="heating-lock-reason"></p>
+        <a id="boundedSessionLink" hidden>Review this heating session</a>
+        <details class="comfort-tools">
+          <summary>Comfort heating</summary>
+          <p class="heating-support">Existing comfort and Ready-by controls. They are unavailable while a timed session runs and never resume on their own after it ends.</p>
+          <p id="comfortLockReason" class="heating-lock-reason"></p>
       <section class="ios-card">
         <div class="temp-control-section">
           <div class="temp-control-header">
             <span class="temp-control-title">Keep at Temperature</span>
             <label class="ios-toggle">
-              <input type="checkbox" id="keepAtTempToggle" name="keepAtTempToggle">
+              <input type="checkbox" id="keepAtTempToggle" name="keepAtTempToggle" aria-label="Keep at Temperature" aria-describedby="comfortLockReason">
               <span class="ios-toggle-track"></span>
               <span class="ios-toggle-thumb"></span>
             </label>
@@ -228,48 +213,64 @@
     </div>
 
   </section>
-    </div><!-- /desktop-column left -->
+        </details>
+      </section>
 
-    <!-- Right Column on Desktop -->
-    <div class="desktop-column">
-  <!-- Glass & Cabin Sensors Card -->
-  <section class="ios-card" aria-labelledby="carSensorsTitle">
-    <div class="ios-card-header">
-      <h3 id="carSensorsTitle">Glass &amp; cabin</h3>
-    </div>
-    <ul class="ios-list">
-      <li class="ios-list-item">
-        <span class="item-label">Glass reference</span>
-        <span id="sensorGlassReference" class="item-value sensor-reading">
-          <span class="sensor-value">—</span>
-          <span class="sensor-state">No data</span>
-        </span>
-      </li>
-      <li class="ios-list-item">
-        <span class="item-label">Glass comparison</span>
-        <span id="sensorGlassComparison" class="item-value sensor-reading">
-          <span class="sensor-value">—</span>
-          <span class="sensor-state">No data</span>
-        </span>
-      </li>
-      <li class="ios-list-item">
-        <span class="item-label">Cabin temperature</span>
-        <span id="sensorCabinTemp" class="item-value sensor-reading">
-          <span class="sensor-value">—</span>
-          <span class="sensor-state">No data</span>
-        </span>
-      </li>
-      <li class="ios-list-item">
-        <span class="item-label">Cabin humidity</span>
-        <span id="sensorCabinHumidity" class="item-value sensor-reading">
-          <span class="sensor-value">—</span>
-          <span class="sensor-state">No data</span>
-        </span>
-      </li>
-    </ul>
-  </section>
-
-  <!-- Details Card -->
+      <section class="heating-panel" aria-labelledby="conditionsHeading">
+        <h2 id="conditionsHeading">Conditions</h2>
+        <div class="weather-reading">
+          <div>
+            <p id="heroOutsideTemp" class="weather-value">—</p>
+            <p class="heating-support">Outside · <span id="weatherFreshness">no weather observation yet</span></p>
+          </div>
+          <p class="heating-support">Wind <span id="heroWind">—</span></p>
+        </div>
+        <ul class="condition-list">
+          <li class="condition-tile">
+            <span class="item-label">Glass reference</span>
+            <span id="sensorGlassReference" class="sensor-reading">
+              <span class="sensor-value">—</span>
+              <span class="sensor-state">No data</span>
+            </span>
+          </li>
+          <li class="condition-tile">
+            <span class="item-label">Glass comparison</span>
+            <span id="sensorGlassComparison" class="sensor-reading">
+              <span class="sensor-value">—</span>
+              <span class="sensor-state">No data</span>
+            </span>
+          </li>
+          <li class="condition-tile">
+            <span class="item-label">Cabin</span>
+            <span id="sensorCabinTemp" class="sensor-reading">
+              <span class="sensor-value">—</span>
+              <span class="sensor-state">No data</span>
+            </span>
+          </li>
+          <li class="condition-tile">
+            <span class="item-label">Cabin humidity</span>
+            <span id="sensorCabinHumidity" class="sensor-reading">
+              <span class="sensor-value">—</span>
+              <span class="sensor-state">No data</span>
+            </span>
+          </li>
+          <li class="condition-tile">
+            <span class="item-label">Heater power</span>
+            <span class="sensor-reading">
+              <span id="conditionPower" class="sensor-value">—</span>
+              <span class="sensor-state">Latest device report</span>
+            </span>
+          </li>
+        </ul>
+        <p class="heating-support">Glass readings are experimental; confirm clearing visually.</p>
+      </section>
+    </aside>
+  </div><!-- /heating-layout -->
+  <section class="heater-evidence heater-settings" {% if heater_view != 'settings' %}hidden{% endif %} aria-labelledby="heaterSettingsHeading">
+    <h2 id="heaterSettingsHeading">Settings &amp; diagnostics</h2>
+    <p>Existing heating preferences, calibration, charts and logs remain available here.</p>
+    <button id="btnOpenReadyBySettings" class="evidence-button" type="button">Heating preferences &amp; calibration</button>
+    <h3 class="heater-details-heading">Latest device telemetry</h3>
   <section class="ios-card">
     <div class="ios-card-header">
       <h3>Details</h3>
@@ -326,14 +327,6 @@
       Last updated: <span id="lastUpdateTime">—</span>
     </div>
   </section>
-
-    </div><!-- /desktop-column right -->
-    </aside>
-  </div><!-- /desktop-grid -->
-  <section class="heater-evidence heater-settings" {% if heater_view != 'settings' %}hidden{% endif %} aria-labelledby="heaterSettingsHeading">
-    <h2 id="heaterSettingsHeading">Settings &amp; diagnostics</h2>
-    <p>Existing heating preferences, calibration, charts and logs remain available here.</p>
-    <button id="btnOpenReadyBySettings" class="evidence-button" type="button">Heating preferences &amp; calibration</button>
   <!-- Charts Button -->
   <button id="btnOpenCarHeaterCharts" class="charts-button" type="button">
     📈 View Charts
@@ -412,11 +405,11 @@
 {% endblock %}
 
 {% block scripts %}
-<script defer src="{{ url_for('static', filename='js/car_heater_bounded.js', v='20261014-7') }}"></script>
-<script defer src="{{ url_for('static', filename='js/car_heater_departure.js', v='20261015-2') }}"></script>
+<script defer src="{{ url_for('static', filename='js/car_heater_bounded.js', v='20261021-2') }}"></script>
+<script defer src="{{ url_for('static', filename='js/car_heater_departure.js', v='20261021-2') }}"></script>
 <script defer src="{{ url_for('static', filename='js/car_heater_weather_health.js', v='20261021-1') }}"></script>
 <script src="{{ url_for('static', filename='js/init_sio.js', v='20260504-1') }}"></script>
-<script src="{{ url_for('static', filename='js/car_heater.js', v='20261014-7') }}"></script>
+<script src="{{ url_for('static', filename='js/car_heater.js', v='20261021-2') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater_logs.js', v='20260323-1') }}"></script>
 <script src="{{ url_for('static', filename='js/flash.js') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater_chart.js', v='20261014-2') }}"></script>

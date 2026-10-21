@@ -40,6 +40,8 @@ with sync_playwright() as pw:
     assert context.request.get(host["origin"] + "/api/car_heater/departure").json() is None
     page.get_by_role("button", name="Save departure", exact=True).click()
     expect(page.locator("#departureSaved")).to_contain_text("Scheduled")
+    expect(page.locator("#departureBigTime")).to_have_text("08:00")
+    expect(page.locator("#departureBigDate")).to_have_text("Sat, 16 Jan 2027")
     first = context.request.get(host["origin"] + "/api/car_heater/departure").json()
     page.get_by_label("Departure time", exact=True).fill("09:00")
     expect(page.get_by_role("button", name="Save departure", exact=True)).to_be_disabled()
@@ -55,6 +57,7 @@ with sync_playwright() as pw:
     assert second["supersedes"] == first["session_id"]
     page.get_by_role("button", name="Cancel upcoming departure", exact=True).click()
     expect(page.locator("#departureSaved")).to_contain_text("Cancelled")
+    expect(page.locator("#departureBigDate")).to_have_text("No upcoming departure")
     page.reload()
     expect(page.locator("#departureSaved")).to_contain_text("Cancelled")
     page.get_by_label("Departure date", exact=True).fill("2027-03-28")
@@ -92,7 +95,9 @@ with sync_playwright() as pw:
     page.reload()
     expect(page.locator("#departureSaved")).to_contain_text("late start")
     expect(page.get_by_role("button", name="Save departure", exact=True)).to_be_disabled()
-    expect(page.locator("#boundedHeatingStatus")).to_contain_text("Start queued")
+    expect(page.locator("#heaterState")).to_contain_text("Start requested")
+    expect(page.locator("#boundedMode")).to_have_text("Departure")
+    expect(page.locator("#departureLockReason")).to_contain_text("confirmed OFF")
     expect(page.get_by_role("button", name="Stop heating", exact=False)).to_be_enabled()
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     page.evaluate("window.scrollTo(0, 0)")

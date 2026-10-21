@@ -30,9 +30,20 @@ class BoundedHeatingMixin:
     def get_bounded_session(self):
         with self._lock:
             run = copy.deepcopy(self._bounded)
-            if run and self._clock() - self._bounded_seen_at > 30:
+            if not run:
+                return run
+            if self._clock() - self._bounded_seen_at > 30:
                 run["relay_on"] = None
                 run["power_w"] = None
+            # Derived for the browser: the server clock judges the remaining
+            # original allowance, so a skewed phone clock cannot extend it.
+            start = next((m for m in run["milestones"] if m["kind"] == "start_requested"), None)
+            run["mode"] = start["reason"] if start else None
+            run["remaining_s"] = (
+                0
+                if run["phase"] == "stopped"
+                else max(0, math.floor(run["finish_at"] - self._clock()))
+            )
             return run
 
     def require_mode_available(self):

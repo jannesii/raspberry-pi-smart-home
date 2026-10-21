@@ -73,113 +73,6 @@ body {
   display: none;
 }
 
-/* Hero Status Card */
-.hero-status {
-  background: linear-gradient(145deg, #1c1c1e 0%, #2c2c2e 100%);
-  border-radius: 20px;
-  padding: 20px;
-  margin-bottom: 16px;
-  border: 1px solid var(--ch-card-border);
-}
-
-.hero-status-main {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-
-.hero-state {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.state-indicator {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 28px;
-  transition: all 0.3s ease;
-}
-
-.state-indicator.state-unknown {
-  background: rgba(142, 142, 147, 0.2);
-}
-
-.state-indicator.state-on {
-  background: rgba(48, 209, 88, 0.2);
-  box-shadow: 0 0 20px rgba(48, 209, 88, 0.3);
-}
-
-.state-indicator.state-off {
-  background: rgba(255, 69, 58, 0.15);
-}
-
-.state-text h3 {
-  font-size: 22px;
-  font-weight: 600;
-  margin: 0 0 2px;
-  color: var(--ch-text);
-}
-
-.state-text .state-label {
-  font-size: 14px;
-  color: var(--ch-text-secondary);
-}
-
-.hero-power {
-  text-align: right;
-}
-
-.power-value {
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--ch-text);
-  font-variant-numeric: tabular-nums;
-}
-
-.power-unit {
-  font-size: 16px;
-  font-weight: 500;
-  color: var(--ch-text-secondary);
-}
-
-.hero-stats {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-}
-
-.hero-stat {
-  text-align: center;
-  padding: 10px 4px;
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 12px;
-  min-width: 0;
-}
-
-.hero-stat-value {
-  font-size: 16px;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--ch-text);
-  font-variant-numeric: tabular-nums;
-}
-
-.hero-stat-label {
-  font-size: 11px;
-  color: var(--ch-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-top: 2px;
-}
-
 /* iOS Card Style */
 .ios-card {
   background: var(--ch-card-bg);
@@ -211,53 +104,6 @@ body {
   grid-template-columns: 1fr 1fr;
   gap: 12px;
   padding: 12px 16px 16px;
-}
-
-.quick-action-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 20px 12px;
-  border-radius: 14px;
-  border: none;
-  font-family: inherit;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-}
-
-.quick-action-btn .icon {
-  font-size: 28px;
-}
-
-.quick-action-btn .label {
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.quick-action-btn.action-on {
-  background: linear-gradient(145deg, rgba(48, 209, 88, 0.25), rgba(48, 209, 88, 0.15));
-  color: var(--ch-success);
-  border: 1px solid rgba(48, 209, 88, 0.3);
-}
-
-.quick-action-btn.action-on:active {
-  background: rgba(48, 209, 88, 0.35);
-  transform: scale(0.97);
-}
-
-.quick-action-btn.action-off {
-  background: linear-gradient(145deg, rgba(255, 69, 58, 0.2), rgba(255, 69, 58, 0.1));
-  color: var(--ch-danger);
-  border: 1px solid rgba(255, 69, 58, 0.25);
-}
-
-.quick-action-btn.action-off:active {
-  background: rgba(255, 69, 58, 0.3);
-  transform: scale(0.97);
 }
 
 /* iOS List Style */
@@ -756,27 +602,6 @@ body {
     padding-left: 12px;
     padding-right: 12px;
   }
-
-  .hero-stats {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-  }
-
-  .hero-stat {
-    padding: 10px 4px;
-  }
-
-  .hero-stat-value {
-    font-size: 16px;
-  }
-
-  .hero-stat-label {
-    font-size: 10px;
-  }
-
-  .power-value {
-    font-size: 28px;
-  }
 }
 
 /* Larger screens - still keep mobile-first */
@@ -792,14 +617,6 @@ body {
     -webkit-backdrop-filter: none;
     border-bottom: none;
     margin-bottom: 20px;
-  }
-
-  .hero-status {
-    padding: 24px;
-  }
-
-  .hero-stat {
-    padding: 14px 12px;
   }
 }
 
@@ -818,73 +635,8 @@ body {
     font-size: 32px;
   }
 
-  /* Desktop grid layout */
-  .desktop-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
-    align-items: start;
-  }
-
-  /* Columns for grouping cards */
-  .desktop-column {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-
-  /* Hero spans full width on desktop */
-  .hero-status {
-    grid-column: 1 / -1;
-  }
-
-  .hero-status-main {
-    margin-bottom: 20px;
-  }
-
-  .hero-stats {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 12px;
-  }
-
-  .state-indicator {
-    width: 64px;
-    height: 64px;
-    font-size: 32px;
-  }
-
-  .state-text h3 {
-    font-size: 26px;
-  }
-
-  .power-value {
-    font-size: 42px;
-  }
-
-  /* Cards within columns */
-  .desktop-column .ios-card {
-    margin-bottom: 0;
-  }
-
   .quick-actions {
     grid-template-columns: 1fr 1fr;
-  }
-
-  .quick-action-btn {
-    padding: 24px 16px;
-  }
-
-  .quick-action-btn .icon {
-    font-size: 32px;
-  }
-
-  .quick-action-btn .label {
-    font-size: 15px;
-  }
-
-  /* Charts button within right column */
-  .desktop-column .charts-button {
-    margin-bottom: 0;
   }
 
   /* Details list as two columns */
@@ -904,26 +656,6 @@ body {
   .car-heater-page {
     padding: 24px 48px 48px;
   }
-
-  .desktop-grid {
-    gap: 24px;
-  }
-
-  .hero-stats {
-    gap: 16px;
-  }
-
-  .hero-stat {
-    padding: 16px;
-  }
-
-  .hero-stat-value {
-    font-size: 22px;
-  }
-
-  .desktop-column {
-    gap: 20px;
-  }
 }
 
 /* Dark mode adjustments for system dark mode */
@@ -935,10 +667,8 @@ body {
 
 /* Reduce motion for accessibility */
 @media (prefers-reduced-motion: reduce) {
-  .quick-action-btn,
   .advanced-btn,
-  .charts-button,
-  .state-indicator {
+  .charts-button {
     transition: none;
   }
 
@@ -946,13 +676,3 @@ body {
     animation: none;
   }
 }
-
-/* Bounded manual controls remain usable with phone text scaling. */
-.bounded-manual-controls { padding: 16px 16px 0; }
-.bounded-manual-controls label { display: block; }
-#manualDuration { min-height: 44px; width: 100%; max-width: 12rem; margin: 8px 0; padding: 8px 12px; box-sizing: border-box; font-size: 1rem; color: var(--ch-text); background: var(--ch-input-bg); border: 1px solid var(--ch-card-border); border-radius: 10px; }
-#manualDuration:focus-visible { outline: 2px solid var(--ch-accent-hover); outline-offset: 2px; }
-#boundedHeatingStatus { line-height: 1.5; overflow-wrap: anywhere; }
-#boundedSessionLink { display: block; margin-bottom: 12px; color: var(--ch-accent-hover); }
-#boundedSessionLink[hidden] { display: none; }
-.quick-action-btn:disabled { opacity: 0.5; cursor: not-allowed; }

@@ -9,8 +9,9 @@ from typing import TYPE_CHECKING
 from flask import current_app, render_template, request
 from flask_login import current_user, login_required
 
+from ...services.weather import browser_conditions
 from ...utils import get_ctrl
-from ..api.car_heater.status import fallback_status
+from ..api.car_heater.status import device_report_age_s, fallback_status
 from . import web_bp
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,8 @@ def get_car_heater_page():
                 "shelly_connected": fallback_status.shelly_connected,
             }
         logger.debug("Using fallback status payload: %s", last_status)
+    if last_status is not None:
+        last_status["report_age_s"] = device_report_age_s(last_status.get("timestamp"))
 
     # Command status from in-memory CarHeaterService (if available)
     command_status = None
@@ -106,15 +109,8 @@ def get_car_heater_page():
     try:
         weather_svc: WeatherService | None = getattr(current_app, "weather_service", None)
         if weather_svc is not None:
-            wd = weather_svc.get_latest()
-            if wd:
-                weather_data = {
-                    "outside_temp_c": wd.t2m.value if wd.t2m else None,
-                    "wind_speed_mps": wd.ws_10min.value if wd.ws_10min else None,
-                    "humidity_pct": wd.rh.value if wd.rh else None,
-                    "station_name": wd.station_name,
-                }
-                logger.debug("Weather data payload: %s", weather_data)
+            weather_data = browser_conditions(weather_svc.get_latest())
+            logger.debug("Weather data payload: %s", weather_data)
     except Exception as e:
         logger.debug("Failed to get weather data: %s", e)
 

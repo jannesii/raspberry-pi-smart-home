@@ -185,6 +185,10 @@ Tests: `tests/test_medicine_calculator.py`, `tests/test_medicine_alert_service.p
   pending/failed-or-unknown; retries are spaced five seconds apart, while explicit
   Stop remains immediate. Only matching relay-local stopped evidence confirms
   shutdown. Stale relay evidence is shown unknown after 30 seconds.
+- Session reads add derived `mode` (start reason) and `remaining_s` (server
+  clock), never stored. The Heating view renders heater state only from them
+  and fresh telemetry; browser outside-condition payloads share one builder
+  carrying the observation time across page render, HTTP and Socket.IO.
 - Start suspends and persists disabled comfort, calibration and charge mode and
   cancels old Ready-by schedules. Starts through those public services are blocked
   until shutdown is confirmed. Finish never automatically resumes these modes.

@@ -1,0 +1,127 @@
+/* Heating view: prototype A's departure-first column beside manual controls
+   and conditions, with B's start/departure/latest-finish timeline. */
+.heating-layout {
+  --heat-surface: #1b1e21;
+  --heat-raised: #24282c;
+  --heat-line: #3a4046;
+  --heat-text: #f1f2f3;
+  --heat-muted: #b0b8c0;
+  --heat-accent: #e9b378;
+  --heat-good: #a3ccba;
+  --heat-danger: #f0b0a8;
+  --heat-focus: #a0bddb;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+  color: var(--heat-text);
+  font-size: 16px;
+  line-height: 1.5;
+}
+.heating-layout * { box-sizing: border-box; }
+.heating-layout p { margin: 0; }
+.heating-layout h2, .heating-layout h3 { margin: 0; font-weight: 600; letter-spacing: -.02em; line-height: 1.2; }
+.heating-principal.departure-planner { padding: 8px 0 0; min-width: 0; }
+.heating-layout .heating-eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .13em; text-transform: uppercase; color: var(--heat-muted); margin: 0; }
+.heating-big-time { font-size: 72px; line-height: 1.1; font-weight: 500; letter-spacing: -.05em; margin: 8px 0 0 !important; font-variant-numeric: tabular-nums; }
+.heating-big-date { font-size: 18px; color: var(--heat-muted); }
+.heating-support { color: var(--heat-muted); font-size: 14px; }
+.heating-section-title { font-size: 20px; margin: 32px 0 8px !important; padding-top: 24px; border-top: 1px solid var(--heat-line); }
+.heating-lock-reason { color: var(--heat-accent); font-size: 14px; margin: 8px 0 !important; }
+.heating-lock-reason:empty { display: none; }
+#deviceFreshness { margin-top: 6px; }
+#deviceFreshness.is-stale { color: var(--heat-danger); }
+
+/* Heater state: text carries the meaning; color only reinforces it. */
+.heater-state { margin-top: 20px; }
+.heater-state-title { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 600; }
+.heater-state-detail { color: var(--heat-muted); font-size: 14px; margin-top: 4px !important; }
+.heater-state-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--heat-muted); }
+.heater-state.state-on .heater-state-title, .heater-state.state-pending .heater-state-title { color: var(--heat-accent); }
+.heater-state.state-on .heater-state-dot, .heater-state.state-pending .heater-state-dot { background: var(--heat-accent); }
+.heater-state.state-off .heater-state-dot { background: var(--heat-good); }
+.heater-state.state-unknown .heater-state-title, .heater-state.state-bad .heater-state-title { color: var(--heat-danger); }
+.heater-state.state-unknown .heater-state-dot { background: transparent; border: 2px solid var(--heat-danger); }
+.heater-state.state-bad .heater-state-dot { background: var(--heat-danger); }
+
+/* B's timeline. */
+.heating-layout .departure-timeline { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 28px 0 16px; padding: 0; list-style: none; }
+.heating-layout .departure-timeline::before { content: ''; position: absolute; top: 5px; left: 5px; right: 18%; height: 1px; background: #6d6556; }
+.heating-layout .departure-timeline li { position: relative; padding: 24px 0 0; border: 0; min-width: 0; }
+.heating-layout .departure-timeline li::before { content: ''; position: absolute; top: 0; left: 0; width: 11px; height: 11px; border-radius: 50%; background: var(--heat-accent); }
+.heating-layout .departure-timeline strong { font-size: 13px; font-weight: 500; color: var(--heat-muted); }
+.heating-layout .departure-timeline time { display: block; font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.heating-layout .departure-timeline-date { display: block; color: var(--heat-muted); font-size: 12px; overflow-wrap: anywhere; }
+.active-session[hidden] { display: none; }
+.active-notice { margin: 20px 0 0 !important; padding: 14px 18px; background: #29231d; border-left: 3px solid var(--heat-accent); color: #ecd0ae; font-size: 14px; }
+.active-notice.is-bad { background: #2a2021; border-color: var(--heat-danger); color: var(--heat-danger); }
+.active-notice[hidden] { display: none; }
+.active-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.heating-layout a.heating-secondary-action { display: inline-flex; align-items: center; min-height: 48px; padding: 10px 16px; border: 1px solid #4a5157; border-radius: 8px; background: var(--heat-raised); color: var(--heat-text); font-weight: 550; text-decoration: none; }
+.heating-layout a.heating-secondary-action[hidden] { display: none; }
+#departureSaved h3, #departurePreview h3 { font-size: 15px; color: var(--heat-muted); margin-top: 24px; }
+
+/* Secondary column: one quiet surface, sections separated by rules. */
+.heating-secondary { min-width: 0; background: var(--heat-surface); border-radius: 12px; padding: 8px 24px; align-self: start; }
+.heating-panel { padding: 24px 0; }
+.heating-panel + .heating-panel { border-top: 1px solid var(--heat-line); }
+.heating-panel h2 { font-size: 22px; margin-bottom: 8px; }
+.heating-layout button, .heating-layout input, .heating-layout select {
+  font: inherit; font-size: 16px; color: var(--heat-text); min-height: 48px; border-radius: 8px;
+  touch-action: manipulation;
+}
+.heating-layout button { cursor: pointer; padding: 10px 16px; background: var(--heat-raised); border: 1px solid #4a5157; font-weight: 550; }
+.heating-layout button:disabled { opacity: .5; cursor: not-allowed; }
+.heating-layout :focus-visible { outline: 3px solid var(--heat-focus); outline-offset: 3px; }
+.bounded-manual-controls label { display: block; color: var(--heat-muted); font-size: 14px; margin: 16px 0 6px; }
+.bounded-manual-controls input { width: 100%; max-width: 12rem; padding: 10px 12px; background: #15181a; border: 1px solid #5a6168; color-scheme: dark; }
+#boundedHeatingStatus, .heater-state-detail { overflow-wrap: anywhere; }
+#boundedSessionLink[hidden] { display: none; }
+.duration-presets { display: flex; gap: 8px; margin-top: 16px; }
+.heating-layout .duration-presets button { flex: 1; padding: 10px 4px; min-width: 0; }
+.heating-layout .duration-presets button[aria-pressed="true"] { border-color: var(--heat-accent); color: var(--heat-accent); background: #e9b3781a; }
+.session-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 20px 0 12px; }
+.session-facts dt { color: var(--heat-muted); font-size: 12px; }
+.session-facts dd { margin: 2px 0 0; font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+#boundedHeatingStatus { color: var(--heat-muted); font-size: 14px; }
+#boundedHeatingStatus:empty { display: none; }
+.heating-layout .quick-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0 0; padding: 0; }
+.heating-layout .quick-actions button { flex: 1 1 160px; }
+.heating-layout .active-actions button { flex: 0 1 auto; }
+.heating-layout .heating-primary { background: var(--heat-accent); border-color: var(--heat-accent); color: #241a10; }
+.heating-layout .heating-stop { background: #302224; border-color: #8a5d58; color: var(--heat-danger); }
+.heating-layout a { color: var(--heat-accent); display: inline-block; padding: 12px 0; }
+.comfort-tools { margin-top: 16px; border-top: 1px solid var(--heat-line); }
+.comfort-tools > summary { min-height: 48px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; font-weight: 600; list-style: none; }
+.comfort-tools > summary::-webkit-details-marker { display: none; }
+.comfort-tools > summary::after { content: '+'; font-size: 22px; color: var(--heat-muted); }
+.comfort-tools[open] > summary::after { content: '−'; }
+.comfort-tools .ios-card { background: transparent; border: 0; box-shadow: none; padding: 0; margin: 16px 0 0; }
+.weather-reading { display: flex; justify-content: space-between; align-items: end; gap: 16px; flex-wrap: wrap; margin: 8px 0 12px; }
+.weather-value { font-size: 30px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.heating-layout .condition-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 14px; margin: 20px 0 16px; padding: 0; list-style: none; }
+.condition-tile { display: grid; align-content: start; gap: 2px; min-width: 0; }
+.condition-tile .item-label { color: var(--heat-muted); font-size: 12px; }
+.condition-tile .sensor-reading { display: grid; gap: 2px; }
+.condition-tile .sensor-value { font-size: 22px; font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.condition-tile .sensor-state { font-size: 12px; color: var(--heat-muted); }
+.condition-tile .sensor-stale .sensor-state, .condition-tile .sensor-cached .sensor-state { color: var(--heat-accent); }
+.heater-details-heading { margin: 24px 0 8px; }
+
+@media (min-width: 768px) {
+  .heating-layout { grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); gap: 48px; }
+}
+@media (max-width: 767px) {
+  .heating-big-time { font-size: 64px; }
+  .heating-secondary { background: transparent; padding: 0; border-top: 1px solid var(--heat-line); border-radius: 0; }
+}
+@media (max-width: 420px) {
+  .heating-layout .departure-timeline { gap: 10px; }
+  .heating-layout .departure-timeline time { font-size: 21px; }
+  .session-facts { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .session-facts > div:first-child { grid-column: 1 / -1; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .heating-layout button { transition: background-color .15s, border-color .15s; }
+}

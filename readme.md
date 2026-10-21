@@ -350,8 +350,16 @@ touch behavior on the actual iPhone before collection.
 
 ### Bounded manual car heating
 
-The Heating page supports a selected duration (default 60 minutes, maximum 180),
-a stable latest finish and explicit Stop pending/failed-or-unknown/confirmed states.
+**Car Heater → Heating** follows the approved layout: the next departure, heater
+state, device freshness and start/departure/latest-finish timeline lead; manual
+heating, comfort tools and conditions sit beside them (below them on a phone).
+Manual heating takes a preset or typed duration (default 60 minutes, maximum 180)
+and shows its mode, original finish and remaining time. **Stop heating** appears
+under the heater state during a session or whenever OFF is not confirmed. It asks
+no confirmation; Stopping, Stop not confirmed and OFF confirmed stay distinct, and
+only matching relay evidence confirms shutdown. Other mode starts show why they
+are unavailable until then. Device report, weather observation and each
+measurement show their own freshness; missing values show —.
 Timed starts require ESP32C3-Car-Heater **3.1.1**, a compatible **bounded-v1** Shelly
 script and migration **20261014_0013**. Older/unsupported devices cannot authorize
 bounded heating. Both transports preserve the same session identity and deadline.

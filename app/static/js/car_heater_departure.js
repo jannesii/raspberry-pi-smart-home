@@ -35,8 +35,9 @@
     target.replaceChildren(node('h3', heading));
     const list = node('ol', ''); list.className = 'departure-timeline';
     [['Heating start', plan.planned_start_at], ['Departure', plan.departure_at], ['Latest finish', plan.finish_at]].forEach(([label, value]) => {
-      const item = node('li', ''); const time = node('time', format(value)); time.dateTime = value;
-      item.append(node('strong', label), time); list.append(item);
+      const item = node('li', ''); const time = node('time', value ? localParts(new Date(value)).time : '—'); if (value) time.dateTime = value;
+      const day = node('small', format(value)); day.className = 'departure-timeline-date';
+      item.append(node('strong', label), time, day); list.append(item);
     });
     target.append(list, node('p', `${plan.preheat_minutes} min preheat · ${plan.grace_minutes} min grace · original finish stays fixed.`));
     const weather = plan.weather;
@@ -65,12 +66,27 @@
       fields.forEach(id => { byId(id).disabled = busy || activeRun; });
       byId('departureTomorrow').disabled = busy || activeRun;
       byId('departureForm').title = activeRun ? 'Confirm Stop heating before changing the departure plan' : '';
+      const lock = byId('departureLockReason');
+      if (lock) lock.textContent = activeRun ? 'Stop heating and wait for confirmed OFF before changing the departure plan.' : '';
+    }
+    const upcoming = ['scheduled', 'waiting_for_device', 'running', 'stopping'];
+    function renderDepartureHero(plan) {
+      const time = byId('departureBigTime'), date = byId('departureBigDate');
+      if (!time || !date) return;
+      if (!plan || !upcoming.includes(plan.status)) {
+        time.textContent = '—'; date.textContent = 'No upcoming departure'; return;
+      }
+      const departure = new Date(plan.departure_at);
+      time.textContent = localParts(departure).time;
+      date.textContent = departure.toLocaleDateString('en-GB', {timeZone: 'Europe/Helsinki',
+        weekday: 'short', day: 'numeric', month: 'short', year: 'numeric'});
     }
     function render(plan, populate = false) {
       saved = plan;
       const serialized = JSON.stringify(plan);
       if (!populate && serialized === renderedPlan) { controls(); return; }
       renderedPlan = serialized;
+      renderDepartureHero(plan);
       if (!plan) { byId('departureSaved').textContent = 'No saved departure.'; }
       else {
         const labels = {scheduled: 'Scheduled', waiting_for_device: 'Waiting for device; original finish unchanged',
@@ -138,6 +154,7 @@
         activeRun = Boolean(run && run.phase !== 'stopped'); loaded = true; render(plan, populate);
       } catch (error) {
         loaded = false; byId('departureFeedback').textContent = error.message + ' Reload to check departure status.'; controls();
+        if (!saved && byId('departureBigDate')) byId('departureBigDate').textContent = 'Departure plan unavailable';
       }
     }
     byId('departureDate').value = tomorrowDate();

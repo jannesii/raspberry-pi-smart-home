@@ -43,23 +43,73 @@ if __name__ == "__main__":
             }
         )
 
-        @flask_app.post("/test/relay-off")
-        def relay_off():
+        from datetime import UTC, datetime
+
+        from flask import request
+        from test_car_heater_sensors import _DummySIOHandler, _DummySocketIO
+
+        from app.blueprints.api.car_heater import status as car_status
+        from app.services.esp32_redis_bridge import ESP32RedisBridge
+
+        flask_app.sio_handler = _DummySIOHandler()
+
+        @flask_app.post("/test/frame")
+        def device_frame():
+            """One firmware-shaped frame through the real HTTP or WebSocket ingest."""
+            spec = request.get_json()
             run = heater.get_bounded_session()
-            heater.observe_bounded_status(
-                {
-                    "bounded": {
-                        "protocol": 1,
-                        "ready": True,
-                        "relay_on": False,
-                        "session_id": run["session_id"],
-                        "phase": "stopped",
-                        "reason": "cancelled",
-                        "boot_id": "relay-one",
-                        "device_boot_id": "esp-one",
-                    }
+            session_id = {"current": run and run["session_id"], "old": "old-session"}
+            now = datetime.now(UTC)
+            frame = {
+                "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
+                "firmware_version": "3.1.1",
+                "shelly_connected": spec.get("connected", True),
+                "temperature": None,
+                "sensors": {
+                    "glass_reference": {"status": "missing", "temperature_c": None},
+                    "cabin": {
+                        "status": "ok",
+                        "temperature_c": -2.5,
+                        "humidity_pct": 0,
+                        "age_ms": 0,
+                    },
+                },
+            }
+            if spec.get("connected", True):
+                relay = spec.get("relay", False)
+                frame["shelly"] = json.dumps(
+                    {"output": relay, "apower": spec.get("power", 0), "aenergy": {"total": 1}}
+                )
+                frame["bounded"] = {
+                    "protocol": 1,
+                    "ready": True,
+                    "relay_on": relay,
+                    "power_w": spec.get("power", 0),
+                    "boot_id": "relay-one",
+                    "device_boot_id": "esp-one",
+                    **(
+                        {"session_id": session_id[spec["session"]], "phase": spec.get("phase")}
+                        if spec.get("session")
+                        else {}
+                    ),
                 }
-            )
+            if spec.get("ack"):
+                ack = spec["ack"]
+                frame["action_results"] = [
+                    {
+                        "action": ack["action"],
+                        "success": ack["success"],
+                        "session_id": session_id[ack["session"]],
+                    }
+                ]
+            if spec.get("transport") == "ws":
+                frame["received_at"] = now.isoformat()
+                ESP32RedisBridge(
+                    app=flask_app, socketio=_DummySocketIO(), sio_handler=flask_app.sio_handler
+                )._emit_status(frame)
+            else:
+                _, code = car_status.handle_status_update_request(frame, commands_enabled=True)
+                assert code == 200
             return {"ok": True}
 
     if len(sys.argv) > 2 and sys.argv[2] == "departure":

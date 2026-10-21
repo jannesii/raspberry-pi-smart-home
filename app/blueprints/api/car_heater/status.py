@@ -31,6 +31,7 @@ from ....services.car_heater.sensor_readings import (
     build_sensor_frame,
     normalize_temperature_c,
 )
+from ....services.weather import browser_conditions
 from ._blueprint import car_bp
 
 if TYPE_CHECKING:
@@ -82,6 +83,7 @@ _last_test_request_time: float | None = None
 _test_mode_was_active: bool = False
 _LATEST_STATUS_LOCK = Lock()
 _LATEST_NORMALIZED_STATUS: dict[str, Any] | None = None
+_LATEST_STATUS_RECEIVED_AT: datetime | None = None
 _SENSOR_TRACKER_LOCK = Lock()
 _SENSOR_TRACKER_KEY = "car_heater_sensor_tracker"
 
@@ -182,14 +184,36 @@ def cache_latest_normalized_status(status_payload: dict[str, Any] | None) -> Non
         status_payload.get("source") if isinstance(status_payload, dict) else None,
     )
     with _LATEST_STATUS_LOCK:
-        global _LATEST_NORMALIZED_STATUS
+        global _LATEST_NORMALIZED_STATUS, _LATEST_STATUS_RECEIVED_AT
         _LATEST_NORMALIZED_STATUS = dict(status_payload) if status_payload else None
+        _LATEST_STATUS_RECEIVED_AT = _utc_now() if status_payload else None
+
+
+def device_report_age_s(timestamp: Any, received_at: datetime | None = None) -> int | None:
+    """Seconds since a device report, judged by the server clock.
+
+    Receipt time is preferred; the device's own timestamp is only a fallback
+    for reports restored from storage. A browser never judges this itself.
+    """
+    reported = received_at
+    if reported is None:
+        try:
+            reported = (
+                timestamp if isinstance(timestamp, datetime) else datetime.fromisoformat(timestamp)
+            )
+        except (TypeError, ValueError):
+            return None
+        if reported.tzinfo is None:
+            return None
+    return max(0, int((_utc_now() - reported).total_seconds()))
 
 
 def get_cached_latest_normalized_status() -> dict[str, Any] | None:
     """Return a copy of the latest normalized status payload, if available."""
     with _LATEST_STATUS_LOCK:
         cached = dict(_LATEST_NORMALIZED_STATUS) if _LATEST_NORMALIZED_STATUS else None
+        if cached is not None:
+            cached["report_age_s"] = device_report_age_s(None, _LATEST_STATUS_RECEIVED_AT)
     logger.debug(
         "get_cached_latest_normalized_status returning has_payload=%s source=%s",
         cached is not None,
@@ -418,6 +442,8 @@ def build_current_status_response(ctrl: Controller) -> dict[str, Any]:
                 bool(fallback_status.shelly_connected),
             )
         logger.debug("build_current_status_response using fallback status=%s", last_status)
+    if last_status is not None and "report_age_s" not in last_status:
+        last_status["report_age_s"] = device_report_age_s(last_status.get("timestamp"))
 
     # Re-judge sensor freshness now: the cached status was built at receipt.
     sensors_snapshot = get_car_heater_sensor_tracker().snapshot(_utc_now())
@@ -447,14 +473,9 @@ def build_current_status_response(ctrl: Controller) -> dict[str, Any]:
     try:
         weather_svc = getattr(current_app, "weather_service", None)
         if weather_svc is not None:
-            wd = weather_svc.get_latest()
-            if wd:
-                payload["weather"] = {
-                    "outside_temp_c": wd.t2m.value if wd.t2m else None,
-                    "wind_speed_mps": wd.ws_10min.value if wd.ws_10min else None,
-                    "humidity_pct": wd.rh.value if wd.rh else None,
-                    "station_name": wd.station_name,
-                }
+            conditions = browser_conditions(weather_svc.get_latest())
+            if conditions:
+                payload["weather"] = conditions
         logger.debug("build_current_status_response attached weather=%s", "weather" in payload)
     except Exception:
         logger.exception("Failed to attach weather data to current status response")
@@ -660,6 +681,7 @@ def process_car_heater_status_data(
             )
         if sensors_snapshot:
             status_payload["sensors"] = sensors_snapshot
+        status_payload["report_age_s"] = 0
         cache_latest_normalized_status(status_payload)
         _process_alerts(
             car=car,
@@ -681,6 +703,7 @@ def process_car_heater_status_data(
         status_payload = build_fallback_payload(timestamp, ambient_temp, shelly_connected)
         if sensors_snapshot:
             status_payload["sensors"] = sensors_snapshot
+        status_payload["report_age_s"] = 0
         cache_latest_normalized_status(status_payload)
         _process_alerts(
             car=None,

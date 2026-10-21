@@ -38,14 +38,14 @@ def emit_car_heater_status_to_views(
         try:
             weather_svc = getattr(current_app, "weather_service", None)
             if weather_svc:
-                wd = weather_svc.get_latest()
-                if wd:
-                    payload["weather"] = {
-                        "outside_temp_c": wd.t2m.value if wd.t2m else None,
-                        "wind_speed_mps": wd.ws_10min.value if wd.ws_10min else None,
-                    }
+                from ..services.weather import browser_conditions
+
+                conditions = browser_conditions(weather_svc.get_latest())
+                if conditions:
+                    payload["weather"] = conditions
         except Exception:
-            pass  # Weather data is optional
+            # Weather data is optional; the status is still emitted.
+            logger.debug("Weather unavailable for car_heater_status emit", exc_info=True)
 
         handler.emit("car_heater_status", payload)
     except Exception as e:

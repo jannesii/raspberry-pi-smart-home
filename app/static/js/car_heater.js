@@ -44,66 +44,100 @@ function fmtCompact(v, unit = '', digits = 0) {
 }
 
 // ============================================
-// Hero Status Updates
+// Heating View: power, device and weather freshness
 // ============================================
 
-function updateHeroStatus(status) {
-  const stateIndicator = document.getElementById('stateIndicator');
-  const stateIcon = document.getElementById('stateIcon');
-  const stateTitle = document.getElementById('stateTitle');
-  const heroPowerValue = document.getElementById('heroPowerValue');
-  const heroAmbient = document.getElementById('heroAmbient');
-  const heroEnergy = document.getElementById('heroEnergy');
+// Matches the server's stale relay-evidence limit; the departure planner's
+// weather freshness limit is 30 minutes.
+const DEVICE_REPORT_MAX_AGE_S = 30;
+const WEATHER_MAX_AGE_S = 1800;
+let latestDeviceReport = null;
+let latestDeviceReportMs = 0;
+let latestWeather = null;
 
-  if (!status) {
-    if (stateIndicator) {
-      stateIndicator.classList.remove('state-on', 'state-off');
-      stateIndicator.classList.add('state-unknown');
-    }
-    if (stateIcon) stateIcon.textContent = '❓';
-    if (stateTitle) stateTitle.textContent = 'Unknown';
-    if (heroPowerValue) heroPowerValue.textContent = '—';
+function fmtHelsinkiTime(ts, withSeconds = false) {
+  const d = new Date(ts);
+  if (!ts || Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleTimeString('en-GB', {
+    timeZone: 'Europe/Helsinki', hourCycle: 'h23', hour: '2-digit', minute: '2-digit',
+    ...(withSeconds ? { second: '2-digit' } : {}),
+  });
+}
+
+function fmtHeaterReportAge(seconds) {
+  if (seconds < 90) return `${Math.max(0, Math.round(seconds))} s ago`;
+  if (seconds < 5400) return `${Math.round(seconds / 60)} min ago`;
+  return `${(seconds / 3600).toFixed(1)} h ago`;
+}
+
+// The server judges report age by its own clock; the browser only advances
+// it locally, so a skewed phone clock cannot make an old report look fresh.
+function deviceReportAgeS() {
+  const age = Number(latestDeviceReport?.report_age_s);
+  if (!latestDeviceReport || latestDeviceReport.report_age_s == null || !Number.isFinite(age)) return null;
+  return age + (Date.now() - latestDeviceReportMs) / 1000;
+}
+
+function deviceReportIsFresh() {
+  const age = deviceReportAgeS();
+  return age !== null && age <= DEVICE_REPORT_MAX_AGE_S;
+}
+
+function updateDeviceReport(status) {
+  // A response without a report keeps the last one; it then ages to stale
+  // instead of disappearing.
+  if (status) {
+    latestDeviceReport = status;
+    latestDeviceReportMs = Date.now();
+  }
+  const power = document.getElementById('conditionPower');
+  // Without Shelly data, or once the report is stale, the relay and its power
+  // are unknown, not zero.
+  if (power) {
+    const shellyKnown = !!latestDeviceReport && typeof latestDeviceReport.is_heater_on === 'boolean';
+    power.textContent = shellyKnown && deviceReportIsFresh() ? fmtNum(latestDeviceReport.instant_power_w, ' W', 0) : '—';
+  }
+  renderDeviceFreshness();
+  window.dispatchEvent(new CustomEvent('car_heater_telemetry', {
+    detail: { status: latestDeviceReport, isFresh: deviceReportIsFresh },
+  }));
+}
+
+function renderDeviceFreshness() {
+  const el = document.getElementById('deviceFreshness');
+  if (!el) return;
+  const age = deviceReportAgeS();
+  const reported = latestDeviceReport?.timestamp;
+  if (age === null) {
+    el.textContent = 'No device report yet.';
+    el.classList.remove('is-stale');
     return;
   }
-
-  // Without Shelly data the relay state is unknown, not OFF.
-  const relayKnown = typeof status.is_heater_on === 'boolean';
-  const isOn = status.is_heater_on === true;
-  const instantW = status.instant_power_w;
-  const ambient = status.ambient_temp;
-  const energyToday = status.energy_last_min_wh;
-
-  // State indicator
-  if (stateIndicator) {
-    stateIndicator.classList.remove('state-on', 'state-off', 'state-unknown');
-    stateIndicator.classList.add(!relayKnown ? 'state-unknown' : (isOn ? 'state-on' : 'state-off'));
-  }
-  if (stateIcon) stateIcon.textContent = !relayKnown ? '❓' : (isOn ? '🔥' : '❄️');
-  if (stateTitle) stateTitle.textContent = !relayKnown ? 'Unknown' : (isOn ? 'Heating' : 'Off');
-
-  // Power display
-  if (heroPowerValue) {
-    const power = Number(instantW);
-    heroPowerValue.textContent = Number.isFinite(power) ? power.toFixed(0) : '—';
-  }
-
-  // Stats row
-  if (heroAmbient) heroAmbient.textContent = fmtNum(ambient, '', 2);
-  if (heroEnergy) heroEnergy.textContent = fmtCompact(energyToday, 'Wh');
+  const shelly = typeof latestDeviceReport.is_heater_on === 'boolean' ? '' : ' Relay not connected.';
+  const stale = age > DEVICE_REPORT_MAX_AGE_S;
+  el.textContent = stale
+    ? `Device not reporting · last report ${fmtHelsinkiTime(reported, true)} (${fmtHeaterReportAge(age)}).${shelly}`
+    : `Device reported ${fmtHelsinkiTime(reported, true)} (${fmtHeaterReportAge(age)}).${shelly}`;
+  el.classList.toggle('is-stale', stale || !!shelly);
 }
 
 function updateWeatherDisplay(weather) {
+  if (weather) latestWeather = weather;
+  const w = latestWeather;
   const heroOutsideTemp = document.getElementById('heroOutsideTemp');
   const heroWind = document.getElementById('heroWind');
-
-  if (!weather) return;
-
-  if (heroOutsideTemp && weather.outside_temp_c != null) {
-    heroOutsideTemp.textContent = fmtNum(weather.outside_temp_c, '', 1);
+  const freshness = document.getElementById('weatherFreshness');
+  if (heroOutsideTemp) heroOutsideTemp.textContent = fmtNum(w?.outside_temp_c, ' °C', 1);
+  if (heroWind) heroWind.textContent = fmtNum(w?.wind_speed_mps, ' m/s', 1);
+  if (!freshness) return;
+  const observed = Date.parse(w?.observed_at);
+  if (!Number.isFinite(observed)) {
+    freshness.textContent = 'no weather observation yet';
+    return;
   }
-  if (heroWind && weather.wind_speed_mps != null) {
-    heroWind.textContent = fmtNum(weather.wind_speed_mps, ' m/s', 1);
-  }
+  const age = (Date.now() - observed) / 1000;
+  const station = w.station_name ? `FMI ${w.station_name}` : 'FMI';
+  freshness.textContent = `${station} observed ${fmtHelsinkiTime(observed)}${age > WEATHER_MAX_AGE_S ? ` · stale (${fmtHeaterReportAge(age)})` : ''}`;
 }
 
 // ============================================
@@ -225,7 +259,7 @@ function renderCarSensorReadings() {
 // ============================================
 
 function updateStatusUI(status) {
-  updateHeroStatus(status);
+  updateDeviceReport(status);
   updateDetailsSection(status);
 }
 
@@ -233,7 +267,8 @@ function applyCarHeaterPayload(data, source = 'unknown') {
   console.log(`📡 applyCarHeaterPayload (${source}):`, data);
   if (!data) return;
 
-  const status = data.status || data;
+  // A response without a status (no device report yet) is not a status.
+  const status = Object.prototype.hasOwnProperty.call(data, 'status') ? data.status : data;
   updateStatusUI(status);
   mergeCarSensorReadings(status?.sensors);
   renderCarSensorReadings();
@@ -514,8 +549,9 @@ document.addEventListener('DOMContentLoaded', () => {
   if (window.CAR_HEATER_LAST_STATUS) {
     updateStatusUI(window.CAR_HEATER_LAST_STATUS);
   }
-  // Re-evaluate sensor freshness between updates so old readings turn stale.
+  // Re-evaluate freshness between updates so old readings turn stale.
   window.setInterval(renderCarSensorReadings, 15000);
+  window.setInterval(() => { updateDeviceReport(null); updateWeatherDisplay(null); }, 5000);
 
   if (window.CAR_HEATER_CMD_STATUS) {
     updateCommandStatusUI(window.CAR_HEATER_CMD_STATUS);
@@ -639,6 +675,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     window.socket.on('disconnect', () => {
+      startStatusPolling();
+    });
+
+    // A socket that never connects still needs the HTTP status fallback.
+    window.socket.on('connect_error', () => {
       startStatusPolling();
     });
 

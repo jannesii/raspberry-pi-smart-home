@@ -58,6 +58,23 @@ class WeatherData:
     n_man: WeatherValue | None
 
 
+def browser_conditions(data: WeatherData | None) -> dict | None:
+    """One outside-conditions shape for the Heating page, HTTP and Socket.IO.
+
+    ``observed_at`` is the temperature's own observation time, so the page can
+    judge freshness instead of trusting the cache fetch time.
+    """
+    if not data:
+        return None
+    return {
+        "outside_temp_c": data.t2m.value if data.t2m else None,
+        "wind_speed_mps": data.ws_10min.value if data.ws_10min else None,
+        "humidity_pct": data.rh.value if data.rh else None,
+        "station_name": data.station_name,
+        "observed_at": data.t2m.time if data.t2m else None,
+    }
+
+
 class WeatherService:
     def __init__(
         self,
