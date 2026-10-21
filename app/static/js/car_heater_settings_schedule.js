@@ -90,22 +90,10 @@ function updateProgressBar(schedule) {
 // Ready-by UI Updates
 // ============================================
 
+// Ready-by tuning (enabled, tolerance, cooldown) lives in Settings → Calibration.
 function updateReadyByUI(data) {
   if (!data) return;
-  updateReadyByConfig(data.config || null);
   updateReadyBySchedule(data.schedule || null);
-}
-
-function updateReadyByConfig(config) {
-  if (!config) return;
-
-  const readyByEnabledToggle = document.getElementById('readyByEnabled');
-  const readyByToleranceInput = document.getElementById('readyByTolerance');
-  const readyByCooldownInput = document.getElementById('readyByCooldown');
-
-  if (readyByEnabledToggle) readyByEnabledToggle.checked = config.enabled;
-  if (readyByToleranceInput) readyByToleranceInput.value = config.reach_tolerance_minutes;
-  if (readyByCooldownInput) readyByCooldownInput.value = config.command_cooldown_s;
 }
 
 function updateReadyBySchedule(schedule) {
@@ -381,25 +369,6 @@ function cancelReadyBy() {
   }
 }
 
-function emitReadyByConfigChange() {
-  const readyByEnabledToggle = document.getElementById('readyByEnabled');
-  const readyByCooldownInput = document.getElementById('readyByCooldown');
-  const readyByToleranceInput = document.getElementById('readyByTolerance');
-
-  const enabled = readyByEnabledToggle ? readyByEnabledToggle.checked : true;
-  const commandCooldownS = readyByCooldownInput ? parseInt(readyByCooldownInput.value) : null;
-  const reachToleranceMinutes = readyByToleranceInput ? parseInt(readyByToleranceInput.value) : null;
-
-  const config = {
-    enabled: enabled,
-    command_cooldown_s: commandCooldownS,
-    reach_tolerance_minutes: reachToleranceMinutes,
-  };
-  if (window.socket) {
-    window.socket.emit('ready_by_control', { action: 'update_config', config });
-  }
-}
-
 // ============================================
 // Socket.IO Event Handlers
 // ============================================
@@ -454,38 +423,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // Ready-by action buttons
   const scheduleBtn = document.getElementById('btnReadyBySchedule');
   const cancelBtn = document.getElementById('btnReadyByCancel');
-  const readyByEnabledToggle = document.getElementById('readyByEnabled');
-  const readyByToleranceInput = document.getElementById('readyByTolerance');
-  const readyByCooldownInput = document.getElementById('readyByCooldown');
-
   if (scheduleBtn) {
     scheduleBtn.addEventListener('click', scheduleReadyBy);
   }
 
   if (cancelBtn) {
     cancelBtn.addEventListener('click', cancelReadyBy);
-  }
-
-  if (readyByEnabledToggle) {
-    readyByEnabledToggle.addEventListener('change', () => {
-      if (window.socket) {
-        emitReadyByConfigChange();
-      }
-    });
-  }
-  if (readyByToleranceInput) {
-    readyByToleranceInput.addEventListener('change', () => {
-      if (window.socket) {
-        emitReadyByConfigChange();
-      }
-    });
-  }
-  if (readyByCooldownInput) {
-    readyByCooldownInput.addEventListener('change', () => {
-      if (window.socket) {
-        emitReadyByConfigChange();
-      }
-    });
   }
 });
 

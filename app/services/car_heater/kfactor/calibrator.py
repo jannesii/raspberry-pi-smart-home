@@ -128,6 +128,15 @@ class KFactorCalibrator:
         return self._cfg
 
     @property
+    def config_updated_at(self) -> str | None:
+        """When the persisted config was last saved; None while defaults are unsaved."""
+        return self._config_updated_ts
+
+    def autonomous_conflict(self) -> str | None:
+        """Why autonomous calibration would wait now, or None when nothing blocks it."""
+        return self._check_autonomous_conflicts()
+
+    @property
     def enabled(self) -> bool:
         """Whether autonomous calibration is enabled."""
         return self._cfg.enabled
@@ -144,22 +153,31 @@ class KFactorCalibrator:
         enabled = bool(value)
         if enabled and self._car_heater_service is not None:
             self._car_heater_service.require_mode_available()
-        if not enabled and self._state in (STATE_AUTONOMOUS_ARMED, STATE_AUTONOMOUS_RECORDING):
-            logger.info("kfactor: disabling autonomous while state=%s", self._state)
-            if self._state == STATE_AUTONOMOUS_RECORDING:
-                self.finalize_session("autonomous_disabled")
-            else:
-                self._state = STATE_IDLE
-                self._slow_rise_checks = 0
-                self._heater_on_streak = 0
-                logger.debug("kfactor: autonomous state reset to IDLE")
+        if not enabled:
+            self._leave_autonomous()
         self._cfg = replace(self._cfg, enabled=enabled)
         self._save_config_in_db(self._cfg)
-        # Keep submodules in sync with latest config
+        self._sync_submodules()
+        logger.info("kfactor: enabled=%s", enabled)
+
+    def _leave_autonomous(self) -> None:
+        """End an autonomous session or arming; its OFF goes through the heater service."""
+        if self._state not in (STATE_AUTONOMOUS_ARMED, STATE_AUTONOMOUS_RECORDING):
+            return
+        logger.info("kfactor: disabling autonomous while state=%s", self._state)
+        if self._state == STATE_AUTONOMOUS_RECORDING:
+            self.finalize_session("autonomous_disabled")
+        else:
+            self._state = STATE_IDLE
+            self._slow_rise_checks = 0
+            self._heater_on_streak = 0
+            logger.debug("kfactor: autonomous state reset to IDLE")
+
+    def _sync_submodules(self) -> None:
+        """Keep submodules in sync with the latest config."""
         self._physics = ThermalPhysics(self._cfg)
         self._session._cfg = self._cfg
         self._snapshot._cfg = self._cfg
-        logger.info("kfactor: enabled=%s", enabled)
 
     # ==========================================================================
     # SERVICE REFERENCES
@@ -181,19 +199,23 @@ class KFactorCalibrator:
     # CONFIG MANAGEMENT
     # ==========================================================================
 
-    def update_config(self, updates: dict[str, Any]) -> None:
-        """Merge user config updates into current config."""
-        logger.debug("kfactor: update_config called updates=%s", updates)
-        if updates.get("enabled") and self._car_heater_service is not None:
+    def save_settings(self, changes: dict[str, Any]) -> None:
+        """Persist owner changes first; a failed save leaves the running config unchanged.
+
+        Enabling autonomous mode requires the heater to be free of a bounded
+        session; disabling it ends any autonomous arming or recording.
+        """
+        logger.debug("kfactor: save_settings called keys=%s", sorted(changes))
+        if changes.get("enabled") and self._car_heater_service is not None:
             self._car_heater_service.require_mode_available()
         self._refresh_config_if_changed()
-        self._cfg = self._merge_config(updates)
-        self._save_config_in_db(self._cfg)
-        # Update submodules with new config
-        self._physics = ThermalPhysics(self._cfg)
-        self._session._cfg = self._cfg
-        self._snapshot._cfg = self._cfg
-        logger.info("kfactor: config updated %s", updates)
+        cfg = self._merge_config(changes)
+        self._persist_config(cfg)
+        if not cfg.enabled:
+            self._leave_autonomous()
+        self._cfg = cfg
+        self._sync_submodules()
+        logger.info("kfactor: owner saved settings %s", sorted(changes))
 
     def _load_config_from_db(self) -> KFactorConfig | None:
         """Load config from database."""
@@ -238,23 +260,29 @@ class KFactorCalibrator:
             logger.debug("kfactor: _save_config_in_db skipped (no ctrl)")
             return
         try:
-            import json
-            from dataclasses import asdict
-
-            from app.core.models import CarHeaterKFactorConfig
-
-            payload = json.dumps(asdict(cfg), separators=(",", ":"), sort_keys=True)
-            now = iso_no_micros(datetime.now(tz=self._tz))
-            self._config_updated_ts = now
-            self._ctrl.save_kfactor_config(
-                CarHeaterKFactorConfig(
-                    id=1,
-                    config_json=payload,
-                    updated_ts=now,
-                )
-            )
+            self._persist_config(cfg)
         except Exception:
             logger.debug("kfactor: failed to save config to DB", exc_info=True)
+
+    def _persist_config(self, cfg: KFactorConfig) -> None:
+        """Save config, raising on failure; the saved time changes only on success."""
+        if self._ctrl is None:
+            raise RuntimeError("Calibration settings storage is unavailable")
+        import json
+        from dataclasses import asdict
+
+        from app.core.models import CarHeaterKFactorConfig
+
+        payload = json.dumps(asdict(cfg), separators=(",", ":"), sort_keys=True)
+        now = iso_no_micros(datetime.now(tz=self._tz))
+        self._ctrl.save_kfactor_config(
+            CarHeaterKFactorConfig(
+                id=1,
+                config_json=payload,
+                updated_ts=now,
+            )
+        )
+        self._config_updated_ts = now
 
     def _merge_config(self, updates: dict[str, Any]) -> KFactorConfig:
         """Merge updates into current config."""

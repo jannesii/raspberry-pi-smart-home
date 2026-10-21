@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater.css', v='20261021-2') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/flash.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_chart.css') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_settings.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_settings.css', v='20261021-1') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_logs.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_sessions.css', v='20261021-1') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_departure.css', v='20261021-2') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_heating.css', v='20261021-3') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_preferences.css', v='20261021-1') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_calibration.css', v='20261021-1') }}">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 {% endblock %}
@@ -317,10 +318,112 @@
       <p id="deviceFactsStatus" class="settings-feedback" role="status" aria-live="polite"></p>
     </section>
 
-    <section id="calibration" class="settings-group" aria-labelledby="calibrationHeading">
+    <section id="calibration" class="settings-group calibration-group" aria-labelledby="calibrationHeading">
       <h3 id="calibrationHeading">Calibration</h3>
-      <p>Existing Ready-by and kFactor calibration tools, unchanged until their redesign. Calibration never controls departure heating.</p>
-      <button id="btnOpenReadyBySettings" class="evidence-button" type="button">Open calibration tools</button>
+      <p><span class="calibration-badge">Experimental</span> Calibration fits a cabin-air warm-up model (heat loss and heater efficiency) from recorded heating. Comfort heating estimates and the legacy Ready-by schedule use it. It never controls departure heating and says nothing about whether windows are clear.</p>
+      <dl class="settings-facts">
+        <dt>Status</dt><dd id="calState">—</dd>
+        <dt>Active model</dt><dd id="calParams">—</dd>
+        <dt>Last session</dt><dd id="calLastSession">—</dd>
+        <dt>Calibration window</dt><dd id="calWindow">—</dd>
+        <dt>Cooldown until</dt><dd id="calCooldown">—</dd>
+        <dt>Model and settings</dt><dd id="calVersion">—</dd>
+      </dl>
+      <p id="calLoadStatus" class="settings-feedback" role="status" aria-live="polite"></p>
+
+      <h4>Autonomous calibration</h4>
+      <p id="calAutonomousHelp" class="settings-help">When on, the server switches the heater on by itself inside the calibration window, records a short warm-up and switches it off again. It waits while comfort heating, a near Ready-by schedule or a timed session is active. Starting timed heating turns it off, and it never comes back on by itself.</p>
+      <p id="calAutonomousState" class="calibration-state" aria-live="polite" aria-atomic="true">—</p>
+      <div class="settings-actions">
+        <button id="calAutonomousToggle" class="evidence-button" type="button" aria-describedby="calAutonomousHelp calAutonomousLock">Turn on autonomous calibration</button>
+        <button id="calResetCooldown" class="evidence-button" type="button" aria-describedby="calResetCooldownHelp">Reset cooldown</button>
+      </div>
+      <p id="calAutonomousLock" class="settings-help calibration-lock"></p>
+      <p id="calResetCooldownHelp" class="settings-help">Reset cooldown lets the next session record without waiting. It does not start heating.</p>
+      <p id="calActionFeedback" class="settings-feedback" role="status" aria-live="polite"></p>
+
+      <form id="calibrationForm" class="settings-form calibration-form" novalidate>
+        <fieldset class="calibration-fieldset">
+          <legend>Calibration window</legend>
+          <p class="settings-help">Autonomous sessions start only between these local Helsinki times. An end before the start crosses midnight.</p>
+          <div class="calibration-fields">
+            <div class="calibration-field">
+              <label for="calWindowStart">Start (HH:MM)</label>
+              <input id="calWindowStart" name="config.auto_calib_start_hhmm" type="text" inputmode="numeric" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" maxlength="5" placeholder="00:00" title="24-hour time, for example 22:30" autocomplete="off">
+            </div>
+            <div class="calibration-field">
+              <label for="calWindowStop">End (HH:MM)</label>
+              <input id="calWindowStop" name="config.auto_calib_stop_hhmm" type="text" inputmode="numeric" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" maxlength="5" placeholder="23:59" title="24-hour time, for example 06:00" autocomplete="off">
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset class="calibration-fieldset">
+          <legend>Ready-by (legacy cabin target)</legend>
+          <p class="settings-help">Tuning for the earlier cabin-temperature schedule on the Heating view. Departure plans do not use it.</p>
+          <label class="evidence-choice" for="calReadyByEnabled"><input id="calReadyByEnabled" name="ready_by.enabled" type="checkbox"> Allow Ready-by schedules</label>
+          <div class="calibration-fields">
+            <div class="calibration-field">
+              <label for="calReachTolerance">Reach tolerance (min)</label>
+              <input id="calReachTolerance" name="ready_by.reach_tolerance_minutes" type="number" inputmode="decimal" min="0" max="30" step="any" aria-describedby="calReachToleranceHelp">
+              <p id="calReachToleranceHelp" class="settings-help">How early the target may be reached and still count as on time. 0–30.</p>
+            </div>
+            <div class="calibration-field">
+              <label for="calCommandCooldown">Command cooldown (s)</label>
+              <input id="calCommandCooldown" name="ready_by.command_cooldown_s" type="number" inputmode="numeric" min="5" max="300" step="1" aria-describedby="calCommandCooldownHelp">
+              <p id="calCommandCooldownHelp" class="settings-help">Least time between Ready-by relay commands. 5–300.</p>
+            </div>
+          </div>
+        </fieldset>
+
+        <details id="calAdvanced" class="calibration-advanced">
+          <summary>Advanced model tuning</summary>
+          <p class="settings-help">Changes affect only future fits and estimates; recorded sessions keep their results. Defaults suit most cars.</p>
+          {% for group in calibration_groups if not group.expert %}
+          {% include 'car_heater_calibration_group.html' %}
+          {% endfor %}
+          <details id="calExpert" class="calibration-advanced calibration-expert">
+            <summary>Expert fitting controls</summary>
+            {% for group in calibration_groups if group.expert %}
+            {% include 'car_heater_calibration_group.html' %}
+            {% endfor %}
+          </details>
+        </details>
+
+        <div class="settings-actions">
+          <button type="submit" id="calibrationSave" class="evidence-button evidence-primary">Save calibration settings</button>
+        </div>
+        <p id="calibrationFeedback" class="settings-feedback" role="status" aria-live="polite"></p>
+        <p class="settings-help">Edits stay unsaved until Save calibration settings. Only changed fields are sent.</p>
+      </form>
+
+      <div class="calibration-reset">
+        <button id="calResetDefaults" class="evidence-button calibration-danger" type="button" aria-describedby="calResetDefaultsHelp">Reset model settings to defaults</button>
+        <p id="calResetDefaultsHelp" class="settings-help">Restores every calibration setting above, except Ready-by, and turns autonomous calibration off. Recorded sessions and fitted parameters are kept.</p>
+      </div>
+
+      <details id="calData" class="calibration-advanced calibration-data">
+        <summary>Recorded calibration data</summary>
+        <p id="calDataStatus" class="settings-feedback" role="status" aria-live="polite"></p>
+        <div id="calLiveSession" hidden>
+          <h5>Recording now</h5>
+          <dl id="calLiveFacts" class="settings-facts"></dl>
+        </div>
+        <h5>Statistics</h5>
+        <dl id="calStats" class="settings-facts"></dl>
+        <h5>Recent sessions (<span id="calSessionCount">—</span>)</h5>
+        <div class="calibration-table-wrap" tabindex="0" role="region" aria-label="Recent calibration sessions">
+          <table id="calSessions" class="calibration-table">
+            <caption class="visually-hidden">Recent calibration sessions, newest first</caption>
+            <thead><tr><th scope="col">Started</th><th scope="col">Outside</th><th scope="col">Quality</th><th scope="col">k_loss (W/K)</th><th scope="col">η</th><th scope="col">Result</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <h5>Bucket coverage</h5>
+        <p class="settings-help">Fitted parameters per outside temperature and wind bucket. Older than 30 days is marked stale.</p>
+        <ul id="calBuckets" class="calibration-buckets"></ul>
+        <button id="calDataRefresh" class="evidence-button" type="button">Refresh recorded data</button>
+      </details>
     </section>
 
     <section id="diagnostics" class="settings-group" aria-labelledby="diagnosticsHeading">
@@ -451,25 +554,23 @@
   window.CAR_HEATER_CMD_STATUS = {{ command_status | tojson }};
   window.CAR_HEATER_CHARGE_STATE = {{ charge_mode_state | tojson }};
   window.CAR_HEATER_READY_BY = {{ ready_by_schedule | tojson }};
-  window.CAR_HEATER_KFACTOR = {{ kfactor_status | tojson }};
   window.CAR_HEATER_WEATHER = {{ weather_data | tojson }};
 </script>
 {% include 'car_heater_chart_modal.html' %}
-{% include 'car_heater_settings_modal.html' %}
 {% include 'car_heater_logs_modal.html' %}
 {% endblock %}
 
 {% block scripts %}
-<script defer src="{{ url_for('static', filename='js/car_heater_bounded.js', v='20261021-3') }}"></script>
+<script defer src="{{ url_for('static', filename='js/car_heater_bounded.js', v='20261021-4') }}"></script>
 <script defer src="{{ url_for('static', filename='js/car_heater_departure.js', v='20261021-2') }}"></script>
 <script defer src="{{ url_for('static', filename='js/car_heater_weather_health.js', v='20261021-1') }}"></script>
 <script defer src="{{ url_for('static', filename='js/car_heater_preferences.js', v='20261021-2') }}"></script>
+<script defer src="{{ url_for('static', filename='js/car_heater_calibration.js', v='20261021-2') }}"></script>
 <script src="{{ url_for('static', filename='js/init_sio.js', v='20260504-1') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater.js', v='20261021-3') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater_logs.js', v='20260323-1') }}"></script>
 <script src="{{ url_for('static', filename='js/flash.js') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater_chart.js', v='20261014-2') }}"></script>
-<script src="{{ url_for('static', filename='js/car_heater_settings_base.js', v='20260323-2') }}"></script>
-<script src="{{ url_for('static', filename='js/car_heater_settings_schedule.js') }}"></script>
-<script src="{{ url_for('static', filename='js/car_heater_settings_kfactor.js') }}"></script>
+<script src="{{ url_for('static', filename='js/car_heater_settings_base.js', v='20261021-1') }}"></script>
+<script src="{{ url_for('static', filename='js/car_heater_settings_schedule.js', v='20261021-1') }}"></script>
 {% endblock %}

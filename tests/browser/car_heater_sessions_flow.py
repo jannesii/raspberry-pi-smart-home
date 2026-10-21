@@ -61,9 +61,9 @@ def record_label_reload_filter_and_navigation(browser_page, viewport):
         "link", name="Settings", exact=True
     ).click()
     page.wait_for_load_state("domcontentloaded")
-    page.get_by_role("button", name="Open calibration tools", exact=True).click()
-    expect(page.get_by_role("heading", name="Car Heater Settings", exact=True)).to_be_visible()
-    page.get_by_role("button", name="Close", exact=True).first.click()
+    # Calibration is an in-page group now, not a dialog.
+    expect(page.get_by_role("heading", name="Calibration", exact=True)).to_be_visible()
+    expect(page.get_by_role("button", name="Save calibration settings", exact=True)).to_be_visible()
     expect(page.get_by_role("button", name="View Charts", exact=False)).to_be_visible()
     expect(page.get_by_role("button", name="Get Logs", exact=True)).to_be_visible()
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")

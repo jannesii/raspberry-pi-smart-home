@@ -25,7 +25,7 @@ if __name__ == "__main__":
     patch = pytest.MonkeyPatch()
     fixture = session_app.__wrapped__(work, patch)
     flask_app = next(fixture)
-    if len(sys.argv) > 2 and sys.argv[2] == "bounded":
+    if len(sys.argv) > 2 and sys.argv[2] in ("bounded", "calibration"):
         from app.services.car_heater.car_heater_service import CarHeaterService
 
         patch.setattr("redis.from_url", lambda *a, **kw: (_ for _ in ()).throw(OSError("isolated")))
@@ -36,9 +36,28 @@ if __name__ == "__main__":
         comfort = KeepAtTempService(heater, flask_app.ctrl)
         flask_app.keep_at_temp_service = comfort
 
+        kfactor = None
+        if sys.argv[2] == "calibration":
+            from app.services.car_heater import KFactorCalibrator, ReadyByService
+
+            kfactor = KFactorCalibrator(flask_app.ctrl)
+            kfactor.set_car_heater_service(heater)
+            kfactor.set_keep_at_temp_service(comfort)
+            ready_by = ReadyByService(
+                car_heater_service=heater,
+                kfactor_calibrator=kfactor,
+                keep_at_temp_service=comfort,
+                ctrl=flask_app.ctrl,
+            )
+            kfactor.set_ready_by_service(ready_by)
+            flask_app.kfactor_calibrator = kfactor
+            flask_app.ready_by_service = ready_by
+
         def suspend_heater_modes():
             # As app.services wires it for bounded starts.
             comfort.enabled = False
+            if kfactor is not None:
+                kfactor.enabled = False
 
         heater.bind_mode_suspension(suspend_heater_modes)
         heater.observe_bounded_status(

@@ -382,8 +382,8 @@ section until it is retired.
 
 **Settings** groups **Heating preferences** (comfort hysteresis, with an
 explanation and an explicit **Save preferences**), **Installation & devices**,
-**Calibration** (the existing Ready-by/kFactor tools) and **Diagnostics**
-(telemetry, command status, charts, logs and weather collection). Installation &
+**Calibration** and **Diagnostics** (telemetry, command status, charts, logs and
+weather collection). Installation &
 devices records the heater, power topology and the three sensor positions. Each
 save is kept as history and copied into heating sessions created afterwards;
 earlier sessions keep their own snapshot. Below it, firmware, relay capability
@@ -391,6 +391,24 @@ and each sensor's state show only what the devices last reported; sensor models
 and I2C addresses are labelled as firmware defaults because the device does not
 report them. The record needs migration **20261021_0019**; without it heating
 still works and the page says the record cannot be read.
+
+**Settings → Calibration** is labelled experimental. It tunes the cabin-air
+warm-up model used by comfort estimates and the legacy Ready-by schedule; the
+departure duration table never uses it. It shows the model state, active heat
+loss and efficiency, last session, calibration window, cooldowns, model version
+and when settings were last saved (Helsinki time; "defaults, never saved" until
+then). The calibration window and Ready-by tuning are always shown; the 28 model
+settings sit in the initially collapsed **Advanced model tuning**, with expert
+fitting controls collapsed inside it, each with its explanation and range.
+Edits save nothing until **Save calibration settings**, which sends only changed
+fields; out-of-range values are refused and a failed save keeps the saved
+values. **Turn on autonomous calibration** (confirmed first) lets the server
+heat briefly by itself inside the window. A timed session switches it off and
+blocks turning it on, in the page and at the server, until OFF is confirmed.
+**Reset model settings to defaults** (confirmed) keeps Ready-by settings,
+recorded sessions and fitted parameters and leaves autonomous calibration off;
+**Reset cooldown** never starts heating. **Recorded calibration data** loads
+recent sessions, bucket coverage and statistics when opened.
 
 ### Departure defrost planning
 

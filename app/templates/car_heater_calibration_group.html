@@ -1,0 +1,13 @@
+<fieldset class="calibration-fieldset">
+  <legend>{{ group.title }}</legend>
+  <p class="settings-help">{{ group.help }}</p>
+  <div class="calibration-fields">
+    {% for field in group.fields %}
+    <div class="calibration-field">
+      <label for="cal_{{ field.key }}">{{ field.label }} ({{ field.unit }})</label>
+      <input id="cal_{{ field.key }}" name="config.{{ field.key }}" type="number" inputmode="decimal" min="{{ field.min }}" max="{{ field.max }}" step="{{ field.step }}" autocomplete="off" aria-describedby="cal_{{ field.key }}_help">
+      <p id="cal_{{ field.key }}_help" class="settings-help">{{ field.help }} {{ '%g' % field.min }}–{{ '%g' % field.max }}.</p>
+    </div>
+    {% endfor %}
+  </div>
+</fieldset>

@@ -391,18 +391,32 @@ class ReadyByService:
         if self._ctrl is None:
             return
         try:
-            logger.info("ready_by: saving config to DB: %r", cfg)
-            payload = json.dumps(asdict(cfg), separators=(",", ":"), sort_keys=True)
-            now = datetime.now(self._tz).replace(microsecond=0).isoformat(sep=" ")
-            self._ctrl.save_ready_by_config(
-                CarHeaterReadyByConfig(
-                    id=1,
-                    config_json=payload,
-                    updated_ts=now,
-                )
-            )
+            self._persist_config(cfg)
         except Exception as e:
             logger.warning("ready_by: failed to seed config in DB: %s", e)
+
+    def _persist_config(self, cfg: ReadyByConfig) -> None:
+        """Save config, raising on failure."""
+        if self._ctrl is None:
+            raise RuntimeError("Ready-by settings storage is unavailable")
+        logger.info("ready_by: saving config to DB: %r", cfg)
+        payload = json.dumps(asdict(cfg), separators=(",", ":"), sort_keys=True)
+        now = datetime.now(self._tz).replace(microsecond=0).isoformat(sep=" ")
+        self._ctrl.save_ready_by_config(
+            CarHeaterReadyByConfig(
+                id=1,
+                config_json=payload,
+                updated_ts=now,
+            )
+        )
+
+    def save_settings(self, changes: dict[str, Any]) -> ReadyByConfig:
+        """Merge and persist owner changes; a failed save leaves the config unchanged."""
+        with self._lock:
+            cfg = self._merge_config(self._cfg, changes)
+            self._persist_config(cfg)
+            self._cfg = cfg
+            return self.config
 
     @staticmethod
     def _merge_config(defaults: ReadyByConfig, raw: dict[str, Any]) -> ReadyByConfig:

@@ -31,8 +31,15 @@ Tests: `tests/test_car_heater*.py`, `tests/test_ready_by.py`.
   departure sessions copy the newest row into their snapshot. Snapshotting
   tolerates the table being unreadable so a lagging migration never blocks
   heating. Device facts are live reports only; never invent missing ones.
-- Use `KFactorCalibrator.update_config()` so physics/session/snapshot modules
-  stay synchronized. Preserve DB refresh of persisted config in workers.
+- Calibration and Ready-by tuning changes go through
+  `calibration_settings.apply_calibration_changes`/`run_calibration_action`
+  from both `/api/car_heater/calibration` and the CSRF-checked
+  `kfactor_control`/`ready_by_control` events: partial, range-validated,
+  persisted before the in-memory copy (`save_settings`), and enabling
+  autonomous calibration is refused while a bounded session is not confirmed
+  stopped. Disabling or resetting ends autonomous arming/recording. Keep the
+  page's field bounds in `KFACTOR_FIELDS`; calibration never feeds departure
+  planning. Preserve DB refresh of persisted config in workers.
 - Imported explicit IDs can leave PostgreSQL sequences behind. Preserve the
   kFactor controller's sequence realignment and single retry on collisions.
 - Glass/cabin `sensors` (firmware 3.0.0+) are ingested by one app-wide

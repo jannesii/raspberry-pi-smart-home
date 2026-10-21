@@ -12,6 +12,9 @@ from typing import TYPE_CHECKING, Any
 
 from flask import current_app
 
+from ..services.car_heater.calibration_settings import apply_calibration_changes
+from .kfactor_handlers import authorized_owner, save_calibration
+
 if TYPE_CHECKING:
     from ..services.car_heater import ReadyByService
     from ._handlers import SocketEventHandler
@@ -106,27 +109,17 @@ def handle_ready_by_control(handler: SocketEventHandler, data: dict[str, Any]) -
         logger.warning("Bad ready_by_control payload: %s", data)
         return
 
-    from ..services.car_heater import ReadyByConfig
-
-    try:
-        svc: ReadyByService | None = getattr(current_app, "ready_by_service", None)
-    except Exception:
-        svc = None
-    if svc is None:
-        handler.socketio.emit("error", {"message": "Ready-by service not initialized"})
-        return
-
     action = (data.get("action") or "").strip()
-    if not action:
-        handler.socketio.emit("error", {"message": "Missing action for ready-by control"})
+    if action != "update_config":
+        handler.socketio.emit("error", {"message": "Invalid ready-by control action"})
         return
-
-    try:
-        if action == "update_config":
-            config = data.get("config")
-            svc.config = ReadyByConfig(**config)
-            logger.info("Ready-by config set via socket %s", config)
-            handler.emit_to_views("ready_by_config", {"enabled": svc.config.enabled})
-    except Exception as e:
-        logger.exception("ready_by_control error: %s", e)
-        handler.socketio.emit("error", {"message": "Ready-by control error"})
+    if not authorized_owner(handler, data):
+        return
+    # Same partial-update contract as PATCH /api/car_heater/calibration.
+    changes = {"ready_by": data.get("config")}
+    save_calibration(
+        handler,
+        lambda kfactor, ready_by, heater: apply_calibration_changes(
+            kfactor, ready_by, heater, changes
+        ),
+    )

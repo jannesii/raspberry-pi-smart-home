@@ -595,3 +595,28 @@ def test_departure_reconciles_its_own_durable_stopped_execution(
     result = client.get("/api/car_heater/departure").get_json()
     assert result["status"] == "cancelled"
     assert result["events"][-1]["reason"] == "cancelled"
+
+
+def test_departure_preview_is_independent_of_experimental_calibration(
+    departure, session_app, client
+):
+    """Calibration tunes the cabin model only; the first-frost table ignores it."""
+    from app.services.car_heater import KFactorCalibrator
+
+    _planner, heater, _clock, weather = departure
+    weather.value = -10
+    auth = headers(session_app, client)
+    request = {"departure_at": "2027-01-16T08:00"}
+    before = client.post("/api/car_heater/departure/preview", json=request, headers=auth)
+    kfactor = KFactorCalibrator(session_app.ctrl)
+    kfactor.set_car_heater_service(heater)
+    session_app.kfactor_calibrator = kfactor
+    saved = client.patch(
+        "/api/car_heater/calibration",
+        json={"config": {"default_k_loss_W_per_K": 200, "default_eta": 0.1, "mass_factor": 150}},
+        headers=auth,
+    )
+    assert saved.status_code == 200
+    after = client.post("/api/car_heater/departure/preview", json=request, headers=auth)
+    assert after.get_json() == before.get_json()
+    assert after.get_json()["preheat_minutes"] == 150

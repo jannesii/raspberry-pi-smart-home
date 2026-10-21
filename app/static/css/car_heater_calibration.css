@@ -1,0 +1,33 @@
+/* Calibration Settings group. Uses the evidence workspace tokens. */
+.calibration-badge {
+  display: inline-block; margin-right: 6px; padding: 2px 10px; border: 1px solid var(--evidence-warning);
+  border-radius: 999px; color: var(--evidence-warning); font-size: .8rem; font-weight: 650; letter-spacing: .04em;
+}
+.heater-evidence .calibration-state { color: var(--evidence-text); font-weight: 600; margin: 8px 0 0; }
+.calibration-lock:empty { display: none; }
+.heater-evidence .calibration-lock { color: var(--evidence-warning); margin-top: 8px; }
+.calibration-form { max-width: 960px; }
+.heater-evidence .calibration-fieldset { border: 0; border-top: 1px solid var(--evidence-border); border-radius: 0; padding: 16px 0 4px; margin: 8px 0 0; }
+.calibration-fieldset legend { padding: 0 8px 0 0; font-weight: 650; color: var(--evidence-text); }
+.calibration-fields { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px 24px; margin-top: 8px; }
+.calibration-field { display: grid; gap: 6px; align-content: start; min-width: 0; }
+.calibration-form .calibration-field label { margin-top: 12px; }
+.calibration-form input[type="number"], .calibration-form input[type="text"] { max-width: 12rem; }
+.calibration-form .evidence-choice { font-weight: 600; margin-top: 8px; }
+.heater-evidence .calibration-advanced { margin-top: 16px; border: 1px solid var(--evidence-border); border-radius: 8px; padding: 0 14px 12px; }
+.heater-evidence .calibration-advanced > summary { padding: 12px 0; }
+.heater-evidence .calibration-advanced[open] > summary { border-bottom: 1px solid var(--evidence-border); margin-bottom: 8px; }
+.heater-evidence .calibration-expert { background: var(--evidence-surface); }
+.calibration-reset { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--evidence-border); display: grid; gap: 8px; justify-items: start; }
+.heater-evidence .calibration-danger { border-color: var(--evidence-warning); color: var(--evidence-warning); }
+.heater-evidence .calibration-data h5 { color: var(--evidence-text); }
+.calibration-table-wrap { max-width: 100%; overflow-x: auto; border-radius: 6px; }
+.calibration-table { border-collapse: collapse; width: 100%; min-width: 520px; font-variant-numeric: tabular-nums; }
+.calibration-table th, .calibration-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--evidence-border); }
+.calibration-table th { color: var(--evidence-muted); font-weight: 600; }
+.calibration-buckets { padding-left: 20px; color: var(--evidence-muted); }
+.calibration-buckets li { margin: 4px 0; }
+.calibration-group .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (min-width: 720px) {
+  .calibration-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

@@ -4,6 +4,7 @@ Organizes car heater functionality by feature:
 - status.py: Status updates from ESP32, alerts, parsing
 - control.py: Manual control, command queuing, history
 - kfactor.py: KFactor calibration endpoints
+- calibration.py: Calibration Settings (owner-facing)
 - ready_by.py: Ready-by scheduling endpoints
 """
 
@@ -11,6 +12,7 @@ Organizes car heater functionality by feature:
 # Import route modules to register routes on car_bp
 from . import (
     bounded,
+    calibration,
     comfort,
     control,
     departure,

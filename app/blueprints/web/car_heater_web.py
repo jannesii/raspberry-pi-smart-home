@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from flask import current_app, render_template, request
 from flask_login import current_user, login_required
 
+from ...services.car_heater.calibration_settings import settings_form_groups
 from ...services.weather import browser_conditions
 from ...utils import get_ctrl
 from ..api.car_heater.status import device_report_age_s, fallback_status
@@ -21,7 +22,6 @@ if TYPE_CHECKING:
     from ...core import CarHeaterStatus, Controller
     from ...services.car_heater import (
         CarHeaterService,
-        KFactorCalibrator,
         ReadyByService,
     )
     from ...services.weather import WeatherService
@@ -78,28 +78,6 @@ def get_car_heater_page():
     except Exception as e:
         logger.exception("Failed to get ready-by schedule: %s", e)
 
-    # kFactor calibration status (if available)
-    kfactor_status = None
-    try:
-        kfactor_svc: KFactorCalibrator | None = getattr(current_app, "kfactor_calibrator", None)
-        if kfactor_svc is not None:
-            snapshot = kfactor_svc.get_debug_snapshot()
-            # Include full config for advanced settings UI
-            full_config = snapshot.get("config", {})
-            enabled_value = bool(full_config.get("enabled", False))
-            kfactor_status = {
-                "state": snapshot.get("state"),
-                "autonomous_enabled": enabled_value,
-                "enabled": enabled_value,
-                "cooldown_until": snapshot.get("cooldown_until"),
-                "active_params": snapshot.get("active_params"),
-                "last_session": snapshot.get("last_session"),
-                "config": full_config,
-            }
-            logger.debug("kfactor_status prepared: %s", kfactor_status)
-    except Exception as e:
-        logger.debug("Failed to get kfactor status: %s", e)
-
     # Weather data
     weather_data = None
     try:
@@ -117,7 +95,7 @@ def get_car_heater_page():
         command_status=command_status,
         charge_mode_state=charge_mode_state,
         ready_by_schedule=ready_by_data,
-        kfactor_status=kfactor_status,
+        calibration_groups=settings_form_groups(),
         weather_data=weather_data,
     )
 

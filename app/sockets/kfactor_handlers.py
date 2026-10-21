@@ -11,28 +11,62 @@ from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
 from flask import current_app
+from flask_login import current_user
+
+from ..services.car_heater.calibration_settings import (
+    NOT_SAVED,
+    apply_calibration_changes,
+    run_calibration_action,
+)
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from ..services.car_heater import KFactorCalibrator
     from ._handlers import SocketEventHandler
 
 logger = logging.getLogger(__name__)
 
 
-def _parse_bool(value: Any) -> bool | None:
-    """Parse a bool from common wire formats."""
-    logger.debug("_parse_bool called value=%s type=%s", value, type(value))
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, int) and value in (0, 1):
-        return bool(value)
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized in ("true", "1", "yes", "on"):
-            return True
-        if normalized in ("false", "0", "no", "off"):
-            return False
-    return None
+def authorized_owner(handler: SocketEventHandler, data: dict[str, Any]) -> bool:
+    """Browser mutations need a signed-in administrator and a valid CSRF token."""
+    from flask_wtf.csrf import ValidationError, validate_csrf
+
+    try:
+        if not current_user.is_authenticated:
+            raise ValueError("Authentication required")
+        validate_csrf(data.get("csrf_token"))
+    except (ValidationError, ValueError) as exc:
+        logger.warning("Calibration socket change refused: %s", exc)
+        handler.socketio.emit("error", {"message": str(exc)})
+        return False
+    if not getattr(current_user, "is_admin", False):
+        logger.warning("Non-admin %s refused calibration change", current_user.get_id())
+        handler.flash("Only administrators can change calibration.", "error")
+        return False
+    return True
+
+
+def save_calibration(handler: SocketEventHandler, save: Callable[..., None]) -> None:
+    """Run one shared save and send every view the persisted result, also on refusal."""
+    from ..services.car_heater.calibration_settings import calibration_payload
+
+    kfactor = getattr(current_app, "kfactor_calibrator", None)
+    ready_by = getattr(current_app, "ready_by_service", None)
+    heater = getattr(current_app, "car_heater_service", None)
+    if kfactor is None:
+        handler.socketio.emit("error", {"message": "Calibration is unavailable"})
+        return
+    try:
+        save(kfactor, ready_by, heater)
+    except ValueError as exc:
+        # Includes ownership refusals; the saved state lets the page drop its edit.
+        logger.warning("Calibration change refused: %s", exc)
+        handler.socketio.emit("error", {"message": str(exc)})
+    except Exception:
+        logger.exception("Calibration change via socket failed")
+        handler.socketio.emit("error", {"message": NOT_SAVED})
+    handler.emit_to_views("calibration_settings", calibration_payload(kfactor, ready_by, heater))
 
 
 def emit_kfactor_status(handler: SocketEventHandler, svc: KFactorCalibrator) -> None:
@@ -75,40 +109,20 @@ def handle_kfactor_control(handler: SocketEventHandler, data: dict[str, Any]) ->
     action = (data.get("action") or "").strip()
     logger.debug("handle_kfactor_control action=%s payload_keys=%s", action, list(data.keys()))
 
-    try:
-        if action == "set_enabled":
-            enabled_raw = data.get("enabled", True)
-            enabled = _parse_bool(enabled_raw)
-            logger.debug(
-                "handle_kfactor_control set_enabled raw=%s parsed=%s",
-                enabled_raw,
-                enabled,
-            )
-            if enabled is None:
-                logger.warning("Invalid enabled value for kfactor_control: %s", enabled_raw)
-                handler.socketio.emit("error", {"message": "Invalid kfactor enabled value"})
-                emit_kfactor_status(handler, svc)
-                return
-            svc.enabled = enabled
-            logger.info("KFactor enabled set to %s via socket", enabled)
-            emit_kfactor_status(handler, svc)
+    if action in _MUTATIONS:
+        if not authorized_owner(handler, data):
+            return
+        save_calibration(handler, _calibration_save(action, data))
+        return
 
-        elif action == "status":
+    try:
+        if action == "status":
             emit_kfactor_status(handler, svc)
 
         elif action == "get_config":
             # Return full config for populating the UI
             config = asdict(svc.config)
             handler.emit_to_views("kfactor_config", {"config": config})
-
-        elif action == "update_config":
-            _handle_update_config(handler, svc, data)
-
-        elif action == "reset_defaults":
-            _handle_reset_defaults(handler, svc)
-
-        elif action == "reset_cooldown":
-            _handle_reset_cooldown(handler, svc)
 
         elif action == "extended_data":
             # Return extended snapshot with live session, history, bucket coverage, stats
@@ -123,87 +137,17 @@ def handle_kfactor_control(handler: SocketEventHandler, data: dict[str, Any]) ->
         handler.socketio.emit("error", {"message": "KFactor control error"})
 
 
-def _handle_update_config(
-    handler: SocketEventHandler, svc: KFactorCalibrator, data: dict[str, Any]
-) -> None:
-    """Update config fields from the UI."""
-    logger.debug("_handle_update_config called keys=%s data=%s", list(data.keys()), data)
-    updates = data.get("config", {})
-    if not isinstance(updates, dict):
-        handler.socketio.emit("error", {"message": "Invalid config payload"})
-        return
+_MUTATIONS = ("set_enabled", "update_config", "reset_cooldown", "reset_defaults")
 
-    # Get current config and merge updates
-    current_config = asdict(svc.config)
-    sanitized_updates: dict[str, Any] = {}
-    for key, value in updates.items():
-        if key in current_config:
-            # Type coercion based on current type
-            current_type = type(current_config[key])
-            try:
-                if current_type is bool:
-                    parsed = _parse_bool(value)
-                    logger.debug(
-                        "_handle_update_config bool key=%s raw=%s parsed=%s",
-                        key,
-                        value,
-                        parsed,
-                    )
-                    if parsed is None:
-                        logger.warning(
-                            "kfactor config: invalid bool value for %s: %s",
-                            key,
-                            value,
-                        )
-                        continue
-                    sanitized_updates[key] = parsed
-                elif current_type is int:
-                    sanitized_updates[key] = int(value)
-                elif current_type is float:
-                    sanitized_updates[key] = float(value)
-                elif current_type is str:
-                    sanitized_updates[key] = str(value)
-                else:
-                    sanitized_updates[key] = value
-            except (TypeError, ValueError) as e:
-                logger.warning("kfactor config: invalid value for %s: %s", key, e)
-                continue
 
-    svc.update_config(sanitized_updates)
-    logger.info("KFactor config updated via socket: %s", list(sanitized_updates.keys()))
-
-    # Emit updated config back to all views
-    handler.emit_to_views(
-        "kfactor_config",
-        {
-            "config": asdict(svc.config),
-            "saved": True,
-        },
+def _calibration_save(action: str, data: dict[str, Any]) -> Callable[..., None]:
+    """The shared HTTP contract for one browser mutation."""
+    if action in ("reset_cooldown", "reset_defaults"):
+        return lambda kfactor, _ready_by, _heater: run_calibration_action(kfactor, action)
+    if action == "set_enabled":
+        changes = {"autonomous_enabled": data.get("enabled")}
+    else:
+        changes = {"config": data.get("config")}
+    return lambda kfactor, ready_by, heater: apply_calibration_changes(
+        kfactor, ready_by, heater, changes
     )
-
-
-def _handle_reset_defaults(handler: SocketEventHandler, svc: KFactorCalibrator) -> None:
-    """Reset to default config."""
-    from ..services.car_heater import KFactorConfig
-
-    default_config = KFactorConfig()
-    svc._cfg = default_config
-    svc._save_config_in_db(default_config)
-
-    logger.info("KFactor config reset to defaults via socket")
-
-    handler.emit_to_views(
-        "kfactor_config",
-        {
-            "config": asdict(default_config),
-            "saved": True,
-            "reset": True,
-        },
-    )
-
-
-def _handle_reset_cooldown(handler: SocketEventHandler, svc: KFactorCalibrator) -> None:
-    """Reset kFactor cooldown timers."""
-    logger.debug("_handle_reset_cooldown called")
-    svc.reset_cooldown()
-    emit_kfactor_status(handler, svc)

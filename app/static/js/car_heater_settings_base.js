@@ -1,6 +1,6 @@
 /**
  * Car Heater Settings - Base Module
- * Shared utilities and modal management
+ * Shared formatting and toast utilities for the legacy Ready-by schedule
  */
 
 console.log('⚙️ car_heater_settings_base.js loaded');
@@ -89,66 +89,6 @@ function showToast(message, type = 'success') {
   document.head.appendChild(toastStyles);
 })();
 
-// ============================================
-// Settings Modal Management
-// ============================================
-
-function openSettingsModal() {
-  const modal = document.getElementById('carHeaterSettingsModal');
-  if (modal) {
-    modal.classList.add('is-open');
-    document.body.style.overflow = 'hidden';
-
-    // Request latest status via socket
-    if (window.socket) {
-      window.socket.emit('kfactor_control', { action: 'status' });
-    }
-  }
-}
-
-function closeSettingsModal() {
-  const modal = document.getElementById('carHeaterSettingsModal');
-  if (modal) {
-    modal.classList.remove('is-open');
-    document.body.style.overflow = '';
-  }
-}
-
-// ============================================
-// Modal Event Listeners Initialization
-// ============================================
-
-document.addEventListener('DOMContentLoaded', () => {
-  // Settings modal buttons
-  const openSettingsBtn = document.getElementById('btnOpenReadyBySettings');
-  const closeSettingsBtn = document.getElementById('carHeaterSettingsClose');
-  const settingsModal = document.getElementById('carHeaterSettingsModal');
-
-  if (openSettingsBtn) {
-    openSettingsBtn.addEventListener('click', openSettingsModal);
-  }
-
-  if (closeSettingsBtn) {
-    closeSettingsBtn.addEventListener('click', closeSettingsModal);
-  }
-
-  // Close modal on backdrop click
-  if (settingsModal) {
-    settingsModal.addEventListener('click', (e) => {
-      if (e.target === settingsModal) {
-        closeSettingsModal();
-      }
-    });
-  }
-
-  // Close modal on Escape key
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      closeSettingsModal();
-    }
-  });
-});
-
 // Export utilities for other modules
 window.CarHeaterSettings = window.CarHeaterSettings || {};
 Object.assign(window.CarHeaterSettings, {
@@ -156,6 +96,4 @@ Object.assign(window.CarHeaterSettings, {
   fmtTime: settingsFmtTime,
   fmtNum: settingsFmtNum,
   showToast,
-  openSettingsModal,
-  closeSettingsModal,
 });
