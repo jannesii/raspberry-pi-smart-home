@@ -217,9 +217,12 @@ From the repository root, using the virtual environment created above:
 python3 scripts/check_agent_instructions.py
 ```
 
-Tests use SQLite through SQLAlchemy Core. Keep validation isolated from live
-devices and production data. The pre-commit configuration is at the repository
-root. Install the hook with `.venv/bin/pre-commit install`.
+Tests use SQLite through SQLAlchemy Core. The sensor-location tests also start
+a disposable PostgreSQL cluster on a private Unix socket when `initdb` and
+`pg_ctl` are installed (on `PATH` or under `/usr/lib/postgresql/`); otherwise
+the PostgreSQL cases are skipped. Run these as a non-root user. Keep validation
+isolated from live devices and production data. The pre-commit configuration is
+at the repository root. Install the hook with `.venv/bin/pre-commit install`.
 
 [AGENTS.md](AGENTS.md) describes the code layout, working conventions, and
 validation expectations. Pre-commit and CI enforce its size budget. Keep this

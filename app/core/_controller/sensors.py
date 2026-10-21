@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Engine, Text, insert, select
+from sqlalchemy import Engine, Text, insert, select, true
 from sqlalchemy.sql import func
 
 from ..models import BMPData, ESP32TemperatureHumidity
@@ -12,6 +12,31 @@ from ..schema import bmp_sensor_data, esp32_temphum
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+
+def _postgres_latest_locations_query():
+    # A window query scans the entire history even with the location/time index.
+    # Seek past each location instead, reading only its newest indexed entry.
+    reading = select(
+        esp32_temphum.c.id,
+        esp32_temphum.c.location,
+        esp32_temphum.c.timestamp,
+        esp32_temphum.c.temperature,
+        esp32_temphum.c.humidity,
+    ).order_by(
+        esp32_temphum.c.location,
+        esp32_temphum.c.timestamp.desc(),
+        esp32_temphum.c.id.desc(),
+    )
+    latest = reading.limit(1).cte("latest_locations", recursive=True)
+    next_location = (
+        reading.where(esp32_temphum.c.location > latest.c.location)
+        .limit(1)
+        .correlate(latest)
+        .lateral("next_location")
+    )
+    latest = latest.union_all(select(next_location).select_from(latest.join(next_location, true())))
+    return select(latest).order_by(latest.c.location)
 
 
 class SensorsMixin:
@@ -158,18 +183,16 @@ class SensorsMixin:
 
     def get_unique_locations(self) -> list[dict[str, Any]]:
         """
-        Return the latest (most recent) reading per unique location,
-        as a list of dicts with keys: location, temp, hum.
+        Return the latest reading per location, breaking timestamp ties by ID.
+
+        Dicts contain location, temperature, humidity, and timestamp.
         """
         sa_engine: Engine | None = self._sa_engine
         if sa_engine is None:
             raise RuntimeError("SQLAlchemy engine not initialized")
 
         try:
-            # Use window function with SQLAlchemy
-
-            # PostgreSQL supports window functions directly
-            # For SQLite fallback, we'll try window function first
+            # SQLite keeps its window query and compatibility fallback.
             subq = select(
                 esp32_temphum,
                 func.row_number()
@@ -194,8 +217,15 @@ class SensorsMixin:
 
             with sa_engine.connect() as conn:
                 try:
-                    rows = conn.execute(stmt_window).mappings().all()
+                    stmt = (
+                        _postgres_latest_locations_query()
+                        if sa_engine.dialect.name == "postgresql"
+                        else stmt_window
+                    )
+                    rows = conn.execute(stmt).mappings().all()
                 except Exception:
+                    if sa_engine.dialect.name == "postgresql":
+                        raise
                     # Fallback for older SQLite without window functions
                     # Use a correlated subquery
                     e2 = esp32_temphum.alias("e2")
