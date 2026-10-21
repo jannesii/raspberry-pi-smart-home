@@ -2,7 +2,9 @@
 
 Observation photo content and original weather replies live in the database, so
 these backups include them; discovery recomputes photo and reply checksums and
-reports photos without a session and broken weather provenance links.
+reports photos without a session, broken weather provenance links and
+collection checkpoints, plus a fingerprint of every weather table to compare a
+restored copy with its source.
 
 Does not import the application, bootstrap tables or load environment files.
 PostgreSQL backup/restore uses pg_dump/pg_restore; see the operating guide.
@@ -78,6 +80,11 @@ def discover(database_url: str) -> dict:
                 report["photo_integrity"] = _photo_integrity(conn)
             if "weather_reply" in report["tables"]:
                 report["weather_integrity"] = _weather_integrity(conn)
+            report["weather_fingerprints"] = {
+                name: _fingerprint(conn, name)
+                for name in report["tables"]
+                if name.startswith("weather_")
+            }
             if backend == "sqlite":
                 rows = conn.execute(
                     text(
@@ -168,15 +175,72 @@ def _weather_integrity(conn) -> dict:
         .scalars()
         .all()
     )
+    # A successful attempt always stores its original reply.
+    successful_without_reply = (
+        conn.execute(
+            select(retrievals.c.id)
+            .where(retrievals.c.status == "ok", retrievals.c.reply_id.is_(None))
+            .order_by(retrievals.c.id)
+        )
+        .scalars()
+        .all()
+    )
     result = {
         "replies_checked": checked,
         "mismatched_replies": mismatched,
         "retrievals_without_reply": without_reply,
+        "successful_retrievals_without_reply": successful_without_reply,
         "readings_without_retrieval": without_retrieval,
     }
     if inspect(conn).has_table("weather_forecast_version"):
         result["forecast_links"] = _forecast_links(conn, retrievals)
+    if inspect(conn).has_table("weather_collection_progress"):
+        result.update(_collection_progress(conn, retrievals))
     return result
+
+
+def _collection_progress(conn, retrievals) -> dict:
+    """Collection checkpoints, and initialized ones with no retrieval history left."""
+    progress = Table("weather_collection_progress", MetaData(), autoload_with=conn)
+    rows = [
+        dict(row)
+        for row in conn.execute(
+            select(progress).order_by(progress.c.kind, progress.c.source_id)
+        ).mappings()
+    ]
+    orphaned = []
+    for row in rows:
+        attempts = conn.scalar(
+            select(func.count())
+            .select_from(retrievals)
+            .where(retrievals.c.kind == row["kind"], retrievals.c.source_id == row["source_id"])
+        )
+        if row["initialized_at"] and not attempts:
+            orphaned.append({"kind": row["kind"], "source_id": row["source_id"]})
+    return {"collection_progress": rows, "progress_without_retrievals": orphaned}
+
+
+def _fingerprint(conn, name: str) -> dict:
+    """Row count and SHA-256 over every row in primary-key order.
+
+    Equal fingerprints before backup and after restore show the restored rows,
+    revisions, links and checkpoints are the same, not just as many. Binary
+    content enters as its own SHA-256, and rows stream in batches on a Pi.
+    """
+    table = Table(name, MetaData(), autoload_with=conn)
+    order = list(table.primary_key.columns) or list(table.columns)
+    digest = hashlib.sha256()
+    rows = 0
+    result = conn.execution_options(yield_per=1000).execute(select(table).order_by(*order))
+    for row in result:
+        values = [
+            hashlib.sha256(bytes(v)).hexdigest() if isinstance(v, bytes | memoryview) else v
+            for v in row
+        ]
+        digest.update(json.dumps(values, default=str).encode())
+        digest.update(b"\n")
+        rows += 1
+    return {"rows": rows, "sha256": digest.hexdigest()}
 
 
 def _forecast_links(conn, retrievals) -> dict:

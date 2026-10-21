@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import func, insert, select
+from sqlalchemy import func, insert, or_, select
 
 if TYPE_CHECKING:
     from sqlalchemy import Engine
@@ -71,6 +71,29 @@ def _content_digest(rows: list[dict]) -> str:
     keys = ("parameter", "valid_at", "status", "source_value", "unit", "period", "statistic")
     material = [[row[k] for k in (*keys, "property_href")] for row in rows]
     return hashlib.sha256(_canonical(material).encode()).hexdigest()
+
+
+_VALUE_FIELDS = (
+    "parameter",
+    "valid_at",
+    "status",
+    "value",
+    "source_value",
+    "unit",
+    "period",
+    "statistic",
+    "property_href",
+)
+
+
+def _origin(version: dict) -> tuple:
+    """Versions sharing this key are revisions of one model origin."""
+    return (
+        version["source_id"],
+        _canonical(version["request"]),
+        version["procedure"],
+        version["analysis_time"],
+    )
 
 
 def _point_dict(text: str | None) -> dict | None:
@@ -283,6 +306,106 @@ class WeatherForecastMixin:
         with self._sa_engine.connect() as conn:
             rows = [dict(row) for row in conn.execute(stmt).mappings()]
             return self._describe_forecast_versions(conn, rows)
+
+    def list_weather_forecast_versions_held(self, source_id: str, at_iso: str) -> list[dict]:
+        """Versions the latest successful check at or before ``at`` received.
+
+        This is what the archive held at that moment, not a reconstruction of
+        what FMI had published.
+        """
+        ver, rec, ret = weather_forecast_version, weather_forecast_receipt, weather_retrieval
+        latest = (
+            select(ret.c.id)
+            .where(
+                ret.c.kind == "forecast",
+                ret.c.source_id == source_id,
+                ret.c.status == "ok",
+                ret.c.retrieved_at <= at_iso,
+            )
+            .order_by(ret.c.retrieved_at.desc(), ret.c.id.desc())
+            .limit(1)
+            .scalar_subquery()
+        )
+        ids = select(rec.c.version_id).where(rec.c.retrieval_id == latest)
+        stmt = select(ver).where(ver.c.id.in_(ids)).order_by(ver.c.id)
+        with self._sa_engine.connect() as conn:
+            rows = [dict(row) for row in conn.execute(stmt).mappings()]
+            return self._describe_forecast_versions(conn, rows)
+
+    def export_weather_forecast_values(
+        self,
+        start_iso: str,
+        end_iso: str,
+        *,
+        source_id: str | None = None,
+        as_of_iso: str | None = None,
+    ) -> tuple[list[dict], list[dict]]:
+        """Versions with values valid in [start, end], and one row per such value.
+
+        A value shared by several versions (identical content) appears once per
+        version. With ``as_of`` only versions and receipts retrieved by then
+        count, and ``current`` is judged among them, like observation ``as_of``.
+        """
+        ver, val = weather_forecast_version, weather_forecast_value
+        stmt = select(ver).where(
+            or_(ver.c.phenomenon_end.is_(None), ver.c.phenomenon_end >= start_iso),
+            or_(ver.c.phenomenon_start.is_(None), ver.c.phenomenon_start <= end_iso),
+        )
+        if source_id:
+            stmt = stmt.where(ver.c.source_id == source_id)
+        if as_of_iso:
+            stmt = stmt.where(ver.c.first_retrieved_at <= as_of_iso)
+        with self._sa_engine.connect() as conn:
+            rows = [dict(r) for r in conn.execute(stmt.order_by(ver.c.id)).mappings()]
+            versions = self._describe_forecast_versions(conn, rows)
+            contents = {row["id"]: row["content_id"] for row in rows}
+            values: dict[int, list[dict]] = {}
+            for value in conn.execute(
+                select(val)
+                .where(val.c.content_id.in_(set(contents.values())))
+                .where(val.c.valid_at >= start_iso, val.c.valid_at <= end_iso)
+                .order_by(val.c.parameter, val.c.valid_at)
+            ).mappings():
+                values.setdefault(value["content_id"], []).append(dict(value))
+        versions = [v for v in versions if values.get(contents[v["id"]])]
+        if as_of_iso:
+            latest: dict[tuple, int] = {}
+            for version in versions:
+                version["receipts"] = [
+                    r for r in version["receipts"] if r["retrieved_at"] <= as_of_iso
+                ]
+                key = _origin(version)
+                latest[key] = max(latest.get(key, 0), version["revision"])
+            for version in versions:
+                version["current"] = version["revision"] == latest[_origin(version)]
+        exported = []
+        for version in versions:
+            receipts = version["receipts"]
+            location = version["location"] or {}
+            requested = version["requested_location"] or {}
+            for value in values[contents[version["id"]]]:
+                exported.append(
+                    {
+                        "version_id": version["id"],
+                        "source_id": version["source_id"],
+                        "requested_lat": requested.get("lat"),
+                        "requested_lon": requested.get("lon"),
+                        "location_name": location.get("name"),
+                        "location_pos": location.get("pos"),
+                        "procedure": version["procedure"],
+                        "analysis_time": version["analysis_time"],
+                        "result_time": version["result_time"],
+                        "revision": version["revision"],
+                        "current": version["current"],
+                        "first_retrieval_id": version["first_retrieval_id"],
+                        "first_retrieved_at": version["first_retrieved_at"],
+                        "first_reply_id": receipts[0]["reply_id"] if receipts else None,
+                        "receipts": len(receipts),
+                        "last_received_at": receipts[-1]["retrieved_at"] if receipts else None,
+                        **{k: value[k] for k in _VALUE_FIELDS},
+                    }
+                )
+        return versions, exported
 
     def get_weather_forecast_version(self, version_id: int) -> dict | None:
         """One received version with its complete returned horizon and receipts."""

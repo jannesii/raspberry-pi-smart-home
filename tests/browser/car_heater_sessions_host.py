@@ -210,6 +210,46 @@ if __name__ == "__main__":
             collector.run_pending()
             return {"ok": True}
 
+    if len(sys.argv) > 2 and sys.argv[2] == "weather_evidence":
+        from datetime import timedelta
+
+        import requests
+        import test_weather_forecast_archive as forecast
+        import test_weather_observation_recovery as recovery
+        from test_weather_evidence_export import run_with
+
+        from app.services.weather.forecast_archive import ForecastCollector
+        from app.services.weather.observation_archive import ObservationCollector
+
+        # The real collection path with #26's initialization backfill; one
+        # station times out so its gap stays visible and repairable.
+        station_fmi = recovery.StationFMI()
+        station_fmi.failing[recovery.AIRPORT] = requests.Timeout("slow")
+        clock = [recovery.START.timestamp()]
+        collector = ObservationCollector(flask_app.ctrl, http=station_fmi, clock=lambda: clock[0])
+        flask_app.weather_collector = collector
+        collector.run_pending()
+        forecast_fmi = forecast.FakeForecastFMI()
+        forecast_fmi.reply = run_with(["0.0", "NaN", "-1.5", "-2.0", "-2.5", "-3.0"])
+        forecaster = ForecastCollector(flask_app.ctrl, http=forecast_fmi, clock=lambda: clock[0])
+        flask_app.weather_forecast_collector = forecaster
+        forecaster.run_pending()
+
+        @flask_app.post("/test/weather-session")
+        def weather_session():
+            """A manual session five hours before the first collection, plus one now."""
+            ids = []
+            for hours in (5, 0):
+                attempt = flask_app.ctrl.create_car_heater_session(
+                    trigger="manual",
+                    observed_at=(recovery.START - timedelta(hours=hours)).isoformat(),
+                    requested_departure_at=None,
+                    heating_duration_minutes=60,
+                    snapshot={"software_version": "1.0.0"},
+                )
+                ids.append(attempt.id)
+            return {"backfilled": ids[0], "current": ids[1]}
+
     authenticated = client.__wrapped__(flask_app)
     server = make_server("127.0.0.1", 0, flask_app, threaded=False)
     (work / "host.json").write_text(

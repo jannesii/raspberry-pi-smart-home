@@ -307,3 +307,22 @@ Tests: `tests/test_weather_forecast_archive.py`, `tests/test_weather_forecast_mi
   interval). It never claims a run was received. Forecast health is stale
   after 2.5 × interval and summarises the last 24 hours' `unobserved_24h`.
   Version JSON never embeds reply content.
+
+## Weather evidence, exports and restore
+
+Code: `app/blueprints/api/car_heater/weather.py` (`/sessions/<id>/weather`,
+`/weather/export`), `app/static/js/car_heater_session_weather.js`,
+`scripts/heater_history.py`. Tests: `tests/test_weather_evidence_export.py`,
+`tests/test_weather_evidence_restore.py`, the weather browser flows.
+
+- Session weather is read-only and derives its window from `session_window`,
+  the Measurements window. It reports coverage, reading counts, health, reply
+  ids and forecast versions for that window without assigning rows to the
+  session or touching its snapshots. "Held at anchor" is what the latest
+  successful check at or before the heating anchor received.
+- Exports are authenticated GETs bounded to 7 days (observations by source
+  time, coverage) or 2 days (forecasts by valid time); date ranges count
+  Helsinki calendar days. They keep every revision and never embed reply
+  content. Coverage reflects the archive at export time, also for `as_of`.
+- Reply and version ids are bounded integers. Discovery's `weather_fingerprints`
+  must match between a source and its restore; integrity lists must be empty.

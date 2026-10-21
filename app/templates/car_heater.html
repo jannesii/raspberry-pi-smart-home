@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_chart.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_settings.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_logs.css') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_sessions.css', v='20261016-1') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_sessions.css', v='20261021-1') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_departure.css', v='20261015-1') }}">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -382,6 +382,16 @@
     <ul id="weatherHealthList" class="weather-health-list"></ul>
     <p id="weatherHealthStatus" role="status" aria-atomic="true">Loading collection status…</p>
     <button id="btnRefreshWeatherHealth" class="evidence-button" type="button">Refresh collection status</button>
+    <form id="weatherExport" class="weather-export" method="get" action="/api/car_heater/weather/export" novalidate>
+      <h4>Export archived weather</h4>
+      <label for="weatherExportKind">Evidence<select id="weatherExportKind" name="kind"><option value="observation">Station observations (up to 7 days)</option><option value="forecast">Forecast values (up to 2 days)</option><option value="coverage">Coverage and gaps (up to 7 days)</option></select></label>
+      <label for="weatherExportStart">From (Helsinki date)<input id="weatherExportStart" name="start_date" type="date" required></label>
+      <label for="weatherExportEnd">To, inclusive<input id="weatherExportEnd" name="end_date" type="date" required aria-describedby="weatherExportError"></label>
+      <p id="weatherExportError" class="weather-export-error" role="alert"></p>
+      <label for="weatherExportFormat">Format<select id="weatherExportFormat" name="format"><option value="csv">CSV</option><option value="json">JSON (adds coverage and gaps)</option></select></label>
+      <button class="evidence-button" type="submit">Download export</button>
+      <p>Observations are selected by source time and include every revision; forecasts by valid time and include every version received; coverage lists collected stretches, gaps and unchecked forecast stretches. Exports keep source text, units, received missing values and backfill labels. Original replies remain separate downloads.</p>
+    </form>
   </section>
   </section>
 
@@ -404,7 +414,7 @@
 {% block scripts %}
 <script defer src="{{ url_for('static', filename='js/car_heater_bounded.js', v='20261014-7') }}"></script>
 <script defer src="{{ url_for('static', filename='js/car_heater_departure.js', v='20261015-2') }}"></script>
-<script defer src="{{ url_for('static', filename='js/car_heater_weather_health.js', v='20261017-1') }}"></script>
+<script defer src="{{ url_for('static', filename='js/car_heater_weather_health.js', v='20261021-1') }}"></script>
 <script src="{{ url_for('static', filename='js/init_sio.js', v='20260504-1') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater.js', v='20261014-7') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater_logs.js', v='20260323-1') }}"></script>

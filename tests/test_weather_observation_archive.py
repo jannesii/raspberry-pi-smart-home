@@ -468,11 +468,16 @@ def test_sqlite_backup_restore_keeps_readings_replies_and_provenance(
     )
     assert report["tables"]["weather_observation"]["count"] == len(before_rows)
     assert report["tables"]["weather_retrieval"]["count"] == 4
-    assert report["weather_integrity"] == {
+    integrity = report["weather_integrity"]
+    # Collection checkpoints are listed; their own checks are in the evidence restore suite.
+    assert {p["source_id"] for p in integrity.pop("collection_progress")} == {PELMAA, AIRPORT}
+    assert integrity == {
         "replies_checked": 3,
         "mismatched_replies": [],
         "retrievals_without_reply": [],
+        "successful_retrievals_without_reply": [],
         "readings_without_retrieval": [],
+        "progress_without_retrievals": [],
         "forecast_links": {
             "values_without_content": [],
             "versions_without_content": [],

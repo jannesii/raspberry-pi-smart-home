@@ -494,7 +494,8 @@ Apply migration **20261017_0018** after 0017 before starting the recovering
 collector. It labels existing retrievals `live` and adds per-station progress;
 it creates no progress rows, so the next start initializes the history.
 Downgrading drops progress and the purpose label but keeps backfilled
-readings. Cross-source export comes in #27. Run the isolated checks with:
+readings. Exports are described under
+[weather evidence and exports](#weather-evidence-and-exports). Run the isolated checks with:
 
 ```sh
 .venv/bin/pytest -q tests/test_weather_observation_archive.py tests/test_weather_observation_recovery.py tests/test_weather_archive_migration.py
@@ -559,4 +560,51 @@ keeps forecast retrievals and replies; back up first. Run the isolated checks wi
 
 ```sh
 .venv/bin/pytest -q tests/test_weather_forecast_archive.py tests/test_weather_forecast_migration.py
+```
+
+### Weather evidence and exports
+
+Each session page has a **Weather evidence** section below Measurements. It
+uses the same window as Measurements; weather is collected continuously and
+belongs to no session, and the session's saved planning, start and departure
+weather never changes. For each station it shows readings in the window, how
+many FMI corrected or the archive recovered later, any gaps (repair pending,
+FMI answered without values, or older than the repair limit) and the original
+replies. For the parking-point forecast it shows the version held when heating
+began, versions received during the window and stretches without a successful
+check. Collection failures, a stale collector and automatic repair are
+explained in the same place. Links download the window's exports.
+
+**Settings & diagnostics → Weather collection → Export archived weather**
+exports other dates (Europe/Helsinki calendar days): station observations for
+up to 7 days, forecast values for up to 2 days, or coverage and gaps for up to
+7 days, as CSV or JSON. Rows keep source text, units, revisions (`current`),
+received missing values (empty value, `status=missing`), retrieval times,
+`purpose`/`backfill`, the station position and the `reply_id`; forecast rows
+add model, origin, result time, requested and returned location and receipts.
+Coverage rows list each station's collected stretches and gaps (repair
+pending, FMI answered without values, older than the repair limit) and the
+forecast's unchecked stretches, so time with no evidence is visible in CSV too.
+Coverage is judged from the archive at export time (`checked_at`), including
+for an `as_of` export. Text cells starting with `=`, `+`, `-` or `@` that are not numbers
+get a leading `'` in CSV only.
+
+Authenticated read-only API:
+
+- `GET /api/car_heater/sessions/<id>/weather`: the window, per-station coverage,
+  reading counts, health and reply ids, forecast versions and export links.
+  It never embeds readings or reply content.
+- `GET /api/car_heater/weather/export?kind=observation|forecast|coverage&format=csv|json`
+  with `start`/`end` ISO timestamps or `start_date`/`end_date`, plus optional
+  `fmisid` or `source_id` and `as_of`.
+
+Original replies stay explicit downloads (`/weather/replies/<id>`, checksum
+verified). Backup and isolated restore of all weather tables, with
+`weather_fingerprints` to compare a restore with its source, are in the
+[preservation guide](docs/operations/heater-history-preservation.md). No
+migration is needed. Run the isolated checks with:
+
+```sh
+.venv/bin/pytest -q tests/test_weather_evidence_export.py tests/test_weather_evidence_restore.py
+.venv/bin/pytest -q tests/test_car_heater_sessions_browser.py -k weather
 ```

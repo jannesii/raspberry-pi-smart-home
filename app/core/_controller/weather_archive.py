@@ -257,10 +257,12 @@ class WeatherArchiveMixin:
         names: dict[str, str | None] = {}
         latest: dict[tuple, int] = {}
         for row in rows:
-            location = row.pop("location")
+            location = json.loads(row.pop("location") or "null") or {}
+            # Each revision keeps the position its own reply reported.
+            row["station_pos"] = location.get("pos")
             names.setdefault(row["fmisid"], None)
-            if location and names[row["fmisid"]] is None:
-                names[row["fmisid"]] = json.loads(location).get("name")
+            if names[row["fmisid"]] is None:
+                names[row["fmisid"]] = location.get("name")
             key = (row["fmisid"], row["parameter"], row["observed_at"])
             latest[key] = max(latest.get(key, 0), row["revision"])
         for row in rows:
@@ -413,6 +415,43 @@ class WeatherArchiveMixin:
             else:
                 segments.append({"start": lo.isoformat(), "end": hi.isoformat(), "kind": kind})
         return segments
+
+    def list_weather_observation_replies(
+        self, source_id: str, start_iso: str, end_iso: str, *, step_s: float
+    ) -> list[dict]:
+        """Successful retrievals whose requested window touches [start, end), one per reply.
+
+        Uses the same window rule as coverage, so these are the original
+        replies that answered the source times reported there.
+        """
+        ret = weather_retrieval
+        step = timedelta(seconds=step_s)
+        stmt = (
+            select(
+                ret.c.id.label("retrieval_id"),
+                ret.c.reply_id,
+                ret.c.retrieved_at,
+                ret.c.purpose,
+                ret.c.requested_start,
+                ret.c.requested_end,
+            )
+            .where(
+                ret.c.kind == "observation",
+                ret.c.source_id == source_id,
+                ret.c.status == "ok",
+                ret.c.reply_id.is_not(None),
+                ret.c.requested_start < end_iso,
+                ret.c.requested_end >= (datetime.fromisoformat(start_iso) - step).isoformat(),
+            )
+            .order_by(ret.c.retrieved_at, ret.c.id)
+        )
+        replies: dict[int, dict] = {}
+        with self._sa_engine.connect() as conn:
+            for row in conn.execute(stmt).mappings():
+                window_end = datetime.fromisoformat(row["requested_end"]) + step
+                if window_end > datetime.fromisoformat(start_iso):
+                    replies.setdefault(row["reply_id"], dict(row))
+        return list(replies.values())
 
     def list_weather_retrievals(
         self, start_iso: str, end_iso: str, *, kind: str = "observation"

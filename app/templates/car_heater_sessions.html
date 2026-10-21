@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}Car heater sessions{% endblock %}
 {% block styles %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_sessions.css', v='20261016-1') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_sessions.css', v='20261021-1') }}">
 {% endblock %}
 {% block content %}
 <main class="heater-evidence" lang="en" data-session-id="{{ session_id or '' }}">
@@ -64,6 +64,14 @@
           <div class="review-chart" id="powerChart" data-title="Heater power" data-unit="W"></div>
           <p class="review-note">Detailed diagnostic charts remain under <a href="{{ url_for('web.car_heater_settings_page') }}">Settings</a> → View Charts.</p>
         </section>
+        <section class="evidence-section weather-health" id="sessionWeather" aria-labelledby="sessionWeatherHeading" aria-busy="true">
+          <h3 id="sessionWeatherHeading">Weather evidence</h3>
+          <p id="sessionWeatherWindow">Loading weather evidence…</p>
+          <p id="sessionWeatherStatus" role="status" aria-atomic="true"></p>
+          <button id="sessionWeatherRetry" class="evidence-button" type="button" hidden>Retry weather evidence</button>
+          <ul id="sessionWeatherSources" class="weather-health-list"></ul>
+          <div id="sessionWeatherExports"></div>
+        </section>
       </div>
       <aside class="review-side">
         <section class="evidence-section" id="sessionPhotos" aria-labelledby="photosHeading">
@@ -108,4 +116,5 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/car_heater_session_charts.js', v='20261015-3') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater_sessions.js', v='20261015-5') }}"></script>
+{% if session_id %}<script src="{{ url_for('static', filename='js/car_heater_session_weather.js', v='20261021-1') }}"></script>{% endif %}
 {% endblock %}

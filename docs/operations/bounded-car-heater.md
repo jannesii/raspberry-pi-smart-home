@@ -54,6 +54,16 @@ never attempts to resume an old timed session.
    initial OFF after a Shelly power cycle and no timer extension or old-mode resume.
    Record actual Shelly model/firmware, timings and power evidence in #12 before
    declaring the installation commissioned. No cold-range validation is claimed.
+6. Before first-frost measurements, verify weather evidence on the deployed
+   server: apply migrations through `20261017_0018`, then confirm **Settings &
+   diagnostics → Weather collection** shows both stations and the parking-point
+   forecast collecting, with history initialized. Open a recent session's
+   **Weather evidence**, download one original reply and one window export.
+   Then make a whole-database backup and restore it into a separate target only
+   (never over production), following the
+   [preservation guide](heater-history-preservation.md#3-restore-into-isolation-and-verify):
+   compare `weather_fingerprints`, require empty integrity lists and check the
+   same session, export and reply in the isolated app. Record both in #12.
 
 See the [14–15 October 2026 commissioning record](bounded-car-heater-commissioning-2026-10-15.md)
 for the owner's supervised relay checks on a work desk at about 24.5°C. It records

@@ -114,8 +114,20 @@ collected, `weather_integrity` recomputes each original reply's checksum
 (`mismatched_replies`) and lists retrievals whose reply is missing and readings
 whose retrieval is missing. All three lists must be empty, as must every list
 under `forecast_links` (forecast values, versions and receipts whose referenced
-row is missing). In the isolated app,
-open a session with photos and confirm each image loads with its capture time. Alembic
+row is missing). `successful_retrievals_without_reply` (a successful attempt
+always stores its reply) and `progress_without_retrievals` (an initialized
+collection checkpoint whose retrieval history is gone) must also be empty;
+`collection_progress` lists each source's checkpoint. `weather_fingerprints`
+gives each `weather_*` table's row count and a SHA-256 over every row in key
+order, with stored reply content entering as its own checksum: the restored
+report must equal the source report exactly, which counts alone cannot show
+for revisions, backfill labels and provenance links. In the isolated app,
+open a session with photos and confirm each image loads with its capture time.
+For weather, open a session's **Weather evidence**, download one original reply
+and the window's observation and forecast exports, and compare them with the
+same downloads from the source. Start the isolated app's collectors only with
+outbound FMI access deliberately allowed or disabled; on restart they must
+continue from the restored `history_start`, not initialize again. Alembic
 does **not** read `DB_PATH`: for SQLite set an explicit URL such as
 `sqlite:////private/restore-check/heater.db`; `DB_PATH` selects only the legacy
 app bootstrap file and the discovery fallback when no `DATABASE_URL` is set.
@@ -185,6 +197,13 @@ weather replies, readings and revisions, checks `weather_integrity`, and serves
 the same readings and original replies through the authenticated API.
 `tests/test_weather_forecast_archive.py` does the same for forecast versions,
 values, receipts and replies.
+`tests/test_weather_evidence_restore.py` collects observations (with
+initialization backfill and a source correction) and forecast revisions through
+the real collectors beside a session and photo, then restores SQLite with
+`sqlite-copy` and PostgreSQL (schema from the reviewed weather migrations) with
+`pg_dump`/`pg_restore` into a separate target. It requires equal fingerprints and
+empty integrity lists, the same session weather, exports and replies from a
+fresh Controller, and live-only collection from the restored checkpoints.
 `tests/test_car_heater_photos.py` also restores SQLite and PostgreSQL backups
 containing a photo, checks discovery integrity, and serves the same image and
 session association from a fresh Controller that still accepts new photos.

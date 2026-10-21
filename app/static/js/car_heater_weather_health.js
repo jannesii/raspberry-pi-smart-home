@@ -143,7 +143,38 @@
       if (button) button.disabled = false;
     }
   }
+  // Mirrors EXPORT_RANGE in the weather API, which enforces the same bounds.
+  const EXPORT_DAYS = {observation: 7, forecast: 2, coverage: 7};
+  function helsinkiToday() {
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Europe/Helsinki', year: 'numeric', month: '2-digit', day: '2-digit'
+    }).formatToParts(new Date()).map(part => [part.type, part.value]));
+    return `${parts.year}-${parts.month}-${parts.day}`;
+  }
+  function setupExport() {
+    const form = byId('weatherExport');
+    if (!form) return;
+    const error = byId('weatherExportError');
+    const today = helsinkiToday();
+    form.elements.start_date.value = form.elements.start_date.value || today;
+    form.elements.end_date.value = form.elements.end_date.value || today;
+    form.addEventListener('submit', event => {
+      const start = form.elements.start_date.value;
+      const end = form.elements.end_date.value;
+      // Inclusive calendar days; the server applies the same bound in Helsinki time.
+      const days = (Date.parse(end) - Date.parse(start)) / 86400000 + 1;
+      const limit = EXPORT_DAYS[form.elements.kind.value];
+      let message = '';
+      if (!start || !end) message = 'Choose both dates.';
+      else if (days < 1) message = 'Choose a start date on or before the end date.';
+      else if (days > limit) message = `Choose at most ${limit} days for this export.`;
+      error.textContent = message;
+      form.elements.end_date.setAttribute('aria-invalid', message ? 'true' : 'false');
+      if (message) event.preventDefault();
+    });
+  }
   document.addEventListener('DOMContentLoaded', () => {
+    setupExport();
     const list = byId('weatherHealthList');
     // Only the Settings & diagnostics view shows collection health.
     if (!list || !byId('weatherHealthStatus') || list.closest('[hidden]')) return;

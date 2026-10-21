@@ -246,6 +246,20 @@ def _energy(power: list[dict[str, Any]]) -> dict[str, Any]:
     return {"first_wh": first, "last_wh": last, "used_wh": used, "source": "shelly_counter"}
 
 
+def session_window(ctrl, session_id: str) -> dict[str, Any] | None:
+    """The session's review window, or None for an unknown session."""
+    session = ctrl.get_car_heater_session(session_id)
+    if session is None:
+        return None
+    return review_window(
+        session,
+        ctrl.get_departure_plan(session_id),
+        ctrl.get_car_heater_execution(session_id),
+        ctrl.list_car_heater_photos(session_id),
+        ctrl.list_car_heater_observations(session_id),
+    )
+
+
 def build_session_review(ctrl, session_id: str) -> dict[str, Any] | None:
     session = ctrl.get_car_heater_session(session_id)
     if session is None:

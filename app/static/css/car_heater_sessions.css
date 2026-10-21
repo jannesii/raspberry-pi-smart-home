@@ -116,3 +116,11 @@
 .weather-health-item dl { grid-template-columns: minmax(120px, 1fr) 2fr; margin: 12px 0 0; }
 .weather-health-item dd { overflow-wrap: anywhere; }
 @media (min-width: 900px) { .weather-health-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.weather-gap-list, .weather-reply-list, .weather-export-links { margin: 0; padding-left: 20px; }
+.weather-gap-list li, .weather-reply-list li { margin: 2px 0; }
+.weather-reply-list a, .weather-export-links a { display: inline-block; min-height: 44px; padding: 10px 0; }
+.weather-health-item details summary { min-height: 44px; }
+.weather-export { display: grid; gap: 12px; max-width: 680px; margin-top: 16px; }
+.weather-export label { display: grid; gap: 6px; }
+.weather-export-error { color: var(--evidence-warning); }
+#sessionWeather > p { margin: 0 0 12px; }
