@@ -1,410 +1,137 @@
+/* Permanent Diagnostics history. Uses the same evidence renderer as Sessions. */
 (() => {
+  'use strict';
   const SERIES = [
-    { key: 'instant_power_w', label: 'Instant power (W)', color: '#ff8a3c', axis: 'yPower' },
-    { key: 'voltage_v', label: 'Voltage (V)', color: '#5ac8fa', axis: 'yVoltage' },
-    { key: 'current_a', label: 'Current (A)', color: '#8cf86a', axis: 'yCurrent' },
-    { key: 'ambient_temp', label: 'Ambient temp (°C)', color: '#ffd54f', axis: 'yTemp' },
-    { key: 'device_temp_c', label: 'Device temp (°C)', color: '#f06292', axis: 'yTemp' },
-    { key: 'glass_reference_temp_c', label: 'Glass reference (°C)', color: '#64d2ff', axis: 'yTemp', gaps: true },
-    { key: 'glass_comparison_temp_c', label: 'Glass comparison (°C)', color: '#bf5af2', axis: 'yTemp', gaps: true },
-    { key: 'cabin_temp_c', label: 'Cabin SHT45 (°C)', color: '#30d158', axis: 'yTemp', gaps: true },
-    { key: 'cabin_humidity_pct', label: 'Cabin humidity (%)', color: '#a2845e', axis: 'yHumidity', gaps: true },
+    {key: 'glass_reference_temp_c', label: 'Glass reference', sensor: 'glass_reference', field: 'temperature_c', color: '#e9b378'},
+    {key: 'glass_comparison_temp_c', label: 'Glass comparison', sensor: 'glass_comparison', field: 'temperature_c', color: '#a0bddb', dash: '7 4'},
+    {key: 'cabin_temp_c', label: 'Cabin SHT45', sensor: 'cabin', field: 'temperature_c', color: '#a3ccba', dash: '2 4'},
+    {key: 'ambient_temp', label: 'Ambient', color: '#e4cb95', dash: '9 3 2 3'},
+    {key: 'device_temp_c', label: 'Device', color: '#d9accc', dash: '10 5'},
+    {key: 'cabin_humidity_pct', label: 'Cabin humidity', sensor: 'cabin', field: 'humidity_pct', color: '#a0bddb'},
+    {key: 'instant_power_w', label: 'Heater power', color: '#e9b378'},
+    {key: 'voltage_v', label: 'Voltage', color: '#a3ccba'},
+    {key: 'current_a', label: 'Current', color: '#d9accc'},
   ];
-
-  const STORAGE_KEY = 'car_heater_chart_visibility';
-  const DEFAULT_AGG_MINUTES = Number(window?.CAR_HEATER_CHART_AGG_MINUTES ?? 10);
-
-  const AXIS_OPTIONS = {
-    yTemp: {
-      type: 'linear',
-      position: 'left',
-      offset: true,
-      grid: { color: 'rgba(255,255,255,0.08)' },
-      title: { display: true, text: 'Temperature (°C)' },
-      ticks: { color: '#fff' },
-    },
-    yPower: {
-      type: 'linear',
-      position: 'right',
-      grid: { drawOnChartArea: false },
-      title: { display: true, text: 'Power (W)' },
-      ticks: { color: '#ff8a3c' },
-    },
-    yVoltage: {
-      type: 'linear',
-      position: 'right',
-      grid: { drawOnChartArea: false },
-      offset: true,
-      title: { display: true, text: 'Voltage (V)' },
-      ticks: { color: '#5ac8fa' },
-    },
-    yHumidity: {
-      type: 'linear',
-      position: 'right',
-      grid: { drawOnChartArea: false },
-      offset: true,
-      title: { display: true, text: 'Humidity (%)' },
-      ticks: { color: '#a2845e' },
-    },
-    yCurrent: {
-      type: 'linear',
-      position: 'left',
-      grid: { drawOnChartArea: false },
-      offset: true,
-      title: { display: true, text: 'Current (A)' },
-      ticks: { color: '#8cf86a' },
-    },
+  const GROUPS = [
+    {title: 'Glass, cabin and device temperatures', unit: '°C', keys: SERIES.slice(0, 5).map(s => s.key)},
+    {title: 'Cabin humidity', unit: '%', keys: ['cabin_humidity_pct'], zero: true},
+    {title: 'Heater power', unit: 'W', keys: ['instant_power_w'], zero: true},
+    {title: 'Voltage', unit: 'V', keys: ['voltage_v']},
+    {title: 'Current', unit: 'A', keys: ['current_a'], zero: true},
+  ];
+  const STORAGE = 'car_heater_chart_visibility';
+  const today = () => new Intl.DateTimeFormat('en-CA', {timeZone: 'Europe/Helsinki', year: 'numeric', month: '2-digit', day: '2-digit'}).format(new Date());
+  const finite = v => typeof v === 'number' && Number.isFinite(v) ? v : null;
+  const stamp = value => {
+    if (!value) return NaN;
+    return Date.parse(value.replace(/([+-]\d{2})$/, '$1:00').replace(' ', 'T'));
   };
-
-  const LABEL_LOCALE = navigator.language || 'fi-FI';
-
-  function loadVisibilityState() {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (!stored) return {};
-      return JSON.parse(stored) || {};
-    } catch (err) {
-      console.warn('Unable to read chart visibility state', err);
-      return {};
-    }
-  }
-
-  function saveVisibilityState(state) {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch (err) {
-      console.warn('Unable to save chart visibility state', err);
-    }
-  }
-
-  function formatDateISO(date) {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  }
-
-  function formatDateHuman(date) {
-    return date.toLocaleDateString(LABEL_LOCALE, {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    });
-  }
-
-  function addDays(date, delta) {
-    const copy = new Date(date);
-    copy.setDate(copy.getDate() + delta);
-    return copy;
-  }
-
-  function normalizeValue(value) {
-    if (value === null || value === undefined || value === '') return null;
-    const n = Number(value);
-    return Number.isFinite(n) ? n : null;
-  }
-
-  function aggregateRows(rows, minutes) {
-    const keys = SERIES.map(series => series.key);
-    const dataByKey = keys.reduce((acc, key) => { acc[key] = []; return acc; }, {});
-    const labels = [];
-
-    if (!rows || rows.length === 0) {
-      return { labels, dataByKey };
-    }
-
-    if (!minutes || minutes <= 1) {
-      for (const row of rows) {
-        const ts = new Date(row.timestamp);
-        if (Number.isNaN(ts)) continue;
-        const hh = String(ts.getHours()).padStart(2, '0');
-        const mm = String(ts.getMinutes()).padStart(2, '0');
-        labels.push(`${hh}:${mm}`);
-        keys.forEach(key => {
-          dataByKey[key].push(normalizeValue(row[key]));
-        });
-      }
-      return { labels, dataByKey };
-    }
-
-    const buckets = new Map();
-    for (const row of rows) {
-      const ts = new Date(row.timestamp);
-      if (Number.isNaN(ts)) continue;
-      const minutesOfDay = ts.getHours() * 60 + ts.getMinutes();
-      const bucketStart = Math.floor(minutesOfDay / minutes) * minutes;
-      let bucket = buckets.get(bucketStart);
-      if (!bucket) {
-        bucket = { ts, sums: {}, counts: {} };
-        buckets.set(bucketStart, bucket);
-      }
-      bucket.ts = ts;
-      keys.forEach(key => {
-        const val = normalizeValue(row[key]);
-        if (val === null) return;
-        bucket.sums[key] = (bucket.sums[key] || 0) + val;
-        bucket.counts[key] = (bucket.counts[key] || 0) + 1;
-      });
-    }
-
-    const sorted = [...buckets.entries()].sort((a, b) => a[0] - b[0]);
-    for (const [, bucket] of sorted) {
-      const ts = bucket.ts;
-      const hh = String(ts.getHours()).padStart(2, '0');
-      const mm = String(ts.getMinutes()).padStart(2, '0');
-      labels.push(`${hh}:${mm}`);
-      keys.forEach(key => {
-        const sum = bucket.sums[key] || 0;
-        const count = bucket.counts[key] || 0;
-        dataByKey[key].push(count ? sum / count : null);
-      });
-    }
-
-    return { labels, dataByKey };
-  }
-
-  function computeAxisRange(values) {
-    const nums = values.filter(Number.isFinite);
-    if (!nums.length) return null;
-    const min = Math.min(...nums);
-    const max = Math.max(...nums);
-    const padding = (max - min) * 0.1 || (Math.abs(min) * 0.1) || 1;
-    return { min: min - padding, max: max + padding };
-  }
 
   function init() {
     const modal = document.getElementById('carHeaterChartModal');
-    const canvas = document.getElementById('carHeaterChartCanvas');
-    const togglesBar = document.getElementById('carHeaterChartToggles');
-    const dateLabel = document.getElementById('carHeaterChartCurrentDate');
-    const prevBtn = document.getElementById('carHeaterChartPrev');
-    const nextBtn = document.getElementById('carHeaterChartNext');
-    const todayBtn = document.getElementById('carHeaterChartToday');
-    const closeBtn = document.getElementById('carHeaterChartClose');
-    const openBtn = document.getElementById('btnOpenCarHeaterCharts');
-    if (!modal || !canvas || !togglesBar || !dateLabel) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const input = document.getElementById('carHeaterChartDate');
+    const state = document.getElementById('carHeaterChartState');
+    const container = document.getElementById('carHeaterDetailedCharts');
+    const toggles = document.getElementById('carHeaterChartToggles');
+    if (!modal || !input || !state || !container || !toggles) return;
+    let visibility = {};
+    try { visibility = JSON.parse(localStorage.getItem(STORAGE)) || {}; } catch { /* optional preference */ }
+    let data = null;
+    let request = null;
+    let trigger = null;
+    input.value = today();
 
-    let currentDate = new Date();
-    let chart = null;
-    let visibilityState = loadVisibilityState();
-
-    function setDateLabel(date) {
-      dateLabel.textContent = formatDateHuman(date);
-    }
-
-    function ensureVisible(fn) {
-      requestAnimationFrame(() => requestAnimationFrame(fn));
-    }
-
-    function openModal() {
-      modal.style.display = 'flex';
-    }
-
-    function closeModal() {
-      modal.style.display = 'none';
-    }
-
-    function createToggles() {
-      togglesBar.innerHTML = '';
-      SERIES.forEach(series => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'toggle-pill';
-        btn.dataset.key = series.key;
-        const visible = visibilityState[series.key] !== false;
-        if (visible) btn.classList.add('active');
-        btn.setAttribute('aria-pressed', visible ? 'true' : 'false');
-        btn.innerHTML = `<span class="pill-chip" style="background:${series.color}"></span><span>${series.label}</span>`;
-        btn.addEventListener('click', () => {
-          const next = !(visibilityState[series.key] !== false);
-          visibilityState[series.key] = next;
-          btn.classList.toggle('active', next);
-          btn.setAttribute('aria-pressed', next ? 'true' : 'false');
-          saveVisibilityState(visibilityState);
-          if (chart) {
-            setDatasetVisibility(series.key, next);
-          }
+    function render() {
+      container.replaceChildren();
+      if (!data) return;
+      const times = [...(data.rows || []).map(row => stamp(row.timestamp)), ...Object.values(data.sensor_series || {}).flatMap(rows => rows.map(row => stamp(row.t)))].filter(Number.isFinite);
+      const first = times.reduce((value, t) => Math.min(value, t), Infinity);
+      const last = times.reduce((value, t) => Math.max(value, t), -Infinity);
+      const start = times.length ? Math.max(stamp(data.start), first - 30000) : stamp(data.start);
+      const end = times.length ? Math.min(stamp(data.end), last + 30000) : stamp(data.end);
+      GROUPS.forEach(group => {
+        const series = SERIES.filter(s => group.keys.includes(s.key) && visibility[s.key] !== false).map(s => {
+          const rows = s.sensor ? data.sensor_series?.[s.sensor] || [] : data.rows || [];
+          const points = rows.map(row => ({
+            x: stamp(s.sensor ? row.t : row.timestamp),
+            y: finite(row[s.sensor ? s.field : s.key]),
+            late: row.state === 'stale',
+          })).filter(p => Number.isFinite(p.x)).sort((a, b) => a.x - b.x);
+          return {...s, points};
         });
-        togglesBar.appendChild(btn);
-      });
-    }
-
-    function setDatasetVisibility(key, visible) {
-      if (!chart) return;
-      const dataset = chart.data.datasets.find(ds => ds.metaKey === key || ds.label === key);
-      if (!dataset) return;
-      dataset.hidden = !visible;
-      chart.update();
-    }
-
-    function ensureChartCreated() {
-      if (chart) return;
-      chart = new Chart(ctx, {
-        type: 'line',
-        data: {
-          labels: [],
-          datasets: SERIES.map(series => ({
-            label: series.label,
-            metaKey: series.key,
-            data: [],
-            borderColor: series.color,
-            tension: 0.25,
-            borderWidth: 2,
-            pointRadius: 0,
-            // Sensor series show missing periods as gaps, not interpolated lines.
-            spanGaps: !series.gaps,
-            yAxisID: series.axis,
-            hidden: visibilityState[series.key] === false,
-          })),
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          interaction: { mode: 'nearest', intersect: false },
-          plugins: {
-            legend: { display: false },
-            tooltip: {
-              callbacks: {
-                label(context) {
-                  const value = context.parsed.y;
-                  if (!Number.isFinite(value)) return context.dataset.label || '';
-                  return `${context.dataset.label}: ${formatTooltipValue(context.dataset.metaKey, value)}`;
-                },
-              },
-            },
-          },
-          scales: AXIS_OPTIONS,
-        },
-      });
-    }
-
-    function formatTooltipValue(seriesKey, value) {
-      const series = SERIES.find(s => s.key === seriesKey);
-      if (!series) return value.toFixed(2);
-      if (seriesKey === 'current_a') {
-        return `${value.toFixed(2)} A`;
-      }
-      if (seriesKey === 'instant_power_w') {
-        return `${value.toFixed(1)} W`;
-      }
-      if (seriesKey === 'voltage_v') {
-        return `${value.toFixed(1)} V`;
-      }
-      if (seriesKey === 'cabin_humidity_pct') {
-        return `${value.toFixed(0)} %`;
-      }
-      return `${value.toFixed(1)}${series.label.includes('°C') ? ' °C' : ''}`;
-    }
-
-    const energyEl = document.getElementById('carHeaterChartEnergyTotal');
-
-    function updateAxes(dataByKey) {
-      Object.entries(AXIS_OPTIONS).forEach(([axisId]) => {
-        if (!chart?.options.scales) return;
-        const axisValues = [];
-        SERIES.filter(series => series.axis === axisId).forEach(series => {
-          axisValues.push(...(dataByKey[series.key] || []));
+        const panel = document.createElement('section');
+        panel.className = 'review-chart';
+        panel.dataset.title = group.title;
+        panel.dataset.unit = group.unit;
+        container.append(panel);
+        window.CarHeaterSessionCharts.render(panel, {
+          series, start, end,
+          gapMs: (data.max_gap_seconds || 60) * 1000, zero: group.zero,
+          emptyText: series.length ? `No ${group.title.toLowerCase()} measurements for this date. Missing data is not zero.` : 'All series in this plot are hidden. Use Series visibility to show them.',
         });
-        const range = computeAxisRange(axisValues);
-        if (range) {
-          chart.options.scales[axisId].min = range.min;
-          chart.options.scales[axisId].max = range.max;
-        } else {
-          delete chart.options.scales[axisId].min;
-          delete chart.options.scales[axisId].max;
-        }
       });
     }
 
-    function setEnergySummary(value) {
-      if (!energyEl) return;
-      const numeric = normalizeValue(value);
-      energyEl.textContent = Number.isFinite(numeric)
-        ? `Energy today: ${numeric.toFixed(1)} Wh`
-        : 'Energy today: – Wh';
-    }
-
-    function renderData(rows) {
-      ensureChartCreated();
-      const { labels, dataByKey } = aggregateRows(rows, DEFAULT_AGG_MINUTES);
-      chart.data.labels = labels;
-      chart.data.datasets.forEach(dataset => {
-        const values = dataByKey[dataset.metaKey] || [];
-        dataset.data = values;
-        dataset.hidden = visibilityState[dataset.metaKey] === false;
+    SERIES.forEach(s => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = s.label;
+      button.setAttribute('aria-pressed', String(visibility[s.key] !== false));
+      button.addEventListener('click', () => {
+        visibility[s.key] = visibility[s.key] === false;
+        button.setAttribute('aria-pressed', String(visibility[s.key]));
+        try { localStorage.setItem(STORAGE, JSON.stringify(visibility)); } catch { /* optional preference */ }
+        render();
       });
-      updateAxes(dataByKey);
-      chart.update();
-      chart.resize();
-    }
+      toggles.append(button);
+    });
 
-    async function fetchAndRender() {
-      const dateStr = formatDateISO(currentDate);
-      setDateLabel(currentDate);
+    async function load() {
+      if (!input.reportValidity()) return;
+      request?.abort();
+      const active = new AbortController();
+      request = active;
+      data = null;
+      container.replaceChildren();
+      state.textContent = `Loading ${input.value}…`;
+      const energy = document.getElementById('carHeaterChartEnergyTotal');
+      energy.textContent = 'Recorded energy change: — Wh';
       try {
-        const resp = await fetch(`/api/car_heater/history?date=${encodeURIComponent(dateStr)}`, { cache: 'no-store' });
-        if (!resp.ok) {
-          throw new Error(`HTTP ${resp.status}`);
-        }
-      const data = await resp.json();
-      let rows = [];
-      let energyValue = null;
-      if (Array.isArray(data)) {
-        rows = data;
-      } else if (data && Array.isArray(data.rows)) {
-        rows = data.rows;
-        energyValue = data.energy_today_wh;
+        const response = await fetch(`/api/car_heater/history?date=${encodeURIComponent(input.value)}`, {cache: 'no-store', signal: active.signal});
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const result = await response.json();
+        if (request !== active) return;
+        data = result;
+        render();
+        state.textContent = `Loaded ${input.value} · Helsinki time. Empty plots mean no available readings.`;
+        energy.textContent = `Recorded energy change: ${finite(data.energy_today_wh) == null ? '—' : data.energy_today_wh.toFixed(1)} Wh`;
+      } catch (error) {
+        if (error.name === 'AbortError' || request !== active) return;
+        state.textContent = 'Measurements unavailable. Choose Load date to retry.';
+        console.warn('Diagnostics history unavailable:', error.message);
       }
-      if (data && Array.isArray(data.sensor_rows) && data.sensor_rows.length) {
-        // Sensor samples have their own times; buckets need chronological rows.
-        rows = [...rows, ...data.sensor_rows].sort(
-          (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
-        );
-      }
-      renderData(rows);
-      setEnergySummary(energyValue);
-    } catch (err) {
-      console.error('Failed to load car heater chart data:', err);
-      renderData([]);
-      setEnergySummary(null);
-    }
     }
 
-    function openAndFetch(options) {
-      if (options?.resetDate) {
-        currentDate = new Date();
-      }
-      openModal();
-      ensureVisible(() => fetchAndRender());
-    }
-
-    prevBtn?.addEventListener('click', () => {
-      currentDate = addDays(currentDate, -1);
-      fetchAndRender();
+    document.getElementById('btnOpenCarHeaterCharts')?.addEventListener('click', event => {
+      trigger = event.currentTarget;
+      modal.showModal();
+      document.getElementById('carHeaterChartClose').focus();
+      load();
     });
-    nextBtn?.addEventListener('click', () => {
-      currentDate = addDays(currentDate, 1);
-      fetchAndRender();
+    document.getElementById('carHeaterChartClose')?.addEventListener('click', () => modal.close());
+    modal.addEventListener('close', () => { request?.abort(); trigger?.focus(); });
+    document.getElementById('carHeaterChartDateForm')?.addEventListener('submit', event => { event.preventDefault(); load(); });
+    [[-1, 'carHeaterChartPrev'], [1, 'carHeaterChartNext']].forEach(([delta, id]) => {
+      document.getElementById(id)?.addEventListener('click', () => {
+        const day = new Date(`${input.value}T12:00:00Z`);
+        if (Number.isNaN(day.getTime())) return;
+        day.setUTCDate(day.getUTCDate() + delta);
+        input.value = day.toISOString().slice(0, 10);
+        load();
+      });
     });
-    todayBtn?.addEventListener('click', () => {
-      currentDate = new Date();
-      fetchAndRender();
-    });
-    closeBtn?.addEventListener('click', closeModal);
-    modal.addEventListener('click', (evt) => {
-      if (evt.target === modal) closeModal();
-    });
-    openBtn?.addEventListener('click', () => openAndFetch({ resetDate: true }));
-
-    createToggles();
-    setDateLabel(currentDate);
+    document.getElementById('carHeaterChartToday')?.addEventListener('click', () => { input.value = today(); load(); });
   }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
 })();

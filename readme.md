@@ -323,7 +323,50 @@ invalid, repeated or late readings, gaps over 60 s and any reading below +3 °C
 restart the dwell. These rules are fixed (definition 1), so recomputing from the
 permanent readings gives the same candidate time. It is a candidate time for later comparison with observed clearing:
 it never stops heating, hands off to comfort or confirms defrost readiness.
-Detailed diagnostic charts remain under **Settings → View Charts**.
+Detailed diagnostic charts are under **Settings → Diagnostics → View Charts**.
+
+### Diagnostics and restarts
+
+Diagnostics keeps connection health, latest device telemetry, command stages,
+logs and detailed history away from everyday Heating controls. Browser live
+connection and HTTP fallback are shown separately from the device's last report
+and relay connection. Missing or stale relay evidence stays unknown.
+
+**Restart ESP** and **Restart Shelly** open a confirmation dialog. Cancel or
+Escape sends nothing and returns focus to the restart button. **Stop heating**
+in Heating stays immediate and independent. Queued means the server accepted
+intent; Sent means delivery, not execution. Only an explicit device
+acknowledgement reports success or failure. After 30 seconds without a result,
+the display says Unknown; later acknowledgements can resolve it. A restart
+acknowledgement does not establish relay OFF or successful reconnection.
+Command stages are transient and start empty after a server restart.
+
+**Get Logs** waits up to 12 seconds for a new snapshot, including through HTTP
+fallback. Copy and Clear affect only the displayed snapshot. Log snapshots
+are held in app memory and disappear on server restart; they are not permanent
+measurement evidence. Dismissing a dialog never cancels a device command.
+
+Retained advanced actions map to these replacements:
+
+| Earlier action | Replacement in Settings → Diagnostics |
+| --- | --- |
+| Command Status (ON/OFF, logs, both restarts) | Command stages, with queued/sent/acknowledged/unknown labels |
+| Latest device details and connection state | Device/relay/browser health and latest telemetry, with Helsinki report time |
+| Get Logs, Copy, Clear | Get Logs dialog with receipt/source, timeout and failure feedback |
+| Restart ESP / Restart Shelly | Confirmed restart dialogs with Cancel/Escape and focus restoration |
+| View Charts, previous/next day, Today | Detailed measurements dialog, date picker and the same day navigation |
+| Chart series toggles and energy summary | Saved series visibility and recorded energy-counter change in Wh |
+| Mixed detailed metrics plot | Glass/cabin/device temperatures together; separate humidity (%), power (W), voltage (V) and current (A), with summaries and value tables |
+
+The history date is a Europe/Helsinki day regardless of browser timezone,
+including clock-change days. All plots use actual sample times and cover the
+first to last recorded sample; failed reads and gaps over
+`CAR_HEATER_SENSOR_MAX_AGE_S` break lines. True zero remains zero; unavailable
+evidence stays missing. Late samples use hollow markers. The history API keeps
+its existing `rows`, `sensor_rows` and `energy_today_wh`, adding `sensor_series`
+(sample state/times and explicit failed reads), UTC `start`/`end` boundaries and
+`max_gap_seconds`. No schema migration or firmware change is required for #17.
+Other slices' retained controls, including legacy Ready-by, remain reachable.
 
 Session list/detail/create and outcome endpoints are authenticated under
 `/api/car_heater/sessions`; browser mutations require the normal CSRF token.

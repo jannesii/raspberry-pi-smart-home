@@ -1,29 +1,20 @@
-<!-- Component asset registration: include CSS/JS when this module is included -->
-{{ assets.style(url_for('static', filename='css/car_heater_chart.css')) if assets is defined else '' }}
-{{ assets.script(url_for('static', filename='js/car_heater_chart.js')) if assets is defined else '' }}
-
-<div id="carHeaterChartModal">
-  <div class="dialog">
-    <div class="header">
-      <h3 id="carHeaterChartTitle">Car Heater Metrics</h3>
-      <button id="carHeaterChartClose" aria-label="Close">✕</button>
-    </div>
-
-    <div class="nav">
-      <button id="carHeaterChartPrev">← Edellinen</button>
-      <span id="carHeaterChartCurrentDate"></span>
-      <button id="carHeaterChartNext">Seuraava →</button>
-      <button id="carHeaterChartToday" type="button">Today</button>
-    </div>
-
-    <div class="chart-summary">
-      <span id="carHeaterChartEnergyTotal">Energy today: – Wh</span>
-    </div>
-
-    <div id="carHeaterChartToggles" class="toggle-bar" aria-label="Toggle series visibility"></div>
-
-    <div class="canvas-wrap">
-      <canvas id="carHeaterChartCanvas" width="960" height="360"></canvas>
-    </div>
+<dialog id="carHeaterChartModal" aria-labelledby="carHeaterChartTitle">
+  <div class="header">
+    <h3 id="carHeaterChartTitle">Detailed measurements</h3>
+    <button id="carHeaterChartClose" type="button" aria-label="Close charts">Close</button>
   </div>
-</div>
+  <p>Permanent history · Europe/Helsinki, 24-hour time. Glass readings are experimental; confirm clearing visually.</p>
+  <form id="carHeaterChartDateForm" class="chart-navigation">
+    <label for="carHeaterChartDate">Measurement date (Helsinki)</label>
+    <input id="carHeaterChartDate" type="date" required>
+    <button type="submit">Load date</button>
+    <button id="carHeaterChartPrev" type="button">Previous day</button>
+    <button id="carHeaterChartNext" type="button">Next day</button>
+    <button id="carHeaterChartToday" type="button">Today</button>
+  </form>
+  <p id="carHeaterChartState" role="status" aria-live="polite"></p>
+  <p id="carHeaterChartEnergyTotal">Recorded energy change: — Wh</p>
+  <p>Plots cover the first to last recorded sample on the selected day. Lines break at failed reads and reporting gaps. Late samples have hollow markers. Values per minute and summaries are available below each plot.</p>
+  <div id="carHeaterChartToggles" class="toggle-bar" role="group" aria-label="Series visibility"></div>
+  <div id="carHeaterDetailedCharts" class="diagnostic-charts"></div>
+</dialog>

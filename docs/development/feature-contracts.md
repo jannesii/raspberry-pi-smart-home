@@ -18,6 +18,16 @@ Tests: `tests/test_car_heater*.py`, `tests/test_ready_by.py`.
 - `car_heater_action_result` distinguishes local `stage=queued` from device
   `stage=executed`. Deduplicate logs received through `car_heater_logs` and
   the compatibility `status.logs` field.
+- Diagnostics accepts only boolean command acknowledgements; absent/malformed
+  results remain `unknown` through HTTP and Redis. Browser command-stage
+  updates merge present fields, and a local 30 s timeout never proves failure
+  or execution. Restart confirmation never changes the immediate Stop path.
+  Latest log snapshots are app-scoped, transient and available to authenticated
+  HTTP status polling; old snapshots cannot satisfy a new log request.
+- Detailed history retains the original row payloads and adds sample-state
+  series using the session-review evidence rules, explicit Helsinki-day UTC
+  boundaries (including DST), and the configured sensor gap limit. Failed reads
+  are null points; late samples keep sample time, never receipt time as a value.
 - WebSocket status runs the same charge-mode, keep-at-temperature, ready-by,
   kFactor, alert, and persistence work as HTTP status.
 - Ready-by reaching its target enables Keep at Temperature, persists

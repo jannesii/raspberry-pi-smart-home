@@ -77,7 +77,9 @@ def review_window(session, plan, execution, photos, observations) -> dict[str, A
     }
 
 
-def _sensor_series(frames, start: datetime, end: datetime) -> dict[str, list[dict[str, Any]]]:
+def sensor_history_series(
+    frames, start: datetime, end: datetime
+) -> dict[str, list[dict[str, Any]]]:
     series: dict[str, list[dict[str, Any]]] = {key: [] for key in SENSOR_KEYS}
     for frame in frames:
         for key in SENSOR_KEYS:
@@ -295,7 +297,7 @@ def build_session_review(ctrl, session_id: str) -> dict[str, Any] | None:
         },
         # Consecutive points further apart than this are drawn as a gap.
         "gap_after_s": sensor_max_age_s(),
-        "series": {**_sensor_series(frames, start, end), "power": power},
+        "series": {**sensor_history_series(frames, start, end), "power": power},
         "energy": _energy(power),
         "glass_indicator": indicator,
         "clearing": clearing(session, photos, observations),

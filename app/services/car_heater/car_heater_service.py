@@ -26,7 +26,7 @@ REDIS_CHANNEL_COMMANDS = "esp32:commands"
 REDIS_CHANNEL_STATUS = "esp32:status"
 REDIS_CHANNEL_ACTION_RESULTS = "esp32:action_results"
 
-status_levels = [None, "queued", "sent", "success", "failed"]
+status_levels = [None, "queued", "sent", "success", "failed", "unknown"]
 
 
 @dataclass
@@ -239,10 +239,16 @@ class CarHeaterService(BoundedHeatingMixin):
             for cmd in commands:
                 if not self.accepts_command_result(cmd):
                     continue
-                self.observe_bounded_result(cmd)
                 action = cmd.get("action")
-                success = bool(cmd.get("success", False))
-                string = "success" if success else "failed"
+                success = cmd.get("success", cmd.get("ok"))
+                if isinstance(success, bool):
+                    self.observe_bounded_result({**cmd, "success": success})
+                    string = "success" if success else "failed"
+                else:
+                    string = "unknown"
+                    logger.debug(
+                        "Command outcome unknown action=%s: no boolean acknowledgement", action
+                    )
                 if isinstance(action, str) and hasattr(self._command_status, action):
                     setattr(self._command_status, action, string)
         logger.debug("Marked %d car heater commands as successful", len(commands))

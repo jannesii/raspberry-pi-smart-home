@@ -59,7 +59,7 @@
       const breaks = segments(s.points, gapMs).length - 1;
       const last = values[values.length - 1];
       const late = values.filter(p => p.late).length;
-      return `${s.label}: ${values.length} readings, ${number(Math.min(...ys), unit)} to ${number(Math.max(...ys), unit)}, last ${number(last.y, unit)} at ${hhmm(last.x)}${breaks ? `; ${breaks} gap${breaks === 1 ? '' : 's'} in readings` : ''}${late ? `; ${late} late (hollow markers)` : ''}.`;
+      return `${s.label}: ${values.length} readings, ${number(ys.reduce((a, b) => Math.min(a, b), Infinity), unit)} to ${number(ys.reduce((a, b) => Math.max(a, b), -Infinity), unit)}, last ${number(last.y, unit)} at ${hhmm(last.x)}${breaks ? `; ${breaks} gap${breaks === 1 ? '' : 's'} in readings` : ''}${late ? `; ${late} late (hollow markers)` : ''}.`;
     });
   }
 
@@ -114,7 +114,7 @@
     const height = width < 500 ? 200 : 240;
     const m = {left: 52, right: 12, top: 14, bottom: 28};
     const ys = all.map(p => p.y).concat((spec.thresholds || []).map(t => t.y));
-    let [low, high] = [Math.min(...ys), Math.max(...ys)];
+    let [low, high] = [ys.reduce((a, b) => Math.min(a, b), Infinity), ys.reduce((a, b) => Math.max(a, b), -Infinity)];
     if (spec.zero) low = Math.min(low, 0);
     if (low === high) { low -= 1; high += 1; }
     const pad = (high - low) * 0.06;

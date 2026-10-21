@@ -1,8 +1,10 @@
+(() => {
+'use strict';
 /**
  * Car Heater Logs Modal - Displays ESP32 logs fetched via get_logs command
  */
 
-console.log('📜 car_heater_logs.js loaded');
+
 
 const LOGS_REQUEST_TIMEOUT_MS = 12000;
 const LOGS_DEDUPE_WINDOW_MS = 3000;
@@ -16,7 +18,9 @@ function fmtTs(ts) {
   if (!ts) return '—';
   try {
     const d = new Date(ts);
-    return d.toLocaleString('fi-FI', {
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleString('en-GB', {
+      timeZone: 'Europe/Helsinki', hourCycle: 'h23', year: 'numeric',
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
@@ -93,23 +97,22 @@ function setLogsContent(text) {
 
 function isLogsModalOpen() {
   const modal = document.getElementById('carHeaterLogsModal');
-  return !!(modal && modal.classList.contains('is-open'));
+  return !!modal?.open;
 }
 
 function openLogsModal() {
   const modal = document.getElementById('carHeaterLogsModal');
   if (!modal) return;
-  modal.classList.add('is-open');
-  modal.setAttribute('aria-hidden', 'false');
-  document.body.style.overflow = 'hidden';
+  if (!modal.open) {
+    modal.showModal();
+    document.getElementById('carHeaterLogsClose')?.focus();
+  }
 }
 
 function closeLogsModal() {
   const modal = document.getElementById('carHeaterLogsModal');
   if (!modal) return;
-  modal.classList.remove('is-open');
-  modal.setAttribute('aria-hidden', 'true');
-  document.body.style.overflow = '';
+  modal.close();
 }
 
 function applyLogsPayload(payload, sourceHint = '') {
@@ -125,7 +128,6 @@ function applyLogsPayload(payload, sourceHint = '') {
   });
   const now = Date.now();
   if (signature === lastLogsSignature && (now - lastLogsSignatureTs) < LOGS_DEDUPE_WINDOW_MS) {
-    console.log('📜 duplicate car_heater_logs payload skipped');
     if (pendingLogsRequestTs) {
       pendingLogsRequestTs = 0;
       clearLogsRequestTimeout();
@@ -139,7 +141,6 @@ function applyLogsPayload(payload, sourceHint = '') {
         setLogsContent(logs);
         setLogsState('ready', 'Latest snapshot unchanged');
       }
-      openLogsModal();
     }
     return;
   }
@@ -161,31 +162,31 @@ function applyLogsPayload(payload, sourceHint = '') {
     setLogsState('ready', note ? `Latest snapshot loaded (${note})` : 'Latest snapshot loaded');
   }
 
-  openLogsModal();
 }
 
 function handleGetLogsRequested() {
   pendingLogsRequestTs = Date.now();
   clearLogsRequestTimeout();
 
-  setLogsMeta('pending', new Date().toISOString());
+  setLogsContent('—');
+  setLogsMeta('awaiting device', null);
+  openLogsModal();
   setLogsState('waiting', 'Waiting for logs...');
 
   logsRequestTimeout = setTimeout(() => {
     if (!pendingLogsRequestTs) return;
     pendingLogsRequestTs = 0;
     setLogsContent('—');
-    setLogsMeta('timeout', new Date().toISOString());
+    setLogsMeta('no response', null);
     setLogsState('error', 'No logs received yet');
-    openLogsModal();
   }, LOGS_REQUEST_TIMEOUT_MS);
 }
 
 function resolveActionResultOk(data) {
-  if (!data || typeof data !== 'object') return true;
+  if (!data || typeof data !== 'object') return null;
   if (typeof data.ok === 'boolean') return data.ok;
   if (typeof data.success === 'boolean') return data.success;
-  return true;
+  return null;
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -237,14 +238,28 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   window.addEventListener('car_heater_get_logs_requested', () => {
-    console.log('📜 get_logs requested');
+
     handleGetLogsRequested();
   });
 
+  modal?.addEventListener('close', () => document.getElementById('btnGetLogs')?.focus());
+  window.addEventListener('car_heater_logs_snapshot', event => {
+    if (!pendingLogsRequestTs) return;
+    const elapsed = (Date.now() - pendingLogsRequestTs) / 1000;
+    // Judge age on the server clock, even if the phone clock is skewed.
+    if (typeof event.detail.age_s === 'number' && event.detail.age_s <= elapsed) applyLogsPayload(event.detail);
+  });
+  window.addEventListener('car_heater_command_result', event => {
+    const data = event.detail;
+    if (data?.action !== 'get_logs' || resolveActionResultOk(data) !== false) return;
+    pendingLogsRequestTs = 0;
+    clearLogsRequestTimeout();
+    setLogsState('error', data.stage === 'queued' ? 'Get Logs request rejected' : 'Get Logs failed');
+  });
   if (!window.socket) return;
 
   window.socket.on('car_heater_logs', payload => {
-    console.log('📜 car_heater_logs:', payload);
+
     applyLogsPayload(payload, 'car_heater_logs');
   });
 
@@ -263,14 +278,7 @@ document.addEventListener('DOMContentLoaded', () => {
     );
   });
 
-  window.socket.on('car_heater_action_result', data => {
-    if (!data || data.action !== 'get_logs') return;
-    const ok = resolveActionResultOk(data);
-    if (ok) return;
 
-    pendingLogsRequestTs = 0;
-    clearLogsRequestTimeout();
-    setLogsState('error', 'Get Logs failed');
-    openLogsModal();
-  });
 });
+
+})();

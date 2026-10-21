@@ -1,139 +1,42 @@
-/* Car Heater chart modal styles (copy/adapt from temperature chart modal) */
-
+/* Detailed history uses session evidence charts and accessible value tables. */
 #carHeaterChartModal {
-  display: none;
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.85);
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
-}
-
-#carHeaterChartModal .dialog {
-  background: #111;
-  color: #fff;
-  padding: 1rem;
-  border-radius: 10px;
-  width: 95%;
-  max-width: 1200px;
+  margin: auto;
+  --evidence-surface: #1b1e21;
+  --evidence-text: #f1f2f3;
+  --evidence-muted: #b0b8c0;
+  box-sizing: border-box;
+  width: min(96vw, 1280px);
   max-height: 92dvh;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+  overflow: auto;
+  background: var(--evidence-surface);
+  color: var(--evidence-text);
+  border: 1px solid #555d66;
+  border-radius: 14px;
+  padding: 24px;
+  line-height: 1.5;
 }
-
-#carHeaterChartModal .header {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: center;
-  gap: 0.75rem;
+#carHeaterChartModal::backdrop { background: rgb(0 0 0 / .8); }
+#carHeaterChartModal .header { display: flex; gap: 16px; justify-content: space-between; align-items: baseline; }
+#carHeaterChartModal h3 { margin: 0; }
+#carHeaterChartModal .chart-navigation, #carHeaterChartModal .toggle-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 20px 0; }
+#carHeaterChartModal button, #carHeaterChartModal input {
+  box-sizing: border-box; min-height: 44px; min-width: 44px; padding: 10px 14px;
+  color: #f1f2f3; background: #292e33; border: 1px solid #68737d; border-radius: 8px;
+  font: inherit; color-scheme: dark;
 }
-
-#carHeaterChartTitle {
-  margin: 0;
-  font-size: 1.25rem;
+#carHeaterChartModal button[aria-pressed="true"] { border-color: #e9b378; color: #f4cfaa; }
+#carHeaterChartModal :focus-visible { outline: 3px solid #a0bddb; outline-offset: 3px; }
+#carHeaterChartModal .diagnostic-charts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+#carHeaterChartModal .review-chart { min-width: 0; padding: 12px; border: 1px solid #414950; border-radius: 10px; }
+#carHeaterChartModal .review-chart svg { display: block; max-width: 100%; }
+#carHeaterChartModal .review-chart details { overflow-x: auto; padding: 8px 0; }
+#carHeaterChartModal .review-chart summary { min-height: 44px; padding: 10px 2px; cursor: pointer; }
+#carHeaterChartModal .review-chart th, #carHeaterChartModal .review-chart td { padding: 8px; border-bottom: 1px solid #414950; text-align: left; }
+@media (min-width: 1000px) {
+  #carHeaterChartModal .diagnostic-charts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #carHeaterChartModal .review-chart:first-child { grid-column: 1 / -1; }
 }
-
-#carHeaterChartClose {
-  background: transparent;
-  border: none;
-  color: #fff;
-  font-size: 1.25rem;
-  cursor: pointer;
-  padding: 0.25rem 0.4rem;
-  line-height: 1;
-}
-
-#carHeaterChartModal .nav {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  font-size: 0.95rem;
-}
-
-#carHeaterChartModal .nav button {
-  background: #222;
-  border: 1px solid #444;
-  color: #fff;
-  border-radius: 6px;
-  padding: 0.35rem 0.8rem;
-  cursor: pointer;
-}
-
-#carHeaterChartToday {
-  background: #3a5780;
-  border-color: #556c9d;
-}
-
-.chart-summary {
-  text-align: center;
-  font-size: 0.9rem;
-  color: #ccc;
-  margin-bottom: 0.25rem;
-}
-
-#carHeaterChartModal .toggle-bar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  justify-content: center;
-  margin: 0.25rem 0;
-}
-
-.toggle-pill {
-  border-radius: 999px;
-  border: 1px solid #555;
-  background: rgba(255, 255, 255, 0.05);
-  color: #fff;
-  padding: 0.3rem 0.9rem;
-  cursor: pointer;
-  font-size: 0.85rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.toggle-pill .pill-chip {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  display: inline-block;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-}
-
-.toggle-pill.active {
-  border-color: #fff;
-  background: rgba(255, 255, 255, 0.15);
-}
-
-.toggle-pill:focus-visible {
-  outline: 2px solid #fff;
-  outline-offset: 2px;
-}
-
-.canvas-wrap {
-  width: 100%;
-  flex: 1;
-  position: relative;
-}
-
-#carHeaterChartCanvas {
-  width: 100% !important;
-  height: 100% !important;
-  display: block;
-}
-
-@media (max-width: 800px) {
-  #carHeaterChartModal .dialog {
-    width: 100vw;
-    max-width: none;
-    border-radius: 0;
-    padding: 0.75rem;
-    max-height: 100dvh;
-  }
+@media (max-width: 500px) {
+  #carHeaterChartModal { width: 96vw; padding: 16px; }
+  #carHeaterChartModal .chart-navigation label { width: 100%; }
 }

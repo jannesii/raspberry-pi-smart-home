@@ -6,9 +6,9 @@
 <meta name="csrf-token" content="{{ csrf_token() }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater.css', v='20261021-2') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/flash.css') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_chart.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_chart.css', v='20261021-1') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_settings.css', v='20261021-1') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_logs.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_logs.css', v='20261021-1') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_sessions.css', v='20261021-1') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_departure.css', v='20261021-2') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_heating.css', v='20261021-3') }}">
@@ -428,6 +428,12 @@
 
     <section id="diagnostics" class="settings-group" aria-labelledby="diagnosticsHeading">
     <h3 id="diagnosticsHeading">Diagnostics</h3>
+    <p class="settings-help">Device reports, command acknowledgements and permanent measurements. A queued or sent command does not prove execution.</p>
+    <dl class="settings-facts diagnostics-health">
+      <dt>Browser connection</dt><dd id="diagnosticsConnection" role="status">Checking connection…</dd>
+      <dt>Device health</dt><dd id="diagnosticsDevice" role="status">No device report yet.</dd>
+      <dt>Relay connection</dt><dd id="diagnosticsRelay">Unknown</dd>
+    </dl>
     <h4 class="heater-details-heading">Latest device telemetry</h4>
   <section class="ios-card">
     <div class="ios-card-header">
@@ -469,7 +475,7 @@
         <span id="detailCurrent" class="item-value">—</span>
       </li>
       <li class="ios-list-item">
-        <span class="item-label">Energy Today</span>
+        <span class="item-label">Energy in last minute</span>
         <span id="detailEnergyToday" class="item-value">—</span>
       </li>
       <li class="ios-list-item">
@@ -487,38 +493,38 @@
   </section>
   <!-- Charts Button -->
   <button id="btnOpenCarHeaterCharts" class="charts-button" type="button">
-    📈 View Charts
+    View Charts
   </button>
 
   <!-- Command Status & Advanced -->
   <section class="ios-card cmd-status-card">
     <div class="cmd-status-section">
-      <div class="cmd-status-title">Command Status</div>
+      <h4 class="cmd-status-title">Command stages</h4>
       <div class="cmd-status-list">
         <div class="cmd-status-item">
           <span class="cmd-status-name">Turn ON</span>
-          <span id="cmdStatus_turn_on" class="cmd-status-badge"></span>
+          <span id="cmdStatus_turn_on" class="cmd-status-badge" role="status">No command result</span>
         </div>
         <div class="cmd-status-item">
           <span class="cmd-status-name">Turn OFF</span>
-          <span id="cmdStatus_turn_off" class="cmd-status-badge"></span>
+          <span id="cmdStatus_turn_off" class="cmd-status-badge" role="status">No command result</span>
         </div>
         <div class="cmd-status-item">
           <span class="cmd-status-name">Get Logs</span>
-          <span id="cmdStatus_get_logs" class="cmd-status-badge"></span>
+          <span id="cmdStatus_get_logs" class="cmd-status-badge" role="status">No command result</span>
         </div>
         <div class="cmd-status-item">
           <span class="cmd-status-name">Restart ESP</span>
-          <span id="cmdStatus_esp_restart" class="cmd-status-badge"></span>
+          <span id="cmdStatus_esp_restart" class="cmd-status-badge" role="status">No command result</span>
         </div>
         <div class="cmd-status-item">
           <span class="cmd-status-name">Restart Shelly</span>
-          <span id="cmdStatus_shelly_restart" class="cmd-status-badge"></span>
+          <span id="cmdStatus_shelly_restart" class="cmd-status-badge" role="status">No command result</span>
         </div>
       </div>
     </div>
     <div class="advanced-actions">
-      <div class="advanced-actions-title">Advanced Actions</div>
+      <div class="advanced-actions-title">Logs &amp; maintenance</div>
       <div class="advanced-btn-row">
         <button id="btnGetLogs" class="advanced-btn" type="button">Get Logs</button>
         <button id="btnEspRestart" class="advanced-btn btn-danger" type="button">Restart ESP</button>
@@ -556,6 +562,14 @@
   window.CAR_HEATER_READY_BY = {{ ready_by_schedule | tojson }};
   window.CAR_HEATER_WEATHER = {{ weather_data | tojson }};
 </script>
+<dialog id="heaterRestartDialog" class="heater-dialog" aria-labelledby="heaterRestartTitle" aria-describedby="heaterRestartHelp">
+  <h3 id="heaterRestartTitle">Restart device?</h3>
+  <p id="heaterRestartHelp">The device will reboot and communication may be interrupted. A restart acknowledgement does not prove the relay is OFF. Use Stop heating in Heating to request OFF.</p>
+  <div class="settings-actions">
+    <button type="button" id="heaterRestartCancel" autofocus>Cancel</button>
+    <button type="button" id="heaterRestartConfirm">Restart device</button>
+  </div>
+</dialog>
 {% include 'car_heater_chart_modal.html' %}
 {% include 'car_heater_logs_modal.html' %}
 {% endblock %}
@@ -567,10 +581,11 @@
 <script defer src="{{ url_for('static', filename='js/car_heater_preferences.js', v='20261021-2') }}"></script>
 <script defer src="{{ url_for('static', filename='js/car_heater_calibration.js', v='20261021-2') }}"></script>
 <script src="{{ url_for('static', filename='js/init_sio.js', v='20260504-1') }}"></script>
-<script src="{{ url_for('static', filename='js/car_heater.js', v='20261021-3') }}"></script>
-<script src="{{ url_for('static', filename='js/car_heater_logs.js', v='20260323-1') }}"></script>
+<script src="{{ url_for('static', filename='js/car_heater.js', v='20261021-5') }}"></script>
+<script src="{{ url_for('static', filename='js/car_heater_logs.js', v='20261021-1') }}"></script>
 <script src="{{ url_for('static', filename='js/flash.js') }}"></script>
-<script src="{{ url_for('static', filename='js/car_heater_chart.js', v='20261014-2') }}"></script>
+<script src="{{ url_for('static', filename='js/car_heater_session_charts.js', v='20261021-2') }}"></script>
+<script src="{{ url_for('static', filename='js/car_heater_chart.js', v='20261021-1') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater_settings_base.js', v='20261021-1') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater_settings_schedule.js', v='20261021-1') }}"></script>
 {% endblock %}

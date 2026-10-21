@@ -16,11 +16,11 @@ function fmtTs(ts) {
   try {
     const d = new Date(ts);
     if (Number.isNaN(d.getTime())) return '—';
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const hour24 = String(d.getHours()).padStart(2, '0');
-    const minute = String(d.getMinutes()).padStart(2, '0');
-    const second = String(d.getSeconds()).padStart(2, '0');
-    return `${months[d.getMonth()]} ${d.getDate()}, ${hour24}:${minute}:${second}`;
+    return d.toLocaleString('en-GB', {
+      timeZone: 'Europe/Helsinki', hourCycle: 'h23',
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+    });
   } catch {
     return '—';
   }
@@ -87,7 +87,12 @@ function updateDeviceReport(status) {
   // A response without a report keeps the last one; it then ages to stale
   // instead of disappearing.
   if (status) {
-    latestDeviceReport = status;
+    const age = deviceReportAgeS();
+    latestDeviceReport = {...latestDeviceReport, ...status};
+    if (status.shelly_connected === false) {
+      ['is_heater_on', 'instant_power_w', 'voltage_v', 'current_a', 'energy_total_wh', 'energy_last_min_wh', 'device_temp_c'].forEach(key => { latestDeviceReport[key] = null; });
+    } else if (typeof status.is_heater_on === 'boolean') latestDeviceReport.shelly_connected = true;
+    if (!Object.prototype.hasOwnProperty.call(status, 'report_age_s')) latestDeviceReport.report_age_s = age;
     latestDeviceReportMs = Date.now();
   }
   const power = document.getElementById('conditionPower');
@@ -110,6 +115,8 @@ function renderDeviceFreshness() {
   const reported = latestDeviceReport?.timestamp;
   if (age === null) {
     el.textContent = 'No device report yet.';
+    const health = document.getElementById('diagnosticsDevice');
+    if (health) health.textContent = el.textContent;
     el.classList.remove('is-stale');
     return;
   }
@@ -119,6 +126,10 @@ function renderDeviceFreshness() {
     ? `Device not reporting · last report ${fmtHelsinkiTime(reported, true)} (${fmtHeaterReportAge(age)}).${shelly}`
     : `Device reported ${fmtHelsinkiTime(reported, true)} (${fmtHeaterReportAge(age)}).${shelly}`;
   el.classList.toggle('is-stale', stale || !!shelly);
+  const health = document.getElementById('diagnosticsDevice');
+  const relay = document.getElementById('diagnosticsRelay');
+  if (health) health.textContent = el.textContent;
+  if (relay) relay.textContent = stale ? 'Unknown · device report stale' : typeof latestDeviceReport.is_heater_on === 'boolean' ? 'Connected · reported by device' : 'Not connected · relay state unknown';
 }
 
 function updateWeatherDisplay(weather) {
@@ -260,11 +271,11 @@ function renderCarSensorReadings() {
 
 function updateStatusUI(status) {
   updateDeviceReport(status);
-  updateDetailsSection(status);
+  updateDetailsSection(latestDeviceReport);
 }
 
 function applyCarHeaterPayload(data, source = 'unknown') {
-  console.log(`📡 applyCarHeaterPayload (${source}):`, data);
+
   if (!data) return;
 
   // A response without a status (no device report yet) is not a status.
@@ -273,6 +284,7 @@ function applyCarHeaterPayload(data, source = 'unknown') {
   mergeCarSensorReadings(status?.sensors);
   renderCarSensorReadings();
 
+  if (data.logs_snapshot) window.dispatchEvent(new CustomEvent('car_heater_logs_snapshot', {detail: data.logs_snapshot}));
   if (data.command_status || data.commandStatus) {
     const cmdStatus = data.command_status || data.commandStatus;
     updateCommandStatusUI(cmdStatus);
@@ -310,8 +322,10 @@ async function fetchCurrentStatus() {
     }
     const data = await resp.json();
     applyCarHeaterPayload(data, 'http');
+    setDiagnosticsConnection(window.socket?.connected ? 'Live connection · status received' : 'HTTP fallback · status received');
   } catch (err) {
     console.warn('Failed to fetch current car heater status:', err);
+    setDiagnosticsConnection('Status unavailable · reconnecting');
   }
 }
 
@@ -339,56 +353,78 @@ const COMMAND_ACTIONS = {
   shelly_restart: 'Restart Shelly',
 };
 
+// A timeout is missing evidence, not a device failure or a successful restart.
+const commandWaits = new Map();
+const knownCommandStages = {};
+const COMMAND_WAIT_MS = 30000;
+const COMMAND_STAGE_LABELS = {
+  requesting: 'Requesting · not yet queued',
+  queued: 'Queued · awaiting delivery',
+  sent: 'Sent · awaiting device acknowledgement',
+  success: 'Device acknowledged success',
+  failed: 'Device reported failure',
+  rejected: 'Request rejected · not queued',
+  unknown: 'Unknown · no acknowledgement',
+};
+
+function setDiagnosticsConnection(text) {
+  const el = document.getElementById('diagnosticsConnection');
+  if (el) el.textContent = text;
+}
+
 function updateSingleCommandStatus(action, status) {
   const el = document.getElementById(`cmdStatus_${action}`);
   if (!el) return;
-
-  el.classList.remove('status-queued', 'status-sent', 'status-error');
-  el.style.display = 'none';
-
-  if (!status) {
-    el.textContent = '';
-    return;
+  const previous = knownCommandStages[action];
+  if (previous === status && commandWaits.has(action) && commandWaits.get(action) === null) return;
+  knownCommandStages[action] = status;
+  el.textContent = COMMAND_STAGE_LABELS[status] || 'No command result';
+  if (action === 'get_logs' && status === 'failed' && previous !== status) {
+    window.dispatchEvent(new CustomEvent('car_heater_command_result', {detail: {action, stage: 'executed', ok: false}}));
   }
-
-  let text = '';
-  let cls = '';
-  switch (status) {
-    case 'queued':
-      text = 'Queued';
-      cls = 'status-queued';
-      break;
-    case 'sent':
-      text = 'Sent';
-      cls = 'status-sent';
-      break;
-    case 'success':
-      text = 'Success';
-      cls = 'status-sent';
-      break;
-    case 'failed':
-      text = 'Failed';
-      cls = 'status-error';
-      break;
-    default:
-      text = String(status);
-      break;
+  el.classList.toggle('status-error', ['failed', 'rejected', 'unknown'].includes(status));
+  if (['requesting', 'queued', 'sent'].includes(status)) {
+    if (previous !== status) {
+      clearTimeout(commandWaits.get(action));
+      commandWaits.set(action, setTimeout(() => {
+        // Keep the source stage so repeated polling cannot reset this timeout.
+        commandWaits.set(action, null);
+        el.textContent = COMMAND_STAGE_LABELS.unknown;
+        el.classList.add('status-error');
+        if (lastQueuedAction === action) setQueueStatus('error', 'Command outcome unknown · no acknowledgement');
+      }, COMMAND_WAIT_MS));
+    } else if (!commandWaits.has(action)) return;
+  } else {
+    clearTimeout(commandWaits.get(action));
+    commandWaits.delete(action);
   }
-
-  el.textContent = text;
-  if (cls) el.classList.add(cls);
-  el.style.display = '';
 }
 
 function updateCommandStatusUI(commandStatus) {
-  const actions = Object.keys(COMMAND_ACTIONS);
-  if (!commandStatus) {
-    actions.forEach(action => updateSingleCommandStatus(action, null));
-    return;
-  }
-  actions.forEach(action => {
-    updateSingleCommandStatus(action, commandStatus[action]);
+  // Only fields present in a partial update replace known stages.
+  if (!commandStatus) return;
+  Object.keys(COMMAND_ACTIONS).forEach(action => {
+    if (Object.prototype.hasOwnProperty.call(commandStatus, action)) {
+      updateSingleCommandStatus(action, commandStatus[action]);
+    }
   });
+}
+
+function handleCarHeaterActionResult(data) {
+  if (!data?.action) return;
+  const ok = typeof data.ok === 'boolean' ? data.ok : data.success;
+  if (data.stage === 'queued') {
+    updateSingleCommandStatus(data.action, ok === true ? 'queued' : ok === false ? 'rejected' : 'unknown');
+    setQueueStatus(ok === true ? 'pending' : 'error', ok === true ? 'Action queued · awaiting device' : 'Queue request not confirmed');
+  } else if (data.stage === 'executed') {
+    if (data.command_status) updateCommandStatusUI(data.command_status);
+    updateSingleCommandStatus(data.action, ok === true ? 'success' : ok === false ? 'failed' : 'unknown');
+    setQueueStatus(ok === true ? 'sent' : 'error', ok === true ? 'Device acknowledged success' : ok === false ? 'Device reported failure' : 'Command outcome unknown');
+    if (lastQueuedAction === data.action) lastQueuedAction = null;
+  } else {
+    updateSingleCommandStatus(data.action, 'unknown');
+  }
+  window.dispatchEvent(new CustomEvent('car_heater_command_result', {detail: data}));
 }
 
 // ============================================
@@ -476,8 +512,9 @@ function queueCommand(action) {
   }
   const payload = { action: action, csrf_token: document.querySelector('meta[name="csrf-token"]')?.content || '' };
   lastQueuedAction = action;
-  setQueueStatus('pending', 'Action queued…');
-  updateSingleCommandStatus(action, 'queued');
+  knownCommandStages[action] = null;
+  setQueueStatus('pending', 'Requesting action…');
+  updateSingleCommandStatus(action, 'requesting');
 
   if (action === 'get_logs') {
     window.dispatchEvent(new CustomEvent('car_heater_get_logs_requested'));
@@ -490,7 +527,7 @@ function queueCommand(action) {
 
   // Prefer Socket.IO for low latency
   try {
-    if (window.socket) {
+    if (window.socket?.connected) {
       window.socket.emit('car_heater_control', payload);
       return;
     }
@@ -508,14 +545,19 @@ function queueCommand(action) {
     },
     body: JSON.stringify(payload),
   }).then(resp => {
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    if (!resp.ok) {
+      handleCarHeaterActionResult({action, stage: 'queued', ok: false});
+      throw new Error('HTTP ' + resp.status);
+    }
     return resp.json();
   }).then(data => {
-    console.log('Queue HTTP result:', data);
-    setQueueStatus('pending', 'Action queued');
+    handleCarHeaterActionResult({action, stage: 'queued', ok: data.ok});
   }).catch(err => {
     console.error('Queue HTTP error:', err);
-    setQueueStatus('error', 'Failed to queue action');
+    if (knownCommandStages[action] !== 'rejected') {
+      updateSingleCommandStatus(action, 'unknown');
+      setQueueStatus('error', 'Queue outcome unknown · check command status before retrying');
+    }
   });
 }
 
@@ -562,21 +604,31 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnOff) btnOff.addEventListener('click', () => queueCommand('turn_off'));
   if (btnLogs) btnLogs.addEventListener('click', () => queueCommand('get_logs'));
 
-  if (btnEspRestart) {
-    btnEspRestart.addEventListener('click', () => {
-      if (window.confirm('Restart ESP? This will reboot the microcontroller.')) {
-        queueCommand('esp_restart');
-      }
+  const restartDialog = document.getElementById('heaterRestartDialog');
+  const restartTitle = document.getElementById('heaterRestartTitle');
+  const restartConfirm = document.getElementById('heaterRestartConfirm');
+  let restartAction = null;
+  let restartTrigger = null;
+  [[btnEspRestart, 'esp_restart', 'Restart ESP?'], [btnShellyRestart, 'shelly_restart', 'Restart Shelly?']].forEach(([button, action, title]) => {
+    button?.addEventListener('click', () => {
+      if (!restartDialog) return;
+      restartAction = action;
+      restartTrigger = button;
+      restartTitle.textContent = title;
+      restartDialog.showModal();
+      document.getElementById('heaterRestartCancel').focus();
     });
-  }
-
-  if (btnShellyRestart) {
-    btnShellyRestart.addEventListener('click', () => {
-      if (window.confirm('Restart Shelly? This will reboot the relay device.')) {
-        queueCommand('shelly_restart');
-      }
-    });
-  }
+  });
+  document.getElementById('heaterRestartCancel')?.addEventListener('click', () => restartDialog.close());
+  restartConfirm?.addEventListener('click', () => {
+    const action = restartAction;
+    restartDialog.close();
+    if (action) queueCommand(action);
+  });
+  restartDialog?.addEventListener('close', () => {
+    restartAction = null;
+    restartTrigger?.focus();
+  });
 
   // Charge mode toggle
   const chargeModeToggle = document.getElementById('chargeModeToggle');
@@ -614,55 +666,21 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     window.socket.on('disconnect', () => {
+      setDiagnosticsConnection('Live connection lost · using HTTP fallback');
       startStatusPolling();
     });
 
     // A socket that never connects still needs the HTTP status fallback.
     window.socket.on('connect_error', () => {
+      setDiagnosticsConnection('Live connection lost · using HTTP fallback');
       startStatusPolling();
     });
 
     window.socket.on('car_heater_status', data => {
-      console.log('📡 car_heater_status:', data);
       applyCarHeaterPayload(data, 'socket');
     });
 
-    window.socket.on('car_heater_action_result', data => {
-      console.log('📡 car_heater_action_result:', data);
-      if (!data) return;
-      const stage = data.stage || 'executed';
-      let ok = true;
-      if (typeof data.ok === 'boolean') ok = data.ok;
-      else if (typeof data.success === 'boolean') ok = data.success;
-
-      if (stage === 'queued') {
-        setQueueStatus(ok ? 'pending' : 'error', ok ? 'Action queued…' : 'Failed to queue action');
-        if (ok && data.action) {
-          updateSingleCommandStatus(data.action, 'queued');
-        } else if (!ok && data.action) {
-          updateSingleCommandStatus(data.action, 'failed');
-        }
-        return;
-      }
-
-      if (data.command_status) {
-        updateCommandStatusUI(data.command_status);
-      }
-
-      if (ok) {
-        setQueueStatus('sent', 'Action successful');
-        if (data.action) {
-          updateSingleCommandStatus(data.action, 'success');
-        }
-        lastQueuedAction = null;
-      } else {
-        setQueueStatus('error', 'Action failed');
-        if (data.action) {
-          updateSingleCommandStatus(data.action, 'failed');
-        }
-        lastQueuedAction = null;
-      }
-    });
+    window.socket.on('car_heater_action_result', handleCarHeaterActionResult);
 
     window.socket.on('car_heater_charge_mode', data => {
       console.log('📡 car_heater_charge_mode:', data);

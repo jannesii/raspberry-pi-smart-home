@@ -225,6 +225,7 @@ class ESP32RedisBridge:
                 logger.debug("ESP32RedisBridge status had no usable logs payload")
                 return
 
+            self._app.extensions["car_heater_logs_snapshot"] = logs_payload
             if self._sio_handler is not None:
                 self._sio_handler.emit_to_views("car_heater_logs", logs_payload)
             else:
@@ -345,7 +346,8 @@ class ESP32RedisBridge:
             )
             payload = dict(data)
             payload["stage"] = "executed"
-            payload["ok"] = bool(data.get("success", data.get("ok", False)))
+            result = data.get("success", data.get("ok"))
+            payload["ok"] = result if isinstance(result, bool) else None
 
             service = getattr(self._app, "car_heater_service", None)
             if service is not None and data.get("action"):

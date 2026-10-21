@@ -25,7 +25,7 @@ if __name__ == "__main__":
     patch = pytest.MonkeyPatch()
     fixture = session_app.__wrapped__(work, patch)
     flask_app = next(fixture)
-    if len(sys.argv) > 2 and sys.argv[2] in ("bounded", "calibration"):
+    if len(sys.argv) > 2 and sys.argv[2] in ("bounded", "calibration", "diagnostics"):
         from app.services.car_heater.car_heater_service import CarHeaterService
 
         patch.setattr("redis.from_url", lambda *a, **kw: (_ for _ in ()).throw(OSError("isolated")))
@@ -81,6 +81,11 @@ if __name__ == "__main__":
         from app.services.esp32_redis_bridge import ESP32RedisBridge
 
         flask_app.sio_handler = _DummySIOHandler()
+        diagnostics_now = (
+            datetime(2026, 11, 2, 5, 10, tzinfo=UTC) if sys.argv[2] == "diagnostics" else None
+        )
+        if diagnostics_now is not None:
+            patch.setattr(car_status, "_utc_now", lambda: diagnostics_now)
 
         @flask_app.post("/test/frame")
         def device_frame():
@@ -88,7 +93,7 @@ if __name__ == "__main__":
             spec = request.get_json()
             run = heater.get_bounded_session()
             session_id = {"current": run and run["session_id"], "old": "old-session"}
-            now = datetime.now(UTC)
+            now = diagnostics_now or datetime.now(UTC)
             frame = {
                 "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
                 "firmware_version": "3.1.1",
@@ -124,13 +129,14 @@ if __name__ == "__main__":
                 }
             if spec.get("ack"):
                 ack = spec["ack"]
-                frame["action_results"] = [
-                    {
-                        "action": ack["action"],
-                        "success": ack["success"],
-                        "session_id": session_id[ack["session"]],
-                    }
-                ]
+                result = {"action": ack["action"]}
+                if "success" in ack:
+                    result["success"] = ack["success"]
+                if "session" in ack:
+                    result["session_id"] = session_id[ack["session"]]
+                frame["action_results"] = [result]
+            if "logs" in spec:
+                frame["logs"] = spec["logs"]
             if spec.get("transport") == "ws":
                 frame["received_at"] = now.isoformat()
                 ESP32RedisBridge(
@@ -328,6 +334,11 @@ if __name__ == "__main__":
                 )
                 ids.append(attempt.id)
             return {"backfilled": ids[0], "current": ids[1]}
+
+    if len(sys.argv) > 2 and sys.argv[2] == "diagnostics":
+        from test_car_heater_diagnostics import seed_history
+
+        seed_history(flask_app.ctrl)
 
     authenticated = client.__wrapped__(flask_app)
     server = make_server("127.0.0.1", 0, flask_app, threaded=False)

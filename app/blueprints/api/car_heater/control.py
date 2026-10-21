@@ -21,7 +21,8 @@ from flask_login import current_user, login_required
 
 from ....extensions import csrf
 from ....security import require_api_key
-from ....services.car_heater.sensor_readings import SENSOR_KEYS, iso_utc
+from ....services.car_heater.sensor_readings import SENSOR_KEYS, iso_utc, sensor_max_age_s
+from ....services.car_heater.session_review import RECEIPT_SLACK, sensor_history_series
 from ._blueprint import car_bp
 
 logger = logging.getLogger(__name__)
@@ -55,7 +56,7 @@ def _normalize_action_results(action_results: Any) -> list[dict[str, Any]]:
                     normalized_results.append(
                         {
                             "action": item.get("action"),
-                            "success": item.get("success", item.get("ok", False)),
+                            "success": item.get("success", item.get("ok")),
                             "session_id": item.get("session_id"),
                             "note": item.get("note"),
                         }
@@ -65,17 +66,17 @@ def _normalize_action_results(action_results: Any) -> list[dict[str, Any]]:
                         normalized_results.append(
                             {
                                 "action": key,
-                                "success": bool(val),
+                                "success": val if isinstance(val, bool) else None,
                             }
                         )
             elif isinstance(item, str):
-                normalized_results.append({"action": item, "success": True})
+                normalized_results.append({"action": item, "success": None})
     elif isinstance(action_results, dict):
         if "action" in action_results:
             normalized_results.append(
                 {
                     "action": action_results.get("action"),
-                    "success": action_results.get("success", action_results.get("ok", False)),
+                    "success": action_results.get("success", action_results.get("ok")),
                     "session_id": action_results.get("session_id"),
                     "note": action_results.get("note"),
                 }
@@ -85,7 +86,7 @@ def _normalize_action_results(action_results: Any) -> list[dict[str, Any]]:
                 normalized_results.append(
                     {
                         "action": key,
-                        "success": bool(val),
+                        "success": val if isinstance(val, bool) else None,
                     }
                 )
     logger.debug("_normalize_action_results returning count=%s", len(normalized_results))
@@ -316,13 +317,22 @@ def get_car_heater_history():
         energy_today_wh = energies[-1] - energies[0]
 
     day_start = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=tz)
+    day_end = day_start + timedelta(days=1)
     sensor_frames = ctrl.get_car_heater_sensor_frames_between(
-        iso_utc(day_start), iso_utc(day_start + timedelta(days=1) - timedelta(milliseconds=1))
+        iso_utc(day_start), iso_utc(day_end + RECEIPT_SLACK - timedelta(milliseconds=1))
     )
     return jsonify(
         {
             "rows": payload,
-            "sensor_rows": _sensor_history_rows(sensor_frames),
+            "sensor_rows": _sensor_history_rows(
+                [f for f in sensor_frames if datetime.fromisoformat(f.received_at) < day_end]
+            ),
+            "sensor_series": sensor_history_series(
+                sensor_frames, day_start, day_end - timedelta(microseconds=1)
+            ),
+            "start": iso_utc(day_start),
+            "end": iso_utc(day_end),
+            "max_gap_seconds": sensor_max_age_s(),
             "energy_today_wh": energy_today_wh,
         }
     ), 200

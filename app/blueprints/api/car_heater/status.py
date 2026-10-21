@@ -255,6 +255,7 @@ def _build_logs_event_payload(
         source,
         len(logs),
     )
+    current_app.extensions["car_heater_logs_snapshot"] = payload
     return payload
 
 
@@ -451,6 +452,10 @@ def build_current_status_response(ctrl: Controller) -> dict[str, Any]:
         last_status = {**(last_status or {}), "sensors": sensors_snapshot}
 
     payload: dict[str, Any] = {"status": last_status}
+    logs = current_app.extensions.get("car_heater_logs_snapshot")
+    if logs is not None:
+        age = (datetime.now(UTC) - datetime.fromisoformat(logs["received_ts"])).total_seconds()
+        payload["logs_snapshot"] = {**logs, "age_s": max(0, age)}
 
     try:
         service = getattr(current_app, "car_heater_service", None)
