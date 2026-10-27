@@ -4,6 +4,50 @@ Shared language for the services managed by this application.
 
 ## Language
 
+### Spoken announcements
+
+**Announcement**:
+A spoken message directed to one or more selected speakers, preceded by an
+attention chime.
+_Avoid_: Notification (when specifically referring to spoken output)
+
+**Attention chime**:
+A soft sound played before an announcement to draw the listener's attention.
+_Avoid_: Ping
+
+**Announcement schedule**:
+A rule specifying when an announcement is due, once or repeatedly.
+
+**Announcement target**:
+The speaker or set of speakers selected to play an announcement.
+
+**Reminder occurrence**:
+One scheduled instance of a reminder, including any repeats or snoozed
+announcements associated with that instance.
+
+**Reminder acknowledgement**:
+The user's explicit indication that a reminder occurrence is done, distinct
+from evidence that its announcement played.
+
+**Snooze**:
+The user's postponement of a reminder occurrence without marking it done.
+
+**Superseded occurrence**:
+A reminder occurrence whose pending announcements have been replaced by the
+next occurrence of the same schedule, without marking the older one done.
+
+**Occurrence expiry**:
+The deadline after which a reminder occurrence must no longer produce spoken
+announcements.
+
+**Quiet hours**:
+A recurring local-time interval during which spoken announcements are held
+unless their schedule explicitly permits an override.
+
+**Fallback notification**:
+A reminder message sent through an alternative channel when spoken delivery
+cannot satisfy the reminder's delivery policy.
+
 ### Car heater
 
 **Departure time**:
