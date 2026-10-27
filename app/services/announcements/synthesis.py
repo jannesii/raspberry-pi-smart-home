@@ -109,10 +109,14 @@ class PiperSubprocessSynthesizer:
                     timeout=self.timeout_s,
                     check=False,
                 )
-            except subprocess.TimeoutExpired as exc:
-                raise SynthesisError("synthesis_timeout") from exc
             except OSError as exc:
                 raise SynthesisError("piper_not_runnable") from exc
+            except Exception as exc:
+                # Under Eventlet, green and stdlib subprocess define distinct
+                # TimeoutExpired classes; either one means the same here.
+                if type(exc).__name__ != "TimeoutExpired":
+                    raise
+                raise SynthesisError("synthesis_timeout") from exc
             if result.returncode != 0:
                 # stderr can echo input text: log only its size.
                 logger.warning(
