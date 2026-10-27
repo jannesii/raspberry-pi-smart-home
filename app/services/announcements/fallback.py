@@ -68,11 +68,11 @@ _REASONS = {
     "stopped_externally": "playback was stopped from another app",
 }
 _WAITED = {
-    "quiet_hours": "quiet hours",
-    "music_playing": "music playing",
-    "media_unknown": "an unclear speaker state",
-    "speaker_busy": "another announcement",
-    "speaker_unavailable": "the speaker not responding",
+    "quiet_hours": "quiet hours to end",
+    "music_playing": "music to stop",
+    "media_unknown": "the speaker state to clear",
+    "speaker_busy": "another announcement to finish",
+    "speaker_unavailable": "the speaker to respond",
 }
 
 

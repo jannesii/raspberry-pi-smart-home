@@ -297,3 +297,96 @@ def test_competing_services_create_one_occurrence_and_recover_it_in_either_store
     assert [a["status"] for a in detail["occurrences"][0]["attempts"]] == ["unknown"]
     assert len(cast.plays) == 1
     ctrl.db.conn.close()
+
+
+FALLBACK = {
+    "id": "f1",
+    "occurrence_id": "o1",
+    "channel": "discord",
+    "reason": "failed",
+    "message": "Muista lääkkeet",
+    "status": "pending",
+    "attempts_made": 0,
+    "max_attempts": 3,
+    "created_at": "2027-01-15T12:30:00+00:00",
+    "updated_at": "2027-01-15T12:30:00+00:00",
+}
+
+
+def test_one_fallback_per_occurrence_and_numbered_attempts_are_constrained(store):
+    engine, _migrations = store
+    with engine.begin() as conn:
+        conn.execute(announcement_schedule.insert().values(**SCHEDULE))
+        conn.execute(announcement_occurrence.insert().values(**OCCURRENCE))
+        conn.execute(announcement_fallback.insert().values(**FALLBACK))
+        conn.execute(
+            announcement_fallback_attempt.insert().values(
+                id="fa1",
+                fallback_id="f1",
+                number=1,
+                status="sending",
+                intent_at="2027-01-15T12:30:00+00:00",
+            )
+        )
+    _rejected(engine, announcement_fallback, {**FALLBACK, "id": "f2"})  # same occurrence
+    for column, value in (
+        ("status", "read"),  # Discord acceptance is not readership
+        ("reason", "unacknowledged"),  # lack of acknowledgement is not a trigger
+        ("attempts_made", 4),
+        ("occurrence_id", "missing"),
+    ):
+        _rejected(engine, announcement_fallback, {**FALLBACK, "id": "f3", column: value})
+    attempt = {
+        "id": "fa2",
+        "fallback_id": "f1",
+        "number": 1,
+        "status": "accepted",
+        "intent_at": "2027-01-15T12:31:00+00:00",
+    }
+    _rejected(engine, announcement_fallback_attempt, attempt)  # number 1 already used
+    _rejected(engine, announcement_fallback_attempt, {**attempt, "number": 2, "status": "read"})
+
+
+def test_competing_services_send_one_fallback_request_in_either_store(store, tmp_path, monkeypatch):
+    from datetime import datetime
+
+    from announcement_support import FakeDiscord
+
+    from app.core.database import DatabaseManager
+
+    engine, _migrations = store
+    monkeypatch.setattr(DatabaseManager, "_instance", None)
+    ctrl = Controller(db_path=str(tmp_path / "legacy.db"))
+    ctrl._sa_engine = engine
+    clock = [START]
+    synth, cast, discord = FakeSynthesizer(), FakeCast(), FakeDiscord()
+    first = build_service(ctrl, clock, (synth, cast), tmp_path / "cache", discord=discord)
+    second = build_service(ctrl, clock, (synth, cast), tmp_path / "cache", discord=discord)
+    _outcome, saved = first.create_schedule(
+        {"text": "Muista lääkkeet", "target": "jbl-right", "due_local": "2027-01-15T14:30"}
+    )
+    synth.failure = "synthesis_failed"
+    clock[0] = datetime.fromisoformat("2027-01-15T12:30:00+00:00").timestamp()
+    first._materialize_due()
+    first._dispatch_work()
+    # Both see the eligible occurrence and its pending fallback before either sends.
+    (eligible,) = ctrl.list_announcement_occurrences_without_fallback()
+    first._open_fallback(eligible, clock[0])
+    second._open_fallback(eligible, clock[0])
+    (pending,) = ctrl.list_announcement_fallbacks(statuses=("pending",))
+    first._send_fallback(pending)
+    second._send_fallback(pending)
+    second.tick()
+    first.tick()
+    assert len(discord.requests) == 1
+
+    reloaded = Controller(db_path=str(tmp_path / "legacy.db"))
+    reloaded._sa_engine = engine
+    restarted = build_service(reloaded, clock, (synth, cast), tmp_path / "cache", discord=discord)
+    clock[0] += 3600
+    restarted.tick()
+    (item,) = restarted.schedule_detail(saved["schedule"]["id"])["occurrences"]
+    assert item["fallback"]["status"] == "accepted"
+    assert [a["number"] for a in item["fallback"]["attempts"]] == [1]
+    assert len(discord.requests) == 1
+    ctrl.db.conn.close()
