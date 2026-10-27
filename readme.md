@@ -166,7 +166,7 @@ Configure only the integrations you use:
 | Weather archive | `WEATHER_ARCHIVE_ENABLED` (default `true`): archive FMI station observations every ten minutes and the parking-point forecast every thirty minutes. `WEATHER_FORECAST_POINT` (default `62.8000,22.8260`): forecast point as `lat,lon`; an invalid value leaves forecast collection off. Needs outbound HTTPS to `opendata.fmi.fi` and migrations `20261016_0016`/`20261016_0017`/`20261017_0018`; see [weather observation archive](#weather-observation-archive) and [parking-point forecast archive](#parking-point-forecast-archive) |
 | Sodexo | `SODEXO_WEBHOOK_URL`, `SODEXO_POST_HOUR`, `SODEXO_POST_MINUTE` |
 | Alerts | `ALERT_WEBHOOK_URL`, `ALERT_WEBHOOK_BATCH_SECONDS` |
-| Spoken announcements | `ANNOUNCEMENTS_ENABLED` (default `true`), `ANNOUNCEMENT_MEDIA_ORIGIN` (speaker-reachable `http(s)://host[:port]`), `ANNOUNCEMENT_TARGETS` (JSON; defaults Jbl-Right `192.168.1.119`, Jbl-Left `192.168.1.148`), `ANNOUNCEMENT_CACHE_DIR`, `PIPER_COMMAND`, `PIPER_VOICE_DIR`, `PIPER_VOICE_FI`/`PIPER_VOICE_EN`, `ANNOUNCEMENT_QUIET_HOURS` (Helsinki `HH:MM-HH:MM`, default `22:00-07:00`, `off` disables), `ANNOUNCEMENT_PUBLIC_ORIGIN` (browser origin such as `https://jannenkoti.com` for the reminder link in Discord fallbacks); fallbacks use `ALERT_WEBHOOK_URL`; optional `requirements-announcements.txt` and migrations `20261027_0020`–`20261027_0023`; see [spoken announcements](#spoken-announcements) |
+| Spoken announcements | `ANNOUNCEMENTS_ENABLED` (default `true`), `ANNOUNCEMENT_MEDIA_ORIGIN` (speaker-reachable `http(s)://host[:port]`), `ANNOUNCEMENT_TARGETS` (JSON; defaults Jbl-Right `192.168.1.119`, Jbl-Left `192.168.1.148`), `ANNOUNCEMENT_CACHE_DIR`, `PIPER_COMMAND`, `PIPER_VOICE_DIR`, `PIPER_VOICE_FI`/`PIPER_VOICE_EN`, `ANNOUNCEMENT_QUIET_HOURS` (Helsinki `HH:MM-HH:MM`, default `22:00-07:00`, `off` disables), `ANNOUNCEMENT_PUBLIC_ORIGIN` (browser origin such as `https://jannenkoti.com` for the reminder link in Discord fallbacks); fallbacks use `ALERT_WEBHOOK_URL`; optional `requirements-announcements.txt` and migrations `20261027_0020`–`20261027_0024`; see [spoken announcements](#spoken-announcements) |
 
 See [app/config.py](app/config.py) for core parsing/defaults and
 [service initialization](app/services/__init__.py) plus individual services for
@@ -574,7 +574,7 @@ Setup (owner commissioning; automated tests never use real speakers or engines):
    (`scheme://host[:port]` only, e.g. `https://jannenkoti.com`) so the message
    links to the reminder page; without it the message names the page instead.
    Sending a real Discord message is a separate, deliberate owner check.
-5. Apply migrations `20261027_0020` through `20261027_0023` with
+5. Apply migrations `20261027_0020` through `20261027_0024` with
    the normal migration procedure.
 
 **One-time reminders.** The same page saves a reminder for a date and time in

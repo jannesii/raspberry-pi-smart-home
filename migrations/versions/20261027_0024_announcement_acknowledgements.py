@@ -13,15 +13,15 @@ zero retries, which the service reads as "first announcement".
 Fallbacks gain status 'cancelled': Done/Skip before a pending fallback starts
 sending cancels it (status_reason 'acknowledged'), never as a send failure.
 
-Revision ID: 20261027_0023
-Revises: 20261027_0022
+Revision ID: 20261027_0024
+Revises: 20261027_0023
 """
 
 import sqlalchemy as sa
 from alembic import op
 
-revision = "20261027_0023"
-down_revision = "20261027_0022"
+revision = "20261027_0024"
+down_revision = "20261027_0023"
 branch_labels = None
 depends_on = None
 
