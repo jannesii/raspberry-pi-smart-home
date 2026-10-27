@@ -192,11 +192,17 @@ def test_deleted_instance_cannot_reappear_after_cursor_rewind_and_restart(store,
     # Controller is the durable public seam: even a restored/backdated cursor
     # cannot recreate the deleted identity and reset its announcement budget.
     ctrl.update_announcement_schedule(sid, next_due_at="2027-01-15T12:30:00+00:00")
-    fresh = build_service(controller(engine, tmp_path), clock, doubles, tmp_path / "fresh")
-    fresh.tick()
-    assert fresh.list_occurrences() == []
-    assert fresh.schedule_detail(sid)["schedule"]["next_due_at"] is None
-    assert len(doubles[1].plays) == 1
+    restored_engine = restore(engine, tmp_path)
+    try:
+        fresh = build_service(
+            controller(restored_engine, tmp_path), clock, doubles, tmp_path / "fresh"
+        )
+        fresh.tick()
+        assert fresh.list_occurrences() == []
+        assert fresh.schedule_detail(sid)["schedule"]["next_due_at"] is None
+        assert len(doubles[1].plays) == 1
+    finally:
+        restored_engine.dispose()
 
 
 def test_unopened_fallback_remains_eligible_until_resolved_before_deletion(store, tmp_path):

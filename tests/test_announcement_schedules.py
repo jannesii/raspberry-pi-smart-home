@@ -793,5 +793,5 @@ def test_reminder_controls_are_on_the_announcement_page(announcement_app, client
         'id="announceHistoryList"',
     ):
         assert element in html
-    assert "js/announcements.js?v=20261027-8" in html
-    assert "css/announcements.css?v=20261027-8" in html
+    assert "js/announcements.js?v=20261027-9" in html
+    assert "css/announcements.css?v=20261027-9" in html

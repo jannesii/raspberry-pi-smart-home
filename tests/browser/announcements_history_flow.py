@@ -44,6 +44,7 @@ with sync_playwright() as pw:
             page.get_by_role("button", name="Add time").click()
             page.get_by_label("Time 2", exact=True).fill("14:03")
         else:
+            page.get_by_label("Once", exact=True).check()
             page.get_by_label("Date (Helsinki)").fill("2027-01-15")
             page.get_by_label("Time (Helsinki)").fill(time)
         if page.locator("#announceAdvanced").get_attribute("open") is None:
@@ -90,9 +91,10 @@ with sync_playwright() as pw:
         .filter(has_text="Stopped")
         .first
     )
-    current.get_by_role("button", name="Done: Integrated routine", exact=True).click()
-    expect(current).to_contain_text("Done by owner")
     occurrence_id = current.get_attribute("data-occurrence-id")
+    current.get_by_role("button", name="Done: Integrated routine", exact=True).click()
+    current = page.locator(f'[data-occurrence-id="{occurrence_id}"]')
+    expect(current).to_contain_text("Done by owner")
     # A deliberate two-step deletion must also be operable with a keyboard.
     current.get_by_role("button", name="Delete history", exact=True).focus()
     page.keyboard.press("Enter")
@@ -112,7 +114,7 @@ with sync_playwright() as pw:
     page.reload()
     expect(row("Day group")).to_contain_text("Jbl-Left")
     expect(row("Day group")).to_contain_text("Unknown")
-    expect(row("Day group")).to_contain_text("Not recorded")
+    expect(row("Day group")).to_contain_text("Not acknowledged")
     requests_after_unknown = control("discord")["requests"]
     page.reload()
     assert control("discord")["requests"] == requests_after_unknown
@@ -125,7 +127,7 @@ with sync_playwright() as pw:
     assert len(control("cast/plays")) == plays
     advance("2027-01-15T21:16:00+00:00")
     expect(row("Night group")).to_contain_text("Accepted by Discord")
-    expect(row("Night group")).to_contain_text("Not recorded")
+    expect(row("Night group")).to_contain_text("Not acknowledged")
     assert control("discord")["requests"] >= 1
 
     # Optional Spotify connection and a newer owner action during urgent audio.
@@ -168,7 +170,7 @@ with sync_playwright() as pw:
     control("cast/report", state="finished")
     page.reload()
     expect(row("Respect owner music")).to_contain_text("Left as changed by you")
-    expect(row("Respect owner music")).to_contain_text("Not recorded")
+    expect(row("Respect owner music")).to_contain_text("Not acknowledged")
     assert control("spotify/effects")["resumes"] == 0
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1")
     browser.close()
