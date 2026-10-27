@@ -356,3 +356,33 @@ Code: `app/blueprints/api/car_heater/weather.py` (`/sessions/<id>/weather`,
   content. Coverage reflects the archive at export time, also for `as_of`.
 - Reply and version ids are bounded integers. Discovery's `weather_fingerprints`
   must match between a source and its restore; integrity lists must be empty.
+
+## Spoken announcements
+
+- Code: `app/services/announcements/` (service, content, media, synthesis,
+  transport, access), `AnnouncementMixin`, `announcements_api.py`,
+  `announcement_media.py`. Tests: `tests/test_announcement*.py`,
+  `tests/announcement_support.py` (doubles only for Piper and Cast).
+- `AnnouncementService.tick()` is the processing interface. Handlers only
+  validate and record requests. Synthesis, probes and Cast calls run in `tick()`.
+  Content preparation, media preparation and delivery stay separate; only static
+  owner text exists.
+- One asset per announcement: generated chime, then 0.5 s silence, then speech at
+  the speech sample rate. Cache keys hash text, language, voice, engine and chime;
+  eviction never touches attempt rows, which keep only `media_key`.
+- Attempt `status`: `requested` → `dispatching` (intent committed before any Cast
+  effect) → `dispatched` → `playing` → `finished`/`failed`/`unknown`/`stopped`.
+  Updates are conditional on the expected status. On construction, the service
+  marks `dispatching`/`dispatched`/`playing` attempts `unknown`
+  (`interrupted_by_restart`) and never replays them or touches volume.
+- Dispatch only to an idle probe; a configured `device_id` must match. Attempts
+  whose `speaker_set` overlaps an active or earlier queued attempt wait. Each
+  attempt has `dispatch_deadline` that queueing never extends. Volume restore
+  requires the speaker to still be idle and at the applied level.
+- Media capability: `GET /announcement-media/<token>.wav` without login or
+  cookies. It stores a token hash in memory and serves one asset until 10 minutes
+  pass or the attempt ends. Unknown and expired tokens both return 404. Logs carry
+  neither tokens (security header debug path is redacted) nor reminder text.
+- Root-Admin + CSRF: `/api/announcements/status`, `previews` (POST, GET, audio),
+  `tests` (GET/POST with idempotent `request_id`), `tests/<id>` and
+  `tests/<id>/stop`. Page: `/settings/announcements`.
