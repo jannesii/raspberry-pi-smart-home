@@ -76,6 +76,10 @@ class AnnouncementConfig:
     music_idle_debounce_s: float = 10.0
     # How often a waiting occurrence re-probes its speaker.
     wait_probe_interval_s: float = 5.0
+    # Automatic retries after a failure that certainly did not play, per
+    # occurrence, each this long after the failure and only before expiry.
+    max_automatic_retries: int = 2
+    retry_delay_s: float = 60.0
 
     def target(self, key: str) -> SpeakerTarget | None:
         return next((t for t in self.targets if t.key == key), None)

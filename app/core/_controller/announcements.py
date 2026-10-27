@@ -30,6 +30,8 @@ _TEST_FIELDS = ("text", "language", "target_key", "volume_percent", "chime_perce
 def _attempt(row) -> AnnouncementAttempt:
     values = dict(row)
     values["speaker_set"] = json.loads(values["speaker_set"])
+    if values.get("certain_not_played") is not None:
+        values["certain_not_played"] = bool(values["certain_not_played"])
     return AnnouncementAttempt(**values)
 
 

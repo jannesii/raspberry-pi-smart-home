@@ -33,6 +33,8 @@ _LOCAL_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$")
 _QUIET_RE = re.compile(r"^(\d{2}):(\d{2})-(\d{2}):(\d{2})$")
 _CLOCK_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 MAX_RECURRING_TIMES = 12
+MAX_ANNOUNCEMENTS = 5
+MAX_REPEAT_INTERVAL_MINUTES = 120
 
 
 def iso(epoch: float) -> str:
@@ -90,6 +92,62 @@ def parse_expiry(value) -> int:
             "expiry_minutes", f"Expiry must be 1-{MAX_EXPIRY_MINUTES} minutes."
         )
     return int(value)
+
+
+def _whole(value) -> bool:
+    return not isinstance(value, bool) and isinstance(value, int | float) and value == int(value)
+
+
+def parse_repeats(count, interval) -> tuple[int, int | None]:
+    """Validate the bounded repeat policy: (max announcements, interval minutes).
+
+    One announcement is the default and needs no interval; more need one.
+    """
+    if count is None or count == "":
+        count = 1
+    if not _whole(count) or not 1 <= int(count) <= MAX_ANNOUNCEMENTS:
+        raise AnnouncementInputError(
+            "max_announcements",
+            f"Announcements per reminder must be a whole number 1-{MAX_ANNOUNCEMENTS}.",
+        )
+    count = int(count)
+    if interval is None or interval == "":
+        if count > 1:
+            raise AnnouncementInputError(
+                "repeat_interval_minutes", "Choose a repeat interval in minutes for the repeats."
+            )
+        return count, None
+    if count == 1:
+        raise AnnouncementInputError(
+            "repeat_interval_minutes",
+            "A repeat interval needs more than one announcement per reminder.",
+        )
+    if not _whole(interval) or not 1 <= int(interval) <= MAX_REPEAT_INTERVAL_MINUTES:
+        raise AnnouncementInputError(
+            "repeat_interval_minutes",
+            f"Repeat interval must be 1-{MAX_REPEAT_INTERVAL_MINUTES} whole minutes.",
+        )
+    return count, int(interval)
+
+
+def repeat_fit(count: int, interval: int | None, expiry_minutes: int) -> dict:
+    """Which configured announcements can start before expiry if the first is on time.
+
+    Announcement *k* is due ``k * interval`` minutes after the due time and must
+    start before expiry; later ones are never spoken. Delays (music, quiet hours,
+    a busy speaker) push repeats later, so this is the best case.
+    """
+    offsets = [0]
+    for k in range(1, count):
+        if interval is None or k * interval >= expiry_minutes:
+            break
+        offsets.append(k * interval)
+    return {
+        "max_announcements": count,
+        "repeat_interval_minutes": interval,
+        "fit": len(offsets),
+        "offsets_minutes": offsets,
+    }
 
 
 def parse_flag(value, field: str) -> bool:

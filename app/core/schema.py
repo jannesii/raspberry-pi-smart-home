@@ -762,6 +762,14 @@ announcement_attempt = Table(
     # whether that music could be restored ('unavailable' until #38 adds it).
     Column("interrupted_media", Text),
     Column("media_restore", Text),
+    # Occurrence attempts only: 'announcement' (the first), 'repeat' (a further
+    # announcement the owner configured; both count in announcements_started)
+    # or 'retry' (automatic, after a failure that certainly did not play; not
+    # counted as an announcement). NULL for speaker tests.
+    Column("purpose", Text),
+    # True when the transport established the audio was certainly not played,
+    # the only failure an automatic retry may follow.
+    Column("certain_not_played", Boolean),
     CheckConstraint(
         "status IN ('requested', 'dispatching', 'dispatched', 'playing', "
         "'finished', 'failed', 'unknown', 'stopped')",
@@ -876,6 +884,11 @@ announcement_occurrence = Table(
     Column("fallback_reason", Text),
     Column("fallback_eligible_at", Text),
     Column("updated_at", Text, nullable=False),
+    # Automatic retries after certain non-playback; separate from the owner's
+    # configured announcements and bounded within the original expiry.
+    Column("retries_started", Integer, nullable=False, server_default=text("0")),
+    # What the next dispatch is: 'announcement' (first), 'repeat' or 'retry'.
+    Column("next_attempt_purpose", Text),
     UniqueConstraint("schedule_id", "instance_due_at", name="uq_announcement_occurrence_instance"),
     CheckConstraint(
         "status IN ('waiting', 'announcing', 'closed')",
@@ -905,4 +918,30 @@ Index(
     "idx_announcement_occurrence_fallback",
     announcement_occurrence.c.fallback_reason,
     announcement_occurrence.c.fallback_eligible_at,
+)
+
+# The owner's reminder acknowledgement of one occurrence: Done ('done') or
+# Skip this occurrence ('skipped'); at most one per occurrence. It records that
+# the owner handled the reminder, never a medicine dose, a blood-pressure value
+# or delivery evidence. The occurrence state it replaced is kept for history.
+announcement_acknowledgement = Table(
+    "announcement_acknowledgement",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column(
+        "occurrence_id",
+        Text,
+        ForeignKey("announcement_occurrence.id"),
+        nullable=False,
+        unique=True,
+    ),
+    Column("action", Text, nullable=False),
+    Column("acknowledged_at", Text, nullable=False),
+    Column("acknowledged_by", Text),
+    Column("prior_status", Text, nullable=False),
+    Column("prior_delivery", Text, nullable=False),
+    Column("prior_disposition", Text),
+    Column("prior_disposition_reason", Text),
+    Column("announcements_started", Integer, nullable=False),
+    CheckConstraint("action IN ('done', 'skipped')", name="ck_announcement_acknowledgement_action"),
 )

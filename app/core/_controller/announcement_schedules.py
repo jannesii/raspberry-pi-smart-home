@@ -35,6 +35,8 @@ _SCHEDULE_FIELDS = (
     "urgent",
     "quiet_hours_override",
     "expiry_minutes",
+    "max_announcements",
+    "repeat_interval_minutes",
     "due_local",
     "due_fold",
     "recurrence",

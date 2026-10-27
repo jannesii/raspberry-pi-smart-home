@@ -15,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.core import Controller
 from app.core.schema import (
+    announcement_acknowledgement,
     announcement_attempt,
     announcement_occurrence,
     announcement_schedule,
@@ -24,12 +25,14 @@ from app.core.schema import (
 MIGRATIONS = (
     "migrations.versions.20261027_0020_announcement_speaker_tests",
     "migrations.versions.20261027_0021_announcement_schedules",
+    "migrations.versions.20261027_0023_announcement_acknowledgements",
 )
 TABLES = (
     announcement_speaker_test,
     announcement_attempt,
     announcement_schedule,
     announcement_occurrence,
+    announcement_acknowledgement,
 )
 
 

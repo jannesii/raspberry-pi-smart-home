@@ -163,6 +163,8 @@ _SCHEDULE_INPUT = (
     "fold",
     "recurrence",
     "expiry_minutes",
+    "max_announcements",
+    "repeat_interval_minutes",
     "urgent",
     "quiet_hours_override",
 )
