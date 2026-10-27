@@ -94,6 +94,26 @@ with sync_playwright() as pw:
     expect(occurrence).to_contain_text("Not recorded")
     expect(page.locator(".announce-reminder").first).to_contain_text("Due time passed")
 
+    # Failed speech: one Discord fallback, shown separately from acknowledgement.
+    expect(page.locator("#announceStatusFallback")).to_contain_text("Available (Discord")
+    expect(page.locator("#announceStatusLink")).to_have_text("https://home.test")
+    page.get_by_label("Reminder text").fill("Ei ääntä")
+    page.get_by_label("Date (Helsinki)").fill("2027-01-15")
+    page.get_by_label("Time (Helsinki)").fill("15:00")
+    page.get_by_role("button", name="Save reminder").click()
+    expect(page.locator("#announceMessage")).to_contain_text("Reminder saved")
+    context.request.get(origin + "/test/synthesis?failure=synthesis_failed")
+    context.request.get(origin + "/test/clock?at=2027-01-15T13:00:00%2B00:00")
+    page.reload()
+    failed = page.locator(".announce-occurrence", has_text="Ei ääntä")
+    expect(failed).to_contain_text("Accepted by Discord")
+    expect(failed).to_contain_text("Reason: spoken delivery failed")
+    expect(failed).to_contain_text("Not recorded")
+    assert context.request.get(origin + "/test/discord").json() == {"requests": 1}
+    occurrence_id = failed.get_attribute("data-occurrence-id")
+    page.goto(f"{origin}/settings/announcements?occurrence={occurrence_id}")
+    expect(page.locator(".announce-occurrence.is-linked")).to_contain_text("Ei ääntä")
+
     overflow = page.evaluate("document.documentElement.scrollWidth - window.innerWidth")
     assert overflow <= 0, f"horizontal scroll at {width}px: {overflow}"
     browser.close()

@@ -485,3 +485,39 @@ class AnnouncementOccurrence:
     fallback_reason: str | None
     fallback_eligible_at: str | None
     updated_at: str
+
+
+@dataclass
+class AnnouncementFallbackAttempt:
+    """One webhook request; 'accepted' is Discord's answer, not readership."""
+
+    id: str
+    fallback_id: str
+    number: int
+    status: str
+    http_status: int | None
+    retry_after_s: float | None
+    detail: str | None
+    intent_at: str
+    finished_at: str | None
+
+
+@dataclass
+class AnnouncementFallback:
+    """The one logical fallback notification of a reminder occurrence."""
+
+    id: str
+    occurrence_id: str
+    channel: str
+    reason: str
+    message: str
+    link: str | None
+    status: str
+    status_reason: str | None
+    attempts_made: int
+    max_attempts: int
+    next_attempt_at: str | None
+    created_at: str
+    updated_at: str
+    accepted_at: str | None
+    completed_at: str | None

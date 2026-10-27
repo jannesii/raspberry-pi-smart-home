@@ -27,6 +27,7 @@ announcement_app = support.announcement_app
 client = support.client
 clock = support.clock
 doubles = support.doubles
+discord = support.discord
 
 
 def preview(app, client, **body):

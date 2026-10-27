@@ -1,5 +1,6 @@
 from ._controller import (
     ACMixin,
+    AnnouncementFallbackMixin,
     AnnouncementMixin,
     AnnouncementScheduleMixin,
     AuthMixin,
@@ -25,6 +26,7 @@ from ._controller import (
 class Controller(
     ControllerBase,
     ACMixin,
+    AnnouncementFallbackMixin,
     AnnouncementMixin,
     AnnouncementScheduleMixin,
     AuthMixin,

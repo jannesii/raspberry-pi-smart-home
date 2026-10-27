@@ -462,6 +462,11 @@
   color: #ffc4c4;
 }
 
+.announce-occurrence.is-linked {
+  outline: 2px solid #2b7aa8;
+  outline-offset: 3px;
+}
+
 .announce-test-facts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));

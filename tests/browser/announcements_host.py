@@ -14,7 +14,14 @@ for key in ("DATABASE_URL", "USE_SQLA_READS"):
 import json
 
 import pytest
-from announcement_support import START, FakeCast, FakeSynthesizer, announcement_app, login
+from announcement_support import (
+    START,
+    FakeCast,
+    FakeDiscord,
+    FakeSynthesizer,
+    announcement_app,
+    login,
+)
 from flask import jsonify, request
 from werkzeug.serving import make_server
 
@@ -25,7 +32,8 @@ if __name__ == "__main__":
     patch = pytest.MonkeyPatch()
     synth, cast = FakeSynthesizer(), FakeCast()
     clock = [START]
-    fixture = announcement_app.__wrapped__(work, patch, clock, (synth, cast))
+    discord = FakeDiscord()
+    fixture = announcement_app.__wrapped__(work, patch, clock, (synth, cast), discord)
     flask_app = next(fixture)
     service = flask_app.announcement_service
 
@@ -39,6 +47,15 @@ if __name__ == "__main__":
         host = {"jbl-right": "192.168.1.119", "jbl-left": "192.168.1.148"}[latest["target"]]
         cast.report(host, latest["attempt_id"], request.args["state"])
         return jsonify({"ok": True})
+
+    @flask_app.route("/test/synthesis")
+    def test_synthesis():
+        synth.failure = request.args.get("failure") or None
+        return jsonify({"ok": True})
+
+    @flask_app.route("/test/discord")
+    def test_discord():
+        return jsonify({"requests": len(discord.requests)})
 
     @flask_app.route("/test/clock")
     def test_clock():
