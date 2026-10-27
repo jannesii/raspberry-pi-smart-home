@@ -150,7 +150,7 @@ class OccurrenceMixin:
             return self.schedule_detail(schedule_id)
         values = {**fields, "revision": schedule.revision + 1, "updated_at": iso(now)}
         if schedule.status == "active":
-            nxt = next_instance(SimpleNamespace(kind=schedule.kind, **fields), now)
+            nxt = next_instance(SimpleNamespace(**fields), now)
             values["next_due_at"] = iso(nxt) if nxt is not None else None
         if not self.ctrl.update_announcement_schedule(
             schedule_id,
@@ -355,7 +355,7 @@ class OccurrenceMixin:
             "status": "closed",
             "waiting_reason": None,
             "disposition": "missed",
-            "disposition_reason": occurrence.waiting_reason or "expired_before_processing",
+            "disposition_reason": occurrence.waiting_reason or "expired_before_dispatch",
             "closed_at": iso(now),
             "updated_at": iso(now),
         }

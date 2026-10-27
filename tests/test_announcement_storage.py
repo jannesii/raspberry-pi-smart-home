@@ -244,3 +244,51 @@ def test_restart_never_replays_an_uncertain_test_in_either_store(store, tmp_path
     assert attempt["reason"] == "interrupted_by_restart"
     assert len(cast.plays) == 1
     ctrl.db.conn.close()
+
+
+def test_competing_services_create_one_occurrence_and_recover_it_in_either_store(
+    store, tmp_path, monkeypatch
+):
+    from datetime import datetime
+
+    from app.core.database import DatabaseManager
+
+    engine, _migrations = store
+    monkeypatch.setattr(DatabaseManager, "_instance", None)
+    ctrl = Controller(db_path=str(tmp_path / "legacy.db"))
+    ctrl._sa_engine = engine
+    clock = [START]
+    synth, cast = FakeSynthesizer(), FakeCast()
+    first = build_service(ctrl, clock, (synth, cast), tmp_path / "cache")
+    second = build_service(ctrl, clock, (synth, cast), tmp_path / "cache")
+    outcome, saved = first.create_schedule(
+        {"text": "Muista lääkkeet", "target": "jbl-right", "due_local": "2027-01-15T14:30"},
+        request_id="schedule-request-1",
+    )
+    assert outcome == "created"
+    clock[0] = datetime.fromisoformat("2027-01-15T12:30:00+00:00").timestamp()
+    # Both read the due schedule before either materializes it.
+    due = ctrl.list_due_announcement_schedules("2027-01-15T12:30:00+00:00")
+    assert len(due) == 1
+    first._materialize_due()
+    second._materialize_due()
+    cast.play_crash = True
+    with contextlib.suppress(SimulatedCrash):
+        first.tick()
+    cast.play_crash = False
+    second.tick()  # sees the occurrence announcing; must not dispatch it again
+    assert len(cast.plays) == 1
+
+    clock[0] += 10
+    reloaded = Controller(db_path=str(tmp_path / "legacy.db"))
+    reloaded._sa_engine = engine
+    restarted = build_service(reloaded, clock, (synth, cast), tmp_path / "cache")
+    restarted.tick()
+    detail = restarted.schedule_detail(saved["schedule"]["id"])
+    assert len(detail["occurrences"]) == 1
+    occurrence = detail["occurrences"][0]["occurrence"]
+    assert occurrence["delivery"] == "unknown"
+    assert occurrence["fallback_reason"] == "unknown"
+    assert [a["status"] for a in detail["occurrences"][0]["attempts"]] == ["unknown"]
+    assert len(cast.plays) == 1
+    ctrl.db.conn.close()

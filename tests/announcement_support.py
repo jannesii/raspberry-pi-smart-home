@@ -13,6 +13,7 @@ import struct
 import wave
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import pytest
 from flask import Blueprint, Flask
@@ -36,6 +37,9 @@ from app.services.announcements import (
     default_targets,
 )
 from app.services.announcements.synthesis import SynthesisError
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 START = datetime(2027, 1, 15, 12, tzinfo=UTC).timestamp()
 MEDIA_ORIGIN = "http://speaker-media.test:8099"
@@ -93,6 +97,9 @@ class FakeSynthesizer:
         self.calls: list[tuple[str, str]] = []
         self.failure: str | None = None
         self.voices = {"fi": "fi_FI-test-medium", "en": "en_GB-test-medium"}
+        # Runs inside synthesis, i.e. while the service prepares a dispatch:
+        # lets tests interleave owner actions, clock jumps or a crash there.
+        self.during: Callable[[], None] | None = None
 
     def status(self) -> dict:
         return {"available": True, "engine": self.engine, "reason": None, "voices": self.voices}
@@ -102,6 +109,9 @@ class FakeSynthesizer:
 
     def synthesize(self, text: str, language: str) -> bytes:
         self.calls.append((text, language))
+        if self.during:
+            hook, self.during = self.during, None
+            hook()
         if self.failure:
             raise SynthesisError(self.failure)
         seconds = 1.0 if language == "fi" else 0.6
