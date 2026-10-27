@@ -499,3 +499,101 @@ def test_group_configuration_requires_known_member_speakers():
     ):
         with pytest.raises(ValueError):
             parse_targets(json.dumps([*speakers, broken]))
+
+
+class _Info:
+    def __init__(self, uuid, name, cast_type, host, port):
+        self.uuid, self.friendly_name, self.cast_type = uuid, name, cast_type
+        self.host, self.port, self.model_name = host, port, "model"
+
+
+class _Cast:
+    def __init__(self, info):
+        self.cast_info = info
+        self.uuid = info.uuid
+        self.handlers = []
+        self.is_idle = True
+        self.status = type("S", (), {"app_id": None, "volume_level": 0.25})()
+        self.media_controller = type("M", (), {"status": None})()
+
+    def wait(self, timeout=None):
+        pass
+
+    def disconnect(self, timeout=None):
+        pass
+
+    def register_handler(self, handler):
+        self.handlers.append(handler)
+
+
+def _fake_pychromecast(monkeypatch, casts):
+    """Stands in for the PyChromecast library (not installed; no network)."""
+    import sys
+    import types
+    from uuid import UUID
+
+    lookups = []
+
+    def get_listed_chromecasts(known_hosts=None, uuids=None, discovery_timeout=None, **_):
+        lookups.append({"known_hosts": known_hosts, "uuids": uuids})
+        wanted = set(uuids or ())
+        return [c for c in casts if not wanted or c.uuid in wanted], object()
+
+    class MultizoneController:
+        def __init__(self, uuid):
+            self.uuid = uuid
+            self.members = []
+
+        def update_members(self):
+            self.members = [UUID(int=1), UUID(int=2)]
+
+    root = types.ModuleType("pychromecast")
+    root.get_listed_chromecasts = get_listed_chromecasts
+    root.get_chromecasts = lambda known_hosts=None, **_: (list(casts), object())
+    root.discovery = types.SimpleNamespace(stop_discovery=lambda browser: None)
+    multizone = types.ModuleType("pychromecast.controllers.multizone")
+    multizone.MultizoneController = MultizoneController
+    monkeypatch.setitem(sys.modules, "pychromecast", root)
+    monkeypatch.setitem(sys.modules, "pychromecast.controllers", types.ModuleType("c"))
+    monkeypatch.setitem(sys.modules, "pychromecast.controllers.multizone", multizone)
+    return lookups
+
+
+def test_cast_adapter_addresses_the_group_by_uuid_never_its_leader_speaker(monkeypatch):
+    from uuid import UUID
+
+    from app.services.announcements import PyChromecastTransport, SpeakerTarget
+
+    leader = _Cast(_Info(UUID(int=1), "Jbl-Right", "audio", "192.168.1.119", 8009))
+    group = _Cast(_Info(UUID(int=9), "Koti kaiuttimet", "group", "192.168.1.119", 32187))
+    lookups = _fake_pychromecast(monkeypatch, [leader, group])
+    transport = PyChromecastTransport(membership_timeout_s=0)
+    target = SpeakerTarget(
+        key="jbl-group",
+        name="Both JBLs",
+        host="192.168.1.119",
+        port=32187,
+        device_id=str(UUID(int=9)),
+        kind="group",
+        members=("jbl-right", "jbl-left"),
+    )
+    probe = transport.probe(target)
+    assert probe.state == "idle"
+    assert probe.device_id == str(UUID(int=9))
+    assert probe.member_ids == (str(UUID(int=1)), str(UUID(int=2)))
+    assert lookups[-1]["uuids"] == [UUID(int=9)]
+    # Without the group's UUID the adapter refuses rather than reach the leader.
+    unidentified = SpeakerTarget(
+        key="g", name="g", host="192.168.1.119", port=32187, kind="group", members=("a", "b")
+    )
+    assert transport.probe(unidentified).state == "unavailable"
+    # A speaker located only by host never resolves to the group at that host.
+    right = SpeakerTarget(key="jbl-right", name="Jbl-Right", host="192.168.1.119")
+    assert transport.probe(right).device_id == str(UUID(int=1))
+    assert transport.probe(right).member_ids is None
+
+    found = transport.discover(["192.168.1.119"])
+    assert {(d["name"], d["cast_type"], d["port"]) for d in found} == {
+        ("Jbl-Right", "audio", 8009),
+        ("Koti kaiuttimet", "group", 32187),
+    }
