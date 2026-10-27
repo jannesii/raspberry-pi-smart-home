@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import secrets
+import threading
 import time
 from urllib.parse import urlencode, urlsplit
 
@@ -87,14 +88,24 @@ class SpotifyHTTP:
 
 
 class SpotifyRestoration:
-    def __init__(self, ctrl, *, http=None, key=None, clock=time.time):
+    def __init__(self, ctrl, *, http=None, key=None, clock=time.time, token_source=None):
         self.ctrl, self.http, self.clock = ctrl, http, clock
         try:
             self.cipher = Fernet(key.encode() if isinstance(key, str) else key) if key else None
         except (ValueError, TypeError):
             self.cipher = None
         self.reason = None
+        self._settings_reason = None
         self.leases = {}
+        self._state_lock = threading.RLock()
+        self._refresh_lock = threading.Lock()
+        self._token_source = token_source
+        self._generation = 0
+        self._operation = None
+        self._device_results = []
+        self._devices_checked = False
+        self._pending = []
+        self._worker = None
 
     @property
     def configured(self):
@@ -115,7 +126,7 @@ class SpotifyRestoration:
         connected = bool(row)
         credentials_status = "missing"
         premium_status = "required_not_reported"
-        reason = self.reason
+        reason = self._settings_reason or self.reason
         if row and self.cipher:
             try:
                 tokens = json.loads(self.cipher.decrypt(row["credentials"].encode()))
@@ -128,6 +139,9 @@ class SpotifyRestoration:
             except (InvalidToken, ValueError, TypeError, KeyError):
                 reason, credentials_status = "reconnect_required", "unreadable"
         return {
+            "operation": self._operation,
+            "available_devices": list(self._device_results),
+            "devices_checked": self._devices_checked,
             "available": self.configured and connected and reason is None,
             "credentials_status": credentials_status,
             "premium_status": premium_status,
@@ -142,6 +156,111 @@ class SpotifyRestoration:
             ),
             "prerequisites": "Spotify Premium and approved playback-control access are required.",
         }
+
+    def _queue(self, kind, *args):
+        # Only the latest settings intent is relevant. Provider waits happen in
+        # this feature-local daemon, independent of requests and speech ticks.
+        with self._state_lock:
+            if kind != "available_devices":
+                self._generation += 1
+                self._pending.clear()
+            elif any(job[1] == kind for job in self._pending):
+                return self.status()
+            self._pending.append((self._generation, kind, args))
+            self._operation = {
+                "connect": "connecting",
+                "configure": "saving",
+                "available_devices": "loading_devices",
+            }[kind]
+            if self._worker is None or not self._worker.is_alive():
+                self._worker = threading.Thread(
+                    target=self._settings_worker, name="AnnouncementSpotify", daemon=True
+                )
+                self._worker.start()
+            return self.status()
+
+    def request_connect(self, code):
+        with self._state_lock:
+            # A reconnect is newer owner intent: stop optional control of the
+            # previous account immediately while the exchange is pending.
+            self.configure(False, None, ())
+            self.leases.clear()
+            return self._queue("connect", code)
+
+    def request_devices(self):
+        return self._queue("available_devices")
+
+    def request_configure(self, enabled, devices, targets):
+        self._validate_configuration(enabled, devices, targets)
+        if not enabled:
+            with self._state_lock:
+                self._generation += 1
+                self._pending = []
+                self._operation = None
+                self._settings_reason = None
+                return self.configure(enabled, devices, targets)
+        if not self.configured or not self.ctrl.get_announcement_spotify():
+            raise AnnouncementStateError(
+                "unavailable", "not_configured" if not self.configured else "disconnected"
+            )
+        return self._queue("configure", enabled, devices, targets)
+
+    def _settings_worker(self):
+        while True:
+            with self._state_lock:
+                if not self._pending:
+                    self._worker = None
+                    return
+                generation, kind, args = self._pending.pop(0)
+                staged = _SpotifySettings(self.ctrl.get_announcement_spotify())
+            isolated = SpotifyRestoration(
+                staged, http=self.http, clock=self.clock, token_source=self
+            )
+            isolated.cipher = self.cipher
+            error = None
+            result = None
+            try:
+                result = getattr(isolated, kind)(*args)
+            except (SpotifyError, AnnouncementStateError) as exc:
+                error = str(exc)
+            except Exception:
+                # Provider implementations must never leak their response or
+                # credentials through logs or status on unexpected failures.
+                error = "spotify_unavailable"
+            with self._state_lock:
+                if generation != self._generation:
+                    continue
+                if error is None:
+                    if staged.changed:
+                        values = dict(staged.row)
+                        if kind != "connect":
+                            current = self.ctrl.get_announcement_spotify()
+                            if current is None:
+                                self.reason = "disconnected"
+                                self._operation = None
+                                continue
+                            # Playback may refresh the same account while a
+                            # device/settings HTTP read waits. Publish settings
+                            # without rolling back its newer rotated credentials.
+                            if current["credentials"] != staged.source_credentials:
+                                values["credentials"] = current["credentials"]
+                        self.ctrl.save_announcement_spotify(**values)
+                    if kind == "available_devices":
+                        self._device_results = result
+                        self._devices_checked = True
+                    if kind == "connect":
+                        self.leases.clear()
+                        logger.info(
+                            "Optional Spotify account connected; restoration disabled until enabled"
+                        )
+                elif self.reason != error:
+                    logger.warning(
+                        "Optional Spotify settings unavailable operation=%s reason=%s", kind, error
+                    )
+                self._settings_reason = error
+                self.reason = error
+                if not self._pending:
+                    self._operation = None
 
     def authorization(self):
         if not self.configured:
@@ -169,6 +288,8 @@ class SpotifyRestoration:
         )
 
     def _tokens(self):
+        if self._token_source is not None:
+            return self._token_source._tokens()
         if not self.configured:
             raise SpotifyError("not_configured")
         row = self.ctrl.get_announcement_spotify()
@@ -178,7 +299,19 @@ class SpotifyRestoration:
             tokens = json.loads(self.cipher.decrypt(row["credentials"].encode()))
         except (InvalidToken, ValueError, TypeError):
             raise SpotifyError("reconnect_required") from None
-        if tokens["expires_at"] <= self.clock() + 30:
+        if tokens["expires_at"] > self.clock() + 30:
+            return tokens
+        # One account owns refresh, including settings-worker reads. Do not
+        # block speech on optional provider refresh; unknown is safer than
+        # issuing concurrent rotating refresh tokens or accepting idle.
+        if not self._refresh_lock.acquire(blocking=False):
+            raise SpotifyError("refresh_pending")
+        try:
+            current = self.ctrl.get_announcement_spotify()
+            if current is None:
+                raise SpotifyError("disconnected")
+            if current["credentials"] != row["credentials"]:
+                return self._tokens()
             refreshed = self.http.token(
                 grant_type="refresh_token", refresh_token=tokens["refresh_token"]
             )
@@ -187,16 +320,32 @@ class SpotifyRestoration:
                 refresh_token=refreshed.get("refresh_token", tokens["refresh_token"]),
                 expires_at=self.clock() + refreshed["expires_in"],
             )
-            self._save(tokens)
-        return tokens
+            with self._state_lock:
+                # A late refresh cannot resurrect a disconnected/replaced account.
+                current = self.ctrl.get_announcement_spotify()
+                if current is None or current["credentials"] != row["credentials"]:
+                    raise SpotifyError("newer_intent")
+                self._save(tokens)
+            return tokens
+        finally:
+            self._refresh_lock.release()
 
     def _call(self, method, path, **kwargs):
+        generation = self._generation
         try:
             token = self._tokens()["access_token"]
+            with self._state_lock:
+                if generation != self._generation:
+                    raise SpotifyError("newer_intent")
             result = self.http.call(method, path, token, **kwargs)
-            self.reason = None
+            with self._state_lock:
+                if generation != self._generation:
+                    raise SpotifyError("newer_intent")
+                self.reason = None
             return result
         except SpotifyError as exc:
+            if generation != self._generation:
+                raise
             if self.reason != str(exc):
                 logger.warning("Optional Spotify access unavailable reason=%s", str(exc))
             self.reason = str(exc)
@@ -218,10 +367,9 @@ class SpotifyRestoration:
         self._save(tokens, enabled=False, devices={})
         self.reason = None
         self.leases.clear()
-        logger.info("Optional Spotify account connected; restoration disabled until enabled")
         return self.status()
 
-    def configure(self, enabled, devices, targets):
+    def _validate_configuration(self, enabled, devices, targets):
         if not isinstance(enabled, bool):
             raise AnnouncementInputError("enabled", "Choose whether to restore interrupted music.")
         if devices is not None and (
@@ -238,6 +386,9 @@ class SpotifyRestoration:
             raise AnnouncementInputError(
                 "devices", "Map configured speaker targets to Spotify device ids."
             )
+
+    def configure(self, enabled, devices, targets):
+        self._validate_configuration(enabled, devices, targets)
         if not enabled:
             # Turning off optional control must work even with revoked tokens
             # or a lost encryption key. Preserve ciphertext; make no HTTP call.
@@ -270,8 +421,15 @@ class SpotifyRestoration:
         ]
 
     def disconnect(self):
-        self.ctrl.delete_announcement_spotify()
-        self.reason = None
+        with self._state_lock:
+            self._generation += 1
+            self._pending = []
+            self._operation = None
+            self._device_results = []
+            self._devices_checked = False
+            self.ctrl.delete_announcement_spotify()
+            self.reason = None
+            self._settings_reason = None
         logger.info("Optional Spotify account disconnected")
         return self.status()
 
@@ -391,3 +549,19 @@ class SpotifyRestoration:
             return (
                 "unknown" if str(exc) in ("request_uncertain", "spotify_unavailable") else "failed"
             )
+
+
+class _SpotifySettings:
+    """Private staging for one provider operation; publish only current intent."""
+
+    def __init__(self, row):
+        self.row = dict(row) if row else None
+        self.source_credentials = row["credentials"] if row else None
+        self.changed = False
+
+    def get_announcement_spotify(self):
+        return self.row
+
+    def save_announcement_spotify(self, **values):
+        self.row = values
+        self.changed = True

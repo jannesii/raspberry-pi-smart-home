@@ -128,3 +128,25 @@ def test_existing_boolean_sender_without_configuration_sends_nothing(monkeypatch
     monkeypatch.delenv("ALERT_WEBHOOK_URL", raising=False)
     assert send_alert_webhook(message="hello") is False
     assert post.calls == []
+
+
+def test_rejected_response_cannot_echo_credentials_or_private_content_into_logs(caplog):
+    caplog.set_level(logging.DEBUG, logger=alert_webhook.__name__)
+    result = deliver_webhook(
+        payload={"content": "PRIVATE_CANARY"},
+        webhook_url=HOOK,
+        post=FakePost(FakeResponse(400, "TOKEN_CANARY PRIVATE_CANARY")),
+    )
+    assert result.status == "rejected"
+    assert "TOKEN_CANARY" not in caplog.text
+    assert "PRIVATE_CANARY" not in caplog.text
+
+
+@pytest.mark.parametrize("code", [101, 302])
+def test_only_2xx_is_accepted_by_delivery_boundary_but_legacy_boolean_is_preserved(
+    monkeypatch, code
+):
+    result = deliver_webhook(payload={}, webhook_url=HOOK, post=FakePost(FakeResponse(code)))
+    assert result.status == "unknown"
+    monkeypatch.setattr(alert_webhook.requests, "post", FakePost(FakeResponse(code)))
+    assert send_alert_webhook(message="legacy", webhook_url=HOOK) is True

@@ -96,13 +96,16 @@ def deliver_webhook(
         logger.warning("alert webhook outcome unknown: %s", kind)
         return WebhookResult("unknown", detail=kind)
     code = resp.status_code
-    if code < 400:
+    if 200 <= code < 300:
         return WebhookResult("accepted", http_status=code)
+    if code < 400:
+        logger.warning("alert webhook outcome unknown: unexpected HTTP status=%s", code)
+        return WebhookResult("unknown", http_status=code)
     if code == 429:
         retry = _retry_after(resp)
         logger.warning("alert webhook rate limited retry_after=%s", retry)
         return WebhookResult("rate_limited", http_status=code, retry_after_s=retry)
-    logger.warning("alert webhook error: %s %s", code, (resp.text or "")[:200])
+    logger.warning("alert webhook rejected: status=%s", code)
     return WebhookResult("rejected", http_status=code)
 
 
@@ -121,7 +124,10 @@ def send_alert_webhook(
         payload["username"] = username
     if extra:
         payload.update(extra)
-    return deliver_webhook(payload=payload, webhook_url=webhook_url).accepted
+    result = deliver_webhook(payload=payload, webhook_url=webhook_url)
+    # Preserve the pre-existing boolean contract for legacy alerts. Rich
+    # delivery users require 2xx evidence of acceptance.
+    return result.http_status is not None and result.http_status < 400
 
 
 def record_alert(

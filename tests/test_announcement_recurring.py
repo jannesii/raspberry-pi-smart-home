@@ -436,5 +436,29 @@ def test_recurring_controls_are_on_the_announcement_page(announcement_app, clien
     ):
         assert element in html
     assert "Europe/Helsinki local time" in html
-    assert "js/announcements.js?v=20261027-9" in html
-    assert "css/announcements.css?v=20261027-9" in html
+    assert "js/announcements.js?v=20261027-10" in html
+    assert "css/announcements.css?v=20261027-10" in html
+
+
+def test_spring_gap_fallback_explains_clock_change_without_suggesting_server_outage(
+    announcement_app, client, clock, doubles, discord
+):
+    at(clock, "2027-03-27T12:00:00+00:00")
+    saved = save(
+        announcement_app,
+        client,
+        recurrence={"weekdays": EVERY_DAY, "times": ["03:30"]},
+        quiet_hours_override=True,
+    )
+    at(clock, "2027-03-28T01:30:00+00:00")
+    service = announcement_app.announcement_service
+    service.tick()
+    service.tick()
+    (item,) = history(client, saved["schedule"]["id"])
+    assert item["fallback"]["status"] == "accepted"
+    assert len(discord.requests) == 1
+    message = discord.requests[0]["json"]["content"]
+    assert "Helsinki clocks moved forward" in message
+    assert "server was down" not in message
+    assert "due 28.3.2027 04:30" not in message
+    assert doubles[1].plays == []

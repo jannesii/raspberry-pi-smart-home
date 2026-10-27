@@ -171,6 +171,8 @@ with sync_playwright() as pw:
     page.reload()
     expect(row("Respect owner music")).to_contain_text("Left as changed by you")
     expect(row("Respect owner music")).to_contain_text("Not acknowledged")
+    expect(row("Respect owner music")).to_contain_text("Interrupted by this announcement")
+    expect(row("Respect owner music")).not_to_contain_text("restoration unavailable")
     assert control("spotify/effects")["resumes"] == 0
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1")
     browser.close()
