@@ -1,4 +1,4 @@
-"""Serve the announcement page with simulated synthesis/Cast; never a real speaker."""
+"""Serve the announcement page with simulated synthesis/Cast/clock; never a real speaker."""
 
 import os
 import sys
@@ -24,7 +24,8 @@ if __name__ == "__main__":
     work = Path(sys.argv[1])
     patch = pytest.MonkeyPatch()
     synth, cast = FakeSynthesizer(), FakeCast()
-    fixture = announcement_app.__wrapped__(work, patch, [START], (synth, cast))
+    clock = [START]
+    fixture = announcement_app.__wrapped__(work, patch, clock, (synth, cast))
     flask_app = next(fixture)
     service = flask_app.announcement_service
 
@@ -37,6 +38,13 @@ if __name__ == "__main__":
         latest = cast.plays[-1]
         host = {"jbl-right": "192.168.1.119", "jbl-left": "192.168.1.148"}[latest["target"]]
         cast.report(host, latest["attempt_id"], request.args["state"])
+        return jsonify({"ok": True})
+
+    @flask_app.route("/test/clock")
+    def test_clock():
+        from datetime import datetime
+
+        clock[0] = datetime.fromisoformat(request.args["at"]).timestamp()
         return jsonify({"ok": True})
 
     @flask_app.before_request

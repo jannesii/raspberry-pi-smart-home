@@ -166,7 +166,7 @@ Configure only the integrations you use:
 | Weather archive | `WEATHER_ARCHIVE_ENABLED` (default `true`): archive FMI station observations every ten minutes and the parking-point forecast every thirty minutes. `WEATHER_FORECAST_POINT` (default `62.8000,22.8260`): forecast point as `lat,lon`; an invalid value leaves forecast collection off. Needs outbound HTTPS to `opendata.fmi.fi` and migrations `20261016_0016`/`20261016_0017`/`20261017_0018`; see [weather observation archive](#weather-observation-archive) and [parking-point forecast archive](#parking-point-forecast-archive) |
 | Sodexo | `SODEXO_WEBHOOK_URL`, `SODEXO_POST_HOUR`, `SODEXO_POST_MINUTE` |
 | Alerts | `ALERT_WEBHOOK_URL`, `ALERT_WEBHOOK_BATCH_SECONDS` |
-| Spoken announcements | `ANNOUNCEMENTS_ENABLED` (default `true`), `ANNOUNCEMENT_MEDIA_ORIGIN` (speaker-reachable `http(s)://host[:port]`), `ANNOUNCEMENT_TARGETS` (JSON; defaults Jbl-Right `192.168.1.119`, Jbl-Left `192.168.1.148`), `ANNOUNCEMENT_CACHE_DIR`, `PIPER_COMMAND`, `PIPER_VOICE_DIR`, `PIPER_VOICE_FI`/`PIPER_VOICE_EN`; optional `requirements-announcements.txt` and migration `20261027_0020`; see [spoken announcements](#spoken-announcements) |
+| Spoken announcements | `ANNOUNCEMENTS_ENABLED` (default `true`), `ANNOUNCEMENT_MEDIA_ORIGIN` (speaker-reachable `http(s)://host[:port]`), `ANNOUNCEMENT_TARGETS` (JSON; defaults Jbl-Right `192.168.1.119`, Jbl-Left `192.168.1.148`), `ANNOUNCEMENT_CACHE_DIR`, `PIPER_COMMAND`, `PIPER_VOICE_DIR`, `PIPER_VOICE_FI`/`PIPER_VOICE_EN`, `ANNOUNCEMENT_QUIET_HOURS` (Helsinki `HH:MM-HH:MM`, default `22:00-07:00`, `off` disables); optional `requirements-announcements.txt` and migrations `20261027_0020`/`20261027_0021`; see [spoken announcements](#spoken-announcements) |
 
 See [app/config.py](app/config.py) for core parsing/defaults and
 [service initialization](app/services/__init__.py) plus individual services for
@@ -569,18 +569,46 @@ Setup (owner commissioning; automated tests never use real speakers or engines):
    `127.0.0.1:5555` with `access_log off`. The token is a bearer secret in the URL
    path. Then set the origin, for example `http://192.168.1.10:8099`. Until it is
    set, preview works and speaker tests fail with "media address not configured".
-4. Apply migration `20261027_0020` with the normal migration procedure.
+4. Apply migrations `20261027_0020` and `20261027_0021` with the normal
+   migration procedure.
+
+**One-time reminders.** The same page saves a reminder for a date and time in
+Europe/Helsinki, whatever timezone the browser uses. A time skipped by the
+spring clock change is rejected; a time repeated in autumn needs a choice of
+the first (UTC+3) or second (UTC+2) occurrence. **Upcoming reminders** shows the
+saved time with Edit, Pause/Resume and Delete. Edits apply to the future
+announcement only; something already due keeps the text and settings it had.
+Pausing or deleting cancels speech that is still waiting, but speech already
+playing finishes. Resuming never revives a cancelled reminder or one whose time
+passed while paused. Deleting removes the reminder from future delivery only;
+its history stays.
+
+When due, a reminder is spoken unless policy says wait. It waits during quiet
+hours (`ANNOUNCEMENT_QUIET_HOURS`, start inclusive, end exclusive) unless the
+reminder allows quiet hours. It also waits while the speaker plays music or its
+state is unclear, for a short settling time after music stops (so a track change
+is not mistaken for the end), while another announcement uses the speaker and
+while the speaker does not respond. **Urgent** reminders go first and may
+interrupt music, but restoring that music needs the optional Spotify connection,
+which is not available yet, so the music may stay stopped. Urgent does not
+override quiet hours. Each reminder expires a configurable number of minutes
+(default 15) after its due time. Waiting never extends expiry, and an expired
+reminder is recorded as *missed*, never spoken late, including after server
+downtime. **Reminder history** keeps due time, expiry, the reasons it waited,
+each attempt, the delivery evidence, volume restore and whether it is eligible
+for a fallback notification. Delivery is never an acknowledgement. Fallback
+notifications, Done/Skip/Snooze, repeats, recurring schedules, the speaker
+group and history deletion are later slices.
 
 Prepared audio is cached in `ANNOUNCEMENT_CACHE_DIR` (default
 `announcement-cache/` beside `DB_PATH`) for up to 7 days or 64 MB. Evicting it
 never removes test history. Default volume 30 % and chime 40 % are starting
 points, not calibrated softness. The JBL/Google Home behavior, Eventlet
 compatibility of PyChromecast and the real media fetch are unverified until
-owner acceptance. Schedules, reminders, Discord fallback, groups and Spotify
-handling are not part of this slice.
+owner acceptance.
 
 ```sh
-.venv/bin/pytest -q tests/test_announcements.py tests/test_announcement_integrations.py tests/test_announcement_storage.py tests/test_announcements_browser.py
+.venv/bin/pytest -q tests/test_announcements.py tests/test_announcement_schedules.py tests/test_announcement_integrations.py tests/test_announcement_storage.py tests/test_announcements_browser.py
 ```
 
 ### Weather observation archive

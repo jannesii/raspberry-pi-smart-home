@@ -132,7 +132,10 @@
 }
 
 .announce-field textarea,
-.announce-field select {
+.announce-field select,
+.announce-field input[type="date"],
+.announce-field input[type="time"],
+.announce-field input[type="number"] {
   box-sizing: border-box;
   width: 100%;
   min-height: 44px;
@@ -180,6 +183,86 @@
   display: grid;
   grid-template-columns: 1fr;
   gap: 0;
+}
+
+.announce-grid-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.announce-side {
+  display: grid;
+  min-width: 0;
+}
+
+.announce-fold {
+  margin: 0 0 14px;
+  border: 1px solid #3a424b;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.announce-fold legend {
+  color: #c3ccd6;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.announce-fold label,
+.announce-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  color: #dce3ea;
+  cursor: pointer;
+}
+
+.announce-fold input,
+.announce-check input {
+  width: 20px;
+  height: 20px;
+  accent-color: #7dd3fc;
+}
+
+.announce-advanced {
+  margin: 4px 0 12px;
+  border: 1px solid #333b43;
+  border-radius: 8px;
+  padding: 0 12px;
+}
+
+.announce-advanced summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  color: #c3ccd6;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.announce-advanced[open] {
+  padding-bottom: 12px;
+}
+
+.announce-advanced > .announce-help {
+  display: block;
+  margin: 0 0 10px 30px;
+}
+
+.announce-advanced summary:focus-visible,
+.announce-check:focus-within,
+.announce-fold label:focus-within {
+  outline: 3px solid #7dd3fc;
+  outline-offset: 2px;
+}
+
+.announce-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .announce-actions {

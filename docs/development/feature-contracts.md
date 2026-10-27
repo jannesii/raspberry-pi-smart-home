@@ -385,4 +385,28 @@ Code: `app/blueprints/api/car_heater/weather.py` (`/sessions/<id>/weather`,
   neither tokens (security header debug path is redacted) nor reminder text.
 - Root-Admin + CSRF: `/api/announcements/status`, `previews` (POST, GET, audio),
   `tests` (GET/POST with idempotent `request_id`), `tests/<id>` and
-  `tests/<id>/stop`. Page: `/settings/announcements`.
+  `tests/<id>/stop`, `schedules` (GET/POST idempotent `request_id`),
+  `schedules/<id>` (GET, PUT with optional `revision`, DELETE),
+  `schedules/<id>/pause|resume`, `occurrences`, `occurrences/<id>`.
+  Page: `/settings/announcements`.
+- Schedules (`AnnouncementScheduleMixin`, `occurrences.py`, `schedules.py`):
+  one-time due times are Helsinki wall time (`due_local` + `due_fold`), stored
+  as UTC ISO. Deletion is soft (`status='deleted'`). `next_due_at` is the only
+  materialization cursor; `next_instance()` is the recurrence extension point.
+- An occurrence is created when due, unique on `(schedule_id, instance_due_at)`,
+  and snapshots the schedule. `status` (waiting/announcing/closed), `delivery`
+  (attempt evidence) and `disposition` (missed/cancelled; later owner actions)
+  are independent. `fallback_reason` (failed/partial/unknown/
+  expired_undelivered) is durable fallback eligibility; cancellation never sets
+  it. `expires_at` is fixed at creation; waiting never moves it.
+- Occurrence attempts are inserted already `dispatching` in the same
+  transaction that moves the occurrence to `announcing`, conditional on it
+  still waiting, without disposition and unexpired. Pause/delete updates lose
+  or win that race as a whole. Restart: in-flight attempts become unknown, the
+  next tick settles the occurrence (fallback `unknown`); waiting occurrences
+  continue inside their window; expired ones close as `missed`.
+- Ordinary occurrences wait on quiet hours, `playing`/`unknown` probes, a
+  10 s idle debounce after media was last seen busy (in memory; restart forgets
+  it), unreachable speakers and overlapping active work. Urgent ones sort first,
+  may dispatch on `playing`/`unknown` (recorded as `interrupted_media`,
+  `media_restore='unavailable'`) and never bypass quiet hours.

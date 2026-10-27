@@ -778,3 +778,18 @@ def test_root_admin_and_csrf_guard_schedule_operations(announcement_app, client)
     assert detail["schedule"]["status"] == "active"
     assert detail["schedule"]["revision"] == 1
     assert len(client.get(API).get_json()["schedules"]) == 1
+
+
+def test_reminder_controls_are_on_the_announcement_page(announcement_app, client):
+    html = client.get("/settings/announcements").get_data(as_text=True)
+    for element in (
+        'id="announcementScheduleButton"',
+        'id="announceDate"',
+        'id="announceTime"',
+        'id="announceAdvanced"',
+        'id="announceSchedulesList"',
+        'id="announceHistoryList"',
+    ):
+        assert element in html
+    assert "js/announcements.js?v=20261027-2" in html
+    assert "css/announcements.css?v=20261027-2" in html
