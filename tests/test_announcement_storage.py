@@ -10,14 +10,34 @@ from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from announcement_support import START, FakeCast, FakeSynthesizer, SimulatedCrash, build_service
 from pg_fixture import private_postgres as private_postgres
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, event, inspect
 from sqlalchemy.exc import IntegrityError
 
 from app.core import Controller
-from app.core.schema import announcement_attempt, announcement_speaker_test
+from app.core.schema import (
+    announcement_attempt,
+    announcement_occurrence,
+    announcement_schedule,
+    announcement_speaker_test,
+)
 
-MIGRATION = "migrations.versions.20261027_0020_announcement_speaker_tests"
-TABLES = (announcement_speaker_test, announcement_attempt)
+MIGRATIONS = (
+    "migrations.versions.20261027_0020_announcement_speaker_tests",
+    "migrations.versions.20261027_0021_announcement_schedules",
+)
+TABLES = (
+    announcement_speaker_test,
+    announcement_attempt,
+    announcement_schedule,
+    announcement_occurrence,
+)
+
+
+def _run(engine, monkeypatch, steps):
+    for migration, direction in steps:
+        with engine.begin() as conn:
+            monkeypatch.setattr(migration, "op", Operations(MigrationContext.configure(conn)))
+            getattr(migration, direction)()
 
 
 @pytest.fixture(params=["sqlite", "postgresql"])
@@ -27,11 +47,13 @@ def store(request, tmp_path, monkeypatch):
     else:
         url = request.getfixturevalue("private_postgres")
     engine = create_engine(url)
-    migration = importlib.import_module(MIGRATION)
-    with engine.begin() as conn:
-        monkeypatch.setattr(migration, "op", Operations(MigrationContext.configure(conn)))
-        migration.upgrade()
-    yield engine, migration
+    if request.param == "sqlite":  # match the app engine: enforce foreign keys
+        event.listen(
+            engine, "connect", lambda dbapi, _record: dbapi.execute("PRAGMA foreign_keys=ON")
+        )
+    migrations = [importlib.import_module(name) for name in MIGRATIONS]
+    _run(engine, monkeypatch, [(m, "upgrade") for m in migrations])
+    yield engine, migrations
     engine.dispose()
 
 
@@ -44,7 +66,7 @@ def _shape(engine, table_name):
 
 
 def test_migration_matches_schema_and_enforces_constraints(store, monkeypatch):
-    engine, migration = store
+    engine, migrations = store
     for table in TABLES:
         columns, indexes, checks = _shape(engine, table.name)
         assert columns == {c.name: c.nullable for c in table.columns}
@@ -91,20 +113,108 @@ def test_migration_matches_schema_and_enforces_constraints(store, monkeypatch):
                 updated_at="2027-01-15T12:00:00+00:00",
             )
         )
-    with engine.begin() as conn:
-        monkeypatch.setattr(migration, "op", Operations(MigrationContext.configure(conn)))
-        migration.downgrade()
+    _run(engine, monkeypatch, [(m, "downgrade") for m in reversed(migrations)])
     assert not {t.name for t in TABLES} & set(inspect(engine).get_table_names())
-    with engine.begin() as conn:
-        monkeypatch.setattr(migration, "op", Operations(MigrationContext.configure(conn)))
-        migration.upgrade()
+    _run(engine, monkeypatch, [(m, "upgrade") for m in migrations])
     assert {t.name for t in TABLES} <= set(inspect(engine).get_table_names())
+
+
+SCHEDULE = {
+    "id": "s1",
+    "kind": "one_time",
+    "status": "active",
+    "revision": 1,
+    "text": "Muista lääkkeet",
+    "language": "fi",
+    "target_key": "jbl-right",
+    "volume_percent": 30,
+    "chime_percent": 40,
+    "urgent": False,
+    "quiet_hours_override": False,
+    "expiry_minutes": 15,
+    "max_announcements": 1,
+    "due_local": "2027-01-15T14:30",
+    "due_at": "2027-01-15T12:30:00+00:00",
+    "next_due_at": "2027-01-15T12:30:00+00:00",
+    "created_at": "2027-01-15T12:00:00+00:00",
+    "updated_at": "2027-01-15T12:00:00+00:00",
+}
+OCCURRENCE = {
+    "id": "o1",
+    "schedule_id": "s1",
+    "instance_due_at": "2027-01-15T12:30:00+00:00",
+    "schedule_revision": 1,
+    "created_at": "2027-01-15T12:30:00+00:00",
+    "text": "Muista lääkkeet",
+    "language": "fi",
+    "target_key": "jbl-right",
+    "target_name": "Jbl-Right",
+    "speaker_set": '["jbl-right"]',
+    "volume_percent": 30,
+    "chime_percent": 40,
+    "urgent": False,
+    "max_announcements": 1,
+    "due_at": "2027-01-15T12:30:00+00:00",
+    "expires_at": "2027-01-15T12:45:00+00:00",
+    "status": "waiting",
+    "waiting_history": "[]",
+    "announcements_started": 0,
+    "delivery": "none",
+    "updated_at": "2027-01-15T12:30:00+00:00",
+}
+ATTEMPT = {
+    "id": "a1",
+    "target_key": "jbl-right",
+    "target_name": "Jbl-Right",
+    "speaker_set": '["jbl-right"]',
+    "evidence_scope": "device",
+    "priority": 0,
+    "text": "Muista lääkkeet",
+    "language": "fi",
+    "volume_percent": 30,
+    "chime_percent": 40,
+    "status": "requested",
+    "requested_at": "2027-01-15T12:30:00+00:00",
+    "dispatch_deadline": "2027-01-15T12:45:00+00:00",
+    "updated_at": "2027-01-15T12:30:00+00:00",
+}
+
+
+def _rejected(engine, table, row):
+    with pytest.raises(IntegrityError), engine.begin() as conn:
+        conn.execute(table.insert().values(**row))
+
+
+def test_occurrences_are_unique_per_schedule_instance_and_states_are_constrained(store):
+    engine, _migrations = store
+    with engine.begin() as conn:
+        conn.execute(announcement_schedule.insert().values(**SCHEDULE))
+        conn.execute(announcement_occurrence.insert().values(**OCCURRENCE))
+        conn.execute(announcement_attempt.insert().values(**ATTEMPT, occurrence_id="o1"))
+    _rejected(engine, announcement_occurrence, {**OCCURRENCE, "id": "o2"})  # same instance
+    _rejected(engine, announcement_schedule, {**SCHEDULE, "id": "s2", "kind": "weekly"})
+    _rejected(engine, announcement_schedule, {**SCHEDULE, "id": "s3", "expiry_minutes": 0})
+    later = {"instance_due_at": "2027-01-16T12:30:00+00:00"}
+    for column, value in (
+        ("status", "heard"),
+        ("delivery", "acknowledged"),  # acknowledgement is not delivery evidence
+        ("disposition", "delivered"),
+        ("fallback_reason", "music"),
+    ):
+        _rejected(
+            engine, announcement_occurrence, {**OCCURRENCE, **later, "id": "o3", column: value}
+        )
+    _rejected(
+        engine, announcement_occurrence, {**OCCURRENCE, **later, "id": "o4", "schedule_id": "x"}
+    )
+    # An attempt belongs to exactly one source: a speaker test or an occurrence.
+    _rejected(engine, announcement_attempt, {**ATTEMPT, "id": "a2"})
 
 
 def test_restart_never_replays_an_uncertain_test_in_either_store(store, tmp_path, monkeypatch):
     from app.core.database import DatabaseManager
 
-    engine, _migration = store
+    engine, _migrations = store
     monkeypatch.setattr(DatabaseManager, "_instance", None)
     ctrl = Controller(db_path=str(tmp_path / "legacy.db"))
     ctrl._sa_engine = engine

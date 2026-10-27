@@ -70,6 +70,12 @@ class AnnouncementConfig:
     playback_start_timeout_s: float = 30.0
     playback_finish_grace_s: float = 30.0
     max_text_length: int = 500
+    # Helsinki "HH:MM-HH:MM", start inclusive, end exclusive; None disables.
+    quiet_hours: str | None = "22:00-07:00"
+    # Ordinary speech needs this long without playing/unknown media observed.
+    music_idle_debounce_s: float = 10.0
+    # How often a waiting occurrence re-probes its speaker.
+    wait_probe_interval_s: float = 5.0
 
     def target(self, key: str) -> SpeakerTarget | None:
         return next((t for t in self.targets if t.key == key), None)
@@ -122,7 +128,20 @@ def config_from_env(default_cache_dir: Path) -> AnnouncementConfig:
         media_origin=normalize_origin(os.getenv("ANNOUNCEMENT_MEDIA_ORIGIN")),
         targets=parse_targets(os.getenv("ANNOUNCEMENT_TARGETS")),
         cache_dir=os.getenv("ANNOUNCEMENT_CACHE_DIR") or default_cache_dir,
+        quiet_hours=_quiet_hours_from_env(),
     )
+
+
+def _quiet_hours_from_env() -> str | None:
+    from .schedules import DEFAULT_QUIET_HOURS, QuietHours
+
+    raw = os.getenv("ANNOUNCEMENT_QUIET_HOURS")
+    if raw is None or not raw.strip():
+        return DEFAULT_QUIET_HOURS
+    if raw.strip().lower() in ("off", "none"):
+        return None
+    QuietHours.parse(raw)  # raises ValueError -> service init fails visibly
+    return raw.strip()
 
 
 def piper_settings_from_env() -> dict:

@@ -22,6 +22,14 @@ class AnnouncementInputError(ValueError):
         self.field = field
 
 
+class AnnouncementStateError(Exception):
+    """A request that conflicts with the current recorded state."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
 @dataclass(frozen=True)
 class PreparedContent:
     text: str  # exactly what the owner wrote (kept for history)

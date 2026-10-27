@@ -382,6 +382,7 @@ class AnnouncementAttempt:
 
     id: str
     speaker_test_id: str | None
+    occurrence_id: str | None
     target_key: str
     target_name: str
     target_host: str | None
@@ -411,4 +412,76 @@ class AnnouncementAttempt:
     volume_applied: float | None
     volume_restore: str | None
     volume_restored_at: str | None
+    updated_at: str
+    interrupted_media: str | None = None
+    media_restore: str | None = None
+
+
+@dataclass
+class AnnouncementSchedule:
+    """When a reminder is due; Helsinki wall time is authoritative for one-time."""
+
+    id: str
+    request_id: str | None
+    kind: str
+    status: str
+    revision: int
+    text: str
+    language: str
+    target_key: str
+    volume_percent: int
+    chime_percent: int
+    urgent: bool
+    quiet_hours_override: bool
+    expiry_minutes: int
+    max_announcements: int
+    repeat_interval_minutes: int | None
+    due_local: str | None
+    due_fold: int | None
+    due_at: str | None
+    recurrence: dict | None
+    next_due_at: str | None
+    created_at: str
+    created_by: str | None
+    updated_at: str
+    paused_at: str | None
+    deleted_at: str | None
+
+
+@dataclass
+class AnnouncementOccurrence:
+    """One schedule instance; disposition and delivery evidence stay separate."""
+
+    id: str
+    schedule_id: str
+    instance_due_at: str
+    schedule_revision: int
+    created_at: str
+    text: str
+    language: str
+    target_key: str
+    target_name: str
+    speaker_set: list[str]
+    volume_percent: int
+    chime_percent: int
+    urgent: bool
+    quiet_hours: str | None
+    max_announcements: int
+    repeat_interval_minutes: int | None
+    due_at: str
+    expires_at: str
+    next_attempt_at: str | None
+    status: str
+    waiting_reason: str | None
+    waiting_since: str | None
+    waiting_history: list[dict]
+    announcements_started: int
+    current_attempt_id: str | None
+    delivery: str
+    delivery_reason: str | None
+    disposition: str | None
+    disposition_reason: str | None
+    closed_at: str | None
+    fallback_reason: str | None
+    fallback_eligible_at: str | None
     updated_at: str
