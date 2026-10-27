@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 
 from ..models import AnnouncementFallback, AnnouncementFallbackAttempt
 from ..schema import (
+    announcement_acknowledgement,
     announcement_fallback,
     announcement_fallback_attempt,
     announcement_occurrence,
@@ -105,6 +106,9 @@ class AnnouncementFallbackMixin:
         """
         fb = announcement_fallback.c
         number = attempt["number"]
+        acknowledged = exists().where(
+            announcement_acknowledgement.c.occurrence_id == fb.occurrence_id
+        )
         with self._sa_engine.begin() as conn:
             changed = conn.execute(
                 update(announcement_fallback)
@@ -113,6 +117,7 @@ class AnnouncementFallbackMixin:
                     fb.status == "pending",
                     fb.attempts_made == number - 1,
                     fb.attempts_made < fb.max_attempts,
+                    ~acknowledged,  # Done/Skip committed first: never send
                 )
                 .values(
                     status="sending",
@@ -150,6 +155,29 @@ class AnnouncementFallbackMixin:
                 .values(**fallback_values)
             )
         return True
+
+    def cancel_acknowledged_announcement_fallbacks(self, now: str) -> int:
+        """Cancel pending fallbacks of occurrences the owner marked Done/Skip.
+
+        Catches a fallback opened just after the acknowledgement committed;
+        the acknowledgement itself cancels any that already existed.
+        """
+        fb = announcement_fallback.c
+        acknowledged = exists().where(
+            announcement_acknowledgement.c.occurrence_id == fb.occurrence_id
+        )
+        with self._sa_engine.begin() as conn:
+            return conn.execute(
+                update(announcement_fallback)
+                .where(fb.status == "pending", acknowledged)
+                .values(
+                    status="cancelled",
+                    status_reason="acknowledged",
+                    next_attempt_at=None,
+                    completed_at=now,
+                    updated_at=now,
+                )
+            ).rowcount
 
     def recover_announcement_fallbacks(self, now: str) -> int:
         """Requests interrupted by a restart: acceptance unknown, never resent."""

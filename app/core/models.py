@@ -415,6 +415,8 @@ class AnnouncementAttempt:
     updated_at: str
     interrupted_media: str | None = None
     media_restore: str | None = None
+    purpose: str | None = None
+    certain_not_played: bool | None = None
     # Group targets: [{key, name, availability, in_group,
     # left_group_during_playback}]; None for single speakers.
     member_evidence: list[dict] | None = None
@@ -488,6 +490,8 @@ class AnnouncementOccurrence:
     fallback_reason: str | None
     fallback_eligible_at: str | None
     updated_at: str
+    retries_started: int = 0
+    next_attempt_purpose: str | None = None
 
 
 @dataclass
@@ -524,3 +528,19 @@ class AnnouncementFallback:
     updated_at: str
     accepted_at: str | None
     completed_at: str | None
+
+
+@dataclass
+class AnnouncementAcknowledgement:
+    """The owner's Done or Skip for one occurrence; never a health record."""
+
+    id: str
+    occurrence_id: str
+    action: str
+    acknowledged_at: str
+    acknowledged_by: str | None
+    prior_status: str
+    prior_delivery: str
+    prior_disposition: str | None
+    prior_disposition_reason: str | None
+    announcements_started: int

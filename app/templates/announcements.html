@@ -3,7 +3,7 @@
 {% block title %}Announcements{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/announcements.css', v='20261027-5') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/announcements.css', v='20261027-6') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/flash.css') }}">
 {% endblock %}
 
@@ -164,7 +164,7 @@
         </div>
 
         <details id="announceAdvanced" class="announce-advanced">
-          <summary>Expiry, urgency and quiet hours</summary>
+          <summary>Expiry, repeats, urgency and quiet hours</summary>
           <label class="announce-field" for="announceExpiry">
             <span>Expires after (minutes)</span>
             <input id="announceExpiry" name="expiry_minutes" type="number" min="1" max="240" step="1" value="15"
@@ -173,6 +173,23 @@
               waiting for music, quiet hours or the speaker. Waiting never extends it; it is recorded as missed.</small>
             <small id="announceExpiryError" class="announce-field-error"></small>
           </label>
+          <fieldset class="announce-fold announce-repeats" aria-describedby="announceRepeatFit announceRepeatError">
+            <legend>Say it more than once</legend>
+            <div class="announce-grid announce-grid-2">
+              <label class="announce-field" for="announceMaxAnnouncements">
+                <span>Announcements per reminder</span>
+                <input id="announceMaxAnnouncements" name="max_announcements" type="number" min="1" max="5" step="1"
+                  value="1" inputmode="numeric">
+              </label>
+              <label class="announce-field" for="announceRepeatInterval">
+                <span>Minutes between them</span>
+                <input id="announceRepeatInterval" name="repeat_interval_minutes" type="number" min="1" max="120"
+                  step="1" inputmode="numeric" disabled>
+              </label>
+            </div>
+            <p id="announceRepeatFit" class="announce-help" aria-live="polite">One announcement.</p>
+            <small id="announceRepeatError" class="announce-field-error" role="alert"></small>
+          </fieldset>
           <label class="announce-check" for="announceUrgent">
             <input id="announceUrgent" name="urgent" type="checkbox" aria-describedby="announceUrgentHelp">
             <span>Urgent: may interrupt music</span>
@@ -216,8 +233,9 @@
       </div>
       <p class="announce-help">Delivery shows what the speaker reported, never that anyone heard it.
         When speech fails, is uncertain or partial, or expires unspoken, one Discord fallback is sent;
-        Discord accepting it does not mean it was read. Acknowledging a reminder is separate and not
-        recorded here yet.</p>
+        Discord accepting it does not mean it was read. Done and Skip record only that you handled the
+        reminder – not a medicine dose or a blood-pressure reading – and cancel a fallback not yet sent.
+        Stop speaking silences it and cancels its repeats without marking it done.</p>
       <ol id="announceHistoryList" class="announce-tests" aria-live="polite"></ol>
     </section>
 
@@ -235,5 +253,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/announcements.js', v='20261027-5') }}"></script>
+<script src="{{ url_for('static', filename='js/announcements.js', v='20261027-6') }}"></script>
 {% endblock %}

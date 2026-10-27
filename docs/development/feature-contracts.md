@@ -432,3 +432,28 @@ Code: `app/blueprints/api/car_heater/weather.py` (`/sessions/<id>/weather`,
 - `alert_webhook.deliver_webhook()` returns `WebhookResult` (accepted/rejected/
   rate_limited/failed/not_configured/unknown) and never logs the URL;
   `send_alert_webhook()` keeps its payload (mentions allowed) and boolean.
+- Repeats: schedules carry `max_announcements` (1–5) and
+  `repeat_interval_minutes` (1–120, required iff more than one); API adds
+  `repeats{fit, offsets_minutes}` (announcement k at k × interval, before
+  expiry). `_settle` returns a delivered occurrence to `waiting` with
+  `next_attempt_purpose='repeat'` at previous `intent_at` + interval (or now if
+  later: no burst), else closes it (group `partial` is never repeated or retried); a delivered occurrence that expires while
+  waiting closes without disposition or fallback.
+- Retries: only a `failed` attempt with `certain_not_played` (TransportError
+  certain) is retried, at most `max_automatic_retries` (2) after
+  `retry_delay_s` (60 s) and only before `expires_at`; `retries_started` is
+  counted apart from `announcements_started`. Unknown outcomes are never
+  retried. No retry left → closed `failed` (fallback `failed`, also when the
+  retry window expires while held).
+- Done/Skip (`POST occurrences/<id>/done|skip`): one `announcement_acknowledgement`
+  per occurrence (unique; keeps prior status/delivery/disposition), disposition
+  `done`/`skipped`, waiting → closed, announcing keeps current speech without
+  follow-ups. Same action again → 200, other → 409 `already_acknowledged`. A
+  `pending` fallback becomes `cancelled`/`acknowledged` (also when opened or
+  about to send after the acknowledgement); sending/sent/unknown stay. Never a
+  medicine dose, BP value or refill change.
+- Stop speaking (`POST occurrences/<id>/stop`, 202): sets the active attempt's
+  `stop_requested_at` (actual `stop_outcome` from the speaker) and disposition
+  `stopped` (waiting follow-up → closed); 409 `not_speaking` before any speech.
+  Never acknowledges and never sets or cancels a fallback. Item `actions` lists
+  what applies now.

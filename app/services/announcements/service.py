@@ -647,8 +647,10 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin, CastDiscoveryMixin):
                 attempt.id, target, url, content_type=media.content_type, title="Announcement"
             )
         except TransportError as exc:
-            status = "failed" if exc.certain_not_played else "unknown"
-            self._finish(attempt, status, exc.reason)
+            if exc.certain_not_played:
+                self._finish(attempt, "failed", exc.reason, certain_not_played=True)
+            else:
+                self._finish(attempt, "unknown", exc.reason)
             return
         except Exception:
             logger.exception("Announcement dispatch %s raised unexpectedly", attempt.id)

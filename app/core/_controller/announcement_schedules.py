@@ -14,8 +14,14 @@ from typing import TYPE_CHECKING
 from sqlalchemy import and_, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from ..models import AnnouncementOccurrence, AnnouncementSchedule
-from ..schema import announcement_attempt, announcement_occurrence, announcement_schedule
+from ..models import AnnouncementAcknowledgement, AnnouncementOccurrence, AnnouncementSchedule
+from ..schema import (
+    announcement_acknowledgement,
+    announcement_attempt,
+    announcement_fallback,
+    announcement_occurrence,
+    announcement_schedule,
+)
 from .announcements import encode_attempt
 
 if TYPE_CHECKING:
@@ -36,6 +42,8 @@ _SCHEDULE_FIELDS = (
     "urgent",
     "quiet_hours_override",
     "expiry_minutes",
+    "max_announcements",
+    "repeat_interval_minutes",
     "due_local",
     "due_fold",
     "recurrence",
@@ -324,3 +332,162 @@ class AnnouncementScheduleMixin:
                 return False
             conn.execute(insert(announcement_attempt).values(**row))
         return True
+
+    # Acknowledgements and Stop -------------------------------------------------
+    def acknowledge_announcement_occurrence(
+        self, occurrence_id: str, *, action: str, ack_id: str, at: str, by: str | None
+    ) -> tuple[str, AnnouncementAcknowledgement | None]:
+        """Record Done/Skip once per occurrence and end its automatic speech.
+
+        Returns ("created" | "exists" | "conflict" | "not_found", acknowledgement).
+        In the same transaction a waiting occurrence closes (pending speech,
+        repeats and retries never start: dispatch requires no disposition), an
+        announcing one keeps its current speech but gets no follow-up, and a
+        fallback still pending (no request in flight) is cancelled. Delivery
+        evidence and sent/uncertain fallbacks are left as they were.
+        """
+        occ = announcement_occurrence.c
+        try:
+            with self._sa_engine.begin() as conn:
+                current = (
+                    conn.execute(
+                        select(announcement_occurrence)
+                        .where(occ.id == occurrence_id)
+                        .with_for_update()
+                    )
+                    .mappings()
+                    .first()
+                )
+                if current is None:
+                    return "not_found", None
+                existing = self._acknowledgement(conn, occurrence_id)
+                if existing is not None:
+                    return ("exists" if existing.action == action else "conflict"), existing
+                conn.execute(
+                    insert(announcement_acknowledgement).values(
+                        id=ack_id,
+                        occurrence_id=occurrence_id,
+                        action=action,
+                        acknowledged_at=at,
+                        acknowledged_by=by,
+                        prior_status=current["status"],
+                        prior_delivery=current["delivery"],
+                        prior_disposition=current["disposition"],
+                        prior_disposition_reason=current["disposition_reason"],
+                        announcements_started=current["announcements_started"],
+                    )
+                )
+                marked = {"disposition": action, "disposition_reason": "acknowledged"}
+                closed = conn.execute(
+                    update(announcement_occurrence)
+                    .where(occ.id == occurrence_id, occ.status == "waiting")
+                    .values(
+                        status="closed",
+                        waiting_reason=None,
+                        next_attempt_at=None,
+                        next_attempt_purpose=None,
+                        closed_at=at,
+                        updated_at=at,
+                        **marked,
+                    )
+                ).rowcount
+                if not closed:
+                    conn.execute(
+                        update(announcement_occurrence)
+                        .where(occ.id == occurrence_id)
+                        .values(updated_at=at, **marked)
+                    )
+                fb = announcement_fallback.c
+                conn.execute(
+                    update(announcement_fallback)
+                    .where(fb.occurrence_id == occurrence_id, fb.status == "pending")
+                    .values(
+                        status="cancelled",
+                        status_reason="acknowledged",
+                        next_attempt_at=None,
+                        completed_at=at,
+                        updated_at=at,
+                    )
+                )
+        except IntegrityError:
+            with self._sa_engine.connect() as conn:
+                existing = self._acknowledgement(conn, occurrence_id)
+            if existing is None:
+                raise
+            return ("exists" if existing.action == action else "conflict"), existing
+        logger.debug("Occurrence %s acknowledged action=%s", occurrence_id, action)
+        return "created", self.get_announcement_acknowledgement(occurrence_id)
+
+    @staticmethod
+    def _acknowledgement(conn, occurrence_id: str) -> AnnouncementAcknowledgement | None:
+        row = (
+            conn.execute(
+                select(announcement_acknowledgement).where(
+                    announcement_acknowledgement.c.occurrence_id == occurrence_id
+                )
+            )
+            .mappings()
+            .first()
+        )
+        return AnnouncementAcknowledgement(**row) if row else None
+
+    def get_announcement_acknowledgement(
+        self, occurrence_id: str
+    ) -> AnnouncementAcknowledgement | None:
+        with self._sa_engine.connect() as conn:
+            return self._acknowledgement(conn, occurrence_id)
+
+    def list_announcement_acknowledgements(
+        self, occurrence_ids: Iterable[str]
+    ) -> list[AnnouncementAcknowledgement]:
+        ids = list(occurrence_ids)
+        if not ids:
+            return []
+        stmt = select(announcement_acknowledgement).where(
+            announcement_acknowledgement.c.occurrence_id.in_(ids)
+        )
+        with self._sa_engine.connect() as conn:
+            return [AnnouncementAcknowledgement(**row) for row in conn.execute(stmt).mappings()]
+
+    def stop_announcement_occurrence(self, occurrence_id: str, *, at: str) -> str | None:
+        """Cancel further automatic speech without acknowledging (Stop speaking).
+
+        An announcing occurrence keeps its status (the service settles it from
+        the attempt's actual stop outcome); a waiting one with speech already
+        started (a pending repeat or retry) closes. Either way it gets
+        disposition 'stopped' unless it already has one, and never a fallback.
+        Returns the occurrence status it applied to, or None if nothing changed.
+        """
+        occ = announcement_occurrence.c
+        marked = {"disposition": "stopped", "disposition_reason": "stop_requested"}
+        with self._sa_engine.begin() as conn:
+            if conn.execute(
+                update(announcement_occurrence)
+                .where(
+                    occ.id == occurrence_id,
+                    occ.status == "announcing",
+                    occ.disposition.is_(None),
+                )
+                .values(updated_at=at, **marked)
+            ).rowcount:
+                return "announcing"
+            if conn.execute(
+                update(announcement_occurrence)
+                .where(
+                    occ.id == occurrence_id,
+                    occ.status == "waiting",
+                    occ.disposition.is_(None),
+                    (occ.announcements_started + occ.retries_started) > 0,
+                )
+                .values(
+                    status="closed",
+                    waiting_reason=None,
+                    next_attempt_at=None,
+                    next_attempt_purpose=None,
+                    closed_at=at,
+                    updated_at=at,
+                    **marked,
+                )
+            ).rowcount:
+                return "waiting"
+        return None

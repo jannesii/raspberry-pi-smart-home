@@ -42,6 +42,8 @@ from .schedules import (
     parse_expiry,
     parse_flag,
     parse_recurrence,
+    parse_repeats,
+    repeat_fit,
     upcoming_instances,
 )
 
@@ -73,6 +75,9 @@ class OccurrenceMixin:
             payload.get("volume_percent"), "volume_percent", DEFAULT_VOLUME_PERCENT
         )
         chime = parse_percent(payload.get("chime_percent"), "chime_percent", DEFAULT_CHIME_PERCENT)
+        count, interval = parse_repeats(
+            payload.get("max_announcements"), payload.get("repeat_interval_minutes")
+        )
         when = {"due_local": None, "due_fold": None, "due_at": None, "recurrence": None}
         if kind == "recurring":
             when["recurrence"] = parse_recurrence(payload.get("recurrence"))
@@ -93,6 +98,8 @@ class OccurrenceMixin:
                 payload.get("quiet_hours_override"), "quiet_hours_override"
             ),
             "expiry_minutes": parse_expiry(payload.get("expiry_minutes")),
+            "max_announcements": count,
+            "repeat_interval_minutes": interval,
             **when,
         }
 
@@ -108,8 +115,6 @@ class OccurrenceMixin:
             "request_id": request_id,
             "status": "active",
             "revision": 1,
-            "max_announcements": 1,
-            "repeat_interval_minutes": None,
             "created_at": iso(now),
             "created_by": requested_by,
             "updated_at": iso(now),
@@ -229,6 +234,9 @@ class OccurrenceMixin:
         target = self.config.target(schedule.target_key)
         data = asdict(schedule)
         data["target_name"] = target.name if target else schedule.target_key
+        data["repeats"] = repeat_fit(
+            schedule.max_announcements, schedule.repeat_interval_minutes, schedule.expiry_minutes
+        )
         data["due_passed"] = (
             schedule.status != "deleted"
             and schedule.kind == "one_time"
@@ -273,11 +281,15 @@ class OccurrenceMixin:
 
     def _occurrence_details(self, occurrences) -> list[dict]:
         attempts: dict[str, list] = {}
+        acks = {}
         if occurrences:
-            for attempt in self.ctrl.list_announcement_attempts(
-                occurrence_ids=[o.id for o in occurrences]
-            ):
+            ids = [o.id for o in occurrences]
+            for attempt in self.ctrl.list_announcement_attempts(occurrence_ids=ids):
                 attempts.setdefault(attempt.occurrence_id, []).append(asdict(attempt))
+            acks = {
+                a.occurrence_id: asdict(a)
+                for a in self.ctrl.list_announcement_acknowledgements(ids)
+            }
         for items in attempts.values():
             items.sort(key=lambda a: a["requested_at"])
         fallbacks = self._fallbacks_by_occurrence([o.id for o in occurrences])
@@ -293,12 +305,92 @@ class OccurrenceMixin:
                 "attempts": attempts.get(o.id, []),
                 # Fallback notification (#33): its own evidence, never acknowledgement.
                 "fallback": fallbacks.get(o.id),
-                # Reminder acknowledgement (Done) is recorded separately (#35);
-                # delivery evidence never implies it.
-                "acknowledgement": None,
+                # The owner's Done/Skip, kept apart from delivery evidence:
+                # playback or a fallback never implies it.
+                "acknowledgement": acks.get(o.id),
+                "actions": self._actions(o, attempts.get(o.id, []), acks.get(o.id)),
             }
             for o in occurrences
         ]
+
+    @staticmethod
+    def _actions(occurrence, attempts: list[dict], acknowledgement) -> list[str]:
+        """Owner actions that would change something now (for the page)."""
+        actions = [] if acknowledgement else ["done", "skip"]
+        current = next((a for a in attempts if a["id"] == occurrence.current_attempt_id), None)
+        speaking = (
+            occurrence.status == "announcing"
+            and current is not None
+            and current["status"] in ("dispatching", "dispatched", "playing")
+            and current["stop_requested_at"] is None
+        )
+        pending_follow_up = (
+            occurrence.status == "waiting"
+            and occurrence.disposition is None
+            and occurrence.announcements_started + occurrence.retries_started > 0
+        )
+        if speaking or pending_follow_up:
+            actions.append("stop")
+        return actions
+
+    # Owner actions on occurrences ---------------------------------------------------
+    def acknowledge_occurrence(self, occurrence_id: str, action: str, *, by=None) -> dict:
+        """Done ('done') or Skip this occurrence ('skipped'); idempotent per action.
+
+        Records the owner's handling of this reminder only: never a medicine
+        dose, blood-pressure value or delivery evidence.
+        """
+        if action not in ("done", "skipped"):
+            raise self._state_error("not_found", "Unknown occurrence action.")
+        now = iso(self._clock())
+        outcome, _ack = self.ctrl.acknowledge_announcement_occurrence(
+            occurrence_id, action=action, ack_id=str(uuid4()), at=now, by=by
+        )
+        if outcome == "not_found":
+            raise self._state_error("not_found", "Occurrence not found.")
+        if outcome == "conflict":
+            raise self._state_error(
+                "already_acknowledged", "This reminder was already marked differently."
+            )
+        if outcome == "created":
+            self._next_probe.pop(occurrence_id, None)
+            logger.info("Occurrence %s acknowledged: %s", occurrence_id, action)
+            self._wake.set()
+        return self.occurrence_detail(occurrence_id)
+
+    def stop_occurrence(self, occurrence_id: str) -> dict:
+        """Stop speaking: end current speech and further automatic repeats.
+
+        Not an acknowledgement; Done and Skip stay available. The actual stop
+        outcome is what the speaker reports (attempt ``stop_outcome``).
+        """
+        occurrence = self.ctrl.get_announcement_occurrence(occurrence_id)
+        if occurrence is None:
+            raise self._state_error("not_found", "Occurrence not found.")
+        now = iso(self._clock())
+        stopped_attempt = False
+        if occurrence.current_attempt_id and occurrence.status == "announcing":
+            stopped_attempt = self.ctrl.update_announcement_attempt(
+                occurrence.current_attempt_id,
+                expected=("dispatching", "dispatched", "playing"),
+                stop_requested_at=now,
+                stop_outcome=None,
+                updated_at=now,
+            )
+        applied = self.ctrl.stop_announcement_occurrence(occurrence_id, at=now)
+        if not stopped_attempt and applied is None:
+            raise self._state_error(
+                "not_speaking", "Nothing is being spoken or repeated for this reminder."
+            )
+        self._next_probe.pop(occurrence_id, None)
+        logger.info(
+            "Stop speaking for occurrence %s (current speech=%s, follow-ups=%s)",
+            occurrence_id,
+            stopped_attempt,
+            applied,
+        )
+        self._wake.set()
+        return self.occurrence_detail(occurrence_id)
 
     def list_occurrences(self, limit: int = 50) -> list[dict]:
         occurrences = self.ctrl.list_announcement_occurrences(newest_first=True, limit=limit)
@@ -404,20 +496,43 @@ class OccurrenceMixin:
             logger.info("Occurrence %s waiting: %s", occurrence.id, reason)
 
     def _expire(self, occurrence, now: float) -> None:
+        """Close a waiting occurrence at its expiry; nothing more is spoken.
+
+        A delivered occurrence whose remaining repeats did not fit simply
+        closes (it was not missed, and needs no fallback). Otherwise it is
+        missed; a pending retry after a definitive failure keeps 'failed' as
+        its fallback reason, everything else is 'expired_undelivered'.
+        """
         values = {
             "status": "closed",
             "waiting_reason": None,
-            "disposition": "missed",
-            "disposition_reason": occurrence.waiting_reason or "expired_before_dispatch",
+            "next_attempt_at": None,
+            "next_attempt_purpose": None,
             "closed_at": iso(now),
             "updated_at": iso(now),
         }
-        if occurrence.delivery != "delivered":
-            values.update(fallback_reason="expired_undelivered", fallback_eligible_at=iso(now))
+        if occurrence.delivery == "delivered":
+            reason = None
+        else:
+            reason = occurrence.waiting_reason or (
+                "retry_not_started"
+                if occurrence.delivery == "failed"
+                else "expired_before_dispatch"
+            )
+            fallback = "failed" if occurrence.delivery == "failed" else "expired_undelivered"
+            values.update(
+                disposition="missed",
+                disposition_reason=reason,
+                fallback_reason=fallback,
+                fallback_eligible_at=iso(now),
+            )
         if self.ctrl.update_announcement_occurrence(occurrence.id, expected=("waiting",), **values):
             self._next_probe.pop(occurrence.id, None)
             logger.info(
-                "Occurrence %s expired undelivered: %s", occurrence.id, values["disposition_reason"]
+                "Occurrence %s expired delivery=%s reason=%s",
+                occurrence.id,
+                occurrence.delivery,
+                reason,
             )
 
     def _quiet(self, occurrence, now: float) -> bool:
@@ -534,7 +649,14 @@ class OccurrenceMixin:
             priority=self._occurrence_priority(occurrence),
             deadline=occurrence.expires_at,
         )
+        purpose = occurrence.next_attempt_purpose or "announcement"
+        counts = (
+            {"retries_started": occurrence.retries_started + 1}
+            if purpose == "retry"
+            else {"announcements_started": occurrence.announcements_started + 1}
+        )
         attempt.update(
+            purpose=purpose,
             status="dispatching",
             intent_at=iso(intent),
             volume_before=probe.volume,
@@ -551,8 +673,8 @@ class OccurrenceMixin:
             status="announcing",
             waiting_reason=None,
             current_attempt_id=attempt["id"],
-            announcements_started=occurrence.announcements_started + 1,
             updated_at=iso(intent),
+            **counts,
         ):
             logger.info("Occurrence %s no longer eligible at dispatch", occurrence.id)
             return False
@@ -594,48 +716,116 @@ class OccurrenceMixin:
             self._settle(occurrence, latest)
 
     def _settle(self, occurrence, attempt) -> None:
-        """Close an occurrence from its attempt's evidence.
+        """Apply an attempt's evidence: repeat, retry or close the occurrence.
 
-        Extension points: repeats (#35) would return the occurrence to
-        ``waiting`` with a later ``next_attempt_at`` instead of closing it;
-        Stop speaking (#35) sets disposition 'stopped' (no fallback).
+        - A requested Stop (or Done/Skip/cancel recorded meanwhile) ends all
+          further automatic speech and never makes a fallback.
+        - After a delivered announcement the owner's configured repeats follow
+          ``repeat_interval_minutes`` after the previous start, one at a time
+          (no burst after a stalled loop), only while they can start before
+          the original expiry.
+        - A failure that certainly did not play may be retried automatically,
+          bounded in number and within the original expiry. Uncertain outcomes
+          are never retried (no unintended duplicate).
+        - Once any announcement was delivered, a later failure closes the
+          occurrence as delivered without a fallback.
         """
-        now = iso(self._clock())
+        now = self._clock()
         disposition = occurrence.disposition
         disposition_reason = occurrence.disposition_reason
+        stop_requested = attempt.stop_requested_at is not None
         if attempt.status == "stopped":
-            if attempt.stop_requested_at:
+            if stop_requested:
                 delivery = "delivered" if attempt.playback_observed_at else "none"
-                disposition = disposition or "stopped"
-                disposition_reason = disposition_reason or "stop_requested"
             else:
                 delivery = "unknown"
         else:
             delivery = _DELIVERY[attempt.status]
+        if stop_requested:
+            disposition = disposition or "stopped"
+            disposition_reason = disposition_reason or "stop_requested"
+        delivered_before = occurrence.delivery == "delivered"
         delivery_reason = attempt.reason
         if delivery == "delivered" and affected_members(attempt.member_evidence):
             # Group playback reached only some members. The group cannot replay
             # to one member without replaying the others, so this is never
-            # retried: it closes fallback-eligible as partial.
+            # retried or repeated: it closes fallback-eligible as partial
+            # (unless an earlier announcement already reached every member).
             delivery, delivery_reason = "partial", MEMBER_UNAVAILABLE
+        if delivered_before:
+            delivery, delivery_reason = "delivered", occurrence.delivery_reason
+        elif delivery == "none" and occurrence.delivery != "none":
+            delivery, delivery_reason = occurrence.delivery, occurrence.delivery_reason
+
+        if disposition is None:
+            follow = self._follow_up(occurrence, attempt, delivery, now)
+            if follow is not None:
+                purpose, at = follow
+                if self.ctrl.update_announcement_occurrence(
+                    occurrence.id,
+                    expected=("announcing",),
+                    status="waiting",
+                    delivery=delivery,
+                    delivery_reason=delivery_reason,
+                    next_attempt_at=iso(at),
+                    next_attempt_purpose=purpose,
+                    waiting_reason=None,
+                    updated_at=iso(now),
+                ):
+                    logger.info(
+                        "Occurrence %s %s scheduled at %s (announcements=%s retries=%s)",
+                        occurrence.id,
+                        purpose,
+                        iso(at),
+                        occurrence.announcements_started,
+                        occurrence.retries_started,
+                    )
+                return
+
         values = {
             "status": "closed",
             "delivery": delivery,
             "delivery_reason": delivery_reason,
             "disposition": disposition,
             "disposition_reason": disposition_reason,
-            "closed_at": now,
-            "updated_at": now,
+            "next_attempt_at": None,
+            "next_attempt_purpose": None,
+            "closed_at": iso(now),
+            "updated_at": iso(now),
         }
         fallback = _FALLBACK.get(delivery)
         if fallback and disposition is None:
-            values.update(fallback_reason=fallback, fallback_eligible_at=now)
+            values.update(fallback_reason=fallback, fallback_eligible_at=iso(now))
         if self.ctrl.update_announcement_occurrence(
             occurrence.id, expected=("announcing",), **values
         ):
             logger.info(
-                "Occurrence %s closed delivery=%s fallback=%s",
+                "Occurrence %s closed delivery=%s disposition=%s fallback=%s",
                 occurrence.id,
                 delivery,
+                disposition,
                 values.get("fallback_reason"),
             )
+
+    def _follow_up(self, occurrence, attempt, delivery: str, now: float):
+        """The next automatic dispatch, as (purpose, epoch), or None to close."""
+        expires = epoch(occurrence.expires_at)
+        if attempt.status == "finished" and delivery == "delivered":
+            if occurrence.announcements_started >= occurrence.max_announcements:
+                return None
+            if not occurrence.repeat_interval_minutes:
+                return None
+            started = epoch(attempt.intent_at or attempt.requested_at)
+            at = max(started + occurrence.repeat_interval_minutes * 60, now)
+            return ("repeat", at) if at < expires else None
+        # Only a definitive failure (never partial or unknown evidence) is retried.
+        if delivery == "failed" and attempt.status == "failed" and attempt.certain_not_played:
+            if occurrence.retries_started >= self.config.max_automatic_retries:
+                logger.info("Occurrence %s retry budget exhausted", occurrence.id)
+                return None
+            at = now + self.config.retry_delay_s
+            if at >= expires:
+                logger.info("Occurrence %s retry would not start before expiry", occurrence.id)
+                return None
+            return ("retry", at)
+        return None

@@ -67,6 +67,9 @@ _REASONS = {
     "playback_failed": "the speaker reported a playback error",
     "interrupted": "something else took over the speaker",
     "stopped_externally": "playback was stopped from another app",
+    "volume_failed": "the speaker volume could not be set",
+    "pychromecast_not_installed": "Cast is not installed on the server",
+    "target_host_not_configured": "the speaker address is not configured",
     "group_not_configured": "the speaker group is not configured",
     "group_unavailable": "the speaker group did not respond",
     "member_unavailable": "a speaker in the group did not take part",
@@ -140,6 +143,10 @@ def _why(occurrence, affected=()) -> str:
         if affected:
             detail = f"{', '.join(affected)} did not take part"
         return f"Only part of {occurrence.target_name} reported playback: {detail}."
+    retries = getattr(occurrence, "retries_started", 0)
+    if retries:
+        plural = "retry" if retries == 1 else "retries"
+        return f"Spoken delivery failed: {detail} (also after {retries} automatic {plural})."
     return f"Spoken delivery failed: {detail}."
 
 
@@ -177,6 +184,9 @@ class FallbackMixin:
         now = self._clock()
         for occurrence in self.ctrl.list_announcement_occurrences_without_fallback():
             self._open_fallback(occurrence, now)
+        cancelled = self.ctrl.cancel_acknowledged_announcement_fallbacks(iso(now))
+        if cancelled:
+            logger.info("Cancelled %s pending fallbacks after Done/Skip", cancelled)
         for fallback in self.ctrl.list_announcement_fallbacks(statuses=("pending",)):
             if fallback.next_attempt_at and iso(now) < fallback.next_attempt_at:
                 continue
@@ -199,7 +209,11 @@ class FallbackMixin:
             "created_at": iso(now),
             "updated_at": iso(now),
         }
-        if len(row["message"]) > DISCORD_CONTENT_LIMIT:
+        if occurrence.disposition in ("done", "skipped"):
+            # Acknowledged before the fallback opened: keep the record, never send.
+            row.update(status="cancelled", status_reason="acknowledged", next_attempt_at=None)
+            row["completed_at"] = iso(now)
+        elif len(row["message"]) > DISCORD_CONTENT_LIMIT:
             # Never truncate a reminder silently; make the problem visible.
             row.update(status="failed", status_reason="message_too_long", next_attempt_at=None)
             row["completed_at"] = iso(now)

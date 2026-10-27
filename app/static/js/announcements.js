@@ -1,7 +1,8 @@
 /**
  * Spoken announcements: browser preview, explicit speaker tests, one-time and
- * recurring reminder schedules and their occurrence history. Recurring times
- * are sent as Helsinki wall-clock "HH:MM" text, never converted in the browser.
+ * recurring reminder schedules and their occurrence history with Done, Skip
+ * and Stop speaking. Recurring times are sent as Helsinki wall-clock "HH:MM"
+ * text, never converted in the browser.
  */
 
 (function() {
@@ -52,7 +53,25 @@
     schedule_paused: 'The schedule was paused.',
     schedule_deleted: 'The schedule was deleted.',
     dst_gap: 'This time did not exist: Helsinki clocks moved forward. Recorded as missed, not spoken.',
+    acknowledged: 'Marked by you.',
+    retry_not_started: 'A retry after a failed attempt could not start before the reminder expired.',
   };
+  const ACK_TEXT = { done: 'Done', skipped: 'Skipped' };
+  const PURPOSE_TEXT = { announcement: 'first', repeat: 'repeat', retry: 'automatic retry' };
+  const STOP_OUTCOME_TEXT = {
+    stopped: 'speaker confirmed it stopped',
+    failed: 'speaker did not confirm the stop',
+    unknown: 'stop outcome unknown',
+    not_dispatched: 'cancelled before it was sent',
+  };
+  const OCCURRENCE_ACTIONS = {
+    done: { label: 'Done', path: 'done', message: 'Marked done. No more announcements for this reminder.' },
+    skip: { label: 'Skip this occurrence', path: 'skip',
+      message: 'Skipped this time. The reminder schedule itself continues.' },
+    stop: { label: 'Stop speaking', path: 'stop',
+      message: 'Stop requested; repeats are cancelled. Done and Skip are still available.' },
+  };
+  const MAX_ANNOUNCEMENTS = 5;
   const WEEKDAY_TEXT = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const MAX_TIMES = 12;
   const WAITING_TEXT = {
@@ -92,6 +111,7 @@
     unknown: 'Unknown – may have reached Discord; not resent',
     failed: 'Not delivered to Discord',
     unavailable: 'Not sent – Discord webhook (ALERT_WEBHOOK_URL) not configured',
+    cancelled: 'Not sent – cancelled',
   };
   const FALLBACK_DETAIL_TEXT = {
     attempts_exhausted: 'all attempts failed',
@@ -101,6 +121,7 @@
     acceptance_unknown: 'no answer from Discord',
     interrupted_by_restart: 'the server restarted while sending',
     message_too_long: 'the message is too long for Discord',
+    acknowledged: 'you marked the reminder Done or Skipped before it was sent',
   };
   const RESTORE_TEXT = {
     restored: 'Restored',
@@ -748,6 +769,47 @@
     return `${days} at ${recurrence.times.join(', ')}`;
   }
 
+  // Mirrors the server: announcement k starts k * interval minutes after the
+  // due time and must start before expiry. Delays only make fewer fit.
+  function repeatFit(count, interval, expiry) {
+    const offsets = [0];
+    for (let k = 1; k < count; k += 1) {
+      if (!interval || k * interval >= expiry) break;
+      offsets.push(k * interval);
+    }
+    return offsets;
+  }
+
+  function ordinal(n) {
+    return ['first', 'second', 'third', 'fourth', 'fifth'][n - 1] || `#${n}`;
+  }
+
+  function repeatFitText(count, interval, expiry) {
+    if (!count || count <= 1) return 'One announcement. Done, Skip and Stop speaking stay available.';
+    if (!interval) return 'Choose the minutes between announcements.';
+    if (!expiry) return 'Set the expiry to see how many announcements fit.';
+    const offsets = repeatFit(count, interval, expiry);
+    const at = offsets.map(m => `${m}`).join(', ');
+    let text = `${offsets.length} of ${count} announcements fit before the reminder expires (${expiry} min): `
+      + `${at} min after the due time.`;
+    if (offsets.length < count) {
+      text += ` The ${ordinal(offsets.length + 1)} would come after expiry and is never spoken.`;
+    }
+    return `${text} Repeats stop at Done, Skip or Stop speaking; waiting for music or quiet hours makes fewer fit.`;
+  }
+
+  function updateRepeatFit() {
+    const count = byId('announceMaxAnnouncements');
+    const interval = byId('announceRepeatInterval');
+    const expiry = byId('announceExpiry');
+    const fit = byId('announceRepeatFit');
+    if (!count || !interval || !fit) return;
+    const n = Number(count.value) || 1;
+    interval.disabled = n <= 1;
+    const minutes = interval.value === '' ? null : Number(interval.value);
+    fit.textContent = repeatFitText(n, minutes, expiry ? Number(expiry.value) : null);
+  }
+
   function upcomingText(item) {
     if (item.missed === 'dst_gap') return `${fmtLocal(item.local)} – does not exist (clocks move forward), recorded as missed`;
     return fmtDue(item.due_at);
@@ -757,10 +819,13 @@
     const due = byId('announceDueError');
     const expiry = byId('announceExpiryError');
     const recurrence = byId('announceRecurrenceError');
+    const repeats = byId('announceRepeatError');
     if (due) due.textContent = '';
     if (expiry) expiry.textContent = '';
     if (recurrence) recurrence.textContent = '';
-    ['announceDate', 'announceTime', 'announceExpiry'].forEach(id => {
+    if (repeats) repeats.textContent = '';
+    ['announceDate', 'announceTime', 'announceExpiry', 'announceMaxAnnouncements', 'announceRepeatInterval']
+      .forEach(id => {
       const input = byId(id);
       if (input) input.setAttribute('aria-invalid', 'false');
     });
@@ -775,6 +840,18 @@
       inputs.forEach(input => input.setAttribute('aria-invalid', 'true'));
       const invalid = inputs.find(input => !input.value) || inputs[0];
       if (invalid) invalid.focus();
+      return;
+    }
+    if (field === 'max_announcements' || field === 'repeat_interval_minutes') {
+      const details = byId('announceAdvanced');
+      if (details) details.open = true;
+      if (repeats) repeats.textContent = message;
+      const input = byId(field === 'max_announcements' ? 'announceMaxAnnouncements' : 'announceRepeatInterval');
+      if (input) {
+        input.setAttribute('aria-invalid', 'true');
+        input.disabled = false;
+        input.focus();
+      }
       return;
     }
     if (field === 'expiry_minutes') {
@@ -814,6 +891,10 @@
     const dueDate = date ? date.value : '';
     const dueTime = time ? time.value : '';
     const recurring = repeatMode() !== 'once';
+    const countInput = byId('announceMaxAnnouncements');
+    const intervalInput = byId('announceRepeatInterval');
+    const count = countInput && countInput.value !== '' ? Number(countInput.value) : 1;
+    const interval = intervalInput && intervalInput.value !== '' ? Number(intervalInput.value) : null;
     return {
       kind: recurring ? 'recurring' : 'one_time',
       recurrence: recurring ? recurrenceValues() : null,
@@ -825,6 +906,8 @@
       due_local: !recurring && dueDate && dueTime ? `${dueDate}T${dueTime.slice(0, 5)}` : null,
       fold: !recurring && foldGroup && !foldGroup.hidden && fold ? Number(fold.value) : null,
       expiry_minutes: expiry && expiry.value !== '' ? Number(expiry.value) : null,
+      max_announcements: count,
+      repeat_interval_minutes: count > 1 ? interval : null,
       urgent: Boolean(urgent && urgent.checked),
       quiet_hours_override: Boolean(quiet && quiet.checked),
     };
@@ -870,6 +953,14 @@
         return;
       }
     }
+    if (values.max_announcements > MAX_ANNOUNCEMENTS || values.max_announcements < 1) {
+      setScheduleError('max_announcements', `Choose 1–${MAX_ANNOUNCEMENTS} announcements.`);
+      return;
+    }
+    if (values.max_announcements > 1 && !values.repeat_interval_minutes) {
+      setScheduleError('repeat_interval_minutes', 'Choose the minutes between announcements.');
+      return;
+    }
     setScheduleError(null, '');
     if (button) {
       button.disabled = true;
@@ -899,7 +990,8 @@
       resetScheduleForm();
       await loadReminders();
     } catch (error) {
-      if (['due_local', 'fold', 'expiry_minutes', 'recurrence', 'weekdays', 'times'].includes(error.field)) {
+      if (['due_local', 'fold', 'expiry_minutes', 'recurrence', 'weekdays', 'times', 'max_announcements',
+        'repeat_interval_minutes'].includes(error.field)) {
         setScheduleError(error.field, error.message);
       } else if (error.field === 'text') {
         setFieldError(error.message);
@@ -948,6 +1040,10 @@
       setValue('announceTime', time);
     }
     setValue('announceExpiry', schedule.expiry_minutes);
+    setValue('announceMaxAnnouncements', schedule.max_announcements || 1);
+    const interval = byId('announceRepeatInterval');
+    if (interval) interval.value = schedule.repeat_interval_minutes || '';
+    updateRepeatFit();
     setChecked('announceUrgent', schedule.urgent);
     setChecked('announceQuietOverride', schedule.quiet_hours_override);
     const group = byId('announceFoldGroup');
@@ -1046,6 +1142,7 @@
         fact(facts, 'Next', coming.length ? coming.join('; ') : '—');
       }
       fact(facts, 'Expires after', schedule.expiry_minutes ? `${schedule.expiry_minutes} min` : '—');
+      fact(facts, 'Announcements', repeatsText(schedule.repeats));
       fact(facts, 'Urgent', schedule.urgent ? 'Yes – may interrupt music' : 'No – waits for music');
       fact(facts, 'Quiet hours', schedule.quiet_hours_override ? 'May speak' : 'Held');
       const actions = document.createElement('div');
@@ -1078,6 +1175,56 @@
     });
   }
 
+  function repeatsText(repeats) {
+    if (!repeats || !repeats.max_announcements) return '—';
+    if (repeats.max_announcements <= 1) return 'Once';
+    const fit = repeats.fit < repeats.max_announcements
+      ? `; only ${repeats.fit} fit before expiry` : '';
+    return `Up to ${repeats.max_announcements}, every ${repeats.repeat_interval_minutes} min${fit}`;
+  }
+
+  function acknowledgementText(ack) {
+    if (!ack) return 'Not acknowledged';
+    return `${ACK_TEXT[ack.action] || ack.action} by ${ack.acknowledged_by || '—'} at ${fmtTime(ack.acknowledged_at)}`;
+  }
+
+  function stopEvidence(attempts) {
+    const stopped = attempts.filter(a => a.stop_requested_at);
+    if (!stopped.length) return null;
+    const last = stopped[stopped.length - 1];
+    const outcome = last.stop_outcome ? STOP_OUTCOME_TEXT[last.stop_outcome] || last.stop_outcome : 'waiting for the speaker';
+    return `Requested ${fmtTime(last.stop_requested_at)} – ${outcome}`;
+  }
+
+  function countsText(occurrence) {
+    const started = Number(occurrence.announcements_started) || 0;
+    const max = Number(occurrence.max_announcements) || 1;
+    const retries = Number(occurrence.retries_started) || 0;
+    const retryText = retries ? ` · ${retries} automatic ${retries === 1 ? 'retry' : 'retries'}` : '';
+    return `${started} of ${max}${retryText}`;
+  }
+
+  async function occurrenceAction(occurrence, action, button) {
+    const spec = OCCURRENCE_ACTIONS[action];
+    if (!spec) return;
+    if (button) {
+      button.disabled = true;
+      button.setAttribute('aria-busy', 'true');
+    }
+    try {
+      await api(`/occurrences/${encodeURIComponent(occurrence.id)}/${spec.path}`, { method: 'POST', body: '{}' });
+      showMessage(spec.message);
+      await loadReminders();
+    } catch (error) {
+      showMessage(`${spec.label} did not apply: ${error.message}`, true);
+      if (button) {
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+      }
+      await loadReminders();
+    }
+  }
+
   function occurrenceState(occurrence) {
     if (occurrence.status === 'waiting') {
       const reason = WAITING_TEXT[occurrence.waiting_reason];
@@ -1095,7 +1242,8 @@
     return attempts.map(attempt => {
       const status = STATUS_TEXT[attempt.status] || attempt.status;
       const sent = attempt.intent_at ? fmtTime(attempt.dispatched_at || attempt.intent_at) : 'not sent';
-      return `${status} (${sent})`;
+      const purpose = PURPOSE_TEXT[attempt.purpose];
+      return purpose ? `${status} (${purpose}, ${sent})` : `${status} (${sent})`;
     }).join('; ');
   }
 
@@ -1180,6 +1328,7 @@
       fact(facts, 'Expires', fmtTime(occurrence.expires_at));
       const waited = (occurrence.waiting_history || []).map(h => REASON_TEXT[h.reason] || h.reason);
       fact(facts, 'Waited for', waited.length ? waited.join(' ') : '—');
+      fact(facts, 'Announcements', countsText(occurrence));
       fact(facts, 'Attempts', attemptSummary(attempts));
       fact(facts, 'Playback observed', fmtTime(last.playback_observed_at));
       fact(facts, 'Delivery', DELIVERY_TEXT[occurrence.delivery] || '—');
@@ -1191,8 +1340,24 @@
       fact(facts, 'Volume restore', RESTORE_TEXT[last.volume_restore] || '—');
       groupFacts(facts, last.id ? last : null);
       fact(facts, 'Discord fallback', fallbackText(occurrence, item.fallback));
-      fact(facts, 'Acknowledged', item.acknowledgement ? fmtTime(item.acknowledgement.at) : 'Not recorded');
+      const stop = stopEvidence(attempts);
+      if (stop) fact(facts, 'Stop speaking', stop);
+      fact(facts, 'Acknowledged', acknowledgementText(item.acknowledgement));
       li.append(head, text, facts);
+      const available = Array.isArray(item.actions) ? item.actions : [];
+      if (available.length) {
+        const actions = document.createElement('div');
+        actions.className = 'announce-item-actions';
+        const name = occurrence.text ? occurrence.text.slice(0, 40) : 'reminder';
+        available.forEach(action => {
+          const spec = OCCURRENCE_ACTIONS[action];
+          if (!spec) return;
+          const style = action === 'stop' ? 'announce-btn-stop' : (action === 'done' ? 'announce-btn-primary' : 'announce-btn-quiet');
+          actions.appendChild(actionButton(spec.label, `${spec.label}: ${name}`, style,
+            button => occurrenceAction(occurrence, action, button)));
+        });
+        li.appendChild(actions);
+      }
       list.appendChild(li);
     });
   }
@@ -1266,6 +1431,11 @@
         scheduleRequestId = null;
       });
     });
+    ['announceMaxAnnouncements', 'announceRepeatInterval', 'announceExpiry'].forEach(id => {
+      const input = byId(id);
+      if (input) input.addEventListener('input', updateRepeatFit);
+    });
+    updateRepeatFit();
     const addTime = byId('announceAddTime');
     if (addTime) addTime.addEventListener('click', () => addTimeRow('', true));
     applyRepeatMode();
