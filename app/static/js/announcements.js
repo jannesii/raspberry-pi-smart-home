@@ -68,9 +68,11 @@
     done: { label: 'Done', path: 'done', message: 'Marked done. No more announcements for this reminder.' },
     skip: { label: 'Skip this occurrence', path: 'skip',
       message: 'Skipped this time. The reminder schedule itself continues.' },
+    snooze: { label: 'Snooze', path: 'snooze', message: 'Reminder postponed. Quiet hours still apply.' },
     stop: { label: 'Stop speaking', path: 'stop',
       message: 'Stop requested; repeats are cancelled. Done and Skip are still available.' },
   };
+  const snoozeRequests = new Map();
   const MAX_ANNOUNCEMENTS = 5;
   const WEEKDAY_TEXT = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const MAX_TIMES = 12;
@@ -1207,18 +1209,29 @@
     const max = Number(occurrence.max_announcements) || 1;
     const retries = Number(occurrence.retries_started) || 0;
     const retryText = retries ? ` · ${retries} automatic ${retries === 1 ? 'retry' : 'retries'}` : '';
-    return `${started} of ${max}${retryText}`;
+    return `${started > max ? `${started} started (includes snooze)` : `${started} of ${max}`}${retryText}`;
   }
 
-  async function occurrenceAction(occurrence, action, button) {
+  async function occurrenceAction(occurrence, action, button, snoozeMinutes) {
     const spec = OCCURRENCE_ACTIONS[action];
     if (!spec) return;
     if (button) {
       button.disabled = true;
       button.setAttribute('aria-busy', 'true');
     }
+    let postponement;
+    if (action === 'snooze') {
+      postponement = snoozeRequests.get(occurrence.id);
+      if (!postponement || postponement.minutes !== snoozeMinutes) {
+        postponement = { minutes: snoozeMinutes, request_id: requestId() };
+        snoozeRequests.set(occurrence.id, postponement);
+      }
+    }
     try {
-      await api(`/occurrences/${encodeURIComponent(occurrence.id)}/${spec.path}`, { method: 'POST', body: '{}' });
+      await api(`/occurrences/${encodeURIComponent(occurrence.id)}/${spec.path}`, { method: 'POST', body: JSON.stringify(action === 'snooze'
+          ? postponement
+          : {}) });
+      if (action === 'snooze') snoozeRequests.delete(occurrence.id);
       showMessage(spec.message);
       await loadReminders();
     } catch (error) {
@@ -1233,6 +1246,7 @@
 
   function occurrenceState(occurrence) {
     if (occurrence.status === 'waiting') {
+      if (occurrence.next_attempt_purpose === 'snooze') return `Snoozed until ${fmtTime(occurrence.next_attempt_at)}`;
       const reason = WAITING_TEXT[occurrence.waiting_reason];
       return reason ? `Waiting – ${reason}` : 'Waiting';
     }
@@ -1332,6 +1346,7 @@
       facts.className = 'announce-test-facts';
       fact(facts, 'Due', gap ? `${fmtLocal(occurrence.instance_local)} (did not exist)` : fmtTime(occurrence.due_at));
       fact(facts, 'Expires', fmtTime(occurrence.expires_at));
+      if (item.snoozes && item.snoozes.length) fact(facts, 'Snoozed', item.snoozes.map(s => `${s.minutes} min at ${fmtTime(s.snoozed_at)}`).join('; '));
       const waited = (occurrence.waiting_history || []).map(h => REASON_TEXT[h.reason] || h.reason);
       fact(facts, 'Waited for', waited.length ? waited.join(' ') : '—');
       fact(facts, 'Announcements', countsText(occurrence));
@@ -1359,6 +1374,24 @@
         available.forEach(action => {
           const spec = OCCURRENCE_ACTIONS[action];
           if (!spec) return;
+          if (action === 'snooze') {
+            const label = document.createElement('label');
+            label.className = 'announce-snooze';
+            label.textContent = 'Snooze minutes: ';
+            const choices = document.createElement('select');
+            choices.setAttribute('aria-label', `Snooze minutes: ${name}`);
+            [5, 10, 15, 30].forEach(minutes => {
+              const option = document.createElement('option');
+              option.value = String(minutes);
+              option.textContent = `${minutes} minutes`;
+              option.selected = minutes === 10;
+              choices.appendChild(option);
+            });
+            label.appendChild(choices);
+            actions.append(label, actionButton('Snooze', `Snooze: ${name}`, 'announce-btn-quiet',
+              button => occurrenceAction(occurrence, action, button, Number(choices.value))));
+            return;
+          }
           const style = action === 'stop' ? 'announce-btn-stop' : (action === 'done' ? 'announce-btn-primary' : 'announce-btn-quiet');
           actions.appendChild(actionButton(spec.label, `${spec.label}: ${name}`, style,
             button => occurrenceAction(occurrence, action, button)));

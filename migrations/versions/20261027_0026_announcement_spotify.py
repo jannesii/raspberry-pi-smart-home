@@ -1,14 +1,14 @@
 """Optional encrypted Spotify connection and explicit target mapping.
 
 Revision ID: 20261027_0026
-Revises: 20261027_0024
+Revises: 20261027_0025
 """
 
 import sqlalchemy as sa
 from alembic import op
 
 revision = "20261027_0026"
-down_revision = "20261027_0024"
+down_revision = "20261027_0025"
 branch_labels = None
 depends_on = None
 

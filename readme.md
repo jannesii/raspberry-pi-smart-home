@@ -678,8 +678,20 @@ starts sending cancels it (shown as cancelled by your acknowledgement); one
 already sending, sent or unknown stays as recorded. Stop speaking never cancels
 a fallback. Acknowledgements are reminder handling only:
 they never record a medicine dose or blood-pressure value and leave medicine
-purchase/refill calculations unchanged. Snooze and history deletion are later
-slices.
+purchase/refill calculations unchanged.
+
+**Snooze and the next occurrence.** Snooze offers 5, 10, 15 or 30 minutes
+(default ten). It postpones the same occurrence, keeps the original schedule
+instance and all delivery evidence, and extends its effective expiry by the
+original delivery window when needed. Quiet hours still apply independently
+of urgency and the quiet-hours override. Only this explicit action extends
+expiry; automatic retries do not. Requests are idempotent across restart and
+never reset announcement or retry counters. Snooze remains available after Stop
+speaking; it requests one deliberate delivery without restoring repeats that
+Stop cancelled. At the next occurrence of the same schedule, older pending
+speech (including snoozes) becomes superseded, without an acknowledgement.
+Already playing speech can finish, but it gets no further automatic repeats.
+History deletion is a later slice.
 
 **Speaker group.** Choosing the group plays one synchronized stream through
 your existing Google Home group, and reminders and tests on the group wait for
