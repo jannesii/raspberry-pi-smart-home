@@ -597,3 +597,11 @@ def test_cast_adapter_addresses_the_group_by_uuid_never_its_leader_speaker(monke
         ("Jbl-Right", "audio", 8009),
         ("Koti kaiuttimet", "group", 32187),
     }
+
+
+def test_page_offers_the_read_only_speaker_check(announcement_app, client):
+    html = client.get("/settings/announcements").get_data(as_text=True)
+    assert 'id="announcementDiscoveryButton"' in html
+    assert "never creates or changes your Google Home group" in html
+    assert "js/announcements.js?v=20261027-5" in html
+    assert "css/announcements.css?v=20261027-5" in html

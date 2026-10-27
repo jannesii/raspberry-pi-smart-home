@@ -3,7 +3,7 @@
 {% block title %}Announcements{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/announcements.css', v='20261027-4') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/announcements.css', v='20261027-5') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/flash.css') }}">
 {% endblock %}
 
@@ -37,6 +37,21 @@
       <div><dt>Discord fallback</dt><dd id="announceStatusFallback">—</dd></div>
       <div><dt>Reminder link in Discord</dt><dd id="announceStatusLink">—</dd></div>
     </dl>
+    <div class="announce-discovery">
+      <div class="announce-discovery-head">
+        <p class="announce-help">Speaker availability is checked when something is sent, or here on request.
+          Finding Cast devices only reads what the speakers report; it never creates or changes your Google Home group.</p>
+        <button id="announcementDiscoveryButton" class="announce-btn announce-btn-quiet" type="button">
+          Check speakers and find Cast group
+        </button>
+      </div>
+      <p id="announceDiscoveryState" class="announce-help" aria-live="polite"></p>
+      <ul id="announceDiscoveryList" class="announce-discovery-list" hidden></ul>
+      <details id="announceDiscoveryConfig" class="announce-discovery-config" hidden>
+        <summary>Suggested ANNOUNCEMENT_TARGETS (copy into the server environment and restart)</summary>
+        <pre><code id="announceDiscoveryJson"></code></pre>
+      </details>
+    </div>
   </section>
 
   <section class="announce-workspace">
@@ -220,5 +235,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/announcements.js', v='20261027-4') }}"></script>
+<script src="{{ url_for('static', filename='js/announcements.js', v='20261027-5') }}"></script>
 {% endblock %}
