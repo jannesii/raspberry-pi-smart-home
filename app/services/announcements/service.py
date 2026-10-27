@@ -173,6 +173,22 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin, CastDiscoveryMixin):
                 values["stop_outcome"] = "unknown"
             if self.ctrl.update_announcement_attempt(attempt.id, expected=ACTIVE, **values):
                 recovered += 1
+        # Playback can be committed before a process dies restoring volume/music.
+        # Preserve its terminal delivery evidence; ownership cannot survive restart.
+        terminal = ("finished", "failed", "unknown", "stopped")
+        for attempt in self.ctrl.list_announcement_attempts(statuses=terminal):
+            values = {}
+            if attempt.volume_applied is not None and attempt.volume_restore is None:
+                values["volume_restore"] = "unknown"
+            if attempt.media_restore == "pending":
+                values["media_restore"] = "unknown"
+            if values:
+                self.ctrl.update_announcement_attempt(
+                    attempt.id, expected=terminal, updated_at=now, **values
+                )
+                logger.warning(
+                    "Announcement attempt %s restoration interrupted by restart", attempt.id
+                )
         if recovered:
             logger.warning("Marked %s interrupted announcement attempts unknown", recovered)
         self._recover_fallbacks(now)
@@ -331,11 +347,26 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin, CastDiscoveryMixin):
         attempt = self._new_attempt(
             chosen, content, volume=volume, chime=chime, now=now, speaker_test_id=test["id"]
         )
-        outcome, saved = self.ctrl.create_announcement_speaker_test(test, attempt)
+        with self._lock:
+            if self.ctrl.announcement_request_consumed(request_id):
+                raise AnnouncementInputError(
+                    "request_id", "This speaker test request was deleted; use a new request id."
+                )
+            outcome, saved = self.ctrl.create_announcement_speaker_test(test, attempt)
         if outcome == "created":
             logger.info("Speaker test %s queued target=%s", saved.id, chosen.key)
             self._wake.set()
         return outcome, self.speaker_test_detail(saved.id)
+
+    def delete_history(self, kind: str, identity: str) -> None:
+        with self._lock:
+            outcome = self.ctrl.delete_announcement_history(kind, identity)
+            if outcome == "active":
+                raise AnnouncementStateError(
+                    "history_active",
+                    "History cannot be deleted while speech, control, fallback or restoration work is pending.",
+                )
+        logger.info("Announcement history %s %s", identity, outcome)
 
     def _new_attempt(
         self,

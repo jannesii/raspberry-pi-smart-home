@@ -18,6 +18,7 @@ from ..models import AnnouncementAcknowledgement, AnnouncementOccurrence, Announ
 from ..schema import (
     announcement_acknowledgement,
     announcement_attempt,
+    announcement_consumed,
     announcement_fallback,
     announcement_occurrence,
     announcement_schedule,
@@ -229,7 +230,13 @@ class AnnouncementScheduleMixin:
                     occ.instance_due_at == occurrence["instance_due_at"],
                 )
             ).first()
-            if exists:
+            consumed = conn.execute(
+                select(announcement_consumed.c.id).where(
+                    announcement_consumed.c.schedule_id == occurrence["schedule_id"],
+                    announcement_consumed.c.instance_due_at == occurrence["instance_due_at"],
+                )
+            ).first()
+            if exists or consumed:
                 logger.warning(
                     "Occurrence for schedule %s at %s already existed; not recreated",
                     occurrence["schedule_id"],

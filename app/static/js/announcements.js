@@ -570,6 +570,35 @@
     return `${outcome} (${fmtTime(attempt.stop_observed_at || attempt.stop_requested_at)})`;
   }
 
+  function historyDeletion(container, kind, identity) {
+    const controls = document.createElement('div');
+    controls.className = 'announce-item-actions';
+    const remove = actionButton('Delete history', 'Delete history', 'announce-btn-quiet', () => {
+      const warning = document.createElement('p');
+      warning.textContent = 'Permanently delete this history and its text? The schedule and future reminders are kept. Active work cannot be deleted.';
+      const confirm = actionButton('Confirm delete history', 'Confirm delete history', 'announce-btn-stop', async button => {
+        button.disabled = true;
+        try {
+          await api(`/${kind}/${encodeURIComponent(identity)}`, { method: 'DELETE', body: JSON.stringify({ confirm: true }) });
+          showMessage('History permanently deleted.');
+          await Promise.all([loadTests(), loadReminders()]);
+        } catch (error) {
+          handleError(error, 'History not deleted');
+          button.disabled = false;
+        }
+      });
+      const cancel = actionButton('Cancel', 'Cancel history deletion', 'announce-btn-quiet', () => {
+        controls.replaceChildren(remove);
+        remove.focus();
+      });
+      controls.replaceChildren(warning, confirm, cancel);
+      cancel.focus();
+    });
+    remove.dataset.historyDelete = identity;
+    controls.appendChild(remove);
+    container.appendChild(controls);
+  }
+
   function renderTests(tests) {
     const list = byId('announceTestsList');
     const count = byId('announceTestsCount');
@@ -624,6 +653,7 @@
       fact(facts, 'Detail', REASON_TEXT[attempt.reason] || attempt.reason || '—');
       groupFacts(facts, attempt);
       li.append(head, text, facts);
+      if (!ACTIVE.includes(attempt.status) && attempt.status !== "requested") historyDeletion(li, "tests", test.id);
       list.appendChild(li);
     });
   }
@@ -1366,6 +1396,7 @@
       if (stop) fact(facts, 'Stop speaking', stop);
       fact(facts, 'Acknowledged', acknowledgementText(item.acknowledgement));
       li.append(head, text, facts);
+      if (!["waiting", "announcing"].includes(occurrence.status)) historyDeletion(li, "occurrences", occurrence.id);
       const available = Array.isArray(item.actions) ? item.actions : [];
       if (available.length) {
         const actions = document.createElement('div');

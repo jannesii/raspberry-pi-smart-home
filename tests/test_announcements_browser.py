@@ -71,3 +71,8 @@ def test_optional_spotify_connection_browser_flow(tmp_path, width):
 @pytest.mark.parametrize("width", [393, 1440])
 def test_snooze_and_supersession_browser_flow(tmp_path, width):
     run_flow(tmp_path, "announcements_snooze_flow.py", width, timeout=120)
+
+
+@pytest.mark.parametrize("width", [393, 1440])
+def test_complete_reminder_history_browser_journey(tmp_path, width):
+    run_flow(tmp_path, "announcements_history_flow.py", width, timeout=180)

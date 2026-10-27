@@ -17,6 +17,7 @@ import pytest
 from announcement_support import (
     GROUP,
     START,
+    DiscordResponse,
     FakeCast,
     FakeDiscord,
     FakeSynthesizer,
@@ -61,7 +62,12 @@ if __name__ == "__main__":
     def test_group():
         # The owner has set the discovered group in ANNOUNCEMENT_TARGETS.
         flask_app.announcement_service = build_service(
-            flask_app.ctrl, clock, (synth, cast), work / "cache", targets=group_targets()
+            flask_app.ctrl,
+            clock,
+            (synth, cast),
+            work / "cache",
+            targets=group_targets(),
+            discord=discord,
         )
         return jsonify({"ok": True})
 
@@ -72,6 +78,13 @@ if __name__ == "__main__":
 
     @flask_app.route("/test/discord")
     def test_discord():
+        outcome = request.args.get("outcome")
+        if outcome == "rejected":
+            discord.outcomes.append(DiscordResponse(503, {}))
+        elif outcome == "unknown":
+            import requests
+
+            discord.outcomes.append(requests.Timeout("simulated acceptance unknown"))
         return jsonify({"requests": len(discord.requests)})
 
     @flask_app.route("/test/clock")
@@ -85,8 +98,19 @@ if __name__ == "__main__":
     def test_spotify():
         from test_announcement_spotify import setup_spotify
 
-        setup_spotify(flask_app, clock)
+        flask_app.test_spotify_server = setup_spotify(flask_app, clock)
         return jsonify({"ok": True})
+
+    @flask_app.route("/test/spotify/owner")
+    def test_spotify_owner():
+        # A new track is independent owner intent at the external HTTP boundary.
+        flask_app.test_spotify_server.player["item"]["uri"] = "spotify:track:owner-choice"
+        return jsonify({"ok": True})
+
+    @flask_app.route("/test/spotify/effects")
+    def test_spotify_effects():
+        calls = flask_app.test_spotify_server.calls
+        return jsonify({"resumes": sum(url.endswith("/play") for _, url, _ in calls)})
 
     @flask_app.before_request
     def tick_on_request():

@@ -149,7 +149,7 @@ def test_stop_then_snooze_stops_old_attempt_and_preserves_budgets(
 
 def test_snooze_controls_explain_choices_and_deadline(announcement_app, client):
     html = client.get("/settings/announcements").get_data(as_text=True)
-    assert "js/announcements.js?v=20261027-8" in html
+    assert "js/announcements.js?v=20261027-9" in html
     script = client.get("/static/js/announcements.js").get_data(as_text=True)
     assert "[5, 10, 15, 30]" in script
     assert "Snooze minutes:" in script
