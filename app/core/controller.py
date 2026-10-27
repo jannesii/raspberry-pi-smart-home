@@ -1,5 +1,6 @@
 from ._controller import (
     ACMixin,
+    AnnouncementMixin,
     AuthMixin,
     CarHeaterInstallationMixin,
     CarHeaterKFactorMixin,
@@ -23,6 +24,7 @@ from ._controller import (
 class Controller(
     ControllerBase,
     ACMixin,
+    AnnouncementMixin,
     AuthMixin,
     CarHeaterMixin,
     CarHeaterInstallationMixin,

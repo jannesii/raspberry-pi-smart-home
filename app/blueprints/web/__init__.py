@@ -12,6 +12,7 @@ web_bp = Blueprint("web", __name__)
 # Import route modules so that their @web_bp.route handlers register.
 # These imports are intentional for side effects.
 from . import (
+    announcements_web,
     car_heater_web,
     medicine_calculator_web,
     pages_web,

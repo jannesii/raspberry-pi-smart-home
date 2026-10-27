@@ -693,3 +693,75 @@ weather_forecast_receipt = Table(
     Column("version_id", Integer, ForeignKey("weather_forecast_version.id"), primary_key=True),
 )
 Index("idx_weather_forecast_receipt_version", weather_forecast_receipt.c.version_id)
+
+# A deliberate owner request to play prepared audio on one announcement target.
+# Not a reminder occurrence: it is never acknowledged and creates no schedule.
+announcement_speaker_test = Table(
+    "announcement_speaker_test",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("request_id", Text, nullable=False, unique=True),
+    Column("requested_at", Text, nullable=False),
+    Column("requested_by", Text),
+    Column("text", Text, nullable=False),
+    Column("language", Text, nullable=False),
+    Column("target_key", Text, nullable=False),
+    Column("volume_percent", Integer, nullable=False),
+    Column("chime_percent", Integer, nullable=False),
+    CheckConstraint("language IN ('fi', 'en')", name="ck_announcement_speaker_test_language"),
+    CheckConstraint("volume_percent BETWEEN 0 AND 100", name="ck_announcement_speaker_test_volume"),
+    CheckConstraint("chime_percent BETWEEN 0 AND 100", name="ck_announcement_speaker_test_chime"),
+)
+
+# Speaker delivery evidence for one dispatch to one target. Dispatch intent
+# (intent_at) is committed before any Cast effect; an attempt left between
+# intent and a decisive outcome by a restart becomes 'unknown' and is never
+# replayed. Evidence is what the receiver reported, not proof of audibility.
+# Holds its own content/volume snapshot so the dispatcher needs only this row.
+announcement_attempt = Table(
+    "announcement_attempt",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("speaker_test_id", Text, ForeignKey("announcement_speaker_test.id")),
+    Column("target_key", Text, nullable=False),
+    Column("target_name", Text, nullable=False),
+    Column("target_host", Text),
+    Column("target_device_id", Text),
+    Column("speaker_set", Text, nullable=False),
+    Column("evidence_scope", Text, nullable=False),
+    Column("priority", Integer, nullable=False),
+    Column("text", Text, nullable=False),
+    Column("language", Text, nullable=False),
+    Column("volume_percent", Integer, nullable=False),
+    Column("chime_percent", Integer, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("reason", Text),
+    Column("requested_at", Text, nullable=False),
+    Column("dispatch_deadline", Text, nullable=False),
+    Column("voice", Text),
+    Column("media_key", Text),
+    Column("media_duration_s", Float),
+    Column("intent_at", Text),
+    Column("dispatched_at", Text),
+    Column("playback_observed_at", Text),
+    Column("finished_at", Text),
+    Column("stop_requested_at", Text),
+    Column("stop_outcome", Text),
+    Column("stop_observed_at", Text),
+    Column("volume_before", Float),
+    Column("volume_applied", Float),
+    Column("volume_restore", Text),
+    Column("volume_restored_at", Text),
+    Column("updated_at", Text, nullable=False),
+    CheckConstraint(
+        "status IN ('requested', 'dispatching', 'dispatched', 'playing', "
+        "'finished', 'failed', 'unknown', 'stopped')",
+        name="ck_announcement_attempt_status",
+    ),
+)
+Index(
+    "idx_announcement_attempt_status",
+    announcement_attempt.c.status,
+    announcement_attempt.c.requested_at,
+)
+Index("idx_announcement_attempt_speaker_test", announcement_attempt.c.speaker_test_id)

@@ -1,0 +1,109 @@
+{% extends 'base.html' %}
+
+{% block title %}Announcements{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/announcements.css', v='20261027-1') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/flash.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="announce-page">
+  <input type="hidden" id="csrfToken" value="{{ csrf_token() }}">
+
+  <header class="announce-header">
+    <div>
+      <p class="announce-eyebrow">Settings</p>
+      <h1>Announcements</h1>
+      <p class="announce-subtitle">Prepare a spoken reminder: a soft chime, a short pause, then your words.
+        Listen in this browser first, then test it deliberately on one speaker.</p>
+    </div>
+    <a class="announce-back-link" href="{{ url_for('web.get_settings_page') }}">Back to settings</a>
+  </header>
+
+  <div id="announceMessage" class="announce-message" role="status" aria-live="polite"></div>
+
+  <section class="announce-panel" aria-labelledby="announceStatusTitle">
+    <div class="announce-section-heading">
+      <h2 id="announceStatusTitle">Readiness</h2>
+      <button id="announcementStatusRefresh" class="announce-btn announce-btn-quiet" type="button">Refresh</button>
+    </div>
+    <dl id="announceStatusList" class="announce-status-list">
+      <div><dt>Speech engine</dt><dd id="announceStatusSynth">—</dd></div>
+      <div><dt>Cast</dt><dd id="announceStatusCast">—</dd></div>
+      <div><dt>Speaker media address</dt><dd id="announceStatusMedia">—</dd></div>
+    </dl>
+  </section>
+
+  <section class="announce-workspace">
+    <form id="announceForm" class="announce-panel" novalidate aria-labelledby="announceComposeTitle">
+      <div class="announce-section-heading">
+        <h2 id="announceComposeTitle">Message</h2>
+        <span id="announceTextCount" aria-live="off">0 / 500</span>
+      </div>
+
+      <label class="announce-field" for="announceText">
+        <span>Reminder text</span>
+        <textarea id="announceText" name="text" rows="3" maxlength="500" required
+          aria-describedby="announceTextError"></textarea>
+        <small id="announceTextError" class="announce-field-error"></small>
+      </label>
+
+      <div class="announce-grid">
+        <label class="announce-field" for="announceLanguage">
+          <span>Language</span>
+          <select id="announceLanguage" name="language">
+            <option value="fi" selected>Suomi (Finnish)</option>
+            <option value="en">English</option>
+          </select>
+        </label>
+
+        <label class="announce-field" for="announceChime">
+          <span>Chime loudness <output id="announceChimeValue" for="announceChime">40 %</output></span>
+          <input id="announceChime" name="chime_percent" type="range" min="0" max="100" step="5" value="40"
+            aria-describedby="announceChimeHelp">
+          <small id="announceChimeHelp" class="announce-help">Relative to the speech in the prepared audio.</small>
+        </label>
+      </div>
+
+      <div class="announce-actions">
+        <button id="announcementPreviewButton" class="announce-btn announce-btn-primary" type="button">
+          Preview in browser
+        </button>
+      </div>
+      <audio id="announcePreviewAudio" class="announce-audio" controls preload="none" hidden></audio>
+      <p id="announcePreviewState" class="announce-help">Preview plays here only; it never uses a speaker.</p>
+
+      <fieldset class="announce-speaker">
+        <legend>Speaker test</legend>
+        <div id="announceTargets" class="announce-targets" role="radiogroup" aria-label="Speaker"></div>
+        <label class="announce-field" for="announceVolume">
+          <span>Speaker volume during the test <output id="announceVolumeValue" for="announceVolume">30 %</output></span>
+          <input id="announceVolume" name="volume_percent" type="range" min="0" max="100" step="5" value="30"
+            aria-describedby="announceVolumeHelp">
+          <small id="announceVolumeHelp" class="announce-help">The previous volume is restored afterwards unless it was changed meanwhile.
+            Tests only start on an idle speaker and never replace music.</small>
+        </label>
+        <div class="announce-actions">
+          <button id="announcementTestButton" class="announce-btn announce-btn-test" type="button">
+            Test on speaker
+          </button>
+        </div>
+      </fieldset>
+    </form>
+
+    <section class="announce-panel" aria-labelledby="announceTestsTitle">
+      <div class="announce-section-heading">
+        <h2 id="announceTestsTitle">Speaker tests</h2>
+        <span id="announceTestsCount">0 tests</span>
+      </div>
+      <p class="announce-help">Shows what the speaker reported. Playback evidence does not prove the message was heard.</p>
+      <ol id="announceTestsList" class="announce-tests" aria-live="polite"></ol>
+    </section>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/announcements.js', v='20261027-1') }}"></script>
+{% endblock %}
