@@ -18,7 +18,8 @@ device integrations need their own hardware, credentials, and configuration.
 - **Administration:** users and API keys, logs, Hue lighting, webhook alerts,
   Sodexo menu posts, and host-specific VPN/DNS bypass controls.
 - **Root-Admin tools:** YNAB transaction review and approval, medicine purchase
-  and refill tracking, and network-bypass management.
+  and refill tracking, network-bypass management, and spoken announcement
+  preview/speaker tests on the JBL Cast speakers.
 
 ## Architecture
 
@@ -165,6 +166,7 @@ Configure only the integrations you use:
 | Weather archive | `WEATHER_ARCHIVE_ENABLED` (default `true`): archive FMI station observations every ten minutes and the parking-point forecast every thirty minutes. `WEATHER_FORECAST_POINT` (default `62.8000,22.8260`): forecast point as `lat,lon`; an invalid value leaves forecast collection off. Needs outbound HTTPS to `opendata.fmi.fi` and migrations `20261016_0016`/`20261016_0017`/`20261017_0018`; see [weather observation archive](#weather-observation-archive) and [parking-point forecast archive](#parking-point-forecast-archive) |
 | Sodexo | `SODEXO_WEBHOOK_URL`, `SODEXO_POST_HOUR`, `SODEXO_POST_MINUTE` |
 | Alerts | `ALERT_WEBHOOK_URL`, `ALERT_WEBHOOK_BATCH_SECONDS` |
+| Spoken announcements | `ANNOUNCEMENTS_ENABLED` (default `true`), `ANNOUNCEMENT_MEDIA_ORIGIN` (speaker-reachable `http(s)://host[:port]`), `ANNOUNCEMENT_TARGETS` (JSON; defaults Jbl-Right `192.168.1.119`, Jbl-Left `192.168.1.148`), `ANNOUNCEMENT_CACHE_DIR`, `PIPER_COMMAND`, `PIPER_VOICE_DIR`, `PIPER_VOICE_FI`/`PIPER_VOICE_EN`; optional `requirements-announcements.txt` and migration `20261027_0020`; see [spoken announcements](#spoken-announcements) |
 
 See [app/config.py](app/config.py) for core parsing/defaults and
 [service initialization](app/services/__init__.py) plus individual services for
@@ -519,6 +521,66 @@ Run isolated planner, migration and phone/desktop checks with:
 
 ```sh
 .venv/bin/pytest -q tests/test_departure_heating.py tests/test_departure_migration.py tests/test_car_heater_sessions_browser.py
+```
+
+### Spoken announcements
+
+**Settings → Announcements** (Root-Admin) prepares a spoken reminder: a soft
+attention chime, about 0.5 s of silence, then the owner's text spoken locally in
+Finnish (default) or English. **Preview in browser** plays the complete audio in
+the page only; it never contacts a speaker. **Test on speaker** is a separate,
+deliberate action on Jbl-Right or Jbl-Left with a chosen speaker volume; chime
+loudness is set separately. A test is its own permanent record. It is not a
+reminder occurrence, cannot be acknowledged and creates no schedule.
+
+A test starts only when the speaker reports idle. Playing, unknown or
+unreachable speakers fail the test with a visible reason instead of replacing
+music. Tests on the same speaker run one after another; a test that waits more
+than two minutes is not played late. **Stop** records the request and then what
+the speaker reported. The previous volume is restored only if it still equals
+the test volume, so a change you made meanwhile is kept. History shows
+requested, sent, observed-playback, ended, stop and volume-restore evidence.
+None of it proves the message was heard. If the server restarts mid-test, the
+attempt becomes *unknown* and is never replayed automatically.
+
+Setup (owner commissioning; automated tests never use real speakers or engines):
+
+1. **Speech engine.** Install [Piper](https://github.com/OHF-Voice/piper1-gpl)
+   (`piper-tts`, GPL-3.0-or-later) in its **own** virtual environment. The app
+   runs it as a subprocess and never imports it. Download
+   `fi_FI-harri-medium` (dataset CC0) and `en_GB-alba-medium` (dataset CC BY 4.0;
+   credit the University of Edinburgh dataset) with
+   `python -m piper.download_voices <voice> --data-dir <dir>`. Set
+   `PIPER_COMMAND=/opt/piper/bin/piper` and `PIPER_VOICE_DIR=<dir>`; each voice
+   needs `<voice>.onnx` and `<voice>.onnx.json`. There is no cloud fallback.
+   Measure first-synthesis latency and listen for pronunciation on the Pi.
+2. **Cast.** `pip install -r requirements-announcements.txt` (PyChromecast, MIT)
+   in the app environment. Without it, readiness shows Cast unavailable and tests
+   fail visibly. Optionally pin each speaker's Cast UUID in
+   `ANNOUNCEMENT_TARGETS`, e.g.
+   `[{"key":"jbl-right","name":"Jbl-Right","host":"192.168.1.119","device_id":"<uuid>"}, ...]`.
+   A different device at that address then fails the test.
+3. **Media origin.** Speakers fetch audio without cookies from
+   `ANNOUNCEMENT_MEDIA_ORIGIN` + `/announcement-media/<token>.wav`. Tokens are
+   random, name one prepared file, and expire after 10 minutes or when the
+   attempt ends. The app listens on `127.0.0.1:5555` behind nginx, so the owner
+   must expose **only** `/announcement-media/` on an address the speakers can
+   reach, for example a LAN-only nginx `server` that proxies that location to
+   `127.0.0.1:5555` with `access_log off`. The token is a bearer secret in the URL
+   path. Then set the origin, for example `http://192.168.1.10:8099`. Until it is
+   set, preview works and speaker tests fail with "media address not configured".
+4. Apply migration `20261027_0020` with the normal migration procedure.
+
+Prepared audio is cached in `ANNOUNCEMENT_CACHE_DIR` (default
+`announcement-cache/` beside `DB_PATH`) for up to 7 days or 64 MB. Evicting it
+never removes test history. Default volume 30 % and chime 40 % are starting
+points, not calibrated softness. The JBL/Google Home behavior, Eventlet
+compatibility of PyChromecast and the real media fetch are unverified until
+owner acceptance. Schedules, reminders, Discord fallback, groups and Spotify
+handling are not part of this slice.
+
+```sh
+.venv/bin/pytest -q tests/test_announcements.py tests/test_announcement_integrations.py tests/test_announcement_storage.py tests/test_announcements_browser.py
 ```
 
 ### Weather observation archive

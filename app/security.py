@@ -11,6 +11,17 @@ from .extensions import limiter
 
 logger = logging.getLogger(__name__)
 
+# Paths whose last segment is a bearer capability (announcement media for Cast).
+_CAPABILITY_PATH_PREFIXES = ("/announcement-media/",)
+
+
+def redact_media_path(path: str) -> str:
+    """Request path safe for logs: capability tokens are replaced."""
+    for prefix in _CAPABILITY_PATH_PREFIXES:
+        if path.startswith(prefix):
+            return f"{prefix}<redacted>"
+    return path
+
 
 def configure_rate_limiting(app) -> None:
     """Initialize Flask-Limiter and register a whitelist request filter.
@@ -74,7 +85,7 @@ def apply_security_headers(app) -> None:
     def _add_security_headers(response):
         logger.debug(
             "apply_security_headers adding headers path=%s status=%s",
-            request.path,
+            redact_media_path(request.path),
             response.status,
         )
         response.headers.setdefault(

@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 
 def register_blueprints(app: Flask) -> None:
     """Register all application blueprints."""
+    from .announcement_media import announcement_media_bp
     from .api import api_bp
     from .auth import auth_bp
     from .villenkoti import villenkoti_bp
@@ -22,3 +23,4 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(web_bp)
     app.register_blueprint(api_bp)
     app.register_blueprint(villenkoti_bp)
+    app.register_blueprint(announcement_media_bp)

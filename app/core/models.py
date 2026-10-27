@@ -359,3 +359,56 @@ class CarHeaterPhoto:
     content_type: str
     byte_size: int
     sha256: str
+
+
+@dataclass
+class AnnouncementSpeakerTest:
+    """An explicit speaker test request; never a reminder occurrence."""
+
+    id: str
+    request_id: str
+    requested_at: str
+    requested_by: str | None
+    text: str
+    language: str
+    target_key: str
+    volume_percent: int
+    chime_percent: int
+
+
+@dataclass
+class AnnouncementAttempt:
+    """Speaker delivery evidence for one dispatch; not proof of audibility."""
+
+    id: str
+    speaker_test_id: str | None
+    target_key: str
+    target_name: str
+    target_host: str | None
+    target_device_id: str | None
+    speaker_set: list[str]
+    evidence_scope: str
+    priority: int
+    text: str
+    language: str
+    volume_percent: int
+    chime_percent: int
+    status: str
+    reason: str | None
+    requested_at: str
+    dispatch_deadline: str
+    voice: str | None
+    media_key: str | None
+    media_duration_s: float | None
+    intent_at: str | None
+    dispatched_at: str | None
+    playback_observed_at: str | None
+    finished_at: str | None
+    stop_requested_at: str | None
+    stop_outcome: str | None
+    stop_observed_at: str | None
+    volume_before: float | None
+    volume_applied: float | None
+    volume_restore: str | None
+    volume_restored_at: str | None
+    updated_at: str

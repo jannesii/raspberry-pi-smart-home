@@ -413,4 +413,21 @@ def init_services(app: Flask) -> dict[str, Any]:
     except Exception as e:
         logger.exception("Failed to initialize medicine calculator service: %s", e)
 
+    # Spoken announcements (Piper subprocess + Cast are optional and reported in status)
+    try:
+        if not _env_bool("ANNOUNCEMENTS_ENABLED", True):
+            logger.info("Announcement service disabled by ANNOUNCEMENTS_ENABLED")
+        else:
+            from .announcements import build_announcement_service
+
+            announcement_service = build_announcement_service(
+                app.ctrl,  # type: ignore[attr-defined]
+                db_path=app.config.get("DB_PATH"),
+            )
+            announcement_service.start()
+            app.announcement_service = announcement_service  # type: ignore[attr-defined]
+            services["announcement_service"] = announcement_service
+    except Exception as e:
+        logger.exception("Failed to initialize announcement service: %s", e)
+
     return services

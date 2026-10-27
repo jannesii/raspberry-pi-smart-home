@@ -6,6 +6,7 @@ per-domain sub-blueprints to keep route modules small and focused.
 
 from flask import Blueprint
 
+from .announcements_api import announcements_bp
 from .bmp_sensor import bmp_bp
 from .car_heater import car_bp
 from .esp32_api import esp32_bp
@@ -29,3 +30,4 @@ api_bp.register_blueprint(misc_bp)
 api_bp.register_blueprint(car_bp)
 api_bp.register_blueprint(ynab_categorizer_bp)
 api_bp.register_blueprint(medicine_calculator_bp)
+api_bp.register_blueprint(announcements_bp)
