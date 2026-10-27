@@ -18,6 +18,7 @@ announcement_app = support.announcement_app
 client = support.client
 clock = support.clock
 doubles = support.doubles
+discord = support.discord
 
 API = "/api/announcements/schedules"
 EVERY_DAY = [1, 2, 3, 4, 5, 6, 7]
