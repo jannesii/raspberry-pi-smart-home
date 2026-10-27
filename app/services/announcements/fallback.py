@@ -125,6 +125,8 @@ def _local(value: str | None) -> str:
 
 
 def _why(occurrence, affected=()) -> str:
+    if occurrence.disposition_reason == "dst_gap":
+        return "This scheduled local time did not exist: Helsinki clocks moved forward. It was recorded as missed and was not spoken."
     if occurrence.fallback_reason == "expired_undelivered":
         waited = []
         for entry in occurrence.waiting_history:
@@ -156,8 +158,13 @@ def compose_message(occurrence, link: str | None, affected=()) -> str:
     ``affected``: names of group members known not to have taken part.
     """
     heading = _HEADINGS[occurrence.fallback_reason]
+    due = (
+        "scheduled during the skipped Helsinki clock hour"
+        if occurrence.disposition_reason == "dst_gap"
+        else f"due {_local(occurrence.due_at)} (Helsinki)"
+    )
     lines = [
-        f"**{heading}** · {occurrence.target_name} · due {_local(occurrence.due_at)} (Helsinki)",
+        f"**{heading}** · {occurrence.target_name} · {due}",
         occurrence.text,
         _why(occurrence, affected),
         f"Open the reminder: {link}" if link else "Open Settings → Announcements in the home app.",

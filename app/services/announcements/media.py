@@ -124,7 +124,10 @@ class MediaCache:
         if not path.exists():
             return None
         now = self._clock()
-        os.utime(path, (now, now))
+        try:
+            os.utime(path, (now, now))
+        except FileNotFoundError:
+            return None  # concurrent eviction; a cache miss is safe
         return path
 
     def put(self, key: str, data: bytes) -> Path:
@@ -139,7 +142,13 @@ class MediaCache:
 
     def stats(self) -> dict:
         files = list(self.directory.glob("*.wav")) if self.directory.exists() else []
-        return {"entries": len(files), "bytes": sum(f.stat().st_size for f in files)}
+        sizes = []
+        for path in files:
+            try:
+                sizes.append(path.stat().st_size)
+            except FileNotFoundError:
+                continue  # requests may read statistics during eviction
+        return {"entries": len(sizes), "bytes": sum(sizes)}
 
     def evict(self, protected: set[str]) -> int:
         """Remove stale or excess entries, never those in active use."""

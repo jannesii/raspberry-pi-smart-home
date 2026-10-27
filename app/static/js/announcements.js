@@ -1386,7 +1386,7 @@
       fact(facts, 'Detail', REASON_TEXT[occurrence.delivery_reason || occurrence.disposition_reason]
         || occurrence.delivery_reason || occurrence.disposition_reason || '—');
       if (last.interrupted_media) {
-        fact(facts, 'Music', 'Interrupted – restoration unavailable');
+        fact(facts, 'Music', 'Interrupted by this announcement');
       }
       fact(facts, 'Volume restore', RESTORE_TEXT[last.volume_restore] || '—');
       if (last.interrupted_media) fact(facts, 'Music restore', RESTORE_TEXT[last.media_restore] || '—');
@@ -1462,10 +1462,12 @@
 
   let spotifyDevices = [];
   let spotifyStatus = {};
+  let spotifyTimer;
   const SPOTIFY_REASON = {
     not_configured: 'Ask the server owner to configure Spotify access before connecting.',
     disconnected: 'No account connected. Basic announcements remain available.',
     reconnect_required: 'Spotify access expired or was revoked. Connect again.',
+    refresh_pending: 'Spotify access is being refreshed. Try the settings action again shortly.',
     access_denied: 'Spotify refused playback control. Check Premium and app access, then reconnect.',
     spotify_unavailable: 'Spotify is unavailable. Interrupted music may remain stopped.',
     premium_required: 'Spotify Premium is required.',
@@ -1474,6 +1476,9 @@
 
   function renderSpotify(status, speakerTargets) {
     spotifyStatus = status || {};
+    spotifyDevices = Array.isArray(spotifyStatus.available_devices) ? spotifyStatus.available_devices : [];
+    clearTimeout(spotifyTimer);
+    if (spotifyStatus.operation) spotifyTimer = setTimeout(loadStatus, 1500);
     const note = byId('announceSpotifyState');
     if (note) note.textContent = SPOTIFY_REASON[spotifyStatus.reason] ||
       (spotifyStatus.enabled ? 'Connected. Restoration enabled for matched speakers.' : 'Connected. Restoration is off.');
@@ -1481,10 +1486,19 @@
       note.textContent += ' Spotify does not report the subscription type; Premium and playback-control access remain required.';
     }
     if (note && spotifyStatus.credentials_status === 'expired') note.textContent += ' Access token expired; it will be refreshed on the next Spotify request.';
+    const operationText = {connecting: 'Connecting to Spotify…', loading_devices: 'Finding Spotify devices…', saving: 'Saving music restoration settings…'};
+    if (note && spotifyStatus.operation) note.textContent = operationText[spotifyStatus.operation] || 'Updating Spotify…';
+    if (note) {
+      note.setAttribute('aria-live', 'polite');
+      note.setAttribute('aria-busy', spotifyStatus.operation ? 'true' : 'false');
+    }
+    if (note && spotifyStatus.devices_checked && !spotifyStatus.operation && !spotifyStatus.reason) {
+      note.textContent += spotifyDevices.length ? ' Devices loaded. Choose the match for each speaker and save.' : ' No devices found. Open Spotify on the intended speaker and find devices again.';
+    }
     const connected = !!spotifyStatus.connected;
     ['announceSpotifyDisconnect', 'announceSpotifyFind', 'announceSpotifySave', 'announceSpotifyEnabled'].forEach(id => {
       const control = byId(id);
-      if (control) control.disabled = !connected;
+      if (control) control.disabled = id === 'announceSpotifyDisconnect' ? (!connected && !spotifyStatus.operation) : !connected;
     });
     const connect = byId('announceSpotifyConnect');
     if (connect) connect.disabled = !spotifyStatus.configured;
@@ -1530,7 +1544,7 @@
         window.location.assign(result.authorization_url);
         return;
       }
-      showMessage(action === 'disconnect' ? 'Spotify disconnected. Basic announcements remain available.' : 'Music restoration settings saved.');
+      showMessage(action === 'disconnect' ? 'Spotify disconnected. Basic announcements remain available.' : (result.spotify && result.spotify.operation ? 'Music restoration settings queued. Readiness will show the result.' : 'Music restoration settings saved.'));
       await loadStatus();
     } catch (error) {
       showMessage(error.message || 'Spotify request failed.', true);
@@ -1551,9 +1565,8 @@
       showMessage('Finding Spotify devices…');
       try {
         const data = await api(`/spotify/devices`);
-        spotifyDevices = Array.isArray(data.devices) ? data.devices : [];
-        renderSpotify(spotifyStatus, targets);
-        showMessage(spotifyDevices.length ? 'Choose the Spotify device for each speaker, then save.' : 'No Spotify devices found. Open Spotify on the intended speaker and try again.');
+        renderSpotify(data.spotify, targets);
+        showMessage('Finding Spotify devices… Readiness will show the result.');
       } catch (error) {
         showMessage(error.message || 'Spotify devices could not be read.', true);
       } finally {

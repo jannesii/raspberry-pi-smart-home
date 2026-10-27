@@ -108,6 +108,18 @@ def setup_spotify(app, clock):
     return server
 
 
+def wait_settings(client):
+    import time
+
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        status = client.get("/api/announcements/spotify").json["spotify"]
+        if status["operation"] is None:
+            return status
+        time.sleep(0.01)
+    raise AssertionError("Spotify settings operation did not settle")
+
+
 def connect(app, client):
     from urllib.parse import parse_qs, urlsplit
 
@@ -118,6 +130,7 @@ def connect(app, client):
         "/api/announcements/spotify/callback", query_string={"code": "code-secret", "state": state}
     )
     assert response.status_code == 302
+    wait_settings(client)
     return state
 
 
@@ -135,12 +148,12 @@ def test_root_can_connect_enable_and_disconnect_without_exposing_tokens(
         ).status_code
         == 400
     )
-    response = client.post(
+    client.post(
         "/api/announcements/spotify/enable",
         json={"enabled": True, "devices": {"jbl-right": "spotify-right"}},
         headers=headers(announcement_app, client),
     )
-    assert response.json["spotify"]["enabled"] is True
+    assert wait_settings(client)["enabled"] is True
     # Public settings survive service reload with the same external key.
     from app.services.announcements.spotify import SpotifyRestoration
 
@@ -168,6 +181,7 @@ def enable(app, client):
         headers=headers(app, client),
     )
     assert response.status_code == 200
+    wait_settings(client)
 
 
 def announce(app, client, clock, cast, *, urgent=True):
@@ -379,8 +393,8 @@ def test_non_premium_account_stays_disconnected(announcement_app, client, clock)
     response = client.get(
         "/api/announcements/spotify/callback", query_string={"code": "code-secret", "state": state}
     )
-    assert response.status_code == 409
-    assert response.json["message"] == "premium_required"
+    assert response.status_code == 302
+    assert wait_settings(client)["reason"] == "premium_required"
     assert client.get("/api/announcements/spotify").json["spotify"]["connected"] is False
 
 
@@ -544,6 +558,7 @@ def test_group_restoration_uses_same_target_and_respects_member_volume(
         ).status_code
         == 200
     )
+    wait_settings(client)
     cast = doubles[1]
     cast.speakers[support.GROUP].state = "playing"
     assert (
@@ -605,3 +620,217 @@ def test_owner_can_disable_restoration_even_when_refresh_access_is_expired(
     assert response.status_code == 200
     assert response.json["spotify"]["enabled"] is False
     assert len(server.calls) == before
+
+
+def test_oauth_callback_records_connection_without_waiting_for_spotify(
+    announcement_app, client, clock
+):
+    import threading
+    from urllib.parse import parse_qs, urlsplit
+
+    server = setup_spotify(announcement_app, clock)
+    entered, release = threading.Event(), threading.Event()
+    original = server.request
+
+    def paused(method, url, **kwargs):
+        entered.set()
+        assert release.wait(5)
+        return original(method, url, **kwargs)
+
+    announcement_app.announcement_service.spotify.http.request = paused
+    response = client.post(
+        "/api/announcements/spotify/connect", headers=headers(announcement_app, client)
+    )
+    state = parse_qs(urlsplit(response.json["authorization_url"]).query)["state"][0]
+    done = threading.Event()
+    responses = []
+
+    def callback():
+        responses.append(
+            client.get(
+                "/api/announcements/spotify/callback",
+                query_string={"code": "code-secret", "state": state},
+            )
+        )
+        done.set()
+
+    worker = threading.Thread(target=callback)
+    worker.start()
+    assert entered.wait(2)
+    try:
+        assert done.wait(1), "OAuth callback waited for provider HTTP"
+        assert responses[0].status_code == 302
+        assert client.get("/api/announcements/spotify").json["spotify"]["operation"] == "connecting"
+        # Disconnect supersedes an in-flight connection; its late reply must not reconnect.
+        response = client.post(
+            "/api/announcements/spotify/disconnect", headers=headers(announcement_app, client)
+        )
+        assert response.json["spotify"]["connected"] is False
+    finally:
+        release.set()
+        worker.join(5)
+    client.get("/api/announcements/spotify/devices")
+    assert wait_settings(client)["connected"] is False
+
+
+@pytest.mark.parametrize("operation", ["devices", "enable"])
+def test_provider_settings_waits_do_not_block_speech_or_override_newer_disable(
+    announcement_app, client, clock, doubles, operation
+):
+    import threading
+
+    server = setup_spotify(announcement_app, clock)
+    connect(announcement_app, client)
+    service = announcement_app.announcement_service
+    clock[0] += 3601  # Enabling and device discovery may both refresh tokens.
+    entered, release, returned = threading.Event(), threading.Event(), threading.Event()
+    original = server.request
+
+    def paused(method, url, **kwargs):
+        if url.endswith("/api/token"):
+            entered.set()
+            assert release.wait(5)
+        return original(method, url, **kwargs)
+
+    service.spotify.http.request = paused
+    responses = []
+
+    def request():
+        if operation == "devices":
+            responses.append(client.get("/api/announcements/spotify/devices"))
+        else:
+            responses.append(
+                client.post(
+                    "/api/announcements/spotify/enable",
+                    json={"enabled": True, "devices": {"jbl-right": "spotify-right"}},
+                    headers=headers(announcement_app, client),
+                )
+            )
+        returned.set()
+
+    requester = threading.Thread(target=request)
+    requester.start()
+    assert entered.wait(2)
+    try:
+        assert returned.wait(1), "Settings handler waited for token refresh"
+        assert responses[0].status_code in (200, 202)
+        _, test = service.request_speaker_test(text="Still available", target="jbl-right")
+        tick_done = threading.Event()
+        tick = threading.Thread(target=lambda: (service.tick(), tick_done.set()))
+        tick.start()
+        assert tick_done.wait(1), "Settings provider wait blocked speech processing"
+        service.request_stop(test["test"]["id"])
+        service.tick()
+        response = client.post(
+            "/api/announcements/spotify/enable",
+            json={"enabled": False},
+            headers=headers(announcement_app, client),
+        )
+        assert response.json["spotify"]["enabled"] is False
+    finally:
+        release.set()
+        requester.join(5)
+    # A subsequent device read is a public barrier after the stale response.
+    service.spotify.http.request = original
+    client.get("/api/announcements/spotify/devices")
+    status = wait_settings(client)
+    assert status["enabled"] is False
+    assert status["connected"] is True
+
+
+def test_device_refresh_cannot_overwrite_newer_playback_credentials(
+    announcement_app, client, clock
+):
+    import threading
+
+    server = setup_spotify(announcement_app, clock)
+    enable(announcement_app, client)
+    service = announcement_app.announcement_service
+    clock[0] += 3601
+    entered, release = threading.Event(), threading.Event()
+    original = server.request
+    token_number = [0]
+
+    def rotating(method, url, **kwargs):
+        response = original(method, url, **kwargs)
+        if url.endswith("/api/token"):
+            token_number[0] += 1
+            response.data["access_token"] = f"rotated-{token_number[0]}"
+            response.data["refresh_token"] = f"refresh-{token_number[0]}"
+        if url.endswith("/me/player/devices") and not entered.is_set():
+            entered.set()
+            assert release.wait(5)
+        return response
+
+    service.spotify.http.request = rotating
+    client.get("/api/announcements/spotify/devices")
+    assert entered.wait(2)
+    try:
+        # Discovery publishes account refresh immediately, before device I/O.
+        # Playback reuses it instead of issuing a second rotating refresh.
+        assert service.spotify.media_state(service.config.target("jbl-right")) == "playing"
+        assert token_number[0] == 1
+    finally:
+        release.set()
+    wait_settings(client)
+    client.get("/api/announcements/spotify/devices")
+    wait_settings(client)
+    device_calls = [kwargs for _, url, kwargs in server.calls if url.endswith("/me/player/devices")]
+    assert device_calls[-1]["headers"]["Authorization"] == "Bearer rotated-1"
+    assert client.get("/api/announcements/spotify").json["spotify"]["enabled"] is True
+
+
+@pytest.mark.parametrize("first", ["settings", "playback"])
+def test_concurrent_refresh_has_one_owner_without_blocking_speech(
+    announcement_app, client, clock, first
+):
+    import threading
+
+    server = setup_spotify(announcement_app, clock)
+    enable(announcement_app, client)
+    service = announcement_app.announcement_service
+    clock[0] += 3601
+    entered, release, observed = threading.Event(), threading.Event(), threading.Event()
+    original = server.request
+    refreshes = []
+
+    def paused(method, url, **kwargs):
+        if url.endswith("/api/token"):
+            refreshes.append(kwargs)
+            entered.set()
+            assert release.wait(5)
+        return original(method, url, **kwargs)
+
+    service.spotify.http.request = paused
+    results = []
+
+    def playback():
+        results.append(service.spotify.media_state(service.config.target("jbl-right")))
+        observed.set()
+
+    player = threading.Thread(target=playback)
+    if first == "settings":
+        client.get("/api/announcements/spotify/devices")
+    else:
+        player.start()
+    assert entered.wait(2)
+    try:
+        if first == "settings":
+            player.start()
+            assert observed.wait(1), "Playback waited for optional settings refresh"
+            assert results == ["unknown"]
+        else:
+            client.get("/api/announcements/spotify/devices")
+            assert wait_settings(client)["reason"] == "refresh_pending"
+        assert len(refreshes) == 1
+    finally:
+        release.set()
+        player.join(5)
+    status = wait_settings(client)
+    if first == "playback":
+        assert status["reason"] == "refresh_pending"
+    client.get("/api/announcements/spotify/devices")
+    status = wait_settings(client)
+    assert status["reason"] is None
+    assert status["enabled"] is True
+    assert len(refreshes) == 1

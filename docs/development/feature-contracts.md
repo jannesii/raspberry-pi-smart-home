@@ -366,7 +366,31 @@ Code: `app/blueprints/api/car_heater/weather.py` (`/sessions/<id>/weather`,
 - `AnnouncementService.tick()` is the processing interface. Handlers only
   validate and record requests. Synthesis, probes and Cast calls run in `tick()`.
   Content preparation, media preparation and delivery stay separate; only static
-  owner text exists.
+  owner text exists. A processor-only lock serializes ticks; short state locks
+  protect preview snapshots and finishing identities. No request shares a lock
+  held over synthesis or provider waits. Terminal history deletion uses atomic
+  Controller guards plus an in-memory finishing guard until restoration and
+  occurrence settlement end. Stops recorded before a tick precede previews.
+- Optional Spotify connect, enable (including refresh) and device discovery are
+  queued to a feature-local worker independent of tick. OAuth callback validates
+  the session/state/owner then redirects immediately. Settings status exposes
+  `operation` (`connecting`, `saving`, `loading_devices`, or null), safe `reason`,
+  cached `available_devices`, and `devices_checked` for an empty successful read.
+  `GET /spotify/devices` queues a refresh and
+  returns 202 with status; clients poll `/spotify` or `/status` for completion.
+  Disable/disconnect are immediate local changes. New settings intent invalidates
+  older queued/in-flight results; provider work stages credentials/settings and
+  publishes only if its generation remains current. Device/settings results
+  preserve credentials refreshed by concurrent playback since the job snapshot.
+  All settings and playback token reads share one refresh owner, which publishes
+  rotated credentials before subsequent provider I/O. A concurrent caller sees
+  `refresh_pending` rather than waiting or rotating the same token again; media
+  evidence stays unknown, and settings can be retried. Settings errors remain
+  visible across unrelated playback successes until the settings action succeeds
+  or the owner disables/disconnects. Device reads do not replace
+  queued settings changes. Queues and OAuth codes are process-local; restart
+  drops unfinished settings work and the owner can retry. No general job system
+  or automatic replay is added.
 - One asset per announcement: generated chime, then 0.5 s silence, then speech at
   the speech sample rate. Cache keys hash text, language, voice, engine and chime;
   eviction never touches attempt rows, which keep only `media_key`.

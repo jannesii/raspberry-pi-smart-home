@@ -313,10 +313,9 @@ def spotify_status(service):
 def spotify_enable(service):
     data = _body()
     try:
-        with service._lock:
-            status = service.spotify.configure(
-                data.get("enabled"), data.get("devices"), service.config.targets
-            )
+        status = service.spotify.request_configure(
+            data.get("enabled"), data.get("devices"), service.config.targets
+        )
     except AnnouncementInputError as exc:
         return _error(400, "bad_request", str(exc), field=exc.field)
     except AnnouncementStateError as exc:
@@ -342,8 +341,6 @@ def spotify_connect(service):
 @announcements_bp.route("/spotify/callback", methods=["GET"])
 @root_admin_service
 def spotify_callback(service):
-    from ...services.announcements.spotify import SpotifyError
-
     pending = session.pop("announcement_spotify_oauth", None)
     state = request.args.get("state", "")
     if (
@@ -357,12 +354,7 @@ def spotify_callback(service):
         return _error(
             400, "invalid_oauth", "Spotify connection was cancelled or expired; connect again."
         )
-    try:
-        with service._lock:
-            service.spotify.connect(request.args["code"])
-    except SpotifyError as exc:
-        service.spotify.reason = str(exc)
-        return _error(409, "spotify_unavailable", str(exc))
+    service.spotify.request_connect(request.args["code"])
     response = redirect("/settings/announcements")
     response.headers["Cache-Control"] = "no-store"
     response.headers["Referrer-Policy"] = "no-referrer"
@@ -372,8 +364,7 @@ def spotify_callback(service):
 @announcements_bp.route("/spotify/disconnect", methods=["POST"])
 @root_admin_service
 def spotify_disconnect(service):
-    with service._lock:
-        status = service.spotify.disconnect()
+    status = service.spotify.disconnect()
     session.pop("announcement_spotify_oauth", None)
     return jsonify(ok=True, spotify=status)
 
@@ -381,14 +372,8 @@ def spotify_disconnect(service):
 @announcements_bp.route("/spotify/devices", methods=["GET"])
 @root_admin_service
 def spotify_devices(service):
-    from ...services.announcements.spotify import SpotifyError
-
-    try:
-        with service._lock:
-            devices = service.spotify.available_devices()
-    except SpotifyError as exc:
-        return _error(409, "spotify_unavailable", str(exc))
-    return jsonify(ok=True, devices=devices)
+    status = service.spotify.request_devices()
+    return jsonify(ok=True, devices=status["available_devices"], spotify=status), 202
 
 
 @announcements_bp.route("/occurrences/<identity>", methods=["DELETE"])

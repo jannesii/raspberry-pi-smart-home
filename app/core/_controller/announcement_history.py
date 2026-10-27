@@ -28,8 +28,9 @@ class AnnouncementHistoryMixin:
     def delete_announcement_history(self, kind, identity):
         """Return deleted/missing/active; never remove pending work or retry budgets.
 
-        The service serializes this with dispatch and restoration. Schedule then
-        occurrence locking matches Snooze/materialization in PostgreSQL.
+        Durable guards reject active dispatch, fallback and restoration work;
+        the service also pins finishing identities until settlement completes.
+        Schedule then occurrence locking matches Snooze/materialization in PostgreSQL.
         """
         table = occurrence if kind == "occurrences" else speaker_test
         with self._sa_engine.begin() as conn:

@@ -121,6 +121,8 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin, CastDiscoveryMixin):
         self._next_probe: dict[str, float] = {}
         self._discovery: dict | None = None
         self._lock = threading.RLock()
+        self._processing_lock = threading.Lock()
+        self._finishing = set()
         self._wake = threading.Event()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -293,14 +295,15 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin, CastDiscoveryMixin):
         return self._public_preview(preview)
 
     def get_preview(self, preview_id: str) -> dict | None:
-        preview = self._previews.get(preview_id)
-        return self._public_preview(preview) if preview else None
+        with self._lock:
+            preview = self._previews.get(preview_id)
+            return self._public_preview(preview) if preview else None
 
     def preview_audio(self, preview_id: str):
-        preview = self._previews.get(preview_id)
-        if not preview or preview["status"] != "ready":
-            return None
-        return self.cache.get(preview["_media_key"])
+        with self._lock:
+            preview = self._previews.get(preview_id)
+            key = preview["_media_key"] if preview and preview["status"] == "ready" else None
+        return self.cache.get(key) if key else None
 
     def _public_preview(self, preview: dict) -> dict:
         return {k: v for k, v in preview.items() if not k.startswith("_")}
@@ -360,6 +363,8 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin, CastDiscoveryMixin):
 
     def delete_history(self, kind: str, identity: str) -> None:
         with self._lock:
+            if (kind, identity) in self._finishing:
+                raise AnnouncementStateError("history_active", "Restoration is still pending.")
             outcome = self.ctrl.delete_announcement_history(kind, identity)
             if outcome == "active":
                 raise AnnouncementStateError(
@@ -464,9 +469,10 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin, CastDiscoveryMixin):
 
     # Processing ----------------------------------------------------------------
     def tick(self) -> None:
-        with self._lock:
-            self._prepare_previews()
+        # Serialize processors, never owner requests, across external waits.
+        with self._processing_lock:
             self._handle_stops()
+            self._prepare_previews()
             self._poll_active()
             self._settle_occurrences()
             self._materialize_due()
@@ -489,19 +495,23 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin, CastDiscoveryMixin):
         return PreparedMedia(key=key, path=path, duration_s=duration, voice=voice)
 
     def _prepare_previews(self) -> None:
-        for preview in [p for p in self._previews.values() if p["status"] == "preparing"]:
+        with self._lock:
+            pending = [p for p in self._previews.values() if p["status"] == "preparing"]
+        for preview in pending:
             try:
                 media = self._prepare(preview["_content"], preview["chime_percent"])
             except (SynthesisError, MediaError) as exc:
-                preview.update(status="failed", reason=exc.reason)
+                with self._lock:
+                    preview.update(status="failed", reason=exc.reason)
                 logger.warning("Preview %s preparation failed: %s", preview["id"], exc.reason)
                 continue
-            preview.update(
-                status="ready",
-                voice=media.voice,
-                duration_s=round(media.duration_s, 2),
-                _media_key=media.key,
-            )
+            with self._lock:
+                preview.update(
+                    status="ready",
+                    voice=media.voice,
+                    duration_s=round(media.duration_s, 2),
+                    _media_key=media.key,
+                )
 
     def _target(self, attempt) -> SpeakerTarget | None:
         return self.config.target(attempt.target_key)
@@ -747,6 +757,20 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin, CastDiscoveryMixin):
         logger.info("Announcement attempt %s dispatched target=%s", attempt.id, target.key)
 
     def _finish(self, attempt, status: str, reason: str | None, **extra) -> None:
+        identity = (
+            ("occurrences", attempt.occurrence_id)
+            if attempt.occurrence_id
+            else ("tests", attempt.speaker_test_id)
+        )
+        with self._lock:
+            self._finishing.add(identity)
+        try:
+            self._finish_pending(attempt, status, reason, **extra)
+        finally:
+            with self._lock:
+                self._finishing.discard(identity)
+
+    def _finish_pending(self, attempt, status: str, reason: str | None, **extra) -> None:
         now = _iso(self._clock())
         changed = self.ctrl.update_announcement_attempt(
             attempt.id,
@@ -922,7 +946,8 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin, CastDiscoveryMixin):
             return
         self._last_eviction = now
         protected = self.grants.active_media_keys()
-        protected |= {p["_media_key"] for p in self._previews.values() if p["_media_key"]}
+        with self._lock:
+            protected |= {p["_media_key"] for p in self._previews.values() if p["_media_key"]}
         for attempt in self.ctrl.list_announcement_attempts(statuses=("requested", *ACTIVE)):
             if attempt.media_key:
                 protected.add(attempt.media_key)

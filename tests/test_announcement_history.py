@@ -1,6 +1,7 @@
 """Deliberate history deletion through authenticated public operations."""
 
 import announcement_support as support
+import pytest
 from announcement_support import headers
 from test_announcement_acknowledgements import API, at, only_occurrence, play_through, save
 
@@ -194,3 +195,55 @@ def test_history_deletion_cannot_reset_waiting_automatic_retry_budget(
     erase(announcement_app, client, "occurrences", identity)
     service.tick()
     assert client.get(f"{API}/occurrences/{identity}").status_code == 404
+
+
+@pytest.mark.parametrize("boundary", ["synthesis", "cast"])
+def test_requests_return_while_background_io_is_paused(announcement_app, doubles, boundary):
+    import threading
+
+    service = announcement_app.announcement_service
+    entered, release = threading.Event(), threading.Event()
+    if boundary == "synthesis":
+        doubles[0].during = lambda: (entered.set(), release.wait(5))
+    else:
+        original_probe = doubles[1].probe
+
+        def paused_probe(target):
+            entered.set()
+            assert release.wait(5)
+            return original_probe(target)
+
+        doubles[1].probe = paused_probe
+        service.request_speaker_test(text="First test", target="jbl-right")
+    first = service.request_preview(text="First")
+    worker = threading.Thread(target=service.tick)
+    worker.start()
+    assert entered.wait(2)
+    finished = threading.Event()
+    errors = []
+
+    def request():
+        try:
+            service.request_preview(text="Second")
+            service.request_speaker_test(text="Queued", target="jbl-right")
+            service.request_discovery()
+            service.delete_history("tests", "missing")
+            assert service.get_preview(first["id"])["status"] == (
+                "preparing" if boundary == "synthesis" else "ready"
+            )
+            service.status()
+        except Exception as exc:
+            errors.append(exc)
+        finally:
+            finished.set()
+
+    requester = threading.Thread(target=request)
+    requester.start()
+    try:
+        assert finished.wait(1), "Owner requests waited for background I/O"
+        assert not errors
+    finally:
+        release.set()
+        worker.join(5)
+        requester.join(5)
+    assert not worker.is_alive()

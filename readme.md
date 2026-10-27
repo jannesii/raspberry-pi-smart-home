@@ -922,7 +922,11 @@ Exclude the OAuth callback query string from reverse-proxy access logs.
 
 Under **Announcements → Music restoration**, connect the account, find Spotify
 devices, match each speaker or existing Cast group to its Spotify device, and
-save with restoration enabled. Spotify device ids differ from Cast UUIDs, so
+save with restoration enabled. Connection, device discovery and enabling run in
+background work; Readiness shows connecting/loading/saving and then the result
+or a safe error. Disable and disconnect take effect immediately, including when
+a previous provider request is still waiting. If the server restarts during a
+settings operation, retry it. Spotify device ids differ from Cast UUIDs, so
 the app never guesses a match from a display name. Spotify Premium and approved
 playback-control access are required. Development Mode also requires the app
 owner's active Premium subscription and limits new apps to five authorized
