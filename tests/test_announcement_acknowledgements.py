@@ -708,3 +708,20 @@ def test_root_admin_and_csrf_guard_occurrence_actions(announcement_app, client, 
     assert item["acknowledgement"] is None
     assert item["occurrence"]["disposition"] is None
     assert item["attempts"][0]["stop_requested_at"] is None
+
+
+def test_repeat_and_acknowledgement_controls_are_on_the_announcement_page(announcement_app, client):
+    html = client.get("/settings/announcements").get_data(as_text=True)
+    for element in (
+        'id="announceMaxAnnouncements"',
+        'id="announceRepeatInterval"',
+        'id="announceRepeatFit"',
+        'id="announceRepeatError"',
+    ):
+        assert element in html
+    assert "not a medicine dose or a blood-pressure reading" in html
+    assert "js/announcements.js?v=20261027-4" in html
+    assert "css/announcements.css?v=20261027-4" in html
+    script = client.get("/static/js/announcements.js").get_data(as_text=True)
+    for wording in ("Stop speaking", "Skip this occurrence", "fit before the reminder expires"):
+        assert wording in script

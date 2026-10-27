@@ -287,6 +287,32 @@
   outline: 2px solid #ffb4b4;
 }
 
+/* Repeat count/interval are ordinary labelled fields inside a fold group. */
+.announce-repeats legend {
+  width: 100%;
+}
+
+.announce-repeats label.announce-field {
+  display: grid;
+  align-items: stretch;
+  min-height: auto;
+  margin-bottom: 8px;
+}
+
+.announce-repeats .announce-field input[type="number"] {
+  width: 100%;
+  height: auto;
+}
+
+.announce-repeats .announce-field input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.announce-repeats .announce-field input[aria-invalid="true"] {
+  border-color: #ffb4b4;
+}
+
 .announce-advanced {
   margin: 4px 0 12px;
   border: 1px solid #333b43;

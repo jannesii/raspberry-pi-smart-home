@@ -212,6 +212,40 @@ def test_occurrences_are_unique_per_schedule_instance_and_states_are_constrained
     )
     # An attempt belongs to exactly one source: a speaker test or an occurrence.
     _rejected(engine, announcement_attempt, {**ATTEMPT, "id": "a2"})
+    with engine.connect() as conn:
+        row = (
+            conn.execute(
+                announcement_occurrence.select().where(announcement_occurrence.c.id == "o1")
+            )
+            .mappings()
+            .one()
+        )
+    assert (row["retries_started"], row["next_attempt_purpose"]) == (0, None)  # defaults
+    ack = {
+        "id": "k1",
+        "occurrence_id": "o1",
+        "action": "done",
+        "acknowledged_at": "2027-01-15T12:35:00+00:00",
+        "prior_status": "closed",
+        "prior_delivery": "delivered",
+        "announcements_started": 1,
+    }
+    with engine.begin() as conn:
+        conn.execute(announcement_acknowledgement.insert().values(**ack))
+    _rejected(engine, announcement_acknowledgement, {**ack, "id": "k2"})  # one per occurrence
+    _rejected(
+        engine,
+        announcement_acknowledgement,
+        {**ack, "id": "k3", "occurrence_id": "o9"},  # unknown occurrence
+    )
+    later_ack = {**OCCURRENCE, **later, "id": "o5"}
+    with engine.begin() as conn:
+        conn.execute(announcement_occurrence.insert().values(**later_ack))
+    _rejected(
+        engine,
+        announcement_acknowledgement,
+        {**ack, "id": "k4", "occurrence_id": "o5", "action": "dose_taken"},  # not a health record
+    )
 
 
 def test_restart_never_replays_an_uncertain_test_in_either_store(store, tmp_path, monkeypatch):
@@ -340,4 +374,62 @@ def test_recurring_catch_up_is_idempotent_across_services_in_either_store(
         ("2027-01-17T06:00:00+00:00", None),
     ]
     assert len(cast.plays) == 1
+    ctrl.db.conn.close()
+
+
+def test_acknowledgements_are_once_per_occurrence_and_survive_restart_in_either_store(
+    store, tmp_path, monkeypatch
+):
+    from datetime import datetime
+
+    from app.core.database import DatabaseManager
+    from app.services.announcements import AnnouncementStateError
+
+    engine, _migrations = store
+    monkeypatch.setattr(DatabaseManager, "_instance", None)
+    ctrl = Controller(db_path=str(tmp_path / "legacy.db"))
+    ctrl._sa_engine = engine
+    clock = [START]
+    synth, cast = FakeSynthesizer(), FakeCast()
+    first = build_service(ctrl, clock, (synth, cast), tmp_path / "cache")
+    second = build_service(ctrl, clock, (synth, cast), tmp_path / "cache")
+    _outcome, saved = first.create_schedule(
+        {
+            "text": "Muista lääkkeet",
+            "target": "jbl-right",
+            "due_local": "2027-01-15T14:30",
+            "max_announcements": 2,
+            "repeat_interval_minutes": 5,
+        }
+    )
+    clock[0] = datetime.fromisoformat("2027-01-15T12:30:00+00:00").timestamp()
+    occurrence_ids = []
+
+    def acknowledge_while_preparing():
+        (item,) = first.schedule_detail(saved["schedule"]["id"])["occurrences"]
+        occurrence_ids.append(item["occurrence"]["id"])
+        first.acknowledge_occurrence(item["occurrence"]["id"], "done", by="owner")
+
+    synth.during = acknowledge_while_preparing
+    second.tick()  # read the occurrence as waiting, then Done committed first
+    second.tick()
+    assert cast.plays == []
+    (occurrence_id,) = occurrence_ids
+    repeated = second.acknowledge_occurrence(occurrence_id, "done", by="owner")
+    with pytest.raises(AnnouncementStateError) as conflict:
+        second.acknowledge_occurrence(occurrence_id, "skipped", by="owner")
+    assert conflict.value.code == "already_acknowledged"
+
+    clock[0] += 600
+    reloaded = Controller(db_path=str(tmp_path / "legacy.db"))
+    reloaded._sa_engine = engine
+    restarted = build_service(reloaded, clock, (synth, cast), tmp_path / "cache")
+    restarted.tick()
+    detail = restarted.occurrence_detail(occurrence_id)
+    assert detail["acknowledgement"] == repeated["acknowledgement"]
+    assert detail["acknowledgement"]["prior_status"] == "waiting"
+    assert detail["occurrence"]["disposition"] == "done"
+    assert detail["occurrence"]["fallback_reason"] is None
+    assert detail["attempts"] == []
+    assert cast.plays == []
     ctrl.db.conn.close()
