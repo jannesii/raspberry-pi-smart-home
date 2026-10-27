@@ -8,9 +8,10 @@ CSRFProtect); nothing here is exempt.
 from __future__ import annotations
 
 import logging
+import secrets
 from functools import wraps
 
-from flask import Blueprint, current_app, jsonify, request, send_file
+from flask import Blueprint, current_app, jsonify, redirect, request, send_file, session
 from flask_login import current_user, login_required
 
 from ...services.announcements import AnnouncementInputError, AnnouncementStateError
@@ -288,3 +289,92 @@ def act_on_occurrence(service, occurrence_id, action):
     except AnnouncementStateError as exc:
         return _state_error(exc)
     return jsonify({"ok": True, **detail})
+
+
+@announcements_bp.route("/spotify", methods=["GET"])
+@root_admin_service
+def spotify_status(service):
+    return jsonify(ok=True, spotify=service.spotify.status())
+
+
+@announcements_bp.route("/spotify/enable", methods=["POST"])
+@root_admin_service
+def spotify_enable(service):
+    data = _body()
+    try:
+        with service._lock:
+            status = service.spotify.configure(
+                data.get("enabled"), data.get("devices"), service.config.targets
+            )
+    except AnnouncementInputError as exc:
+        return _error(400, "bad_request", str(exc), field=exc.field)
+    except AnnouncementStateError as exc:
+        return _state_error(exc)
+    return jsonify(ok=True, spotify=status)
+
+
+@announcements_bp.route("/spotify/connect", methods=["POST"])
+@root_admin_service
+def spotify_connect(service):
+    try:
+        state, url = service.spotify.authorization()
+    except AnnouncementStateError as exc:
+        return _state_error(exc)
+    session["announcement_spotify_oauth"] = {
+        "state": state,
+        "owner": current_user.get_id(),
+        "at": service._clock(),
+    }
+    return jsonify(ok=True, authorization_url=url)
+
+
+@announcements_bp.route("/spotify/callback", methods=["GET"])
+@root_admin_service
+def spotify_callback(service):
+    from ...services.announcements.spotify import SpotifyError
+
+    pending = session.pop("announcement_spotify_oauth", None)
+    state = request.args.get("state", "")
+    if (
+        not pending
+        or pending["owner"] != current_user.get_id()
+        or not secrets.compare_digest(pending["state"], state)
+        or not 0 <= service._clock() - pending["at"] <= 600
+        or not request.args.get("code")
+        or request.args.get("error")
+    ):
+        return _error(
+            400, "invalid_oauth", "Spotify connection was cancelled or expired; connect again."
+        )
+    try:
+        with service._lock:
+            service.spotify.connect(request.args["code"])
+    except SpotifyError as exc:
+        service.spotify.reason = str(exc)
+        return _error(409, "spotify_unavailable", str(exc))
+    response = redirect("/settings/announcements")
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+@announcements_bp.route("/spotify/disconnect", methods=["POST"])
+@root_admin_service
+def spotify_disconnect(service):
+    with service._lock:
+        status = service.spotify.disconnect()
+    session.pop("announcement_spotify_oauth", None)
+    return jsonify(ok=True, spotify=status)
+
+
+@announcements_bp.route("/spotify/devices", methods=["GET"])
+@root_admin_service
+def spotify_devices(service):
+    from ...services.announcements.spotify import SpotifyError
+
+    try:
+        with service._lock:
+            devices = service.spotify.available_devices()
+    except SpotifyError as exc:
+        return _error(409, "spotify_unavailable", str(exc))
+    return jsonify(ok=True, devices=devices)

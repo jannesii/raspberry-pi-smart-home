@@ -22,6 +22,7 @@ from app.core.schema import (
     announcement_occurrence,
     announcement_schedule,
     announcement_speaker_test,
+    announcement_spotify,
 )
 
 MIGRATIONS = (
@@ -30,8 +31,10 @@ MIGRATIONS = (
     "migrations.versions.20261027_0022_announcement_fallbacks",
     "migrations.versions.20261027_0023_announcement_group_evidence",
     "migrations.versions.20261027_0024_announcement_acknowledgements",
+    "migrations.versions.20261027_0026_announcement_spotify",
 )
 TABLES = (
+    announcement_spotify,
     announcement_speaker_test,
     announcement_attempt,
     announcement_schedule,

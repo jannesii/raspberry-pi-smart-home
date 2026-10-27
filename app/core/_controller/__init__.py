@@ -2,6 +2,7 @@ from ._base import ControllerBase
 from .ac import ACMixin
 from .announcement_fallbacks import AnnouncementFallbackMixin
 from .announcement_schedules import AnnouncementScheduleMixin
+from .announcement_spotify import AnnouncementSpotifyMixin
 from .announcements import AnnouncementMixin
 from .auth import AuthMixin
 from .car_heater import CarHeaterMixin
@@ -25,6 +26,7 @@ __all__ = [
     "AnnouncementFallbackMixin",
     "AnnouncementMixin",
     "AnnouncementScheduleMixin",
+    "AnnouncementSpotifyMixin",
     "AuthMixin",
     "CarHeaterInstallationMixin",
     "CarHeaterKFactorMixin",

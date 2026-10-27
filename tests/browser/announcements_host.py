@@ -81,6 +81,13 @@ if __name__ == "__main__":
         clock[0] = datetime.fromisoformat(request.args["at"]).timestamp()
         return jsonify({"ok": True})
 
+    @flask_app.route("/test/spotify")
+    def test_spotify():
+        from test_announcement_spotify import setup_spotify
+
+        setup_spotify(flask_app, clock)
+        return jsonify({"ok": True})
+
     @flask_app.before_request
     def tick_on_request():
         # Stands in for the service loop: page polling drives processing, so the

@@ -3,7 +3,7 @@
 {% block title %}Announcements{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/announcements.css', v='20261027-6') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/announcements.css', v='20261027-8') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/flash.css') }}">
 {% endblock %}
 
@@ -37,6 +37,27 @@
       <div><dt>Discord fallback</dt><dd id="announceStatusFallback">—</dd></div>
       <div><dt>Reminder link in Discord</dt><dd id="announceStatusLink">—</dd></div>
     </dl>
+    <details class="announce-advanced" id="announceSpotifySettings">
+      <summary>Music restoration (optional Spotify connection)</summary>
+      <p class="announce-help" id="announceSpotifyHelp">Spotify Premium and approved playback-control access are required.
+        Connect your account, match Spotify devices to your speakers, then enable restoration.
+        An urgent interruption may leave music stopped when restoration is unavailable or fails.
+        Unknown ownership or newer music, device or volume choices prevent restoration.</p>
+      <p id="announceSpotifyState" class="announce-help" role="status" aria-live="polite">—</p>
+      <div class="announce-actions">
+        <button id="announceSpotifyConnect" class="announce-btn announce-btn-quiet" type="button">Connect Spotify</button>
+        <button id="announceSpotifyDisconnect" class="announce-btn announce-btn-quiet" type="button" disabled>Disconnect Spotify</button>
+        <button id="announceSpotifyFind" class="announce-btn announce-btn-quiet" type="button" disabled>Find Spotify devices</button>
+      </div>
+      <form id="announceSpotifyForm" aria-describedby="announceSpotifyHelp">
+        <div id="announceSpotifyTargets" class="announce-grid"></div>
+        <label class="announce-check" for="announceSpotifyEnabled">
+          <input id="announceSpotifyEnabled" type="checkbox" disabled>
+          <span>Restore music interrupted by urgent reminders</span>
+        </label>
+        <button id="announceSpotifySave" class="announce-btn announce-btn-quiet" type="submit" disabled>Save music restoration</button>
+      </form>
+    </details>
     <div class="announce-discovery">
       <div class="announce-discovery-head">
         <p class="announce-help">Speaker availability is checked when something is sent, or here on request.
@@ -195,8 +216,8 @@
             <span>Urgent: may interrupt music</span>
           </label>
           <small id="announceUrgentHelp" class="announce-help">Ordinary reminders wait while the speaker plays music or its
-            state is unclear. Urgent ones go first and may stop music; restoring that music is not available yet, so
-            it may stay stopped. Urgent does not allow speaking during quiet hours.</small>
+            state is unclear. Urgent ones go first and may stop music; optional Spotify restoration can be
+            enabled above. Music may stay stopped when restoration is unavailable, fails or ownership is unclear. Urgent does not allow speaking during quiet hours.</small>
           <label class="announce-check" for="announceQuietOverride">
             <input id="announceQuietOverride" name="quiet_hours_override" type="checkbox"
               aria-describedby="announceQuietHelp">
@@ -253,5 +274,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/announcements.js', v='20261027-6') }}"></script>
+<script src="{{ url_for('static', filename='js/announcements.js', v='20261027-8') }}"></script>
 {% endblock %}

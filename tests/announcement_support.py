@@ -196,6 +196,7 @@ class FakeCast:
         self.play_crash = False
         self.stop_result = "stopped"
         self.available = True
+        self.volume_watches = {}
 
     def status(self) -> dict:
         if not self.available:
@@ -272,6 +273,27 @@ class FakeCast:
         if self.stop_result == "stopped":
             self.finish(self._key(target), attempt_id, "cancelled")
         return self.stop_result
+
+    def watch_volume(self, attempt_id, target):
+        speaker = self._speaker(target)
+        self.volume_watches.setdefault(attempt_id, []).append(
+            (speaker, speaker.volume, speaker.device_id)
+        )
+
+    def owns(self, attempt_id, target, *, volume=False) -> bool:
+        if volume and any(
+            s.volume != v or s.device_id != d or s.state == "unavailable"
+            for s, v, d in self.volume_watches.get(attempt_id, [])
+        ):
+            return False
+        speaker = self._speaker(target)
+        return speaker.media.get(attempt_id) in (
+            "loading",
+            "playing",
+            "finished",
+            "failed",
+            "cancelled",
+        )
 
     def release(self, attempt_id) -> None:
         self.effects.append(("release", attempt_id))

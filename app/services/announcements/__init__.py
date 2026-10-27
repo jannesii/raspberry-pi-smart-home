@@ -44,6 +44,7 @@ def build_announcement_service(ctrl, *, db_path: str | None) -> AnnouncementServ
     """Production wiring: Piper subprocess + PyChromecast, both optional."""
     from .config import piper_settings_from_env
     from .fallback import DiscordFallbackChannel
+    from .spotify import SpotifyHTTP, SpotifyRestoration
     from .synthesis import PiperSubprocessSynthesizer
 
     base = Path(db_path).resolve().parent if db_path else Path.cwd()
@@ -51,6 +52,15 @@ def build_announcement_service(ctrl, *, db_path: str | None) -> AnnouncementServ
     synthesizer = PiperSubprocessSynthesizer(**piper_settings_from_env())
     service = AnnouncementService(
         ctrl,
+        spotify=SpotifyRestoration(
+            ctrl,
+            key=os.getenv("ANNOUNCEMENT_SPOTIFY_ENCRYPTION_KEY"),
+            http=SpotifyHTTP(
+                os.getenv("SPOTIFY_CLIENT_ID"),
+                os.getenv("SPOTIFY_CLIENT_SECRET"),
+                os.getenv("SPOTIFY_REDIRECT_URI") or "",
+            ),
+        ),
         synthesizer=synthesizer,
         transport=PyChromecastTransport(),
         config=config,

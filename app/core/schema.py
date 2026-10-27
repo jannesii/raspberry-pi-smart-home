@@ -1022,3 +1022,14 @@ announcement_acknowledgement = Table(
     Column("announcements_started", Integer, nullable=False),
     CheckConstraint("action IN ('done', 'skipped')", name="ck_announcement_acknowledgement_action"),
 )
+
+# Only ciphertext is stored; the encryption key is supplied outside the database.
+announcement_spotify = Table(
+    "announcement_spotify",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("credentials", Text, nullable=False),
+    Column("enabled", Boolean, nullable=False),
+    Column("devices", Text, nullable=False),
+    CheckConstraint("id = 1", name="ck_announcement_spotify_singleton"),
+)
