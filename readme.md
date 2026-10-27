@@ -166,7 +166,7 @@ Configure only the integrations you use:
 | Weather archive | `WEATHER_ARCHIVE_ENABLED` (default `true`): archive FMI station observations every ten minutes and the parking-point forecast every thirty minutes. `WEATHER_FORECAST_POINT` (default `62.8000,22.8260`): forecast point as `lat,lon`; an invalid value leaves forecast collection off. Needs outbound HTTPS to `opendata.fmi.fi` and migrations `20261016_0016`/`20261016_0017`/`20261017_0018`; see [weather observation archive](#weather-observation-archive) and [parking-point forecast archive](#parking-point-forecast-archive) |
 | Sodexo | `SODEXO_WEBHOOK_URL`, `SODEXO_POST_HOUR`, `SODEXO_POST_MINUTE` |
 | Alerts | `ALERT_WEBHOOK_URL`, `ALERT_WEBHOOK_BATCH_SECONDS` |
-| Spoken announcements | `ANNOUNCEMENTS_ENABLED` (default `true`), `ANNOUNCEMENT_MEDIA_ORIGIN` (speaker-reachable `http(s)://host[:port]`), `ANNOUNCEMENT_TARGETS` (JSON; defaults Jbl-Right `192.168.1.119`, Jbl-Left `192.168.1.148`), `ANNOUNCEMENT_CACHE_DIR`, `PIPER_COMMAND`, `PIPER_VOICE_DIR`, `PIPER_VOICE_FI`/`PIPER_VOICE_EN`, `ANNOUNCEMENT_QUIET_HOURS` (Helsinki `HH:MM-HH:MM`, default `22:00-07:00`, `off` disables); optional `requirements-announcements.txt` and migrations `20261027_0020`/`20261027_0021`/`20261027_0023`; see [spoken announcements](#spoken-announcements) |
+| Spoken announcements | `ANNOUNCEMENTS_ENABLED` (default `true`), `ANNOUNCEMENT_MEDIA_ORIGIN` (speaker-reachable `http(s)://host[:port]`), `ANNOUNCEMENT_TARGETS` (JSON; defaults Jbl-Right `192.168.1.119`, Jbl-Left `192.168.1.148`), `ANNOUNCEMENT_CACHE_DIR`, `PIPER_COMMAND`, `PIPER_VOICE_DIR`, `PIPER_VOICE_FI`/`PIPER_VOICE_EN`, `ANNOUNCEMENT_QUIET_HOURS` (Helsinki `HH:MM-HH:MM`, default `22:00-07:00`, `off` disables), `ANNOUNCEMENT_PUBLIC_ORIGIN` (browser origin such as `https://jannenkoti.com` for the reminder link in Discord fallbacks); fallbacks use `ALERT_WEBHOOK_URL`; optional `requirements-announcements.txt` and migrations `20261027_0020`–`20261027_0023`; see [spoken announcements](#spoken-announcements) |
 
 See [app/config.py](app/config.py) for core parsing/defaults and
 [service initialization](app/services/__init__.py) plus individual services for
@@ -569,7 +569,12 @@ Setup (owner commissioning; automated tests never use real speakers or engines):
    `127.0.0.1:5555` with `access_log off`. The token is a bearer secret in the URL
    path. Then set the origin, for example `http://192.168.1.10:8099`. Until it is
    set, preview works and speaker tests fail with "media address not configured".
-4. Apply migrations `20261027_0020`, `20261027_0021` and `20261027_0023` with
+4. **Discord fallback.** Fallbacks reuse `ALERT_WEBHOOK_URL`. Set
+   `ANNOUNCEMENT_PUBLIC_ORIGIN` to the origin you open the app from in a browser
+   (`scheme://host[:port]` only, e.g. `https://jannenkoti.com`) so the message
+   links to the reminder page; without it the message names the page instead.
+   Sending a real Discord message is a separate, deliberate owner check.
+5. Apply migrations `20261027_0020` through `20261027_0023` with
    the normal migration procedure.
 
 **One-time reminders.** The same page saves a reminder for a date and time in
@@ -612,8 +617,27 @@ override quiet hours. Each reminder expires a configurable number of minutes
 (default 15) after its due time. Waiting never extends expiry, and an expired
 reminder is recorded as *missed*, never spoken late, including after server
 downtime. **Reminder history** keeps due time, expiry, the reasons it waited,
-each attempt, the delivery evidence, volume restore and whether it is eligible
-for a fallback notification. Delivery is never an acknowledgement.
+each attempt, the delivery evidence, volume restore and the Discord fallback.
+Delivery is never an acknowledgement.
+
+**Discord fallback.** When spoken delivery fails, is partial or uncertain
+(including a restart mid-announcement), or the reminder expires unspoken
+(quiet hours, music, an unreachable speaker or downtime), the app sends **one**
+Discord message for that occurrence through `ALERT_WEBHOOK_URL`, immediately
+rather than in the hourly alert batch. It contains the same reminder text, why
+it is sent ("Missed reminder … while waiting for quiet hours to end") and a
+link to the reminder page, which still requires login. All Discord mentions
+are disabled, including `@everyone` typed into the text, and the message never
+contains the webhook, media addresses or tokens. A rejected or rate-limited
+request is retried at most three times in total, after 1 and 5 minutes or
+the delay Discord asks for. If Discord does not answer after the request was
+sent (timeout, or the server restarted while sending), the fallback is shown
+as *unknown* and is not resent, so a duplicate is avoided at the cost of a
+possible miss. History and **Readiness** show *Accepted by Discord*, *Not
+delivered*, *Unknown* or *Not configured*; acceptance means Discord took the
+message, not that anyone read it. A reminder whose speech was delivered gets no
+fallback even if it is never acknowledged, and pausing or deleting never sends
+one.
 
 **Repeats.** By default a reminder is spoken once. Under *Expiry, repeats,
 urgency and quiet hours* choose up to 5 announcements per reminder and the
@@ -636,7 +660,10 @@ retries; speech already playing finishes. Skip affects that occurrence only; the
 schedule continues. **Stop speaking** asks the speaker to stop and cancels
 further repeats; the history shows whether the speaker confirmed the stop. It
 does not mark the reminder done, so Done and Skip stay available, and none of
-these actions create a fallback. Acknowledgements are reminder handling only:
+these actions create a fallback. Done or Skip before a pending Discord fallback
+starts sending cancels it (shown as cancelled by your acknowledgement); one
+already sending, sent or unknown stays as recorded. Stop speaking never cancels
+a fallback. Acknowledgements are reminder handling only:
 they never record a medicine dose or blood-pressure value and leave medicine
 purchase/refill calculations unchanged. Fallback notifications, Snooze, the
 speaker group and history deletion are later slices.
@@ -649,7 +676,7 @@ compatibility of PyChromecast and the real media fetch are unverified until
 owner acceptance.
 
 ```sh
-.venv/bin/pytest -q tests/test_announcements.py tests/test_announcement_schedules.py tests/test_announcement_recurring.py tests/test_announcement_acknowledgements.py tests/test_announcement_integrations.py tests/test_announcement_storage.py tests/test_announcements_browser.py
+.venv/bin/pytest -q tests/test_announcements.py tests/test_announcement_schedules.py tests/test_announcement_recurring.py tests/test_announcement_acknowledgements.py tests/test_announcement_fallback.py tests/test_alert_webhook.py tests/test_announcement_integrations.py tests/test_announcement_storage.py tests/test_announcements_browser.py
 ```
 
 ### Weather observation archive

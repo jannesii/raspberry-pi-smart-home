@@ -418,3 +418,42 @@ Code: `app/blueprints/api/car_heater/weather.py` (`/sessions/<id>/weather`,
   it), unreachable speakers and overlapping active work. Urgent ones sort first,
   may dispatch on `playing`/`unknown` (recorded as `interrupted_media`,
   `media_restore='unavailable'`) and never bypass quiet hours.
+- Fallback (`fallback.py`, `AnnouncementFallbackMixin`): each tick opens one
+  `announcement_fallback` per occurrence with `fallback_reason` (unique
+  `occurrence_id`); the message is composed once (reminder text, reason or
+  waited-for context, link `ANNOUNCEMENT_PUBLIC_ORIGIN` +
+  `/settings/announcements?occurrence=<id>`) and sent at once through
+  `ALERT_WEBHOOK_URL` with `allowed_mentions={"parse": []}`, never the batcher.
+  A numbered `sending` attempt row is committed before each request. Confirmed
+  failures (HTTP error, 429, never sent) retry after 60 s/300 s or the server's
+  `retry_after`, at most 3 requests; 4xx other than 408/429 stop at once.
+  Timeouts after sending and restarts mid-request are `unknown` and never
+  resent. Missing webhook → `unavailable`. Accepted is not read/acknowledged.
+- `alert_webhook.deliver_webhook()` returns `WebhookResult` (accepted/rejected/
+  rate_limited/failed/not_configured/unknown) and never logs the URL;
+  `send_alert_webhook()` keeps its payload (mentions allowed) and boolean.
+- Repeats: schedules carry `max_announcements` (1–5) and
+  `repeat_interval_minutes` (1–120, required iff more than one); API adds
+  `repeats{fit, offsets_minutes}` (announcement k at k × interval, before
+  expiry). `_settle` returns a delivered occurrence to `waiting` with
+  `next_attempt_purpose='repeat'` at previous `intent_at` + interval (or now if
+  later: no burst), else closes it; a delivered occurrence that expires while
+  waiting closes without disposition or fallback.
+- Retries: only a `failed` attempt with `certain_not_played` (TransportError
+  certain) is retried, at most `max_automatic_retries` (2) after
+  `retry_delay_s` (60 s) and only before `expires_at`; `retries_started` is
+  counted apart from `announcements_started`. Unknown outcomes are never
+  retried. No retry left → closed `failed` (fallback `failed`, also when the
+  retry window expires while held).
+- Done/Skip (`POST occurrences/<id>/done|skip`): one `announcement_acknowledgement`
+  per occurrence (unique; keeps prior status/delivery/disposition), disposition
+  `done`/`skipped`, waiting → closed, announcing keeps current speech without
+  follow-ups. Same action again → 200, other → 409 `already_acknowledged`. A
+  `pending` fallback becomes `cancelled`/`acknowledged` (also when opened or
+  about to send after the acknowledgement); sending/sent/unknown stay. Never a
+  medicine dose, BP value or refill change.
+- Stop speaking (`POST occurrences/<id>/stop`, 202): sets the active attempt's
+  `stop_requested_at` (actual `stop_outcome` from the speaker) and disposition
+  `stopped` (waiting follow-up → closed); 409 `not_speaking` before any speech.
+  Never acknowledges and never sets or cancels a fallback. Item `actions` lists
+  what applies now.

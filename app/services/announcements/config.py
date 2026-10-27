@@ -61,6 +61,9 @@ def default_targets() -> tuple[SpeakerTarget, ...]:
 @dataclass(frozen=True)
 class AnnouncementConfig:
     media_origin: str | None
+    # Browser-facing origin of this app (e.g. https://jannenkoti.com) used for
+    # the authenticated reminder link in fallback notifications; None = no link.
+    public_origin: str | None = None
     targets: tuple[SpeakerTarget, ...] = field(default_factory=default_targets)
     cache_dir: Path | str = "announcement-cache"
     cache_max_age_s: float = 7 * 24 * 3600
@@ -85,16 +88,16 @@ class AnnouncementConfig:
         return next((t for t in self.targets if t.key == key), None)
 
 
-def normalize_origin(raw: str | None) -> str | None:
+def normalize_origin(raw: str | None, setting: str = "ANNOUNCEMENT_MEDIA_ORIGIN") -> str | None:
     """Accept only a bare http(s) origin; anything else counts as unconfigured."""
     if not raw:
         return None
     parts = urlsplit(raw.strip())
     if parts.scheme not in ("http", "https") or not parts.netloc:
-        logger.warning("ANNOUNCEMENT_MEDIA_ORIGIN ignored: not an http(s) origin")
+        logger.warning("%s ignored: not an http(s) origin", setting)
         return None
     if parts.path not in ("", "/") or parts.query or parts.fragment or "@" in parts.netloc:
-        logger.warning("ANNOUNCEMENT_MEDIA_ORIGIN ignored: must be scheme://host[:port] only")
+        logger.warning("%s ignored: must be scheme://host[:port] only", setting)
         return None
     return f"{parts.scheme}://{parts.netloc}"
 
@@ -130,6 +133,9 @@ def parse_targets(raw: str | None) -> tuple[SpeakerTarget, ...]:
 def config_from_env(default_cache_dir: Path) -> AnnouncementConfig:
     return AnnouncementConfig(
         media_origin=normalize_origin(os.getenv("ANNOUNCEMENT_MEDIA_ORIGIN")),
+        public_origin=normalize_origin(
+            os.getenv("ANNOUNCEMENT_PUBLIC_ORIGIN"), "ANNOUNCEMENT_PUBLIC_ORIGIN"
+        ),
         targets=parse_targets(os.getenv("ANNOUNCEMENT_TARGETS")),
         cache_dir=os.getenv("ANNOUNCEMENT_CACHE_DIR") or default_cache_dir,
         quiet_hours=_quiet_hours_from_env(),

@@ -1,5 +1,6 @@
 from ._base import ControllerBase
 from .ac import ACMixin
+from .announcement_fallbacks import AnnouncementFallbackMixin
 from .announcement_schedules import AnnouncementScheduleMixin
 from .announcements import AnnouncementMixin
 from .auth import AuthMixin
@@ -21,6 +22,7 @@ from .ynab_categorizer import YnabCategorizerMixin
 
 __all__ = [
     "ACMixin",
+    "AnnouncementFallbackMixin",
     "AnnouncementMixin",
     "AnnouncementScheduleMixin",
     "AuthMixin",

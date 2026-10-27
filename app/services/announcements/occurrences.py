@@ -295,6 +295,7 @@ class OccurrenceMixin:
             }
         for items in attempts.values():
             items.sort(key=lambda a: a["requested_at"])
+        fallbacks = self._fallbacks_by_occurrence([o.id for o in occurrences])
         return [
             {
                 "kind": "occurrence",
@@ -305,6 +306,8 @@ class OccurrenceMixin:
                     ),
                 },
                 "attempts": attempts.get(o.id, []),
+                # Fallback notification (#33): its own evidence, never acknowledgement.
+                "fallback": fallbacks.get(o.id),
                 # The owner's Done/Skip, kept apart from delivery evidence:
                 # playback or a fallback never implies it.
                 "acknowledgement": acks.get(o.id),

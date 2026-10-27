@@ -94,11 +94,30 @@
     superseded: 'Superseded',
     stopped: 'Stopped',
   };
-  const FALLBACK_TEXT = {
-    failed: 'Eligible – spoken delivery failed',
-    partial: 'Eligible – partial delivery',
-    unknown: 'Eligible – delivery uncertain',
-    expired_undelivered: 'Eligible – expired without spoken delivery',
+  const FALLBACK_REASON_TEXT = {
+    failed: 'spoken delivery failed',
+    partial: 'partial delivery',
+    unknown: 'delivery uncertain',
+    expired_undelivered: 'expired without spoken delivery',
+  };
+  const FALLBACK_STATUS_TEXT = {
+    pending: 'Waiting to send to Discord',
+    sending: 'Sending to Discord',
+    accepted: 'Accepted by Discord',
+    unknown: 'Unknown – may have reached Discord; not resent',
+    failed: 'Not delivered to Discord',
+    unavailable: 'Not sent – Discord webhook (ALERT_WEBHOOK_URL) not configured',
+    cancelled: 'Not sent – cancelled',
+  };
+  const FALLBACK_DETAIL_TEXT = {
+    attempts_exhausted: 'all attempts failed',
+    rejected: 'Discord rejected the message',
+    rate_limited: 'Discord asked to wait',
+    failed: 'the request could not be sent',
+    acceptance_unknown: 'no answer from Discord',
+    interrupted_by_restart: 'the server restarted while sending',
+    message_too_long: 'the message is too long for Discord',
+    acknowledged: 'you marked the reminder Done or Skipped before it was sent',
   };
   const RESTORE_TEXT = {
     restored: 'Restored',
@@ -114,6 +133,7 @@
   let previewToken = 0;
   let editing = null; // {id, revision} while editing a schedule
   let scheduleRequestId = null;
+  let linkedShown = false;
 
   function byId(id) {
     return document.getElementById(id);
@@ -205,6 +225,7 @@
         ? 'Available'
         : 'Unavailable – music an urgent reminder interrupts stays stopped';
     }
+    renderFallbackStatus(status.fallback);
     targets = Array.isArray(status.targets) ? status.targets : [];
     const container = byId('announceTargets');
     if (!container) return;
@@ -228,6 +249,30 @@
     const defaults = status.defaults || {};
     const textArea = byId('announceText');
     if (textArea && defaults.max_text_length) textArea.maxLength = defaults.max_text_length;
+  }
+
+  function renderFallbackStatus(fallback) {
+    const channel = byId('announceStatusFallback');
+    const link = byId('announceStatusLink');
+    if (channel) {
+      if (!fallback) {
+        channel.textContent = '—';
+      } else if (!fallback.available) {
+        channel.textContent = 'Not configured – set ALERT_WEBHOOK_URL; failed or missed reminders stay only here';
+      } else {
+        let text = `Available (Discord, up to ${fallback.max_attempts || '—'} attempts)`;
+        const last = fallback.last;
+        if (last) {
+          text += `. Last: ${FALLBACK_STATUS_TEXT[last.status] || last.status} ${fmtTime(last.updated_at)}`;
+        }
+        channel.textContent = text;
+      }
+    }
+    if (link) {
+      link.textContent = fallback && fallback.link_origin
+        ? fallback.link_origin
+        : 'Not configured – set ANNOUNCEMENT_PUBLIC_ORIGIN to include a link';
+    }
   }
 
   async function loadStatus() {
@@ -1072,6 +1117,41 @@
     }).join('; ');
   }
 
+  function fallbackText(occurrence, fallback) {
+    const reason = FALLBACK_REASON_TEXT[occurrence.fallback_reason] || occurrence.fallback_reason;
+    if (!fallback) return reason ? `Due – ${reason}` : 'Not needed';
+    let text = FALLBACK_STATUS_TEXT[fallback.status] || fallback.status || '—';
+    if (fallback.status === 'accepted') text += ` ${fmtTime(fallback.accepted_at)}`;
+    const detail = FALLBACK_DETAIL_TEXT[fallback.status_reason];
+    if (detail && fallback.status !== 'unavailable') text += ` – ${detail}`;
+    if (fallback.status === 'pending' && fallback.attempts_made > 0) {
+      text += `; next try ${fmtTime(fallback.next_attempt_at)}`;
+    }
+    const attempts = Number(fallback.attempts_made) || 0;
+    const most = Number(fallback.max_attempts) || 0;
+    if (attempts) text += ` (attempt ${attempts} of ${most})`;
+    return reason ? `${text}. Reason: ${reason}.` : text;
+  }
+
+  function linkedOccurrenceId() {
+    const value = new URLSearchParams(window.location.search).get('occurrence') || '';
+    return /^[0-9a-f-]{36}$/i.test(value) ? value : null;
+  }
+
+  function showLinkedOccurrence() {
+    if (linkedShown) return;
+    const wanted = linkedOccurrenceId();
+    const list = byId('announceHistoryList');
+    if (!wanted || !list) return;
+    const match = Array.from(list.children).find(li => li.dataset && li.dataset.occurrenceId === wanted);
+    if (!match) return;
+    linkedShown = true;
+    match.classList.add('is-linked');
+    match.tabIndex = -1;
+    match.scrollIntoView({ block: 'center' });
+    match.focus({ preventScroll: true });
+  }
+
   function renderHistory(items) {
     const list = byId('announceHistoryList');
     const count = byId('announceHistoryCount');
@@ -1091,6 +1171,7 @@
       const last = attempts[attempts.length - 1] || {};
       const li = document.createElement('li');
       li.className = 'announce-test announce-occurrence';
+      if (linkedShown && occurrence.id === linkedOccurrenceId()) li.classList.add('is-linked');
       li.dataset.occurrenceId = occurrence.id || '';
       const head = document.createElement('div');
       head.className = 'announce-test-head';
@@ -1101,7 +1182,9 @@
       const badge = document.createElement('span');
       badge.className = 'announce-badge';
       if (['waiting', 'announcing'].includes(occurrence.status)) badge.classList.add('is-active');
-      if (['failed', 'unknown'].includes(occurrence.delivery) || occurrence.disposition === 'missed') {
+      const fallbackProblem = item.fallback && ['failed', 'unavailable', 'unknown'].includes(item.fallback.status);
+      if (['failed', 'partial', 'unknown'].includes(occurrence.delivery) || occurrence.disposition === 'missed'
+        || fallbackProblem) {
         badge.classList.add('is-problem');
       }
       badge.textContent = gap ? 'Missed (clock change)' : occurrenceState(occurrence);
@@ -1125,7 +1208,7 @@
         fact(facts, 'Music', 'Interrupted – restoration unavailable');
       }
       fact(facts, 'Volume restore', RESTORE_TEXT[last.volume_restore] || '—');
-      fact(facts, 'Fallback', FALLBACK_TEXT[occurrence.fallback_reason] || 'Not needed');
+      fact(facts, 'Discord fallback', fallbackText(occurrence, item.fallback));
       const stop = stopEvidence(attempts);
       if (stop) fact(facts, 'Stop speaking', stop);
       fact(facts, 'Acknowledged', acknowledgementText(item.acknowledgement));
@@ -1155,6 +1238,7 @@
       const historyItems = Array.isArray(history.occurrences) ? history.occurrences : [];
       renderSchedules(scheduleItems);
       renderHistory(historyItems);
+      showLinkedOccurrence();
       const active = historyItems.some(i => i.occurrence && ['waiting', 'announcing'].includes(i.occurrence.status));
       clearTimeout(reminderTimer);
       reminderTimer = setTimeout(loadReminders, active ? 3000 : 20000);

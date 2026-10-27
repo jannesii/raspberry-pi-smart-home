@@ -18,6 +18,7 @@ from ..models import AnnouncementAcknowledgement, AnnouncementOccurrence, Announ
 from ..schema import (
     announcement_acknowledgement,
     announcement_attempt,
+    announcement_fallback,
     announcement_occurrence,
     announcement_schedule,
 )
@@ -340,9 +341,10 @@ class AnnouncementScheduleMixin:
 
         Returns ("created" | "exists" | "conflict" | "not_found", acknowledgement).
         In the same transaction a waiting occurrence closes (pending speech,
-        repeats and retries never start: dispatch requires no disposition) and
-        an announcing one keeps its current speech but gets no follow-up.
-        Delivery evidence is left as it was and no fallback is created.
+        repeats and retries never start: dispatch requires no disposition), an
+        announcing one keeps its current speech but gets no follow-up, and a
+        fallback still pending (no request in flight) is cancelled. Delivery
+        evidence and sent/uncertain fallbacks are left as they were.
         """
         occ = announcement_occurrence.c
         try:
@@ -395,6 +397,18 @@ class AnnouncementScheduleMixin:
                         .where(occ.id == occurrence_id)
                         .values(updated_at=at, **marked)
                     )
+                fb = announcement_fallback.c
+                conn.execute(
+                    update(announcement_fallback)
+                    .where(fb.occurrence_id == occurrence_id, fb.status == "pending")
+                    .values(
+                        status="cancelled",
+                        status_reason="acknowledged",
+                        next_attempt_at=None,
+                        completed_at=at,
+                        updated_at=at,
+                    )
+                )
         except IntegrityError:
             with self._sa_engine.connect() as conn:
                 existing = self._acknowledgement(conn, occurrence_id)

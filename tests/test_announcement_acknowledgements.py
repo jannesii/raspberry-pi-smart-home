@@ -17,6 +17,7 @@ announcement_app = support.announcement_app
 client = support.client
 clock = support.clock
 doubles = support.doubles
+discord = support.discord
 
 API = "/api/announcements"
 RIGHT = "192.168.1.119"
@@ -723,5 +724,128 @@ def test_repeat_and_acknowledgement_controls_are_on_the_announcement_page(announ
     assert "js/announcements.js?v=20261027-4" in html
     assert "css/announcements.css?v=20261027-4" in html
     script = client.get("/static/js/announcements.js").get_data(as_text=True)
-    for wording in ("Stop speaking", "Skip this occurrence", "fit before the reminder expires"):
+    for wording in (
+        "Stop speaking",
+        "Skip this occurrence",
+        "fit before the reminder expires",
+        "Done or Skipped before it was sent",
+    ):
         assert wording in script
+
+
+def fail_speech(app, client, doubles, clock, **body):
+    """A reminder whose speech fails definitively (no retry) at 12:30 UTC."""
+    synth, _cast = doubles
+    schedule = save(app, client, **body)["schedule"]
+    synth.failure = "synthesis_failed"
+    at(clock, "2027-01-15T12:30:00+00:00")
+    app.announcement_service.tick()
+    synth.failure = None
+    return schedule
+
+
+def test_done_cancels_a_pending_fallback_but_never_one_already_sent(
+    announcement_app, client, doubles, discord, clock
+):
+    service = announcement_app.announcement_service
+    discord.outcomes = [support.DiscordResponse(429, {"retry_after": 60.0})]
+    waiting = fail_speech(announcement_app, client, doubles, clock)
+    item = only_occurrence(client, waiting["id"])
+    assert item["fallback"]["status"] == "pending"  # rate limited, retry not started
+    done = act(announcement_app, client, item["occurrence"]["id"], "done")
+    assert done["fallback"]["status"] == "cancelled"
+    assert done["fallback"]["status_reason"] == "acknowledged"
+    assert done["fallback"]["next_attempt_at"] is None
+    assert done["occurrence"]["fallback_reason"] == "failed"  # eligibility history kept
+    at(clock, "2027-01-15T12:40:00+00:00")
+    service.tick()
+    assert len(discord.requests) == 1
+
+    sent = save(announcement_app, client, due_local="2027-01-15T14:41")["schedule"]
+    doubles[0].failure = "synthesis_failed"
+    at(clock, "2027-01-15T12:41:00+00:00")
+    service.tick()
+    item = only_occurrence(client, sent["id"])
+    assert item["fallback"]["status"] == "accepted"
+    skipped = act(announcement_app, client, item["occurrence"]["id"], "skip")
+    assert skipped["fallback"]["status"] == "accepted"  # as recorded
+    assert skipped["acknowledgement"]["action"] == "skipped"
+
+
+def test_done_while_the_fallback_is_sending_leaves_its_outcome_as_recorded(
+    announcement_app, client, doubles, discord, clock
+):
+    import requests
+
+    schedule = save(announcement_app, client)["schedule"]
+    doubles[0].failure = "synthesis_failed"
+
+    def acknowledge():
+        (item,) = client.get(f"{API}/occurrences").get_json()["occurrences"]
+        act(announcement_app, client, item["occurrence"]["id"], "done")
+
+    discord.during = acknowledge
+    discord.outcomes = [requests.ReadTimeout("read timed out")]
+    at(clock, "2027-01-15T12:30:00+00:00")
+    announcement_app.announcement_service.tick()
+    item = only_occurrence(client, schedule["id"])
+    assert item["acknowledgement"]["action"] == "done"
+    assert item["fallback"]["status"] == "unknown"  # never rewritten as cancelled
+    assert len(discord.requests) == 1
+
+
+def test_acknowledgement_just_before_the_fallback_opens_keeps_it_unsent(
+    announcement_app, client, doubles, discord, clock
+):
+    from app.services.announcements import TransportError
+
+    synth, cast = doubles
+    service = announcement_app.announcement_service
+    # Prepare the first reminder's audio in advance so that, in the tick
+    # below, only the second reminder synthesizes speech.
+    client.post(
+        f"{API}/previews",
+        json={"text": "Muista ottaa lääkkeet."},
+        headers=headers(announcement_app, client),
+    )
+    service.tick()
+    first = save(announcement_app, client, due_local="2027-01-15T14:29")["schedule"]
+    save(announcement_app, client, target="jbl-left", text="Mittaa verenpaine.")
+
+    def acknowledge_first():
+        item = only_occurrence(client, first["id"])
+        assert item["occurrence"]["fallback_reason"] == "unknown"
+        assert item["fallback"] is None
+        act(announcement_app, client, item["occurrence"]["id"], "done")
+
+    synth.during = acknowledge_first
+    cast.play_error = TransportError("load_uncertain", certain_not_played=False)
+    at(clock, "2027-01-15T12:30:00+00:00")
+    service.tick()
+    item = only_occurrence(client, first["id"])
+    assert item["fallback"]["status"] == "cancelled"
+    assert item["fallback"]["status_reason"] == "acknowledged"
+    assert item["fallback"]["attempts"] == []
+    assert all("Muista" not in m for m in discord.messages)
+
+
+def test_failed_retries_end_in_one_fallback_that_names_them(
+    announcement_app, client, doubles, discord, clock
+):
+    from app.services.announcements import TransportError
+
+    _synth, cast = doubles
+    service = announcement_app.announcement_service
+    cast.play_error = TransportError("speaker_unavailable", certain_not_played=True)
+    saved = save(announcement_app, client)["schedule"]
+    at(clock, "2027-01-15T12:30:00+00:00")
+    service.tick()
+    assert discord.requests == []  # a retry is still possible: no fallback yet
+    for _ in range(4):
+        clock[0] += 60
+        service.tick()
+    item = only_occurrence(client, saved["id"])
+    assert item["fallback"]["status"] == "accepted"
+    (message,) = discord.messages
+    assert "Muista ottaa lääkkeet." in message
+    assert "the speaker did not respond (also after 2 automatic retries)" in message

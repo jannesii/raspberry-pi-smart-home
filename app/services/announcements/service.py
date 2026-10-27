@@ -39,6 +39,7 @@ from .content import (
     StaticTextProvider,
     parse_percent,
 )
+from .fallback import DiscordFallbackChannel, FallbackMixin
 from .media import MediaCache, MediaError, PreparedMedia, compose, media_key
 from .occurrences import OccurrenceMixin
 from .schedules import DEFAULT_EXPIRY_MINUTES, QuietHours
@@ -76,7 +77,7 @@ def _wav_duration(path) -> float | None:
         return None
 
 
-class AnnouncementService(OccurrenceMixin):
+class AnnouncementService(OccurrenceMixin, FallbackMixin):
     def __init__(
         self,
         ctrl,
@@ -87,6 +88,7 @@ class AnnouncementService(OccurrenceMixin):
         clock: Callable[[], float] = time.time,
         content_provider: ContentProvider | None = None,
         tick_interval_s: float = 1.0,
+        fallback_channel: DiscordFallbackChannel | None = None,
     ):
         self.ctrl = ctrl
         self.synthesizer = synthesizer
@@ -94,6 +96,8 @@ class AnnouncementService(OccurrenceMixin):
         self.config = config
         self._clock = clock
         self.content = content_provider or StaticTextProvider(config.max_text_length)
+        # Unconfigured by default: only production wiring passes the webhook.
+        self.fallback_channel = fallback_channel or DiscordFallbackChannel(None)
         self.cache = MediaCache(
             config.cache_dir,
             clock=clock,
@@ -163,6 +167,7 @@ class AnnouncementService(OccurrenceMixin):
                 recovered += 1
         if recovered:
             logger.warning("Marked %s interrupted announcement attempts unknown", recovered)
+        self._recover_fallbacks(now)
         return recovered
 
     # Status ------------------------------------------------------------------
@@ -194,6 +199,7 @@ class AnnouncementService(OccurrenceMixin):
             # Restoring music interrupted by an urgent announcement needs the
             # optional Spotify connection (#38); until then it is not promised.
             "music_restoration": {"available": False, "reason": "not_configured"},
+            "fallback": self.fallback_status(),
         }
 
     # Browser preview (never dispatches) ---------------------------------------
@@ -389,6 +395,7 @@ class AnnouncementService(OccurrenceMixin):
             self._settle_occurrences()
             self._materialize_due()
             self._dispatch_work()
+            self._process_fallbacks()
             self._evict_if_due()
 
     def _prepare(self, content: PreparedContent, chime: int) -> PreparedMedia:

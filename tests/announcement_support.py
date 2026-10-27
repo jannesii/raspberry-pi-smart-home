@@ -36,6 +36,7 @@ from app.services.announcements import (
     TransportError,
     default_targets,
 )
+from app.services.announcements.fallback import DiscordFallbackChannel
 from app.services.announcements.synthesis import SynthesisError
 
 if TYPE_CHECKING:
@@ -43,6 +44,8 @@ if TYPE_CHECKING:
 
 START = datetime(2027, 1, 15, 12, tzinfo=UTC).timestamp()
 MEDIA_ORIGIN = "http://speaker-media.test:8099"
+PUBLIC_ORIGIN = "https://home.test"
+WEBHOOK_URL = "https://discord.test/api/webhooks/42/webhook-secret"
 SPEECH_RATE = 22050
 
 
@@ -196,6 +199,51 @@ class FakeCast:
     finish = report
 
 
+class DiscordResponse:
+    def __init__(self, status_code: int, body=None, headers=None):
+        self.status_code = status_code
+        self._body = body
+        self.headers = headers or {}
+        self.text = "" if body is None else str(body)
+
+    def json(self):
+        if self._body is None:
+            raise ValueError("no body")
+        return self._body
+
+
+class FakeDiscord:
+    """Stands in for Discord's HTTP endpoint (``requests.post``); no network.
+
+    ``outcomes`` is consumed per request (a response or an exception to
+    raise); when empty every request is accepted with 200 + message JSON.
+    """
+
+    def __init__(self):
+        self.outcomes: list = []
+        self.requests: list[dict] = []
+        self.during: Callable[[], None] | None = None
+
+    def post(self, url, **kwargs):
+        self.requests.append({"url": url, **kwargs})
+        if self.during:
+            hook, self.during = self.during, None
+            hook()
+        outcome = self.outcomes.pop(0) if self.outcomes else DiscordResponse(200, {"id": "m"})
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
+
+    @property
+    def messages(self) -> list[str]:
+        return [r["json"]["content"] for r in self.requests]
+
+
+@pytest.fixture
+def discord():
+    return FakeDiscord()
+
+
 @pytest.fixture
 def clock():
     return [START]
@@ -206,20 +254,30 @@ def doubles():
     return FakeSynthesizer(), FakeCast()
 
 
-def build_service(ctrl, clock, doubles, cache_dir, **config):
+def build_service(
+    ctrl, clock, doubles, cache_dir, *, discord=None, webhook_url=WEBHOOK_URL, **config
+):
+    """Without ``discord`` the fallback channel is unconfigured (never sends)."""
     synth, cast = doubles
     settings = {
         "media_origin": MEDIA_ORIGIN,
+        "public_origin": PUBLIC_ORIGIN,
         "targets": default_targets(),
         "cache_dir": cache_dir,
     }
     settings.update(config)
+    channel = (
+        DiscordFallbackChannel(webhook_url, post=discord.post)
+        if discord is not None
+        else DiscordFallbackChannel(None)
+    )
     return AnnouncementService(
         ctrl,
         clock=lambda: clock[0],
         synthesizer=synth,
         transport=cast,
         config=AnnouncementConfig(**settings),
+        fallback_channel=channel,
     )
 
 
@@ -229,7 +287,7 @@ class _User(UserMixin):
 
 
 @pytest.fixture
-def announcement_app(tmp_path, monkeypatch, clock, doubles):
+def announcement_app(tmp_path, monkeypatch, clock, doubles, discord):
     from app.core.database import DatabaseManager
 
     monkeypatch.setattr(DatabaseManager, "_instance", None)
@@ -253,7 +311,9 @@ def announcement_app(tmp_path, monkeypatch, clock, doubles):
     app.register_blueprint(web_bp)
     app.register_blueprint(auth_bp)
     csrf.init_app(app)
-    app.announcement_service = build_service(ctrl, clock, doubles, tmp_path / "cache")
+    app.announcement_service = build_service(
+        ctrl, clock, doubles, tmp_path / "cache", discord=discord
+    )
     yield app
     engine.dispose()
     ctrl.db.conn.close()

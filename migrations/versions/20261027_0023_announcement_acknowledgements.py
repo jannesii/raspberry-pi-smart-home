@@ -10,17 +10,28 @@ certainly did not play, counted apart from the configured announcements) and
 ``purpose`` and ``certain_not_played``. Existing rows keep NULL purposes and
 zero retries, which the service reads as "first announcement".
 
+Fallbacks gain status 'cancelled': Done/Skip before a pending fallback starts
+sending cancels it (status_reason 'acknowledged'), never as a send failure.
+
 Revision ID: 20261027_0023
-Revises: 20261027_0021
+Revises: 20261027_0022
 """
 
 import sqlalchemy as sa
 from alembic import op
 
 revision = "20261027_0023"
-down_revision = "20261027_0021"
+down_revision = "20261027_0022"
 branch_labels = None
 depends_on = None
+
+
+_FALLBACK_STATUSES = "'pending', 'sending', 'accepted', 'unknown', 'failed', 'unavailable'"
+
+
+def _fallback_status_check(batch, statuses: str) -> None:
+    batch.drop_constraint("ck_announcement_fallback_status", type_="check")
+    batch.create_check_constraint("ck_announcement_fallback_status", f"status IN ({statuses})")
 
 
 def upgrade():
@@ -54,9 +65,16 @@ def upgrade():
     with op.batch_alter_table("announcement_attempt") as batch:
         batch.add_column(sa.Column("purpose", sa.Text()))
         batch.add_column(sa.Column("certain_not_played", sa.Boolean()))
+    with op.batch_alter_table("announcement_fallback") as batch:
+        _fallback_status_check(batch, f"{_FALLBACK_STATUSES}, 'cancelled'")
 
 
 def downgrade():
+    # Cancelled fallbacks were never sent; record them as unavailable so the
+    # older status set still holds and nothing is sent after a downgrade.
+    op.execute("UPDATE announcement_fallback SET status = 'unavailable' WHERE status = 'cancelled'")
+    with op.batch_alter_table("announcement_fallback") as batch:
+        _fallback_status_check(batch, _FALLBACK_STATUSES)
     with op.batch_alter_table("announcement_attempt") as batch:
         batch.drop_column("certain_not_played")
         batch.drop_column("purpose")

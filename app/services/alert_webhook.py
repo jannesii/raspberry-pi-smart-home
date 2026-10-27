@@ -2,6 +2,8 @@ import logging
 import os
 import threading
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 import requests
@@ -14,6 +16,96 @@ _BATCH_THREAD: threading.Thread | None = None
 _LAST_FLUSH_TS: float | None = None
 
 
+@dataclass(frozen=True)
+class WebhookResult:
+    """What is known about one webhook request.
+
+    ``status``: ``accepted`` (2xx: Discord took the message, which says nothing
+    about readership), ``rejected`` (HTTP error answer), ``rate_limited`` (429,
+    with ``retry_after_s`` when given), ``failed`` (certainly never sent, e.g.
+    connection refused), ``not_configured`` (no URL) or ``unknown`` (sent or
+    possibly sent without an answer, e.g. a read timeout: resending could
+    duplicate the message).
+    """
+
+    status: str
+    http_status: int | None = None
+    retry_after_s: float | None = None
+    detail: str | None = None
+
+    @property
+    def accepted(self) -> bool:
+        return self.status == "accepted"
+
+
+def _retry_after(resp) -> float | None:
+    try:
+        body = resp.json()
+    except ValueError:
+        body = None
+    value = body.get("retry_after") if isinstance(body, dict) else None
+    if value is None:
+        value = (resp.headers or {}).get("Retry-After")
+    try:
+        return max(0.0, float(value)) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _certainly_not_sent(exc: Exception) -> bool:
+    """True only when the request provably never left this host."""
+    if isinstance(exc, requests.ConnectTimeout | requests.exceptions.InvalidURL):
+        return True
+    if isinstance(exc, requests.exceptions.MissingSchema | requests.exceptions.InvalidSchema):
+        return True
+    if isinstance(exc, requests.ConnectionError) and exc.args:
+        from urllib3.exceptions import MaxRetryError, NewConnectionError
+
+        inner = exc.args[0]
+        reason = inner.reason if isinstance(inner, MaxRetryError) else inner
+        return isinstance(reason, NewConnectionError)
+    return False
+
+
+def deliver_webhook(
+    *,
+    payload: dict[str, Any],
+    webhook_url: str | None = None,
+    params: dict[str, str] | None = None,
+    timeout: float = 10,
+    post: Callable[..., Any] | None = None,
+) -> WebhookResult:
+    """POST ``payload`` to the webhook and classify the outcome.
+
+    Logs never include the URL (it embeds the webhook token) or the payload.
+    """
+    url = (webhook_url or os.getenv("ALERT_WEBHOOK_URL") or "").strip()
+    if not url:
+        logger.debug("alert webhook not configured")
+        return WebhookResult("not_configured")
+    kwargs: dict[str, Any] = {"json": payload, "timeout": timeout}
+    if params:
+        kwargs["params"] = params
+    try:
+        resp = (post or requests.post)(url, **kwargs)
+    except Exception as exc:
+        kind = type(exc).__name__
+        if _certainly_not_sent(exc):
+            logger.warning("alert webhook not sent: %s", kind)
+            return WebhookResult("failed", detail=kind)
+        logger.warning("alert webhook outcome unknown: %s", kind)
+        return WebhookResult("unknown", detail=kind)
+    code = resp.status_code
+    if code < 400:
+        return WebhookResult("accepted", http_status=code)
+    if code == 429:
+        retry = _retry_after(resp)
+        logger.warning("alert webhook rate limited retry_after=%s", retry)
+        return WebhookResult("rate_limited", http_status=code, retry_after_s=retry)
+    logger.warning("alert webhook error: %s %s", code, (resp.text or "")[:200])
+    return WebhookResult("rejected", http_status=code)
+
+
 def send_alert_webhook(
     *,
     message: str,
@@ -22,27 +114,14 @@ def send_alert_webhook(
     username: str | None = None,
     extra: dict[str, Any] | None = None,
 ) -> bool:
-    url = (webhook_url or os.getenv("ALERT_WEBHOOK_URL") or "").strip()
-    if not url:
-        logger.debug("alert webhook not configured")
-        return False
-
+    """Boolean sender for existing alerts; payload (and mentions) unchanged."""
     content = message if title is None else f"**{title}**\n{message}"
     payload: dict[str, Any] = {"content": content}
     if username:
         payload["username"] = username
     if extra:
         payload.update(extra)
-
-    try:
-        resp = requests.post(url, json=payload, timeout=10)
-        if resp.status_code >= 400:
-            logger.warning("alert webhook error: %s %s", resp.status_code, resp.text)
-            return False
-        return True
-    except Exception:
-        logger.exception("Failed to send alert webhook")
-        return False
+    return deliver_webhook(payload=payload, webhook_url=webhook_url).accepted
 
 
 def record_alert(
