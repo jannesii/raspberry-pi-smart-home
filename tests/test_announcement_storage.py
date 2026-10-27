@@ -292,3 +292,49 @@ def test_competing_services_create_one_occurrence_and_recover_it_in_either_store
     assert [a["status"] for a in detail["occurrences"][0]["attempts"]] == ["unknown"]
     assert len(cast.plays) == 1
     ctrl.db.conn.close()
+
+
+def test_recurring_catch_up_is_idempotent_across_services_in_either_store(
+    store, tmp_path, monkeypatch
+):
+    from datetime import datetime
+
+    from app.core.database import DatabaseManager
+
+    engine, _migrations = store
+    monkeypatch.setattr(DatabaseManager, "_instance", None)
+    ctrl = Controller(db_path=str(tmp_path / "legacy.db"))
+    ctrl._sa_engine = engine
+    clock = [START]
+    synth, cast = FakeSynthesizer(), FakeCast()
+    first = build_service(ctrl, clock, (synth, cast), tmp_path / "cache")
+    _outcome, saved = first.create_schedule(
+        {
+            "kind": "recurring",
+            "text": "Mittaa verenpaine",
+            "target": "jbl-left",
+            "recurrence": {"weekdays": [6, 7], "times": ["20:00", "08:00"]},
+        },
+        request_id="recurring-request-1",
+    )
+    schedule_id = saved["schedule"]["id"]
+    # Down from Friday 14:00 until Sunday 08:05 Helsinki; two services resume.
+    clock[0] = datetime.fromisoformat("2027-01-17T06:05:00+00:00").timestamp()
+    second = build_service(ctrl, clock, (synth, cast), tmp_path / "cache")
+    third = build_service(ctrl, clock, (synth, cast), tmp_path / "cache")
+    second.tick()
+    third.tick()
+    second.tick()
+    detail = third.schedule_detail(schedule_id)
+    assert detail["schedule"]["recurrence"] == {"weekdays": [6, 7], "times": ["08:00", "20:00"]}
+    assert detail["schedule"]["next_due_at"] == "2027-01-17T18:00:00+00:00"
+    occurrences = sorted(
+        (item["occurrence"] for item in detail["occurrences"]), key=lambda o: o["due_at"]
+    )
+    assert [(o["instance_due_at"], o["disposition"]) for o in occurrences] == [
+        ("2027-01-16T06:00:00+00:00", "missed"),
+        ("2027-01-16T18:00:00+00:00", "missed"),
+        ("2027-01-17T06:00:00+00:00", None),
+    ]
+    assert len(cast.plays) == 1
+    ctrl.db.conn.close()

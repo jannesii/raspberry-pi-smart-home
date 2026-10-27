@@ -264,3 +264,162 @@ def test_autumn_repeated_time_runs_once_at_its_first_occurrence(
     assert items[0]["occurrence"]["delivery"] == "delivered"
     assert items[0]["occurrence"]["instance_local"] == "2027-10-31T03:30"
     assert len(cast.plays) == 1
+
+
+def put(app, client, schedule_id, expect=200, **body):
+    payload = {
+        "kind": "recurring",
+        "text": "Muista ottaa lääkkeet.",
+        "target": "jbl-right",
+        "recurrence": {"weekdays": EVERY_DAY, "times": ["08:00"]},
+        **body,
+    }
+    response = client.put(f"{API}/{schedule_id}", json=payload, headers=headers(app, client))
+    assert response.status_code == expect, response.get_json()
+    return response.get_json()
+
+
+def act(app, client, schedule_id, action, expect=200):
+    if action == "delete":
+        response = client.delete(f"{API}/{schedule_id}", headers=headers(app, client))
+    else:
+        response = client.post(f"{API}/{schedule_id}/{action}", headers=headers(app, client))
+    assert response.status_code == expect, response.get_json()
+    return response.get_json()
+
+
+def test_edits_change_future_instances_and_keep_past_snapshots(
+    announcement_app, client, doubles, clock
+):
+    _synth, cast = doubles
+    service = announcement_app.announcement_service
+    saved = save(announcement_app, client)["schedule"]
+    at(clock, "2027-01-16T06:00:00+00:00")  # Saturday 08:00
+    service.tick()
+    finish_all(announcement_app, cast, clock)
+    edited = put(
+        announcement_app,
+        client,
+        saved["id"],
+        revision=1,
+        text="Mittaa verenpaine.",
+        recurrence={"weekdays": [6, 7], "times": ["09:15"]},
+    )
+    assert edited["schedule"]["revision"] == 2
+    # Today's 09:15 is still ahead, then Sunday, then next weekend.
+    assert [u["due_at"] for u in edited["upcoming"][:3]] == [
+        "2027-01-16T07:15:00+00:00",
+        "2027-01-17T07:15:00+00:00",
+        "2027-01-23T07:15:00+00:00",
+    ]
+    at(clock, "2027-01-16T07:15:00+00:00")
+    service.tick()
+    items = history(client, saved["id"])
+    assert dues(items) == ["2027-01-16T06:00:00+00:00", "2027-01-16T07:15:00+00:00"]
+    old, new = (i["occurrence"] for i in items)
+    assert (old["text"], old["schedule_revision"]) == ("Muista ottaa lääkkeet.", 1)
+    assert (new["text"], new["schedule_revision"]) == ("Mittaa verenpaine.", 2)
+    assert old["delivery"] == "delivered"  # history is not rewritten by the edit
+
+    switched = put(
+        announcement_app,
+        client,
+        saved["id"],
+        kind="one_time",
+        due_local="2027-01-20T12:00",
+        recurrence=None,
+    )
+    assert switched["schedule"]["recurrence"] is None
+    assert switched["upcoming"] == [{"due_at": "2027-01-20T10:00:00+00:00"}]
+
+
+def test_pause_and_delete_stop_pending_and_future_work_without_replay(
+    announcement_app, client, doubles, clock
+):
+    _synth, cast = doubles
+    service = announcement_app.announcement_service
+    cast.speakers["192.168.1.119"].state = "playing"  # music: the reminder waits
+    saved = save(
+        announcement_app, client, recurrence={"weekdays": EVERY_DAY, "times": ["08:00", "12:00"]}
+    )["schedule"]
+    at(clock, "2027-01-16T06:00:00+00:00")
+    service.tick()
+    paused = act(announcement_app, client, saved["id"], "pause")
+    assert paused["upcoming"] == []
+    (pending,) = history(client, saved["id"])
+    assert pending["occurrence"]["disposition"] == "cancelled"
+    assert pending["occurrence"]["fallback_reason"] is None
+
+    cast.speakers["192.168.1.119"].state = "idle"
+    at(clock, "2027-01-16T10:05:00+00:00")  # 12:05: the 12:00 instance passed while paused
+    service.tick()
+    resumed = act(announcement_app, client, saved["id"], "resume")
+    assert resumed["upcoming"][0] == {"due_at": "2027-01-17T06:00:00+00:00"}
+    service.tick()
+    assert cast.plays == []  # neither the cancelled 08:00 nor the paused 12:00 replay
+    assert dues(history(client, saved["id"])) == ["2027-01-16T06:00:00+00:00"]
+
+    at(clock, "2027-01-17T06:00:00+00:00")
+    service.tick()
+    assert len(cast.plays) == 1
+    deleted = act(announcement_app, client, saved["id"], "delete")
+    assert deleted["schedule"]["status"] == "deleted"
+    assert deleted["upcoming"] == []
+    at(clock, "2027-01-18T06:00:00+00:00")
+    service.tick()
+    assert len(cast.plays) == 1
+    kept = history(client, saved["id"])
+    assert dues(kept) == ["2027-01-16T06:00:00+00:00", "2027-01-17T06:00:00+00:00"]
+
+
+def test_recurring_reminders_keep_quiet_hours_expiry_and_music_rules(
+    announcement_app, client, doubles, clock
+):
+    _synth, cast = doubles
+    service = announcement_app.announcement_service
+    at(clock, "2027-01-15T20:30:00+00:00")  # Friday 22:30
+    saved = save(
+        announcement_app,
+        client,
+        recurrence={"weekdays": EVERY_DAY, "times": ["06:50", "21:55"]},
+        expiry_minutes=20,
+    )["schedule"]
+    at(clock, "2027-01-16T04:50:00+00:00")  # 06:50: quiet hours until 07:00
+    service.tick()
+    (held,) = history(client, saved["id"])
+    assert held["occurrence"]["waiting_reason"] == "quiet_hours"
+    at(clock, "2027-01-16T05:00:00+00:00")
+    service.tick()
+    assert len(cast.plays) == 1
+    finish_all(announcement_app, cast, clock)
+
+    cast.speakers["192.168.1.119"].state = "playing"
+    at(clock, "2027-01-16T19:55:00+00:00")  # 21:55, music playing
+    service.tick()
+    at(clock, "2027-01-16T20:00:00+00:00")  # 22:00 quiet hours begin
+    cast.speakers["192.168.1.119"].state = "idle"
+    service.tick()
+    at(clock, "2027-01-16T20:15:00+00:00")  # expiry passes while held
+    service.tick()
+    evening = history(client, saved["id"])[1]["occurrence"]
+    assert evening["disposition"] == "missed"
+    assert evening["disposition_reason"] == "quiet_hours"
+    assert [h["reason"] for h in evening["waiting_history"]] == ["music_playing", "quiet_hours"]
+    assert len(cast.plays) == 1
+
+
+def test_invalid_recurrence_is_rejected_with_the_field_to_fix(announcement_app, client):
+    cases = [
+        ({"recurrence": None}, "recurrence"),
+        ({"recurrence": {"weekdays": [], "times": ["08:00"]}}, "weekdays"),
+        ({"recurrence": {"weekdays": [0, 8], "times": ["08:00"]}}, "weekdays"),
+        ({"recurrence": {"weekdays": [1], "times": []}}, "times"),
+        ({"recurrence": {"weekdays": [1], "times": ["24:00"]}}, "times"),
+        ({"recurrence": {"weekdays": [1], "times": ["8:00"]}}, "times"),
+        ({"recurrence": {"weekdays": [1], "times": [f"{h:02}:00" for h in range(13)]}}, "times"),
+        ({"kind": "hourly"}, "kind"),
+    ]
+    for body, field in cases:
+        data = save(announcement_app, client, expect=400, **body)
+        assert data["field"] == field, (body, data)
+    assert client.get(API).get_json()["schedules"] == []
