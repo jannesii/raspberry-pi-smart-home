@@ -238,6 +238,17 @@ class SpotifyRestoration:
             raise AnnouncementInputError(
                 "devices", "Map configured speaker targets to Spotify device ids."
             )
+        if not enabled:
+            # Turning off optional control must work even with revoked tokens
+            # or a lost encryption key. Preserve ciphertext; make no HTTP call.
+            row = self.ctrl.get_announcement_spotify()
+            if row:
+                self.ctrl.save_announcement_spotify(
+                    credentials=row["credentials"],
+                    enabled=False,
+                    devices=row["devices"] if devices is None else json.dumps(devices),
+                )
+            return self.status()
         try:
             tokens = self._tokens()
             self._save(tokens, enabled=enabled, devices=devices)

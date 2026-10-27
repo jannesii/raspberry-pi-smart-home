@@ -587,3 +587,21 @@ def test_slow_spotify_capture_cannot_start_speech_after_expiry(
     detail = announce(announcement_app, client, clock, doubles[1])
     assert doubles[1].plays == []
     assert detail["attempts"][0]["reason"] == "expired_before_dispatch"
+
+
+def test_owner_can_disable_restoration_even_when_refresh_access_is_expired(
+    announcement_app, client, clock
+):
+    server = setup_spotify(announcement_app, clock)
+    enable(announcement_app, client)
+    clock[0] += 3600
+    server.refresh_error = True
+    before = len(server.calls)
+    response = client.post(
+        "/api/announcements/spotify/enable",
+        json={"enabled": False},
+        headers=headers(announcement_app, client),
+    )
+    assert response.status_code == 200
+    assert response.json["spotify"]["enabled"] is False
+    assert len(server.calls) == before
