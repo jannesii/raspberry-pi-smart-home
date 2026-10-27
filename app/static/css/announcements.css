@@ -133,6 +133,7 @@
 
 .announce-field textarea,
 .announce-field select,
+.announce-snooze select,
 .announce-field input[type="date"],
 .announce-field input[type="time"],
 .announce-field input[type="number"] {
@@ -161,6 +162,7 @@
 
 .announce-field textarea:focus-visible,
 .announce-field select:focus-visible,
+.announce-snooze select:focus-visible,
 .announce-field input:focus-visible,
 .announce-btn:focus-visible,
 .announce-targets label:focus-within {
@@ -351,6 +353,17 @@
   justify-content: flex-end;
   gap: 8px;
   margin-top: 10px;
+}
+
+.announce-snooze {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.announce-snooze select {
+  width: auto;
 }
 
 .announce-actions {

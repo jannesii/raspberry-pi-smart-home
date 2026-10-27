@@ -166,7 +166,7 @@ Configure only the integrations you use:
 | Weather archive | `WEATHER_ARCHIVE_ENABLED` (default `true`): archive FMI station observations every ten minutes and the parking-point forecast every thirty minutes. `WEATHER_FORECAST_POINT` (default `62.8000,22.8260`): forecast point as `lat,lon`; an invalid value leaves forecast collection off. Needs outbound HTTPS to `opendata.fmi.fi` and migrations `20261016_0016`/`20261016_0017`/`20261017_0018`; see [weather observation archive](#weather-observation-archive) and [parking-point forecast archive](#parking-point-forecast-archive) |
 | Sodexo | `SODEXO_WEBHOOK_URL`, `SODEXO_POST_HOUR`, `SODEXO_POST_MINUTE` |
 | Alerts | `ALERT_WEBHOOK_URL`, `ALERT_WEBHOOK_BATCH_SECONDS` |
-| Spoken announcements | `ANNOUNCEMENTS_ENABLED` (default `true`), `ANNOUNCEMENT_MEDIA_ORIGIN` (speaker-reachable `http(s)://host[:port]`), `ANNOUNCEMENT_TARGETS` (JSON; defaults Jbl-Right `192.168.1.119`, Jbl-Left `192.168.1.148` and an unconfigured speaker group), `ANNOUNCEMENT_CACHE_DIR`, `PIPER_COMMAND`, `PIPER_VOICE_DIR`, `PIPER_VOICE_FI`/`PIPER_VOICE_EN`, `ANNOUNCEMENT_QUIET_HOURS` (Helsinki `HH:MM-HH:MM`, default `22:00-07:00`, `off` disables), `ANNOUNCEMENT_PUBLIC_ORIGIN` (browser origin such as `https://jannenkoti.com` for the reminder link in Discord fallbacks); fallbacks use `ALERT_WEBHOOK_URL`; optional `requirements-announcements.txt` and migrations `20261027_0020`–`20261027_0024`; see [spoken announcements](#spoken-announcements) |
+| Spoken announcements | `ANNOUNCEMENTS_ENABLED` (default `true`), `ANNOUNCEMENT_MEDIA_ORIGIN` (speaker-reachable `http(s)://host[:port]`), `ANNOUNCEMENT_TARGETS` (JSON; defaults Jbl-Right `192.168.1.119`, Jbl-Left `192.168.1.148` and an unconfigured speaker group), `ANNOUNCEMENT_CACHE_DIR`, `PIPER_COMMAND`, `PIPER_VOICE_DIR`, `PIPER_VOICE_FI`/`PIPER_VOICE_EN`, `ANNOUNCEMENT_QUIET_HOURS` (Helsinki `HH:MM-HH:MM`, default `22:00-07:00`, `off` disables), `ANNOUNCEMENT_PUBLIC_ORIGIN` (browser origin such as `https://jannenkoti.com` for the reminder link in Discord fallbacks); fallbacks use `ALERT_WEBHOOK_URL`; optional `requirements-announcements.txt` and migrations `20261027_0020`–`20261027_0025`; see [spoken announcements](#spoken-announcements) |
 
 See [app/config.py](app/config.py) for core parsing/defaults and
 [service initialization](app/services/__init__.py) plus individual services for
@@ -677,8 +677,20 @@ starts sending cancels it (shown as cancelled by your acknowledgement); one
 already sending, sent or unknown stays as recorded. Stop speaking never cancels
 a fallback. Acknowledgements are reminder handling only:
 they never record a medicine dose or blood-pressure value and leave medicine
-purchase/refill calculations unchanged. Snooze and history deletion are later
-slices.
+purchase/refill calculations unchanged.
+
+**Snooze and the next occurrence.** Snooze offers 5, 10, 15 or 30 minutes
+(default ten). It postpones the same occurrence, keeps the original schedule
+instance and all delivery evidence, and extends its effective expiry by the
+original delivery window when needed. Quiet hours still apply independently
+of urgency and the quiet-hours override. Only this explicit action extends
+expiry; automatic retries do not. Requests are idempotent across restart and
+never reset announcement or retry counters. Snooze remains available after Stop
+speaking; it requests one deliberate delivery without restoring repeats that
+Stop cancelled. At the next occurrence of the same schedule, older pending
+speech (including snoozes) becomes superseded, without an acknowledgement.
+Already playing speech can finish, but it gets no further automatic repeats.
+History deletion is a later slice.
 
 **Speaker group.** Choosing the group plays one synchronized stream through
 your existing Google Home group, and reminders and tests on the group wait for

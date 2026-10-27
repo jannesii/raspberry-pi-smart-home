@@ -9,9 +9,9 @@ Owner operations validate input and record state only. ``tick()`` then:
 4. offers the rest to the dispatcher alongside speaker tests, where music,
    speaker availability and our own queue decide whether they wait.
 
-Expiry is fixed at materialization (due + expiry minutes). Waiting, queueing
-and probe retries never move it, and dispatch intent is committed together
-with the occurrence transition, conditional on the occurrence still being
+Expiry starts at materialization (due + expiry minutes); only deliberate
+snooze extends it. Waiting, queueing and probe retries never move it. Dispatch
+intent is committed together with the occurrence transition, conditional on it being
 waiting, uncancelled and unexpired.
 """
 
@@ -282,8 +282,11 @@ class OccurrenceMixin:
     def _occurrence_details(self, occurrences) -> list[dict]:
         attempts: dict[str, list] = {}
         acks = {}
+        snoozes = {}
         if occurrences:
             ids = [o.id for o in occurrences]
+            for snooze in self.ctrl.list_announcement_snoozes(ids):
+                snoozes.setdefault(snooze["occurrence_id"], []).append(snooze)
             for attempt in self.ctrl.list_announcement_attempts(occurrence_ids=ids):
                 attempts.setdefault(attempt.occurrence_id, []).append(asdict(attempt))
             acks = {
@@ -308,13 +311,13 @@ class OccurrenceMixin:
                 # The owner's Done/Skip, kept apart from delivery evidence:
                 # playback or a fallback never implies it.
                 "acknowledgement": acks.get(o.id),
+                "snoozes": snoozes.get(o.id, []),
                 "actions": self._actions(o, attempts.get(o.id, []), acks.get(o.id)),
             }
             for o in occurrences
         ]
 
-    @staticmethod
-    def _actions(occurrence, attempts: list[dict], acknowledgement) -> list[str]:
+    def _actions(self, occurrence, attempts: list[dict], acknowledgement) -> list[str]:
         """Owner actions that would change something now (for the page)."""
         actions = [] if acknowledgement else ["done", "skip"]
         current = next((a for a in attempts if a["id"] == occurrence.current_attempt_id), None)
@@ -331,6 +334,19 @@ class OccurrenceMixin:
         )
         if speaking or pending_follow_up:
             actions.append("stop")
+        schedule = self.ctrl.get_announcement_schedule(occurrence.schedule_id)
+        if (
+            not acknowledgement
+            and occurrence.disposition in (None, "stopped")
+            and schedule
+            and schedule.status == "active"
+            and (schedule.next_due_at is None or epoch(schedule.next_due_at) > self._clock())
+        ):
+            newer = self.ctrl.has_newer_announcement_occurrence(
+                occurrence.schedule_id, occurrence.instance_due_at
+            )
+            if not newer:
+                actions.append("snooze")
         return actions
 
     # Owner actions on occurrences ---------------------------------------------------
@@ -355,6 +371,58 @@ class OccurrenceMixin:
         if outcome == "created":
             self._next_probe.pop(occurrence_id, None)
             logger.info("Occurrence %s acknowledged: %s", occurrence_id, action)
+            self._wake.set()
+        return self.occurrence_detail(occurrence_id)
+
+    def snooze_occurrence(
+        self, occurrence_id: str, *, minutes=10, request_id=None, by=None
+    ) -> dict:
+        """Explicit postponement, independent of automatic announcement budgets."""
+        if (
+            isinstance(minutes, bool)
+            or not isinstance(minutes, int)
+            or minutes not in (5, 10, 15, 30)
+        ):
+            raise AnnouncementInputError("minutes", "Choose 5, 10, 15 or 30 minutes.")
+        if not isinstance(request_id, str) or not 8 <= len(request_id) <= 64:
+            raise AnnouncementInputError("request_id", "request_id must be 8-64 characters.")
+        occurrence = self.ctrl.get_announcement_occurrence(occurrence_id)
+        if occurrence is None:
+            raise self._state_error("not_found", "Occurrence not found.")
+        prior = self.ctrl.list_announcement_snoozes([occurrence_id])
+        windows = prior or [
+            {"prior_due_at": occurrence.due_at, "prior_expires_at": occurrence.expires_at}
+        ]
+        # A shorter second snooze can retain an already extended deadline.
+        # The smallest recorded window is the original snapshot, even when
+        # requests share a clock timestamp and sort by request id.
+        window = min(epoch(s["prior_expires_at"]) - epoch(s["prior_due_at"]) for s in windows)
+        now = self._clock()
+        due = now + minutes * 60
+        row = {
+            "request_id": request_id,
+            "occurrence_id": occurrence_id,
+            "snoozed_at": iso(now),
+            "snoozed_by": by,
+            "minutes": minutes,
+            "prior_disposition": occurrence.disposition,
+            "prior_due_at": occurrence.due_at,
+            "prior_expires_at": occurrence.expires_at,
+            "due_at": iso(due),
+            "expires_at": iso(max(epoch(occurrence.expires_at), due + window)),
+        }
+        outcome = self.ctrl.snooze_announcement_occurrence(row, expected_due_at=occurrence.due_at)
+        if outcome == "not_found":
+            raise self._state_error("not_found", "Occurrence not found.")
+        if outcome in ("ineligible", "conflict"):
+            raise self._state_error(
+                outcome, "This reminder changed or is no longer eligible for snooze."
+            )
+        if outcome == "created":
+            self._next_probe.pop(occurrence_id, None)
+            logger.info(
+                "Occurrence %s snoozed minutes=%s due=%s", occurrence_id, minutes, row["due_at"]
+            )
             self._wake.set()
         return self.occurrence_detail(occurrence_id)
 
@@ -487,6 +555,7 @@ class OccurrenceMixin:
         if self.ctrl.update_announcement_occurrence(
             occurrence.id,
             expected=("waiting",),
+            snapshot={"due_at": occurrence.due_at},
             waiting_reason=reason,
             waiting_since=iso(now),
             waiting_history=history[-WAITING_HISTORY_LIMIT:],
@@ -526,7 +595,9 @@ class OccurrenceMixin:
                 fallback_reason=fallback,
                 fallback_eligible_at=iso(now),
             )
-        if self.ctrl.update_announcement_occurrence(occurrence.id, expected=("waiting",), **values):
+        if self.ctrl.update_announcement_occurrence(
+            occurrence.id, expected=("waiting",), snapshot={"due_at": occurrence.due_at}, **values
+        ):
             self._next_probe.pop(occurrence.id, None)
             logger.info(
                 "Occurrence %s expired delivery=%s reason=%s",
@@ -578,6 +649,8 @@ class OccurrenceMixin:
         if self.ctrl.add_announcement_occurrence_attempt(
             occurrence.id,
             attempt,
+            expected_due_at=occurrence.due_at,
+            not_expired_at=iso(now),
             status="closed",
             waiting_reason=None,
             current_attempt_id=attempt["id"],
@@ -669,6 +742,7 @@ class OccurrenceMixin:
         if not self.ctrl.add_announcement_occurrence_attempt(
             occurrence.id,
             attempt,
+            expected_due_at=occurrence.due_at,
             not_expired_at=iso(intent),
             status="announcing",
             waiting_reason=None,
@@ -712,7 +786,12 @@ class OccurrenceMixin:
     def _settle_occurrence_of(self, attempt) -> None:
         occurrence = self.ctrl.get_announcement_occurrence(attempt.occurrence_id)
         latest = self.ctrl.get_announcement_attempt(attempt.id)
-        if occurrence and latest and occurrence.status == "announcing":
+        if (
+            occurrence
+            and latest
+            and occurrence.status == "announcing"
+            and occurrence.current_attempt_id == attempt.id
+        ):
             self._settle(occurrence, latest)
 
     def _settle(self, occurrence, attempt) -> None:
@@ -764,6 +843,10 @@ class OccurrenceMixin:
                 if self.ctrl.update_announcement_occurrence(
                     occurrence.id,
                     expected=("announcing",),
+                    snapshot={
+                        "current_attempt_id": attempt.id,
+                        "disposition": occurrence.disposition,
+                    },
                     status="waiting",
                     delivery=delivery,
                     delivery_reason=delivery_reason,
@@ -797,7 +880,10 @@ class OccurrenceMixin:
         if fallback and disposition is None:
             values.update(fallback_reason=fallback, fallback_eligible_at=iso(now))
         if self.ctrl.update_announcement_occurrence(
-            occurrence.id, expected=("announcing",), **values
+            occurrence.id,
+            expected=("announcing",),
+            snapshot={"current_attempt_id": attempt.id, "disposition": occurrence.disposition},
+            **values,
         ):
             logger.info(
                 "Occurrence %s closed delivery=%s disposition=%s fallback=%s",
@@ -811,6 +897,11 @@ class OccurrenceMixin:
         """The next automatic dispatch, as (purpose, epoch), or None to close."""
         expires = epoch(occurrence.expires_at)
         if attempt.status == "finished" and delivery == "delivered":
+            if any(
+                s["prior_disposition"] == "stopped"
+                for s in self.ctrl.list_announcement_snoozes([occurrence.id])
+            ):
+                return None  # A later deliberate snooze does not undo Stop's repeat cancellation.
             if occurrence.announcements_started >= occurrence.max_announcements:
                 return None
             if not occurrence.repeat_interval_minutes:
