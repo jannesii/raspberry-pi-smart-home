@@ -161,6 +161,7 @@ _SCHEDULE_INPUT = (
     "chime_percent",
     "due_local",
     "fold",
+    "recurrence",
     "expiry_minutes",
     "urgent",
     "quiet_hours_override",

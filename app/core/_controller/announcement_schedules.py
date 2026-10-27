@@ -37,6 +37,7 @@ _SCHEDULE_FIELDS = (
     "expiry_minutes",
     "due_local",
     "due_fold",
+    "recurrence",
 )
 
 
