@@ -336,7 +336,8 @@ def test_urgent_reminder_may_interrupt_music_and_restoration_is_not_promised(
     _synth, cast = doubles
     service = announcement_app.announcement_service
     status = client.get("/api/announcements/status").get_json()
-    assert status["music_restoration"] == {"available": False, "reason": "not_configured"}
+    assert status["music_restoration"]["available"] is False
+    assert status["music_restoration"]["reason"] == "not_configured"
     assert status["schedules"]["quiet_hours"] == "22:00-07:00"
     assert status["schedules"]["default_expiry_minutes"] == 15
     cast.speakers["192.168.1.119"].state = "playing"
@@ -792,5 +793,5 @@ def test_reminder_controls_are_on_the_announcement_page(announcement_app, client
         'id="announceHistoryList"',
     ):
         assert element in html
-    assert "js/announcements.js?v=20261027-7" in html
-    assert "css/announcements.css?v=20261027-7" in html
+    assert "js/announcements.js?v=20261027-8" in html
+    assert "css/announcements.css?v=20261027-8" in html

@@ -131,6 +131,10 @@
     not_needed: 'Not needed',
     failed: 'Restore failed',
     unknown: 'Unknown',
+    pending: 'Waiting for the announcement to end',
+    unavailable: 'Unavailable – interrupted music may remain stopped',
+    disabled: 'Disabled – interrupted music may remain stopped',
+    unmapped_target: 'This speaker has no matched Spotify device',
   };
 
   const AVAILABILITY_TEXT = {
@@ -247,9 +251,10 @@
     if (quietText) quietText.textContent = quietHours ? quietHours.replace('-', '–') : 'off';
     if (restore) {
       restore.textContent = status.music_restoration && status.music_restoration.available
-        ? 'Available'
-        : 'Unavailable – music an urgent reminder interrupts stays stopped';
+        ? (status.music_restoration.enabled ? 'Enabled – restoration requires unchanged playback ownership' : 'Connected – restoration off')
+        : 'Unavailable – music an urgent reminder interrupts may stay stopped';
     }
+    renderSpotify(status.music_restoration, status.targets || []);
     renderFallbackStatus(status.fallback);
     targets = Array.isArray(status.targets) ? status.targets : [];
     const container = byId('announceTargets');
@@ -614,6 +619,7 @@
       fact(facts, 'Ended', fmtTime(attempt.finished_at));
       fact(facts, 'Volume before → test', `${fmtVolume(attempt.volume_before)} → ${fmtVolume(attempt.volume_applied)}`);
       fact(facts, 'Volume restore', RESTORE_TEXT[attempt.volume_restore] || '—');
+      if (attempt.interrupted_media) fact(facts, 'Music restore', RESTORE_TEXT[attempt.media_restore] || '—');
       fact(facts, 'Stop', stopText(attempt));
       fact(facts, 'Detail', REASON_TEXT[attempt.reason] || attempt.reason || '—');
       groupFacts(facts, attempt);
@@ -1353,6 +1359,7 @@
         fact(facts, 'Music', 'Interrupted – restoration unavailable');
       }
       fact(facts, 'Volume restore', RESTORE_TEXT[last.volume_restore] || '—');
+      if (last.interrupted_media) fact(facts, 'Music restore', RESTORE_TEXT[last.media_restore] || '—');
       groupFacts(facts, last.id ? last : null);
       fact(facts, 'Discord fallback', fallbackText(occurrence, item.fallback));
       const stop = stopEvidence(attempts);
@@ -1422,8 +1429,115 @@
     update();
   }
 
+  let spotifyDevices = [];
+  let spotifyStatus = {};
+  const SPOTIFY_REASON = {
+    not_configured: 'Ask the server owner to configure Spotify access before connecting.',
+    disconnected: 'No account connected. Basic announcements remain available.',
+    reconnect_required: 'Spotify access expired or was revoked. Connect again.',
+    access_denied: 'Spotify refused playback control. Check Premium and app access, then reconnect.',
+    spotify_unavailable: 'Spotify is unavailable. Interrupted music may remain stopped.',
+    premium_required: 'Spotify Premium is required.',
+    scopes_required: 'Playback permissions were not granted. Connect again.',
+  };
+
+  function renderSpotify(status, speakerTargets) {
+    spotifyStatus = status || {};
+    const note = byId('announceSpotifyState');
+    if (note) note.textContent = SPOTIFY_REASON[spotifyStatus.reason] ||
+      (spotifyStatus.enabled ? 'Connected. Restoration enabled for matched speakers.' : 'Connected. Restoration is off.');
+    if (note && spotifyStatus.connected && spotifyStatus.premium_status === 'required_not_reported') {
+      note.textContent += ' Spotify does not report the subscription type; Premium and playback-control access remain required.';
+    }
+    if (note && spotifyStatus.credentials_status === 'expired') note.textContent += ' Access token expired; it will be refreshed on the next Spotify request.';
+    const connected = !!spotifyStatus.connected;
+    ['announceSpotifyDisconnect', 'announceSpotifyFind', 'announceSpotifySave', 'announceSpotifyEnabled'].forEach(id => {
+      const control = byId(id);
+      if (control) control.disabled = !connected;
+    });
+    const connect = byId('announceSpotifyConnect');
+    if (connect) connect.disabled = !spotifyStatus.configured;
+    const enabled = byId('announceSpotifyEnabled');
+    if (enabled) enabled.checked = !!spotifyStatus.enabled;
+    const container = byId('announceSpotifyTargets');
+    if (!container) return;
+    container.replaceChildren();
+    speakerTargets.filter(t => t.configured).forEach(target => {
+      const label = document.createElement('label');
+      label.className = 'announce-field';
+      const text = document.createElement('span');
+      text.textContent = `${target.name}: Spotify device`;
+      const select = document.createElement('select');
+      select.dataset.target = target.key;
+      select.disabled = !connected;
+      const off = document.createElement('option');
+      off.value = '';
+      off.textContent = 'No match – restoration unavailable here';
+      select.append(off);
+      const selected = (spotifyStatus.devices || {})[target.key];
+      const devices = spotifyDevices.slice();
+      if (selected && !devices.some(d => d.id === selected)) devices.push({id: selected, name: 'Saved device (not checked yet)'});
+      devices.forEach(device => {
+        const option = document.createElement('option');
+        option.value = device.id;
+        option.textContent = device.name + (device.restricted ? ' (playback restricted)' : '');
+        option.disabled = !!device.restricted;
+        option.selected = device.id === selected;
+        select.append(option);
+      });
+      label.append(text, select);
+      container.append(label);
+    });
+  }
+
+  async function spotifyAction(action, button, body) {
+    button.disabled = true;
+    showMessage('Updating Spotify connection…');
+    try {
+      const result = await api(`/spotify/${action}`, {method: 'POST', body: JSON.stringify(body || {})});
+      if (result.authorization_url) {
+        window.location.assign(result.authorization_url);
+        return;
+      }
+      showMessage(action === 'disconnect' ? 'Spotify disconnected. Basic announcements remain available.' : 'Music restoration settings saved.');
+      await loadStatus();
+    } catch (error) {
+      showMessage(error.message || 'Spotify request failed.', true);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
   function init() {
     if (!byId('announceForm')) return;
+    const spotifyConnect = byId('announceSpotifyConnect');
+    if (spotifyConnect) spotifyConnect.addEventListener('click', () => spotifyAction('connect', spotifyConnect));
+    const spotifyDisconnect = byId('announceSpotifyDisconnect');
+    if (spotifyDisconnect) spotifyDisconnect.addEventListener('click', () => spotifyAction('disconnect', spotifyDisconnect));
+    const spotifyFind = byId('announceSpotifyFind');
+    if (spotifyFind) spotifyFind.addEventListener('click', async () => {
+      spotifyFind.disabled = true;
+      showMessage('Finding Spotify devices…');
+      try {
+        const data = await api(`/spotify/devices`);
+        spotifyDevices = Array.isArray(data.devices) ? data.devices : [];
+        renderSpotify(spotifyStatus, targets);
+        showMessage(spotifyDevices.length ? 'Choose the Spotify device for each speaker, then save.' : 'No Spotify devices found. Open Spotify on the intended speaker and try again.');
+      } catch (error) {
+        showMessage(error.message || 'Spotify devices could not be read.', true);
+      } finally {
+        spotifyFind.disabled = false;
+      }
+    });
+    const spotifyForm = byId('announceSpotifyForm');
+    if (spotifyForm) spotifyForm.addEventListener('submit', event => {
+      event.preventDefault();
+      const devices = {};
+      spotifyForm.querySelectorAll('select[data-target]').forEach(select => {
+        if (select.value) devices[select.dataset.target] = select.value;
+      });
+      spotifyAction('enable', byId('announceSpotifySave'), {enabled: byId('announceSpotifyEnabled').checked, devices});
+    });
     bindRange('announceChime', 'announceChimeValue');
     bindRange('announceVolume', 'announceVolumeValue');
     const text = byId('announceText');

@@ -721,8 +721,8 @@ def test_repeat_and_acknowledgement_controls_are_on_the_announcement_page(announ
     ):
         assert element in html
     assert "not a medicine dose or a blood-pressure reading" in html
-    assert "js/announcements.js?v=20261027-7" in html
-    assert "css/announcements.css?v=20261027-7" in html
+    assert "js/announcements.js?v=20261027-8" in html
+    assert "css/announcements.css?v=20261027-8" in html
     script = client.get("/static/js/announcements.js").get_data(as_text=True)
     for wording in (
         "Stop speaking",

@@ -89,6 +89,10 @@ class CastTransport(Protocol):
         """Return ``stopped``, ``failed`` or ``unknown`` as observed."""
         ...
 
+    def owns(self, attempt_id: str, target: SpeakerTarget, *, volume: bool = False) -> bool: ...
+
+    def watch_volume(self, attempt_id: str, target: SpeakerTarget) -> None: ...
+
     def release(self, attempt_id: str) -> None: ...
 
 
@@ -98,16 +102,31 @@ class _MediaListener:
         self.state = "loading"
         self.detail: str | None = None
         self.started = False
+        self.identified = False
+        self.revoked = False
+        self.volume = None
+        self.volume_changed = False
+
+    def new_cast_status(self, status) -> None:
+        level = getattr(status, "volume_level", None)
+        if level is None or self.volume is None or abs(level - self.volume) > 0.005:
+            self.volume_changed = True
 
     def new_media_status(self, status) -> None:
-        if getattr(status, "content_id", None) not in (None, self.media_url):
-            if self.started:
-                self.state = "interrupted"
+        content_id = getattr(status, "content_id", None)
+        if content_id == self.media_url:
+            self.identified = True
+        elif self.identified:
+            self.revoked = True
+            self.state = "interrupted"
+        if content_id != self.media_url:
             return
         player = getattr(status, "player_state", None)
-        if player in ("PLAYING", "BUFFERING"):
+        if player == "PLAYING":
             self.started = True
             self.state = "playing"
+        elif player == "BUFFERING" and not self.started:
+            self.state = "loading"
         elif player == "IDLE":
             reason = getattr(status, "idle_reason", None)
             self.detail = reason
@@ -150,6 +169,7 @@ class PyChromecastTransport:
         # How long a probe waits for a group's membership report (else unknown).
         self.membership_timeout_s = membership_timeout_s
         self._sessions: dict[str, tuple] = {}
+        self._volume_sessions: dict[str, list] = {}
         self._lock = threading.Lock()
 
     def _module(self):
@@ -288,7 +308,9 @@ class PyChromecastTransport:
     def play(self, attempt_id, target, media_url, *, content_type, title) -> None:
         cast = self._connect(target)
         listener = _MediaListener(media_url)
+        listener.volume = getattr(cast.status, "volume_level", None)
         try:
+            cast.register_status_listener(listener)
             cast.media_controller.register_status_listener(listener)
             cast.register_connection_listener(_ConnectionListener(listener))
             multizone = self._multizone(cast) if target.is_group else None
@@ -319,6 +341,8 @@ class PyChromecastTransport:
         if session is None:
             return "unknown"
         cast, listener, _multizone = session
+        if not self.owns(attempt_id, target):
+            return "unknown"
         try:
             cast.media_controller.stop(timeout=self.command_timeout_s)
         except Exception as exc:
@@ -326,7 +350,54 @@ class PyChromecastTransport:
             return "unknown"
         return "stopped" if listener.state in ("cancelled", "finished") else "unknown"
 
+    def watch_volume(self, attempt_id, target) -> None:
+        """Retain a member's status subscription until the group attempt ends."""
+        try:
+            cast = self._connect(target)
+        except TransportError:
+            self._volume_sessions.setdefault(attempt_id, []).append(None)
+            return
+        listener = _MediaListener("")
+        listener.volume = getattr(cast.status, "volume_level", None)
+        listener.state = "playing"  # connection loss revokes this subscription
+        cast.register_status_listener(listener)
+        cast.register_connection_listener(_ConnectionListener(listener))
+        self._volume_sessions.setdefault(attempt_id, []).append((cast, listener, target))
+
+    def owns(self, attempt_id, target, *, volume=False) -> bool:
+        with self._lock:
+            session = self._sessions.get(attempt_id)
+        if session is None or target is None:
+            return False
+        cast, listener, _ = session
+        if volume:
+            for watched in self._volume_sessions.get(attempt_id, []):
+                if watched is None:
+                    return False
+                member, observer, member_target = watched
+                if (
+                    observer.volume is None
+                    or observer.volume_changed
+                    or observer.state == "lost"
+                    or not self._matches(member, member_target)
+                ):
+                    return False
+        return bool(
+            self._matches(cast, target)
+            and listener.identified
+            and not listener.revoked
+            and (not volume or not listener.volume_changed)
+            and cast.status.app_id == DEFAULT_MEDIA_RECEIVER
+            and cast.media_controller.status.content_id == listener.media_url
+        )
+
     def release(self, attempt_id) -> None:
+        for watched in self._volume_sessions.pop(attempt_id, []):
+            if watched:
+                try:
+                    watched[0].disconnect(timeout=self.command_timeout_s)
+                except Exception:
+                    logger.debug("Cast member disconnect failed during release", exc_info=True)
         with self._lock:
             session = self._sessions.pop(attempt_id, None)
         if session:

@@ -17,7 +17,7 @@ import secrets
 import threading
 import time
 import wave
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import uuid4
@@ -44,6 +44,7 @@ from .groups import CastDiscoveryMixin, combine, observe_playback
 from .media import MediaCache, MediaError, PreparedMedia, compose, media_key
 from .occurrences import OccurrenceMixin
 from .schedules import DEFAULT_EXPIRY_MINUTES, QuietHours
+from .spotify import SpotifyRestoration
 from .synthesis import SynthesisError, Synthesizer
 from .transport import CastTransport, TransportError
 
@@ -90,8 +91,10 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin, CastDiscoveryMixin):
         content_provider: ContentProvider | None = None,
         tick_interval_s: float = 1.0,
         fallback_channel: DiscordFallbackChannel | None = None,
+        spotify: SpotifyRestoration | None = None,
     ):
         self.ctrl = ctrl
+        self.spotify = spotify or SpotifyRestoration(ctrl, clock=clock)
         self.synthesizer = synthesizer
         self.transport = transport
         self.config = config
@@ -161,6 +164,9 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin, CastDiscoveryMixin):
                 "reason": "interrupted_by_restart",
                 "finished_at": now,
                 "volume_restore": "unknown" if attempt.volume_applied is not None else None,
+                "media_restore": "unknown"
+                if attempt.media_restore == "pending"
+                else attempt.media_restore,
                 "updated_at": now,
             }
             if attempt.stop_requested_at and attempt.stop_outcome in (None, "failed", "unknown"):
@@ -196,9 +202,7 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin, CastDiscoveryMixin):
                 "default_expiry_minutes": DEFAULT_EXPIRY_MINUTES,
                 "timezone": "Europe/Helsinki",
             },
-            # Restoring music interrupted by an urgent announcement needs the
-            # optional Spotify connection (#38); until then it is not promised.
-            "music_restoration": {"available": False, "reason": "not_configured"},
+            "music_restoration": self.spotify.status(),
             "fallback": self.fallback_status(),
         }
 
@@ -532,6 +536,9 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin, CastDiscoveryMixin):
 
     def _probe_target(self, target: SpeakerTarget):
         probe = self.transport.probe(target)
+        spotify_state = self.spotify.media_state(target)
+        if probe.state != "unavailable" and spotify_state in ("playing", "unknown"):
+            probe = replace(probe, state=spotify_state)
         if target.is_group:
             probe = self._probe_group(target, probe)
         now = self._clock()
@@ -635,17 +642,59 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin, CastDiscoveryMixin):
             return
         self._send(self.ctrl.get_announcement_attempt(attempt.id), target, media, probe)
 
+    def _dispatch_still_allowed(self, attempt) -> bool:
+        latest = self.ctrl.get_announcement_attempt(attempt.id)
+        occurrence = (
+            self.ctrl.get_announcement_occurrence(attempt.occurrence_id)
+            if attempt.occurrence_id
+            else None
+        )
+        if latest is None or latest.status != "dispatching":
+            return False
+        if latest.stop_requested_at or (occurrence and occurrence.disposition):
+            self._finish(
+                attempt,
+                "stopped",
+                "cancelled_before_dispatch",
+                stop_outcome="not_dispatched",
+                stop_observed_at=_iso(self._clock()),
+            )
+            return False
+        if _iso(self._clock()) >= attempt.dispatch_deadline:
+            self._finish(attempt, "failed", "expired_before_dispatch", certain_not_played=True)
+            return False
+        return True
+
     def _send(self, attempt, target: SpeakerTarget, media: PreparedMedia, probe) -> None:
         """Cast effects for an attempt whose intent is already committed."""
+        if not self._dispatch_still_allowed(attempt):
+            return
+        if attempt.interrupted_media:
+            self.ctrl.update_announcement_attempt(
+                attempt.id, media_restore="pending", updated_at=_iso(self._clock())
+            )
+            outcome = self.spotify.capture(attempt.id, target)
+            self.ctrl.update_announcement_attempt(
+                attempt.id, media_restore=outcome, updated_at=_iso(self._clock())
+            )
+        if not self._dispatch_still_allowed(attempt):
+            return
         applied = attempt.volume_applied
         token = self.grants.issue(media.key, attempt.id, self.config.media_grant_ttl_s)
         url = f"{self.config.media_origin}{media_path(token)}"
         try:
             if probe.volume is None or abs(probe.volume - applied) > VOLUME_EPSILON:
                 self.transport.set_volume(target, applied)
+            if not self._dispatch_still_allowed(attempt):
+                return
             self.transport.play(
                 attempt.id, target, url, content_type=media.content_type, title="Announcement"
             )
+            if target.is_group:
+                for key in target.members:
+                    member = self.config.target(key)
+                    if member:
+                        self.transport.watch_volume(attempt.id, member)
         except TransportError as exc:
             if exc.certain_not_played:
                 self._finish(attempt, "failed", exc.reason, certain_not_played=True)
@@ -678,27 +727,61 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin, CastDiscoveryMixin):
             **extra,
         )
         self.grants.revoke_attempt(attempt.id)
-        self.transport.release(attempt.id)
         if not changed:
+            self.transport.release(attempt.id)
             return
         logger.info("Announcement attempt %s %s reason=%s", attempt.id, status, reason)
-        self._restore_volume(attempt)
+        target = self._target(attempt)
+        owned = bool(target and self.transport.owns(attempt.id, target, volume=True))
+        if attempt.interrupted_media:
+            probe = self.transport.probe(target) if target else None
+            owned = bool(
+                owned
+                and probe
+                and probe.state == "idle"
+                and probe.device_id == attempt.target_device_id
+                and probe.volume is not None
+                and attempt.volume_applied is not None
+                and abs(probe.volume - attempt.volume_applied) <= VOLUME_EPSILON
+                and (
+                    status == "finished"
+                    or (status == "failed" and reason != "interrupted")
+                    or (status == "stopped" and extra.get("stop_outcome") == "stopped")
+                )
+            )
+        if attempt.interrupted_media and owned:
+            owned = self.spotify.owns(attempt.id, attempt.volume_applied, target)
+        self._restore_volume(attempt, owned=owned)
+        outcome = self.spotify.restore(attempt.id, target, owned=owned)
+        if (
+            outcome is None
+            and self.ctrl.get_announcement_attempt(attempt.id).media_restore == "pending"
+        ):
+            outcome = "unknown"
+        if outcome:
+            self.ctrl.update_announcement_attempt(attempt.id, media_restore=outcome, updated_at=now)
+            logger.info("Announcement attempt %s music restore: %s", attempt.id, outcome)
+        self.transport.release(attempt.id)
         if attempt.occurrence_id:
             self._settle_occurrence_of(attempt)
 
-    def _restore_volume(self, attempt) -> None:
+    def _restore_volume(self, attempt, *, owned=None) -> None:
         target = self._target(attempt)
         before, applied = attempt.volume_before, attempt.volume_applied
         outcome = None
         if applied is None:
             return
-        if before is None or abs(before - applied) <= VOLUME_EPSILON:
+        if owned is False:
+            outcome = "skipped_newer_intent"
+        elif before is None or abs(before - applied) <= VOLUME_EPSILON:
             outcome = "not_needed"
         elif target is None:
             outcome = "unknown"
         else:
             probe = self.transport.probe(target)
-            if probe.volume is None or probe.state not in ("idle",):
+            if probe.device_id != attempt.target_device_id:
+                outcome = "skipped_newer_intent"
+            elif probe.volume is None or probe.state not in ("idle",):
                 outcome = "unknown" if probe.volume is None else "skipped_newer_intent"
             elif abs(probe.volume - applied) > VOLUME_EPSILON:
                 outcome = "skipped_newer_intent"

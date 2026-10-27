@@ -1039,3 +1039,14 @@ announcement_snooze = Table(
     Column("expires_at", Text, nullable=False),
     CheckConstraint("minutes IN (5, 10, 15, 30)", name="ck_announcement_snooze_minutes"),
 )
+
+# Only ciphertext is stored; the encryption key is supplied outside the database.
+announcement_spotify = Table(
+    "announcement_spotify",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("credentials", Text, nullable=False),
+    Column("enabled", Boolean, nullable=False),
+    Column("devices", Text, nullable=False),
+    CheckConstraint("id = 1", name="ck_announcement_spotify_singleton"),
+)

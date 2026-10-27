@@ -166,7 +166,7 @@ Configure only the integrations you use:
 | Weather archive | `WEATHER_ARCHIVE_ENABLED` (default `true`): archive FMI station observations every ten minutes and the parking-point forecast every thirty minutes. `WEATHER_FORECAST_POINT` (default `62.8000,22.8260`): forecast point as `lat,lon`; an invalid value leaves forecast collection off. Needs outbound HTTPS to `opendata.fmi.fi` and migrations `20261016_0016`/`20261016_0017`/`20261017_0018`; see [weather observation archive](#weather-observation-archive) and [parking-point forecast archive](#parking-point-forecast-archive) |
 | Sodexo | `SODEXO_WEBHOOK_URL`, `SODEXO_POST_HOUR`, `SODEXO_POST_MINUTE` |
 | Alerts | `ALERT_WEBHOOK_URL`, `ALERT_WEBHOOK_BATCH_SECONDS` |
-| Spoken announcements | `ANNOUNCEMENTS_ENABLED` (default `true`), `ANNOUNCEMENT_MEDIA_ORIGIN` (speaker-reachable `http(s)://host[:port]`), `ANNOUNCEMENT_TARGETS` (JSON; defaults Jbl-Right `192.168.1.119`, Jbl-Left `192.168.1.148` and an unconfigured speaker group), `ANNOUNCEMENT_CACHE_DIR`, `PIPER_COMMAND`, `PIPER_VOICE_DIR`, `PIPER_VOICE_FI`/`PIPER_VOICE_EN`, `ANNOUNCEMENT_QUIET_HOURS` (Helsinki `HH:MM-HH:MM`, default `22:00-07:00`, `off` disables), `ANNOUNCEMENT_PUBLIC_ORIGIN` (browser origin such as `https://jannenkoti.com` for the reminder link in Discord fallbacks); fallbacks use `ALERT_WEBHOOK_URL`; optional `requirements-announcements.txt` and migrations `20261027_0020`–`20261027_0025`; see [spoken announcements](#spoken-announcements) |
+| Spoken announcements | `ANNOUNCEMENTS_ENABLED` (default `true`), `ANNOUNCEMENT_MEDIA_ORIGIN` (speaker-reachable `http(s)://host[:port]`), `ANNOUNCEMENT_TARGETS` (JSON; defaults Jbl-Right `192.168.1.119`, Jbl-Left `192.168.1.148` and an unconfigured speaker group), `ANNOUNCEMENT_CACHE_DIR`, `PIPER_COMMAND`, `PIPER_VOICE_DIR`, `PIPER_VOICE_FI`/`PIPER_VOICE_EN`, `ANNOUNCEMENT_QUIET_HOURS` (Helsinki `HH:MM-HH:MM`, default `22:00-07:00`, `off` disables), `ANNOUNCEMENT_PUBLIC_ORIGIN` (browser origin such as `https://jannenkoti.com` for the reminder link in Discord fallbacks); fallbacks use `ALERT_WEBHOOK_URL`; optional `requirements-announcements.txt` and migrations `20261027_0020`–`20261027_0026`; see [spoken announcements](#spoken-announcements) |
 
 See [app/config.py](app/config.py) for core parsing/defaults and
 [service initialization](app/services/__init__.py) plus individual services for
@@ -623,7 +623,8 @@ state is unclear, for a short settling time after music stops (so a track change
 is not mistaken for the end), while another announcement uses the speaker and
 while the speaker does not respond. **Urgent** reminders go first and may
 interrupt music, but restoring that music needs the optional Spotify connection,
-which is not available yet, so the music may stay stopped. Urgent does not
+which is optional and disabled until explicitly connected and enabled. Music
+may stay stopped when restoration fails or playback ownership is unclear. Urgent does not
 override quiet hours. Each reminder expires a configurable number of minutes
 (default 15) after its due time. Waiting never extends expiry, and an expired
 reminder is recorded as *missed*, never spoken late, including after server
@@ -898,3 +899,45 @@ migration is needed. Run the isolated checks with:
 .venv/bin/pytest -q tests/test_weather_evidence_export.py tests/test_weather_evidence_restore.py
 .venv/bin/pytest -q tests/test_car_heater_sessions_browser.py -k weather
 ```
+
+
+### Optional Spotify restoration
+
+Basic announcements work without a Spotify account. To enable restoration,
+configure `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `SPOTIFY_REDIRECT_URI`
+(the exact HTTPS `/api/announcements/spotify/callback` URL registered in the
+Spotify developer dashboard) and `ANNOUNCEMENT_SPOTIFY_ENCRYPTION_KEY` (a Fernet
+key generated with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`).
+Keep these values in the protected server environment, never in Git or browser
+settings. Back up the encryption key separately from the database; losing or
+changing it requires reconnecting. Tokens are encrypted in PostgreSQL/SQLite.
+Exclude the OAuth callback query string from reverse-proxy access logs.
+
+Under **Announcements → Music restoration**, connect the account, find Spotify
+devices, match each speaker or existing Cast group to its Spotify device, and
+save with restoration enabled. Spotify device ids differ from Cast UUIDs, so
+the app never guesses a match from a display name. Spotify Premium and approved
+playback-control access are required. Development Mode also requires the app
+owner's active Premium subscription and limits new apps to five authorized
+users: see [Spotify's current access requirements](https://developer.spotify.com/documentation/web-api/tutorials/february-2026-migration-guide)
+and [resume playback requirements](https://developer.spotify.com/documentation/web-api/reference/start-a-users-playback).
+Development Mode no longer reports the account product in `/me`, so the page
+shows the Premium prerequisite as unreported when appropriate; a successful
+connection alone does not establish playback-control acceptance.
+Expired access tokens refresh automatically; rejected refreshes require a new
+connection. Disconnect deletes the locally encrypted credentials and disables
+restoration; revoke app access separately in Spotify account settings if needed.
+
+An urgent interruption captures the current track, context, position and exact
+Spotify device, confirms a pause, and retains a temporary ownership lease.
+After completion, an observed failure or confirmed Stop, music resumes only
+while the exact paused playback and announcement receiver/volume ownership
+remain established. Newer playback, seeking, device or volume changes win;
+missing state, a receiver replacement or a restart prevents restoration.
+The same speaker/group targets and physical-speaker queue are used. A speaker
+that disappears from Spotify after Cast takes over may remain stopped; the
+app does not transfer playback to another device or blindly retry restoration.
+Music restoration and volume results appear separately from spoken delivery
+and Done/Skip. Numeric volume equality cannot prove unobserved changes; the
+Cast listener also revokes volume ownership when it observes a newer change.
+Real Spotify/JBL/group behavior still needs deliberate owner listening tests.
