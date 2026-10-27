@@ -139,10 +139,7 @@ def test_each_instance_becomes_its_own_occurrence_once_across_ticks_and_restarts
     assert len(detail["occurrences"]) == 2
 
 
-def test_selected_weekdays_only_and_local_time_follows_summer_time(
-    announcement_app, client, doubles, clock
-):
-    _synth, cast = doubles
+def test_selected_weekdays_only_and_local_time_follows_summer_time(announcement_app, client, clock):
     saved = save(
         announcement_app,
         client,
