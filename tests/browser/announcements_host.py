@@ -48,6 +48,15 @@ if __name__ == "__main__":
         cast.report(host, latest["attempt_id"], request.args["state"])
         return jsonify({"ok": True})
 
+    @flask_app.route("/test/synthesis")
+    def test_synthesis():
+        synth.failure = request.args.get("failure") or None
+        return jsonify({"ok": True})
+
+    @flask_app.route("/test/discord")
+    def test_discord():
+        return jsonify({"requests": len(discord.requests)})
+
     @flask_app.route("/test/clock")
     def test_clock():
         from datetime import datetime

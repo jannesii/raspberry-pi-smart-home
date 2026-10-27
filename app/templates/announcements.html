@@ -3,7 +3,7 @@
 {% block title %}Announcements{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/announcements.css', v='20261027-2') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/announcements.css', v='20261027-3') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/flash.css') }}">
 {% endblock %}
 
@@ -34,6 +34,8 @@
       <div><dt>Speaker media address</dt><dd id="announceStatusMedia">—</dd></div>
       <div><dt>Quiet hours (Helsinki)</dt><dd id="announceStatusQuiet">—</dd></div>
       <div><dt>Music restoration</dt><dd id="announceStatusRestore">—</dd></div>
+      <div><dt>Discord fallback</dt><dd id="announceStatusFallback">—</dd></div>
+      <div><dt>Reminder link in Discord</dt><dd id="announceStatusLink">—</dd></div>
     </dl>
   </section>
 
@@ -166,7 +168,9 @@
         <span id="announceHistoryCount">0 occurrences</span>
       </div>
       <p class="announce-help">Delivery shows what the speaker reported, never that anyone heard it.
-        Acknowledging a reminder is separate and not recorded here yet.</p>
+        When speech fails, is uncertain or partial, or expires unspoken, one Discord fallback is sent;
+        Discord accepting it does not mean it was read. Acknowledging a reminder is separate and not
+        recorded here yet.</p>
       <ol id="announceHistoryList" class="announce-tests" aria-live="polite"></ol>
     </section>
 
@@ -184,5 +188,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/announcements.js', v='20261027-2') }}"></script>
+<script src="{{ url_for('static', filename='js/announcements.js', v='20261027-3') }}"></script>
 {% endblock %}

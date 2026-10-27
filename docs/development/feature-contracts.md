@@ -410,3 +410,17 @@ Code: `app/blueprints/api/car_heater/weather.py` (`/sessions/<id>/weather`,
   it), unreachable speakers and overlapping active work. Urgent ones sort first,
   may dispatch on `playing`/`unknown` (recorded as `interrupted_media`,
   `media_restore='unavailable'`) and never bypass quiet hours.
+- Fallback (`fallback.py`, `AnnouncementFallbackMixin`): each tick opens one
+  `announcement_fallback` per occurrence with `fallback_reason` (unique
+  `occurrence_id`); the message is composed once (reminder text, reason or
+  waited-for context, link `ANNOUNCEMENT_PUBLIC_ORIGIN` +
+  `/settings/announcements?occurrence=<id>`) and sent at once through
+  `ALERT_WEBHOOK_URL` with `allowed_mentions={"parse": []}`, never the batcher.
+  A numbered `sending` attempt row is committed before each request. Confirmed
+  failures (HTTP error, 429, never sent) retry after 60 s/300 s or the server's
+  `retry_after`, at most 3 requests; 4xx other than 408/429 stop at once.
+  Timeouts after sending and restarts mid-request are `unknown` and never
+  resent. Missing webhook → `unavailable`. Accepted is not read/acknowledged.
+- `alert_webhook.deliver_webhook()` returns `WebhookResult` (accepted/rejected/
+  rate_limited/failed/not_configured/unknown) and never logs the URL;
+  `send_alert_webhook()` keeps its payload (mentions allowed) and boolean.

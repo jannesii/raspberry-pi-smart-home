@@ -461,3 +461,38 @@ def test_reminder_link_opens_the_authenticated_page_only(announcement_app, clien
     assert anonymous.get(page).status_code in (302, 401)
     other = support.login(announcement_app.test_client(), "admin")
     assert other.get(page).status_code == 302  # not Root-Admin: back to Settings
+
+
+def test_fallback_state_has_a_place_on_the_reminder_page(announcement_app, client):
+    html = client.get("/settings/announcements").get_data(as_text=True)
+    assert 'id="announceStatusFallback"' in html
+    assert 'id="announceStatusLink"' in html
+    assert "Discord accepting it does not mean it was read" in html
+
+
+def test_production_wiring_uses_the_alert_webhook_and_public_origin(tmp_path, monkeypatch):
+    from sqlalchemy import create_engine
+
+    from app.core import Controller
+    from app.core.database import DatabaseManager
+    from app.core.schema import metadata
+    from app.services.announcements import build_announcement_service
+
+    monkeypatch.setattr(DatabaseManager, "_instance", None)
+    monkeypatch.setenv("PIPER_COMMAND", str(tmp_path / "missing-piper"))
+    monkeypatch.setenv("ALERT_WEBHOOK_URL", WEBHOOK_URL)
+    monkeypatch.setenv("ANNOUNCEMENT_PUBLIC_ORIGIN", "https://jannenkoti.test/")
+    ctrl = Controller(db_path=str(tmp_path / "legacy.db"))
+    ctrl._sa_engine = create_engine(f"sqlite:///{tmp_path / 'a.db'}")
+    metadata.create_all(ctrl._sa_engine)
+    status = build_announcement_service(ctrl, db_path=str(tmp_path / "legacy.db")).status()
+    assert status["fallback"]["available"] is True
+    assert status["fallback"]["link_origin"] == "https://jannenkoti.test"
+    assert WEBHOOK_URL not in str(status)  # the webhook token is never exposed
+    monkeypatch.delenv("ALERT_WEBHOOK_URL")
+    monkeypatch.setenv("ANNOUNCEMENT_PUBLIC_ORIGIN", "https://jannenkoti.test/settings")
+    status = build_announcement_service(ctrl, db_path=str(tmp_path / "legacy.db")).status()
+    assert status["fallback"]["reason"] == "not_configured"
+    assert status["fallback"]["link_origin"] is None  # a path is not an origin
+    ctrl._sa_engine.dispose()
+    ctrl.db.conn.close()
