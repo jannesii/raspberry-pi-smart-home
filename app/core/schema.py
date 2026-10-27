@@ -906,3 +906,72 @@ Index(
     announcement_occurrence.c.fallback_reason,
     announcement_occurrence.c.fallback_eligible_at,
 )
+
+# One logical fallback notification per reminder occurrence (unique), created
+# once the occurrence records fallback_reason. ``message`` is composed once so
+# every retry sends identical content. Attempts are persisted ('sending')
+# before each webhook request; a request left 'sending' by a restart becomes
+# 'unknown' and is never resent. 'accepted' means Discord took the message,
+# not that anyone read it, and is never a reminder acknowledgement.
+announcement_fallback = Table(
+    "announcement_fallback",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column(
+        "occurrence_id",
+        Text,
+        ForeignKey("announcement_occurrence.id"),
+        nullable=False,
+        unique=True,
+    ),
+    Column("channel", Text, nullable=False),
+    Column("reason", Text, nullable=False),
+    Column("message", Text, nullable=False),
+    Column("link", Text),
+    Column("status", Text, nullable=False),
+    Column("status_reason", Text),
+    Column("attempts_made", Integer, nullable=False),
+    Column("max_attempts", Integer, nullable=False),
+    Column("next_attempt_at", Text),
+    Column("created_at", Text, nullable=False),
+    Column("updated_at", Text, nullable=False),
+    Column("accepted_at", Text),
+    Column("completed_at", Text),
+    CheckConstraint(
+        "status IN ('pending', 'sending', 'accepted', 'unknown', 'failed', 'unavailable')",
+        name="ck_announcement_fallback_status",
+    ),
+    CheckConstraint(
+        "reason IN ('failed', 'partial', 'unknown', 'expired_undelivered')",
+        name="ck_announcement_fallback_reason",
+    ),
+    CheckConstraint(
+        "attempts_made BETWEEN 0 AND max_attempts", name="ck_announcement_fallback_attempts"
+    ),
+)
+Index(
+    "idx_announcement_fallback_status",
+    announcement_fallback.c.status,
+    announcement_fallback.c.next_attempt_at,
+)
+
+# One webhook request of a fallback notification, numbered 1..max_attempts.
+announcement_fallback_attempt = Table(
+    "announcement_fallback_attempt",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("fallback_id", Text, ForeignKey("announcement_fallback.id"), nullable=False),
+    Column("number", Integer, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("http_status", Integer),
+    Column("retry_after_s", Float),
+    Column("detail", Text),
+    Column("intent_at", Text, nullable=False),
+    Column("finished_at", Text),
+    UniqueConstraint("fallback_id", "number", name="uq_announcement_fallback_attempt_number"),
+    CheckConstraint(
+        "status IN ('sending', 'accepted', 'rejected', 'rate_limited', 'failed', "
+        "'not_configured', 'unknown')",
+        name="ck_announcement_fallback_attempt_status",
+    ),
+)
