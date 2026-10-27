@@ -26,6 +26,7 @@ from urllib.parse import quote
 from uuid import uuid4
 
 from ..alert_webhook import WebhookResult, deliver_webhook
+from .groups import affected_members
 from .schedules import HELSINKI, iso
 
 if TYPE_CHECKING:
@@ -66,6 +67,9 @@ _REASONS = {
     "playback_failed": "the speaker reported a playback error",
     "interrupted": "something else took over the speaker",
     "stopped_externally": "playback was stopped from another app",
+    "group_not_configured": "the speaker group is not configured",
+    "group_unavailable": "the speaker group did not respond",
+    "member_unavailable": "a speaker in the group did not take part",
 }
 _WAITED = {
     "quiet_hours": "quiet hours to end",
@@ -73,6 +77,7 @@ _WAITED = {
     "media_unknown": "the speaker state to clear",
     "speaker_busy": "another announcement to finish",
     "speaker_unavailable": "the speaker to respond",
+    "group_unavailable": "the speaker group to respond",
 }
 
 
@@ -116,7 +121,7 @@ def _local(value: str | None) -> str:
     return f"{local.day}.{local.month}.{local.year} {local:%H:%M}"
 
 
-def _why(occurrence) -> str:
+def _why(occurrence, affected=()) -> str:
     if occurrence.fallback_reason == "expired_undelivered":
         waited = []
         for entry in occurrence.waiting_history:
@@ -132,17 +137,22 @@ def _why(occurrence) -> str:
     if occurrence.fallback_reason == "unknown":
         return f"Delivery is uncertain: {detail}. The speaker may have played it."
     if occurrence.fallback_reason == "partial":
+        if affected:
+            detail = f"{', '.join(affected)} did not take part"
         return f"Only part of {occurrence.target_name} reported playback: {detail}."
     return f"Spoken delivery failed: {detail}."
 
 
-def compose_message(occurrence, link: str | None) -> str:
-    """Same reminder text as the speech, with delivery context and a page link."""
+def compose_message(occurrence, link: str | None, affected=()) -> str:
+    """Same reminder text as the speech, with delivery context and a page link.
+
+    ``affected``: names of group members known not to have taken part.
+    """
     heading = _HEADINGS[occurrence.fallback_reason]
     lines = [
         f"**{heading}** · {occurrence.target_name} · due {_local(occurrence.due_at)} (Helsinki)",
         occurrence.text,
-        _why(occurrence),
+        _why(occurrence, affected),
         f"Open the reminder: {link}" if link else "Open Settings → Announcements in the home app.",
     ]
     return "\n".join(lines)
@@ -156,6 +166,12 @@ class FallbackMixin:
         if not origin:
             return None
         return f"{origin}{REMINDER_PAGE}?occurrence={quote(occurrence_id, safe='')}"
+
+    def _affected_names(self, occurrence) -> list[str]:
+        if occurrence.fallback_reason != "partial" or not occurrence.current_attempt_id:
+            return []
+        attempt = self.ctrl.get_announcement_attempt(occurrence.current_attempt_id)
+        return [m["name"] for m in affected_members(attempt.member_evidence if attempt else None)]
 
     def _process_fallbacks(self) -> None:
         now = self._clock()
@@ -173,7 +189,7 @@ class FallbackMixin:
             "occurrence_id": occurrence.id,
             "channel": self.fallback_channel.channel,
             "reason": occurrence.fallback_reason,
-            "message": compose_message(occurrence, link),
+            "message": compose_message(occurrence, link, self._affected_names(occurrence)),
             "link": link,
             "status": "pending",
             "status_reason": None,

@@ -63,6 +63,13 @@ def announcement_status(service):
     return jsonify({"ok": True, **service.status()})
 
 
+@announcements_bp.route("/discovery", methods=["POST"])
+@root_admin_service
+def request_discovery(service):
+    """Look up Cast devices and groups at the configured hosts (read-only)."""
+    return jsonify({"ok": True, "discovery": service.request_discovery()}), 202
+
+
 @announcements_bp.route("/previews", methods=["POST"])
 @root_admin_service
 def create_preview(service):

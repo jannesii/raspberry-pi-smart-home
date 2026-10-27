@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 
 from ..models import AnnouncementOccurrence, AnnouncementSchedule
 from ..schema import announcement_attempt, announcement_occurrence, announcement_schedule
+from .announcements import encode_attempt
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -312,8 +313,7 @@ class AnnouncementScheduleMixin:
         ]
         if not_expired_at is not None:
             conditions.append(occ.expires_at > not_expired_at)
-        row = dict(attempt)
-        row["speaker_set"] = json.dumps(sorted(attempt["speaker_set"]))
+        row = encode_attempt(attempt)
         with self._sa_engine.begin() as conn:
             changed = conn.execute(
                 update(announcement_occurrence)

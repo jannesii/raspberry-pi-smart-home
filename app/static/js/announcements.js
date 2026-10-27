@@ -21,6 +21,9 @@
     speaker_playing: 'The speaker was playing something, so the test did not interrupt it.',
     speaker_state_unknown: 'The speaker state was unclear, so the test did not start.',
     speaker_unavailable: 'The speaker did not respond. Check that it is powered on and on the network.',
+    group_unavailable: 'The speaker group did not respond. Nothing was sent to the speakers separately.',
+    group_not_configured: 'The speaker group is not configured (ANNOUNCEMENT_TARGETS needs its host, port and Cast id).',
+    member_unavailable: 'The group played, but a speaker in it did not take part.',
     device_identity_mismatch: 'A different Cast device answered at this address; check the configured device id.',
     media_origin_not_configured: 'Speaker media address (ANNOUNCEMENT_MEDIA_ORIGIN) is not configured.',
     cast_unavailable: 'Cast support is not installed or not available on the server.',
@@ -58,6 +61,7 @@
     media_unknown: 'speaker state unclear',
     speaker_busy: 'another announcement',
     speaker_unavailable: 'speaker not responding',
+    group_unavailable: 'speaker group not responding',
   };
   const DELIVERY_TEXT = {
     none: 'Not delivered',
@@ -106,7 +110,26 @@
     unknown: 'Unknown',
   };
 
+  const AVAILABILITY_TEXT = {
+    available: 'Responded',
+    unavailable: 'Not responding',
+    not_checked: 'Not checked yet',
+    unconfigured: 'Not configured',
+    unknown: 'Unknown',
+  };
+  const MEMBER_AVAILABILITY_TEXT = {
+    available: 'responded',
+    unavailable: 'not responding',
+    unknown: 'not checked',
+  };
+  const DISCOVERY_REASON_TEXT = {
+    cast_unavailable: 'Cast support is not installed or not available on the server.',
+    discovery_failed: 'Looking up Cast devices failed.',
+    discovery_error: 'Looking up Cast devices failed unexpectedly.',
+  };
+
   let targets = [];
+  let discoveryTimer = null;
   let pollTimer = null;
   let reminderTimer = null;
   let previewToken = 0;
@@ -217,17 +240,123 @@
       input.name = 'announceTarget';
       input.value = target.key;
       input.checked = previous ? previous === target.key : index === 0;
+      const configured = target.configured !== false;
+      if (!configured) {
+        input.disabled = true;
+        input.checked = false;
+        label.classList.add('is-disabled');
+      }
+      if (target.kind === 'group') label.classList.add('is-group');
       const text = document.createElement('span');
-      text.textContent = target.name;
+      text.textContent = target.kind === 'group' ? `${target.name} – speaker group` : target.name;
       const host = document.createElement('small');
       host.textContent = target.host || '—';
-      text.appendChild(host);
+      const availability = document.createElement('small');
+      availability.textContent = targetAvailabilityText(target);
+      if (['unavailable', 'unconfigured'].includes(target.availability)) availability.classList.add('is-problem');
+      text.append(host, availability);
+      if (target.kind === 'group' && Array.isArray(target.member_status)) {
+        const members = document.createElement('small');
+        members.textContent = target.member_status
+          .map(m => `${m.name || m.key}: ${AVAILABILITY_TEXT[m.availability] || m.availability || '—'}`)
+          .join(' · ') || '—';
+        text.appendChild(members);
+      }
       label.append(input, text);
       container.appendChild(label);
     });
+    if (!container.querySelector('input:checked')) {
+      const first = container.querySelector('input:not(:disabled)');
+      if (first) first.checked = true;
+    }
+    renderDiscovery(status.discovery);
     const defaults = status.defaults || {};
     const textArea = byId('announceText');
     if (textArea && defaults.max_text_length) textArea.maxLength = defaults.max_text_length;
+  }
+
+  function targetAvailabilityText(target) {
+    const text = AVAILABILITY_TEXT[target.availability] || target.availability || '—';
+    const observed = target.last_probe && target.last_probe.observed_at;
+    if (target.availability === 'unconfigured') {
+      return target.kind === 'group'
+        ? 'Not configured – use “Check speakers and find Cast group”'
+        : 'Not configured';
+    }
+    return observed ? `${text} (${fmtTime(observed)})` : text;
+  }
+
+  function renderDiscovery(discovery) {
+    const state = byId('announceDiscoveryState');
+    const list = byId('announceDiscoveryList');
+    const config = byId('announceDiscoveryConfig');
+    const json = byId('announceDiscoveryJson');
+    const button = byId('announcementDiscoveryButton');
+    if (!discovery) return;
+    const pending = discovery.status === 'requested';
+    if (button) button.disabled = pending;
+    if (state) {
+      if (pending) state.textContent = 'Looking for Cast devices…';
+      else if (discovery.status === 'failed') {
+        state.textContent = DISCOVERY_REASON_TEXT[discovery.reason] || discovery.reason || 'Lookup failed.';
+      } else if (discovery.status === 'finished') {
+        const devices = discovery.devices || [];
+        state.textContent = devices.length
+          ? `Found ${devices.length} Cast ${devices.length === 1 ? 'receiver' : 'receivers'} (${fmtTime(discovery.finished_at)}).`
+          : 'No Cast receivers answered at the configured addresses.';
+      } else {
+        state.textContent = '';
+      }
+    }
+    const devices = Array.isArray(discovery.devices) ? discovery.devices : [];
+    if (list) {
+      list.replaceChildren();
+      devices.forEach(device => {
+        const li = document.createElement('li');
+        const kind = device.cast_type === 'group' ? 'speaker group' : 'speaker';
+        li.textContent = `${device.name || '—'} (${kind}) · ${device.host || '—'}:${device.port ?? '—'} · Cast id ${device.device_id || '—'}`;
+        list.appendChild(li);
+      });
+      list.hidden = !devices.length;
+    }
+    const suggested = Array.isArray(discovery.suggested_targets) ? discovery.suggested_targets : [];
+    if (config && json) {
+      json.textContent = suggested.length ? JSON.stringify(suggested, null, 2) : '';
+      config.hidden = !(discovery.status === 'finished' && suggested.length);
+    }
+    clearTimeout(discoveryTimer);
+    if (pending) discoveryTimer = setTimeout(loadStatus, 1500);
+  }
+
+  async function runDiscovery() {
+    const button = byId('announcementDiscoveryButton');
+    if (button) button.disabled = true;
+    try {
+      const { discovery } = await api('/discovery', { method: 'POST', body: '{}' });
+      renderDiscovery(discovery);
+      setTimeout(loadStatus, 1500);
+    } catch (error) {
+      if (button) button.disabled = false;
+      showMessage(`Could not check speakers: ${error.message}`, true);
+    }
+  }
+
+  function memberEvidenceText(attempt) {
+    const members = Array.isArray(attempt.member_evidence) ? attempt.member_evidence : [];
+    if (!members.length) return '—';
+    return members.map(m => {
+      const parts = [MEMBER_AVAILABILITY_TEXT[m.availability] || m.availability || '—'];
+      if (m.in_group === true) parts.push('listed in the group');
+      else if (m.in_group === false) parts.push('not listed in the group');
+      if (m.left_group_during_playback === true) parts.push('left the group during playback');
+      return `${m.name || m.key}: ${parts.join(', ')}`;
+    }).join(' · ');
+  }
+
+  function groupFacts(facts, attempt) {
+    if (!attempt || attempt.evidence_scope !== 'group') return;
+    fact(facts, 'Evidence', 'Group playback report only – speakers do not report what was audible');
+    fact(facts, 'Speakers in group', memberEvidenceText(attempt));
   }
 
   function renderFallbackStatus(fallback) {
@@ -464,6 +593,7 @@
       fact(facts, 'Volume restore', RESTORE_TEXT[attempt.volume_restore] || '—');
       fact(facts, 'Stop', stopText(attempt));
       fact(facts, 'Detail', REASON_TEXT[attempt.reason] || attempt.reason || '—');
+      groupFacts(facts, attempt);
       li.append(head, text, facts);
       list.appendChild(li);
     });
@@ -1059,6 +1189,7 @@
         fact(facts, 'Music', 'Interrupted – restoration unavailable');
       }
       fact(facts, 'Volume restore', RESTORE_TEXT[last.volume_restore] || '—');
+      groupFacts(facts, last.id ? last : null);
       fact(facts, 'Discord fallback', fallbackText(occurrence, item.fallback));
       fact(facts, 'Acknowledged', item.acknowledgement ? fmtTime(item.acknowledgement.at) : 'Not recorded');
       li.append(head, text, facts);
@@ -1110,6 +1241,8 @@
     if (test) test.addEventListener('click', runTest);
     const refresh = byId('announcementStatusRefresh');
     if (refresh) refresh.addEventListener('click', loadStatus);
+    const discover = byId('announcementDiscoveryButton');
+    if (discover) discover.addEventListener('click', runDiscovery);
     const save = byId('announcementScheduleButton');
     if (save) save.addEventListener('click', saveSchedule);
     const cancel = byId('announcementScheduleCancel');

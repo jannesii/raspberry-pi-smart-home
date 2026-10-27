@@ -15,11 +15,14 @@ import json
 
 import pytest
 from announcement_support import (
+    GROUP,
     START,
     FakeCast,
     FakeDiscord,
     FakeSynthesizer,
     announcement_app,
+    build_service,
+    group_targets,
     login,
 )
 from flask import jsonify, request
@@ -35,7 +38,6 @@ if __name__ == "__main__":
     discord = FakeDiscord()
     fixture = announcement_app.__wrapped__(work, patch, clock, (synth, cast), discord)
     flask_app = next(fixture)
-    service = flask_app.announcement_service
 
     @flask_app.route("/test/cast/plays")
     def test_cast_plays():
@@ -44,8 +46,23 @@ if __name__ == "__main__":
     @flask_app.route("/test/cast/report")
     def test_cast_report():
         latest = cast.plays[-1]
-        host = {"jbl-right": "192.168.1.119", "jbl-left": "192.168.1.148"}[latest["target"]]
+        host = {"jbl-right": "192.168.1.119", "jbl-left": "192.168.1.148", "jbl-group": GROUP}[
+            latest["target"]
+        ]
         cast.report(host, latest["attempt_id"], request.args["state"])
+        return jsonify({"ok": True})
+
+    @flask_app.route("/test/cast/speaker")
+    def test_cast_speaker():
+        cast.speakers[request.args["host"]].state = request.args["state"]
+        return jsonify({"ok": True})
+
+    @flask_app.route("/test/group")
+    def test_group():
+        # The owner has set the discovered group in ANNOUNCEMENT_TARGETS.
+        flask_app.announcement_service = build_service(
+            flask_app.ctrl, clock, (synth, cast), work / "cache", targets=group_targets()
+        )
         return jsonify({"ok": True})
 
     @flask_app.route("/test/synthesis")
@@ -68,7 +85,7 @@ if __name__ == "__main__":
     def tick_on_request():
         # Stands in for the service loop: page polling drives processing, so the
         # flow is deterministic without a background thread.
-        service.tick()
+        flask_app.announcement_service.tick()
 
     authenticated = login(flask_app.test_client())
     server = make_server("127.0.0.1", 0, flask_app, threaded=False)

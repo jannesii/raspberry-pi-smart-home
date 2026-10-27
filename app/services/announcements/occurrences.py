@@ -29,6 +29,7 @@ from .content import (
     PreparedContent,
     parse_percent,
 )
+from .groups import MEMBER_UNAVAILABLE, affected_members
 from .schedules import (
     Instance,
     QuietHours,
@@ -49,8 +50,8 @@ logger = logging.getLogger(__name__)
 WAITING_HISTORY_LIMIT = 20
 # Passed instances materialized per schedule per tick when catching up.
 MATERIALIZE_BATCH = 50
-# Terminal attempt status -> occurrence delivery summary. Extension point for
-# group/partial evidence (#37).
+# Terminal attempt status -> occurrence delivery summary; a group attempt
+# with a member known to be missing is downgraded to 'partial' in _settle.
 _DELIVERY = {"finished": "delivered", "failed": "failed", "unknown": "unknown"}
 # Delivery outcomes that make an occurrence eligible for one fallback (#33).
 _FALLBACK = {"failed": "failed", "partial": "partial", "unknown": "unknown"}
@@ -67,11 +68,7 @@ class OccurrenceMixin:
         content = self.content.prepare(
             {"text": payload.get("text"), "language": payload.get("language")}
         )
-        key = payload.get("target")
-        target = self.config.target(key) if isinstance(key, str) else None
-        if target is None:
-            names = ", ".join(t.name for t in self.config.targets)
-            raise AnnouncementInputError("target", f"Choose a speaker: {names}.")
+        target = self._selectable_target(payload.get("target"))
         volume = parse_percent(
             payload.get("volume_percent"), "volume_percent", DEFAULT_VOLUME_PERCENT
         )
@@ -492,6 +489,9 @@ class OccurrenceMixin:
             )
             self._fail_occurrence(occurrence, placeholder, "target_not_configured")
             return False
+        if not target.configured:
+            self._fail_occurrence(occurrence, target, self._unconfigured_reason(target))
+            return False
         if self._next_probe.get(occurrence.id, 0.0) > now:
             return False
         content = PreparedContent(text=occurrence.text, language=occurrence.language)
@@ -503,7 +503,9 @@ class OccurrenceMixin:
         self._next_probe[occurrence.id] = now + self.config.wait_probe_interval_s
         media_values = self._media_values(target, media, probe)
         if probe.state == "unavailable":
-            self._set_waiting(occurrence, "speaker_unavailable", now)
+            # A group never falls back to separate member streams: it waits,
+            # and expiry turns it into a visible missed-reminder fallback.
+            self._set_waiting(occurrence, self._unavailable_reason(target), now)
             return False
         if target.device_id and probe.device_id and probe.device_id != target.device_id:
             self._fail_occurrence(occurrence, target, "device_identity_mismatch", **media_values)
@@ -610,10 +612,16 @@ class OccurrenceMixin:
                 delivery = "unknown"
         else:
             delivery = _DELIVERY[attempt.status]
+        delivery_reason = attempt.reason
+        if delivery == "delivered" and affected_members(attempt.member_evidence):
+            # Group playback reached only some members. The group cannot replay
+            # to one member without replaying the others, so this is never
+            # retried: it closes fallback-eligible as partial.
+            delivery, delivery_reason = "partial", MEMBER_UNAVAILABLE
         values = {
             "status": "closed",
             "delivery": delivery,
-            "delivery_reason": attempt.reason,
+            "delivery_reason": delivery_reason,
             "disposition": disposition,
             "disposition_reason": disposition_reason,
             "closed_at": now,

@@ -415,6 +415,9 @@ class AnnouncementAttempt:
     updated_at: str
     interrupted_media: str | None = None
     media_restore: str | None = None
+    # Group targets: [{key, name, availability, in_group,
+    # left_group_during_playback}]; None for single speakers.
+    member_evidence: list[dict] | None = None
 
 
 @dataclass
