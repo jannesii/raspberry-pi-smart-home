@@ -30,19 +30,25 @@ from .content import (
     parse_percent,
 )
 from .schedules import (
+    Instance,
     QuietHours,
     epoch,
     helsinki_epoch,
+    helsinki_label,
+    instance_at,
     iso,
     next_instance,
     parse_expiry,
     parse_flag,
+    parse_recurrence,
     upcoming_instances,
 )
 
 logger = logging.getLogger(__name__)
 
 WAITING_HISTORY_LIMIT = 20
+# Passed instances materialized per schedule per tick when catching up.
+MATERIALIZE_BATCH = 50
 # Terminal attempt status -> occurrence delivery summary. Extension point for
 # group/partial evidence (#37).
 _DELIVERY = {"finished": "delivered", "failed": "failed", "unknown": "unknown"}
@@ -56,8 +62,8 @@ class OccurrenceMixin:
     # Owner operations -------------------------------------------------------------
     def _schedule_fields(self, payload: dict, now: float) -> dict:
         kind = payload.get("kind") or "one_time"
-        if kind != "one_time":
-            raise AnnouncementInputError("kind", "Only one-time schedules are available.")
+        if kind not in ("one_time", "recurring"):
+            raise AnnouncementInputError("kind", "Choose a one-time or a recurring reminder.")
         content = self.content.prepare(
             {"text": payload.get("text"), "language": payload.get("language")}
         )
@@ -70,9 +76,14 @@ class OccurrenceMixin:
             payload.get("volume_percent"), "volume_percent", DEFAULT_VOLUME_PERCENT
         )
         chime = parse_percent(payload.get("chime_percent"), "chime_percent", DEFAULT_CHIME_PERCENT)
-        due, fold = helsinki_epoch(payload.get("due_local"), payload.get("fold"))
-        if due <= now:
-            raise AnnouncementInputError("due_local", "Choose a time in the future.")
+        when = {"due_local": None, "due_fold": None, "due_at": None, "recurrence": None}
+        if kind == "recurring":
+            when["recurrence"] = parse_recurrence(payload.get("recurrence"))
+        else:
+            due, fold = helsinki_epoch(payload.get("due_local"), payload.get("fold"))
+            if due <= now:
+                raise AnnouncementInputError("due_local", "Choose a time in the future.")
+            when.update(due_local=payload["due_local"], due_fold=fold, due_at=iso(due))
         return {
             "kind": kind,
             "text": content.text,
@@ -85,9 +96,7 @@ class OccurrenceMixin:
                 payload.get("quiet_hours_override"), "quiet_hours_override"
             ),
             "expiry_minutes": parse_expiry(payload.get("expiry_minutes")),
-            "due_local": payload["due_local"],
-            "due_fold": fold,
-            "due_at": iso(due),
+            **when,
         }
 
     def create_schedule(self, payload: dict, *, request_id=None, requested_by=None):
@@ -104,7 +113,6 @@ class OccurrenceMixin:
             "revision": 1,
             "max_announcements": 1,
             "repeat_interval_minutes": None,
-            "recurrence": None,
             "created_at": iso(now),
             "created_by": requested_by,
             "updated_at": iso(now),
@@ -250,8 +258,15 @@ class OccurrenceMixin:
         if schedule.status != "active" or schedule.next_due_at is None:
             return []
         first = epoch(schedule.next_due_at)
-        instances = [first, *upcoming_instances(schedule, first, limit=4)]
-        return [{"due_at": iso(at)} for at in instances]
+        head = instance_at(schedule, first) or Instance(first, helsinki_label(first))
+        items = []
+        for instance in [head, *upcoming_instances(schedule, first, limit=4)]:
+            item = {"due_at": iso(instance.at)}
+            if instance.dst_gap:
+                # Shown so the owner sees it will be recorded missed, not spoken.
+                item.update(local=instance.local, missed="dst_gap")
+            items.append(item)
+        return items
 
     def list_schedules(self) -> list[dict]:
         schedules = self.ctrl.list_announcement_schedules()
@@ -271,7 +286,12 @@ class OccurrenceMixin:
         return [
             {
                 "kind": "occurrence",
-                "occurrence": asdict(o),
+                "occurrence": {
+                    **asdict(o),
+                    "instance_local": helsinki_label(
+                        epoch(o.instance_due_at), dst_gap=o.disposition_reason == "dst_gap"
+                    ),
+                },
                 "attempts": attempts.get(o.id, []),
                 # Reminder acknowledgement (Done) is recorded separately (#35);
                 # delivery evidence never implies it.
@@ -290,50 +310,83 @@ class OccurrenceMixin:
 
     # Processing ---------------------------------------------------------------------
     def _materialize_due(self) -> None:
+        """Create occurrences for every passed instance, oldest first.
+
+        After downtime each passed instance still gets its own occurrence so
+        history shows what was missed; the expiry check that follows closes
+        the stale ones as ``missed`` before anything is spoken, so only
+        instances still inside their window can speak (no burst). Catch-up
+        is bounded per tick; the next tick continues.
+        """
         now = self._clock()
         for schedule in self.ctrl.list_due_announcement_schedules(iso(now)):
-            due = epoch(schedule.next_due_at)
-            target = self.config.target(schedule.target_key)
-            quiet = None if schedule.quiet_hours_override else self.quiet_hours
-            nxt = next_instance(schedule, due)
-            occurrence = {
-                "id": str(uuid4()),
-                "schedule_id": schedule.id,
-                "instance_due_at": schedule.next_due_at,
-                "schedule_revision": schedule.revision,
-                "created_at": iso(now),
-                "text": schedule.text,
-                "language": schedule.language,
-                "target_key": schedule.target_key,
-                "target_name": target.name if target else schedule.target_key,
-                "speaker_set": sorted(target.speaker_set) if target else [schedule.target_key],
-                "volume_percent": schedule.volume_percent,
-                "chime_percent": schedule.chime_percent,
-                "urgent": schedule.urgent,
-                "quiet_hours": quiet.text() if quiet else None,
-                "max_announcements": schedule.max_announcements,
-                "repeat_interval_minutes": schedule.repeat_interval_minutes,
-                "due_at": schedule.next_due_at,
-                "expires_at": iso(due + schedule.expiry_minutes * 60),
-                "next_attempt_at": schedule.next_due_at,
-                "status": "waiting",
-                "waiting_reason": None,
-                "waiting_since": None,
-                "waiting_history": [],
-                "announcements_started": 0,
-                "current_attempt_id": None,
-                "delivery": "none",
-                "updated_at": iso(now),
-            }
-            if self.ctrl.materialize_announcement_occurrence(
-                occurrence, next_due_at=iso(nxt) if nxt is not None else None
-            ):
+            cursor = schedule.next_due_at
+            for _ in range(MATERIALIZE_BATCH):
+                due = epoch(cursor)
+                instance = instance_at(schedule, due)
+                nxt = next_instance(schedule, due)
+                occurrence = self._occurrence_row(schedule, cursor, now, instance)
+                if not self.ctrl.materialize_announcement_occurrence(
+                    occurrence, next_due_at=iso(nxt) if nxt is not None else None
+                ):
+                    break  # paused, edited or materialized elsewhere meanwhile
                 logger.info(
-                    "Occurrence %s created for schedule %s due=%s",
+                    "Occurrence %s created for schedule %s due=%s%s",
                     occurrence["id"],
                     schedule.id,
-                    schedule.next_due_at,
+                    cursor,
+                    " (missed: clock change)" if occurrence["status"] == "closed" else "",
                 )
+                if nxt is None or nxt > now:
+                    break
+                cursor = iso(nxt)
+
+    def _occurrence_row(self, schedule, due_iso: str, now: float, instance) -> dict:
+        due = epoch(due_iso)
+        target = self.config.target(schedule.target_key)
+        quiet = None if schedule.quiet_hours_override else self.quiet_hours
+        row = {
+            "id": str(uuid4()),
+            "schedule_id": schedule.id,
+            "instance_due_at": due_iso,
+            "schedule_revision": schedule.revision,
+            "created_at": iso(now),
+            "text": schedule.text,
+            "language": schedule.language,
+            "target_key": schedule.target_key,
+            "target_name": target.name if target else schedule.target_key,
+            "speaker_set": sorted(target.speaker_set) if target else [schedule.target_key],
+            "volume_percent": schedule.volume_percent,
+            "chime_percent": schedule.chime_percent,
+            "urgent": schedule.urgent,
+            "quiet_hours": quiet.text() if quiet else None,
+            "max_announcements": schedule.max_announcements,
+            "repeat_interval_minutes": schedule.repeat_interval_minutes,
+            "due_at": due_iso,
+            "expires_at": iso(due + schedule.expiry_minutes * 60),
+            "next_attempt_at": due_iso,
+            "status": "waiting",
+            "waiting_reason": None,
+            "waiting_since": None,
+            "waiting_history": [],
+            "announcements_started": 0,
+            "current_attempt_id": None,
+            "delivery": "none",
+            "updated_at": iso(now),
+        }
+        if instance is not None and instance.dst_gap:
+            # The wall time did not exist (spring clock change): never spoken,
+            # recorded as a missed reminder so a fallback can tell the owner.
+            row.update(
+                status="closed",
+                next_attempt_at=None,
+                disposition="missed",
+                disposition_reason="dst_gap",
+                closed_at=iso(now),
+                fallback_reason="expired_undelivered",
+                fallback_eligible_at=iso(now),
+            )
+        return row
 
     def _set_waiting(self, occurrence, reason: str, now: float) -> None:
         if occurrence.waiting_reason == reason:

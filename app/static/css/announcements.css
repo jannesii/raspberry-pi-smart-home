@@ -225,6 +225,68 @@
   accent-color: #7dd3fc;
 }
 
+.announce-repeat,
+.announce-weekdays {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
+.announce-repeat legend,
+.announce-weekdays legend {
+  width: 100%;
+}
+
+.announce-weekdays label {
+  min-width: 64px;
+}
+
+.announce-times-list {
+  list-style: none;
+  margin: 6px 0 10px;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.announce-time-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.announce-time-row label {
+  min-height: auto;
+  color: #c3ccd6;
+  font-size: 0.86rem;
+  font-weight: 700;
+  cursor: default;
+}
+
+.announce-time-row input[type="time"] {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid #3a424b;
+  border-radius: 8px;
+  background: #0f1215;
+  color: #f5f8fb;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 1rem;
+}
+
+.announce-time-row input:focus-visible {
+  outline: 3px solid #7dd3fc;
+  outline-offset: 2px;
+}
+
+.announce-time-row input[aria-invalid="true"],
+.announce-weekdays input[aria-invalid="true"] {
+  outline: 2px solid #ffb4b4;
+}
+
 .announce-advanced {
   margin: 4px 0 12px;
   border: 1px solid #333b43;

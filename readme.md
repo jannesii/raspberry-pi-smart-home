@@ -583,6 +583,23 @@ playing finishes. Resuming never revives a cancelled reminder or one whose time
 passed while paused. Deleting removes the reminder from future delivery only;
 its history stays.
 
+**Recurring reminders.** Choose **Repeat → Every day** or **Selected weekdays**
+and add up to 12 times of day. Days and times are Helsinki wall-clock time and
+follow summer/winter time (08:00 stays 08:00 in Helsinki), whatever timezone
+the browser uses. Each time on each day becomes its own occurrence, created
+once even across restarts, and keeps the text and settings that applied when it
+became due. **Upcoming reminders** lists the next due times. Edits change only
+instances that are not yet due; pausing cancels waiting speech, and resuming
+continues with the next future time without replaying anything missed while
+paused. If the server was down, every time that passed is recorded as *missed*
+in history (eligible for a fallback notification); only a time still inside its
+expiry window is spoken. A time that does not exist on the night clocks move
+forward (03:00–03:59 on the last Sunday of March) is recorded as missed
+("clock change") instead of being spoken at another time; a time repeated when
+clocks move back is spoken once, at its first occurrence. If a schedule has both
+such a time and the real time one hour later (e.g. 03:30 and 04:30), that night
+only the real 04:30 instance is recorded.
+
 When due, a reminder is spoken unless policy says wait. It waits during quiet
 hours (`ANNOUNCEMENT_QUIET_HOURS`, start inclusive, end exclusive) unless the
 reminder allows quiet hours. It also waits while the speaker plays music or its
@@ -597,8 +614,8 @@ reminder is recorded as *missed*, never spoken late, including after server
 downtime. **Reminder history** keeps due time, expiry, the reasons it waited,
 each attempt, the delivery evidence, volume restore and whether it is eligible
 for a fallback notification. Delivery is never an acknowledgement. Fallback
-notifications, Done/Skip/Snooze, repeats, recurring schedules, the speaker
-group and history deletion are later slices.
+notifications, Done/Skip/Snooze, repeats, the speaker group and history
+deletion are later slices.
 
 Prepared audio is cached in `ANNOUNCEMENT_CACHE_DIR` (default
 `announcement-cache/` beside `DB_PATH`) for up to 7 days or 64 MB. Evicting it
@@ -608,7 +625,7 @@ compatibility of PyChromecast and the real media fetch are unverified until
 owner acceptance.
 
 ```sh
-.venv/bin/pytest -q tests/test_announcements.py tests/test_announcement_schedules.py tests/test_announcement_integrations.py tests/test_announcement_storage.py tests/test_announcements_browser.py
+.venv/bin/pytest -q tests/test_announcements.py tests/test_announcement_schedules.py tests/test_announcement_recurring.py tests/test_announcement_integrations.py tests/test_announcement_storage.py tests/test_announcements_browser.py
 ```
 
 ### Weather observation archive
