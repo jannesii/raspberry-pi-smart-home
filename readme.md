@@ -166,7 +166,7 @@ Configure only the integrations you use:
 | Weather archive | `WEATHER_ARCHIVE_ENABLED` (default `true`): archive FMI station observations every ten minutes and the parking-point forecast every thirty minutes. `WEATHER_FORECAST_POINT` (default `62.8000,22.8260`): forecast point as `lat,lon`; an invalid value leaves forecast collection off. Needs outbound HTTPS to `opendata.fmi.fi` and migrations `20261016_0016`/`20261016_0017`/`20261017_0018`; see [weather observation archive](#weather-observation-archive) and [parking-point forecast archive](#parking-point-forecast-archive) |
 | Sodexo | `SODEXO_WEBHOOK_URL`, `SODEXO_POST_HOUR`, `SODEXO_POST_MINUTE` |
 | Alerts | `ALERT_WEBHOOK_URL`, `ALERT_WEBHOOK_BATCH_SECONDS` |
-| Spoken announcements | `ANNOUNCEMENTS_ENABLED` (default `true`), `ANNOUNCEMENT_MEDIA_ORIGIN` (speaker-reachable `http(s)://host[:port]`), `ANNOUNCEMENT_TARGETS` (JSON; defaults Jbl-Right `192.168.1.119`, Jbl-Left `192.168.1.148`), `ANNOUNCEMENT_CACHE_DIR`, `PIPER_COMMAND`, `PIPER_VOICE_DIR`, `PIPER_VOICE_FI`/`PIPER_VOICE_EN`, `ANNOUNCEMENT_QUIET_HOURS` (Helsinki `HH:MM-HH:MM`, default `22:00-07:00`, `off` disables); optional `requirements-announcements.txt` and migrations `20261027_0020`/`20261027_0021`; see [spoken announcements](#spoken-announcements) |
+| Spoken announcements | `ANNOUNCEMENTS_ENABLED` (default `true`), `ANNOUNCEMENT_MEDIA_ORIGIN` (speaker-reachable `http(s)://host[:port]`), `ANNOUNCEMENT_TARGETS` (JSON; defaults Jbl-Right `192.168.1.119`, Jbl-Left `192.168.1.148`), `ANNOUNCEMENT_CACHE_DIR`, `PIPER_COMMAND`, `PIPER_VOICE_DIR`, `PIPER_VOICE_FI`/`PIPER_VOICE_EN`, `ANNOUNCEMENT_QUIET_HOURS` (Helsinki `HH:MM-HH:MM`, default `22:00-07:00`, `off` disables); optional `requirements-announcements.txt` and migrations `20261027_0020`/`20261027_0021`/`20261027_0023`; see [spoken announcements](#spoken-announcements) |
 
 See [app/config.py](app/config.py) for core parsing/defaults and
 [service initialization](app/services/__init__.py) plus individual services for
@@ -569,8 +569,8 @@ Setup (owner commissioning; automated tests never use real speakers or engines):
    `127.0.0.1:5555` with `access_log off`. The token is a bearer secret in the URL
    path. Then set the origin, for example `http://192.168.1.10:8099`. Until it is
    set, preview works and speaker tests fail with "media address not configured".
-4. Apply migrations `20261027_0020` and `20261027_0021` with the normal
-   migration procedure.
+4. Apply migrations `20261027_0020`, `20261027_0021` and `20261027_0023` with
+   the normal migration procedure.
 
 **One-time reminders.** The same page saves a reminder for a date and time in
 Europe/Helsinki, whatever timezone the browser uses. A time skipped by the
@@ -613,9 +613,33 @@ override quiet hours. Each reminder expires a configurable number of minutes
 reminder is recorded as *missed*, never spoken late, including after server
 downtime. **Reminder history** keeps due time, expiry, the reasons it waited,
 each attempt, the delivery evidence, volume restore and whether it is eligible
-for a fallback notification. Delivery is never an acknowledgement. Fallback
-notifications, Done/Skip/Snooze, repeats, the speaker group and history
-deletion are later slices.
+for a fallback notification. Delivery is never an acknowledgement.
+
+**Repeats.** By default a reminder is spoken once. Under *Expiry, repeats,
+urgency and quiet hours* choose up to 5 announcements per reminder and the
+minutes between them (1–120). The page shows how many fit before expiry: three
+announcements ten minutes apart fit only twice in the default 15 minutes, and
+the third is never spoken. Each repeat starts that many minutes after the
+previous one started, belongs to the same occurrence and expiry, and waits for
+music, quiet hours or the speaker like the first; a delayed server plays one
+repeat, never a burst of missed ones. Separately, an attempt the speaker
+certainly did not play (e.g. connection refused) is retried automatically at
+most twice, a minute apart, only before the original expiry; an attempt whose
+outcome is uncertain is never replayed. Retries are counted apart from
+repeats; once a reminder has been delivered, a later failed repeat does not
+make it eligible for a fallback.
+
+**Done, Skip, Stop speaking.** Each occurrence in **Reminder history** offers
+the actions that apply. **Done** and **Skip this occurrence** are recorded once
+per occurrence (who and when) and cancel its waiting speech, repeats and
+retries; speech already playing finishes. Skip affects that occurrence only; the
+schedule continues. **Stop speaking** asks the speaker to stop and cancels
+further repeats; the history shows whether the speaker confirmed the stop. It
+does not mark the reminder done, so Done and Skip stay available, and none of
+these actions create a fallback. Acknowledgements are reminder handling only:
+they never record a medicine dose or blood-pressure value and leave medicine
+purchase/refill calculations unchanged. Fallback notifications, Snooze, the
+speaker group and history deletion are later slices.
 
 Prepared audio is cached in `ANNOUNCEMENT_CACHE_DIR` (default
 `announcement-cache/` beside `DB_PATH`) for up to 7 days or 64 MB. Evicting it
@@ -625,7 +649,7 @@ compatibility of PyChromecast and the real media fetch are unverified until
 owner acceptance.
 
 ```sh
-.venv/bin/pytest -q tests/test_announcements.py tests/test_announcement_schedules.py tests/test_announcement_recurring.py tests/test_announcement_integrations.py tests/test_announcement_storage.py tests/test_announcements_browser.py
+.venv/bin/pytest -q tests/test_announcements.py tests/test_announcement_schedules.py tests/test_announcement_recurring.py tests/test_announcement_acknowledgements.py tests/test_announcement_integrations.py tests/test_announcement_storage.py tests/test_announcements_browser.py
 ```
 
 ### Weather observation archive
