@@ -423,3 +423,20 @@ def test_invalid_recurrence_is_rejected_with_the_field_to_fix(announcement_app, 
         data = save(announcement_app, client, expect=400, **body)
         assert data["field"] == field, (body, data)
     assert client.get(API).get_json()["schedules"] == []
+
+
+def test_recurring_controls_are_on_the_announcement_page(announcement_app, client):
+    html = client.get("/settings/announcements").get_data(as_text=True)
+    for element in (
+        'name="announceRepeat" value="once"',
+        'name="announceRepeat" value="daily"',
+        'name="announceRepeat" value="weekdays"',
+        'id="announceWeekdayGroup"',
+        'id="announceTimesList"',
+        'id="announceAddTime"',
+        'id="announceRecurrenceError"',
+    ):
+        assert element in html
+    assert "Europe/Helsinki local time" in html
+    assert "js/announcements.js?v=20261027-3" in html
+    assert "css/announcements.css?v=20261027-3" in html

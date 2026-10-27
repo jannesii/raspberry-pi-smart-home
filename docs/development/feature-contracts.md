@@ -391,8 +391,16 @@ Code: `app/blueprints/api/car_heater/weather.py` (`/sessions/<id>/weather`,
   Page: `/settings/announcements`.
 - Schedules (`AnnouncementScheduleMixin`, `occurrences.py`, `schedules.py`):
   one-time due times are Helsinki wall time (`due_local` + `due_fold`), stored
-  as UTC ISO. Deletion is soft (`status='deleted'`). `next_due_at` is the only
-  materialization cursor; `next_instance()` is the recurrence extension point.
+  as UTC ISO. Recurring rules live in `recurrence` JSON
+  (`{"weekdays": [ISO 1-7], "times": ["HH:MM"]}`, Helsinki wall time; no due
+  columns). Deletion is soft (`status='deleted'`). `next_due_at` is the only
+  materialization cursor; `instance_after()`/`next_instance()` give instances.
+- Each tick materializes every passed instance (bounded batch), so downtime
+  leaves one occurrence per missed instance and the expiry check closes stale
+  ones `missed` before dispatch. Spring-gap times are instances at the
+  pre-change offset, inserted closed `missed`/`dst_gap` (fallback
+  `expired_undelivered`); autumn repeats use the first occurrence only.
+  API items add `instance_local`; gap upcoming items add `local` + `missed`.
 - An occurrence is created when due, unique on `(schedule_id, instance_due_at)`,
   and snapshots the schedule. `status` (waiting/announcing/closed), `delivery`
   (attempt evidence) and `disposition` (missed/cancelled; later owner actions)

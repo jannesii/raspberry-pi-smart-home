@@ -3,7 +3,7 @@
 {% block title %}Announcements{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/announcements.css', v='20261027-2') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/announcements.css', v='20261027-3') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/flash.css') }}">
 {% endblock %}
 
@@ -94,9 +94,16 @@
       </fieldset>
 
       <fieldset class="announce-speaker announce-schedule" aria-describedby="announceScheduleHelp">
-        <legend id="announceScheduleLegend">One-time reminder</legend>
-        <p id="announceScheduleHelp" class="announce-help">Date and time are Europe/Helsinki local time,
+        <legend id="announceScheduleLegend">Reminder</legend>
+        <p id="announceScheduleHelp" class="announce-help">Dates and times are Europe/Helsinki local time,
           whatever timezone this device uses.</p>
+        <fieldset class="announce-fold announce-repeat">
+          <legend>Repeat</legend>
+          <label><input type="radio" name="announceRepeat" value="once" checked> Once</label>
+          <label><input type="radio" name="announceRepeat" value="daily"> Every day</label>
+          <label><input type="radio" name="announceRepeat" value="weekdays"> Selected weekdays</label>
+        </fieldset>
+        <div id="announceOnceFields">
         <div class="announce-grid announce-grid-2">
           <label class="announce-field" for="announceDate">
             <span>Date (Helsinki)</span>
@@ -113,6 +120,31 @@
           <label><input type="radio" name="announceFold" value="0"> First (summer time, UTC+3)</label>
           <label><input type="radio" name="announceFold" value="1"> Second (winter time, UTC+2)</label>
         </fieldset>
+        </div>
+
+        <div id="announceRecurringFields" hidden>
+          <fieldset id="announceWeekdayGroup" class="announce-fold announce-weekdays" hidden
+            aria-describedby="announceRecurrenceError">
+            <legend>Weekdays</legend>
+            <label><input type="checkbox" name="announceWeekday" value="1" checked> Mon</label>
+            <label><input type="checkbox" name="announceWeekday" value="2" checked> Tue</label>
+            <label><input type="checkbox" name="announceWeekday" value="3" checked> Wed</label>
+            <label><input type="checkbox" name="announceWeekday" value="4" checked> Thu</label>
+            <label><input type="checkbox" name="announceWeekday" value="5" checked> Fri</label>
+            <label><input type="checkbox" name="announceWeekday" value="6"> Sat</label>
+            <label><input type="checkbox" name="announceWeekday" value="7"> Sun</label>
+          </fieldset>
+          <fieldset class="announce-fold announce-times" aria-describedby="announceTimesHelp announceRecurrenceError">
+            <legend>Times of day (Helsinki)</legend>
+            <ol id="announceTimesList" class="announce-times-list"></ol>
+            <button id="announceAddTime" class="announce-btn announce-btn-quiet" type="button">Add time</button>
+            <small id="announceTimesHelp" class="announce-help">Each time is its own reminder occurrence and follows
+              Helsinki summer and winter time. A time that does not exist when clocks move forward (03:00–03:59 on the
+              last Sunday of March) is recorded as missed; a time repeated when clocks move back plays once, the first
+              time.</small>
+          </fieldset>
+          <small id="announceRecurrenceError" class="announce-field-error" role="alert"></small>
+        </div>
 
         <details id="announceAdvanced" class="announce-advanced">
           <summary>Expiry, urgency and quiet hours</summary>
@@ -184,5 +216,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/announcements.js', v='20261027-2') }}"></script>
+<script src="{{ url_for('static', filename='js/announcements.js', v='20261027-3') }}"></script>
 {% endblock %}

@@ -1,6 +1,7 @@
 /**
- * Spoken announcements: browser preview, explicit speaker tests, one-time
- * reminder schedules and their occurrence history.
+ * Spoken announcements: browser preview, explicit speaker tests, one-time and
+ * recurring reminder schedules and their occurrence history. Recurring times
+ * are sent as Helsinki wall-clock "HH:MM" text, never converted in the browser.
  */
 
 (function() {
@@ -47,7 +48,10 @@
     expired_before_dispatch: 'Expired before it could be sent (for example while the server was down).',
     schedule_paused: 'The schedule was paused.',
     schedule_deleted: 'The schedule was deleted.',
+    dst_gap: 'This time did not exist: Helsinki clocks moved forward. Recorded as missed, not spoken.',
   };
+  const WEEKDAY_TEXT = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const MAX_TIMES = 12;
   const WAITING_TEXT = {
     quiet_hours: 'quiet hours',
     music_playing: 'music playing',
@@ -458,16 +462,148 @@
     }).format(date);
   }
 
+  function fmtLocal(local) {
+    // "YYYY-MM-DDTHH:MM" Helsinki wall time, shown as-is (no timezone maths).
+    const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2})$/.exec(local || '');
+    if (!match) return '—';
+    return `${Number(match[3])}.${Number(match[2])}.${match[1]} ${match[4]}`;
+  }
+
+  function repeatMode() {
+    const checked = document.querySelector('input[name="announceRepeat"]:checked');
+    return checked ? checked.value : 'once';
+  }
+
+  function applyRepeatMode() {
+    const mode = repeatMode();
+    const once = byId('announceOnceFields');
+    const recurring = byId('announceRecurringFields');
+    const weekdays = byId('announceWeekdayGroup');
+    if (once) once.hidden = mode !== 'once';
+    if (recurring) recurring.hidden = mode === 'once';
+    if (weekdays) weekdays.hidden = mode !== 'weekdays';
+    const list = byId('announceTimesList');
+    if (mode !== 'once' && list && !list.children.length) addTimeRow('08:00', false);
+  }
+
+  function setRepeatMode(mode) {
+    document.querySelectorAll('input[name="announceRepeat"]').forEach(input => {
+      input.checked = input.value === mode;
+    });
+    applyRepeatMode();
+  }
+
+  function renumberTimes() {
+    const list = byId('announceTimesList');
+    if (!list) return;
+    const rows = Array.from(list.children);
+    rows.forEach((row, index) => {
+      const input = row.querySelector('input');
+      const label = row.querySelector('label');
+      const remove = row.querySelector('button');
+      const id = `announceRecurringTime${index + 1}`;
+      if (input) input.id = id;
+      if (label) {
+        label.htmlFor = id;
+        label.textContent = `Time ${index + 1}`;
+      }
+      if (remove) {
+        remove.hidden = rows.length === 1;
+        remove.setAttribute('aria-label', `Remove time ${index + 1}${input && input.value ? ` (${input.value})` : ''}`);
+      }
+    });
+    const add = byId('announceAddTime');
+    if (add) add.disabled = rows.length >= MAX_TIMES;
+  }
+
+  function addTimeRow(value, focus) {
+    const list = byId('announceTimesList');
+    if (!list || list.children.length >= MAX_TIMES) return;
+    const row = document.createElement('li');
+    row.className = 'announce-time-row';
+    const label = document.createElement('label');
+    const input = document.createElement('input');
+    input.type = 'time';
+    input.step = 60;
+    input.required = true;
+    input.value = value || '';
+    input.setAttribute('aria-describedby', 'announceRecurrenceError');
+    input.addEventListener('change', () => {
+      scheduleRequestId = null;
+      renumberTimes();
+    });
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'announce-btn announce-btn-quiet';
+    remove.textContent = 'Remove';
+    remove.addEventListener('click', () => {
+      const next = row.previousElementSibling || row.nextElementSibling;
+      row.remove();
+      scheduleRequestId = null;
+      renumberTimes();
+      const target = next && next.querySelector('input');
+      if (target) target.focus();
+    });
+    row.append(label, input, remove);
+    list.appendChild(row);
+    renumberTimes();
+    if (focus) input.focus();
+  }
+
+  function setTimes(times) {
+    const list = byId('announceTimesList');
+    if (!list) return;
+    list.replaceChildren();
+    (times && times.length ? times : ['08:00']).forEach(time => addTimeRow(time, false));
+  }
+
+  function recurrenceValues() {
+    const times = Array.from(document.querySelectorAll('#announceTimesList input'))
+      .map(input => input.value.slice(0, 5))
+      .filter(Boolean);
+    const weekdays = repeatMode() === 'daily'
+      ? [1, 2, 3, 4, 5, 6, 7]
+      : Array.from(document.querySelectorAll('input[name="announceWeekday"]:checked')).map(input => Number(input.value));
+    return { weekdays, times };
+  }
+
+  function recurrenceText(recurrence) {
+    if (!recurrence || !Array.isArray(recurrence.weekdays) || !Array.isArray(recurrence.times)) return '—';
+    const days = recurrence.weekdays.length === 7
+      ? 'Every day'
+      : recurrence.weekdays.map(day => WEEKDAY_TEXT[day] || '?').join(', ');
+    return `${days} at ${recurrence.times.join(', ')}`;
+  }
+
+  function upcomingText(item) {
+    if (item.missed === 'dst_gap') return `${fmtLocal(item.local)} – does not exist (clocks move forward), recorded as missed`;
+    return fmtDue(item.due_at);
+  }
+
   function setScheduleError(field, message) {
     const due = byId('announceDueError');
     const expiry = byId('announceExpiryError');
+    const recurrence = byId('announceRecurrenceError');
     if (due) due.textContent = '';
     if (expiry) expiry.textContent = '';
+    if (recurrence) recurrence.textContent = '';
     ['announceDate', 'announceTime', 'announceExpiry'].forEach(id => {
       const input = byId(id);
       if (input) input.setAttribute('aria-invalid', 'false');
     });
+    document.querySelectorAll('#announceTimesList input, input[name="announceWeekday"]').forEach(input => {
+      input.setAttribute('aria-invalid', 'false');
+    });
     if (!message) return;
+    if (['recurrence', 'weekdays', 'times'].includes(field)) {
+      if (recurrence) recurrence.textContent = message;
+      const selector = field === 'weekdays' ? 'input[name="announceWeekday"]' : '#announceTimesList input';
+      const inputs = Array.from(document.querySelectorAll(selector));
+      inputs.forEach(input => input.setAttribute('aria-invalid', 'true'));
+      const invalid = inputs.find(input => !input.value) || inputs[0];
+      if (invalid) invalid.focus();
+      return;
+    }
     if (field === 'expiry_minutes') {
       const details = byId('announceAdvanced');
       if (details) details.open = true;
@@ -504,14 +640,17 @@
     const fold = document.querySelector('input[name="announceFold"]:checked');
     const dueDate = date ? date.value : '';
     const dueTime = time ? time.value : '';
+    const recurring = repeatMode() !== 'once';
     return {
+      kind: recurring ? 'recurring' : 'one_time',
+      recurrence: recurring ? recurrenceValues() : null,
       text: base.text,
       language: base.language,
       target: base.target,
       volume_percent: base.volume_percent,
       chime_percent: base.chime_percent,
-      due_local: dueDate && dueTime ? `${dueDate}T${dueTime.slice(0, 5)}` : '',
-      fold: foldGroup && !foldGroup.hidden && fold ? Number(fold.value) : null,
+      due_local: !recurring && dueDate && dueTime ? `${dueDate}T${dueTime.slice(0, 5)}` : null,
+      fold: !recurring && foldGroup && !foldGroup.hidden && fold ? Number(fold.value) : null,
       expiry_minutes: expiry && expiry.value !== '' ? Number(expiry.value) : null,
       urgent: Boolean(urgent && urgent.checked),
       quiet_hours_override: Boolean(quiet && quiet.checked),
@@ -524,7 +663,7 @@
     const legend = byId('announceScheduleLegend');
     const button = byId('announcementScheduleButton');
     const cancel = byId('announcementScheduleCancel');
-    if (legend) legend.textContent = 'One-time reminder';
+    if (legend) legend.textContent = 'Reminder';
     if (button) button.textContent = 'Save reminder';
     if (cancel) cancel.hidden = true;
     const group = byId('announceFoldGroup');
@@ -543,9 +682,20 @@
       showMessage('Choose a speaker for the reminder.', true);
       return;
     }
-    if (!values.due_local) {
+    if (values.kind === 'one_time' && !values.due_local) {
       setScheduleError('due_local', 'Choose a date and a time.');
       return;
+    }
+    if (values.kind === 'recurring') {
+      if (!values.recurrence.weekdays.length) {
+        setScheduleError('weekdays', 'Choose at least one weekday.');
+        return;
+      }
+      const rows = document.querySelectorAll('#announceTimesList input');
+      if (!values.recurrence.times.length || values.recurrence.times.length !== rows.length) {
+        setScheduleError('times', 'Fill in every time of day, or remove the empty one.');
+        return;
+      }
     }
     setScheduleError(null, '');
     if (button) {
@@ -569,11 +719,14 @@
       }
       const due = (result.upcoming && result.upcoming[0]) || {};
       const verb = editing ? 'Reminder updated' : 'Reminder saved';
-      showMessage(`${verb}: ${fmtDue(due.due_at || result.schedule.due_at)} (Helsinki) on ${result.schedule.target_name}.`);
+      const when = result.schedule.kind === 'recurring'
+        ? `${recurrenceText(result.schedule.recurrence)}; next ${due.due_at ? upcomingText(due) : '—'}`
+        : fmtDue(due.due_at || result.schedule.due_at);
+      showMessage(`${verb}: ${when} (Helsinki) on ${result.schedule.target_name}.`);
       resetScheduleForm();
       await loadReminders();
     } catch (error) {
-      if (['due_local', 'fold', 'expiry_minutes'].includes(error.field)) {
+      if (['due_local', 'fold', 'expiry_minutes', 'recurrence', 'weekdays', 'times'].includes(error.field)) {
         setScheduleError(error.field, error.message);
       } else if (error.field === 'text') {
         setFieldError(error.message);
@@ -608,9 +761,19 @@
     setValue('announceVolume', schedule.volume_percent);
     const target = document.querySelector(`input[name="announceTarget"][value="${CSS.escape(schedule.target_key)}"]`);
     if (target) target.checked = true;
-    const [date, time] = (schedule.due_local || 'T').split('T');
-    setValue('announceDate', date);
-    setValue('announceTime', time);
+    const recurrence = schedule.recurrence;
+    if (schedule.kind === 'recurring' && recurrence) {
+      setRepeatMode(recurrence.weekdays && recurrence.weekdays.length === 7 ? 'daily' : 'weekdays');
+      document.querySelectorAll('input[name="announceWeekday"]').forEach(input => {
+        input.checked = (recurrence.weekdays || []).includes(Number(input.value));
+      });
+      setTimes(recurrence.times);
+    } else {
+      setRepeatMode('once');
+      const [date, time] = (schedule.due_local || 'T').split('T');
+      setValue('announceDate', date);
+      setValue('announceTime', time);
+    }
     setValue('announceExpiry', schedule.expiry_minutes);
     setChecked('announceUrgent', schedule.urgent);
     setChecked('announceQuietOverride', schedule.quiet_hours_override);
@@ -627,7 +790,7 @@
     if (cancel) cancel.hidden = false;
     const text = byId('announceText');
     if (text) text.focus();
-    showMessage('Editing the reminder. Changes apply to its future announcement; history stays as it was.');
+    showMessage('Editing the reminder. Changes apply to future announcements; history stays as it was.');
   }
 
   async function scheduleAction(schedule, action, button) {
@@ -676,7 +839,7 @@
     if (!items.length) {
       const empty = document.createElement('li');
       empty.className = 'announce-empty';
-      empty.textContent = 'No reminders yet. Write the text, choose a speaker, date and time, then save.';
+      empty.textContent = 'No reminders yet. Write the text, choose a speaker and when to repeat, then save.';
       list.appendChild(empty);
       return;
     }
@@ -689,7 +852,11 @@
       head.className = 'announce-test-head';
       const title = document.createElement('strong');
       const next = item.upcoming && item.upcoming[0];
-      title.textContent = next ? fmtDue(next.due_at) : fmtDue(schedule.due_at);
+      if (schedule.kind === 'recurring') {
+        title.textContent = recurrenceText(schedule.recurrence);
+      } else {
+        title.textContent = next ? fmtDue(next.due_at) : fmtDue(schedule.due_at);
+      }
       const badge = document.createElement('span');
       badge.className = 'announce-badge';
       if (schedule.status === 'active' && next) badge.classList.add('is-active');
@@ -701,6 +868,10 @@
       const facts = document.createElement('dl');
       facts.className = 'announce-test-facts';
       fact(facts, 'Speaker', `${schedule.target_name || '—'} · ${(schedule.language || '—').toUpperCase()}`);
+      if (schedule.kind === 'recurring') {
+        const coming = (item.upcoming || []).slice(0, 3).map(upcomingText);
+        fact(facts, 'Next', coming.length ? coming.join('; ') : '—');
+      }
       fact(facts, 'Expires after', schedule.expiry_minutes ? `${schedule.expiry_minutes} min` : '—');
       fact(facts, 'Urgent', schedule.urgent ? 'Yes – may interrupt music' : 'No – waits for music');
       fact(facts, 'Quiet hours', schedule.quiet_hours_override ? 'May speak' : 'Held');
@@ -778,21 +949,23 @@
       const head = document.createElement('div');
       head.className = 'announce-test-head';
       const title = document.createElement('strong');
-      title.textContent = `${fmtDue(occurrence.due_at)} · ${occurrence.target_name || '—'}`;
+      const gap = occurrence.disposition_reason === 'dst_gap';
+      const due = gap ? fmtLocal(occurrence.instance_local) : fmtDue(occurrence.due_at);
+      title.textContent = `${due} · ${occurrence.target_name || '—'}`;
       const badge = document.createElement('span');
       badge.className = 'announce-badge';
       if (['waiting', 'announcing'].includes(occurrence.status)) badge.classList.add('is-active');
       if (['failed', 'unknown'].includes(occurrence.delivery) || occurrence.disposition === 'missed') {
         badge.classList.add('is-problem');
       }
-      badge.textContent = occurrenceState(occurrence);
+      badge.textContent = gap ? 'Missed (clock change)' : occurrenceState(occurrence);
       head.append(title, badge);
       const text = document.createElement('p');
       text.className = 'announce-test-text';
       text.textContent = occurrence.text || '—';
       const facts = document.createElement('dl');
       facts.className = 'announce-test-facts';
-      fact(facts, 'Due', fmtTime(occurrence.due_at));
+      fact(facts, 'Due', gap ? `${fmtLocal(occurrence.instance_local)} (did not exist)` : fmtTime(occurrence.due_at));
       fact(facts, 'Expires', fmtTime(occurrence.expires_at));
       const waited = (occurrence.waiting_history || []).map(h => REASON_TEXT[h.reason] || h.reason);
       fact(facts, 'Waited for', waited.length ? waited.join(' ') : '—');
@@ -866,6 +1039,21 @@
     }
     const date = byId('announceDate');
     if (date instanceof HTMLInputElement && !date.value) date.value = helsinkiToday();
+    document.querySelectorAll('input[name="announceRepeat"]').forEach(input => {
+      input.addEventListener('change', () => {
+        scheduleRequestId = null;
+        setScheduleError(null, '');
+        applyRepeatMode();
+      });
+    });
+    document.querySelectorAll('input[name="announceWeekday"]').forEach(input => {
+      input.addEventListener('change', () => {
+        scheduleRequestId = null;
+      });
+    });
+    const addTime = byId('announceAddTime');
+    if (addTime) addTime.addEventListener('click', () => addTimeRow('', true));
+    applyRepeatMode();
     ['announceDate', 'announceTime'].forEach(id => {
       const input = byId(id);
       if (input) {
