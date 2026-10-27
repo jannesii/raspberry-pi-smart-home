@@ -1022,3 +1022,20 @@ announcement_acknowledgement = Table(
     Column("announcements_started", Integer, nullable=False),
     CheckConstraint("action IN ('done', 'skipped')", name="ck_announcement_acknowledgement_action"),
 )
+
+# Deliberate postponements retain their original window and request identity.
+announcement_snooze = Table(
+    "announcement_snooze",
+    metadata,
+    Column("request_id", Text, primary_key=True),
+    Column("occurrence_id", Text, ForeignKey("announcement_occurrence.id"), nullable=False),
+    Column("snoozed_at", Text, nullable=False),
+    Column("snoozed_by", Text),
+    Column("minutes", Integer, nullable=False),
+    Column("prior_disposition", Text),
+    Column("prior_due_at", Text, nullable=False),
+    Column("prior_expires_at", Text, nullable=False),
+    Column("due_at", Text, nullable=False),
+    Column("expires_at", Text, nullable=False),
+    CheckConstraint("minutes IN (5, 10, 15, 30)", name="ck_announcement_snooze_minutes"),
+)

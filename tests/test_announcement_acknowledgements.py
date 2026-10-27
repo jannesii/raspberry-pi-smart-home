@@ -323,7 +323,7 @@ def test_done_acknowledges_a_delivered_reminder_and_stops_its_remaining_repeats(
     play_through(service, cast, clock)
     pending = only_occurrence(client, sid)
     assert pending["acknowledgement"] is None  # playback is not acknowledgement
-    assert pending["actions"] == ["done", "skip", "stop"]
+    assert pending["actions"] == ["done", "skip", "stop", "snooze"]
 
     at(clock, "2027-01-15T12:32:00+00:00")
     done = act(announcement_app, client, pending["occurrence"]["id"], "done")
@@ -372,7 +372,7 @@ def test_skip_suppresses_one_waiting_instance_and_the_schedule_continues(
     service.tick()
     held = only_occurrence(client, saved["id"])
     assert held["occurrence"]["waiting_reason"] == "music_playing"
-    assert held["actions"] == ["done", "skip"]  # nothing is speaking, so no Stop
+    assert held["actions"] == ["done", "skip", "snooze"]  # nothing is speaking, so no Stop
 
     skipped = act(announcement_app, client, held["occurrence"]["id"], "skip")
     assert skipped["occurrence"]["status"] == "closed"
@@ -482,7 +482,7 @@ def test_stop_speaking_ends_speech_and_repeats_without_acknowledging(
     assert occurrence["disposition"] == "stopped"
     assert occurrence["fallback_reason"] is None
     assert stopped["acknowledgement"] is None
-    assert stopped["actions"] == ["done", "skip"]
+    assert stopped["actions"] == ["done", "skip", "snooze"]
 
     at(clock, "2027-01-15T12:44:00+00:00")
     service.tick()
@@ -721,8 +721,8 @@ def test_repeat_and_acknowledgement_controls_are_on_the_announcement_page(announ
     ):
         assert element in html
     assert "not a medicine dose or a blood-pressure reading" in html
-    assert "js/announcements.js?v=20261027-6" in html
-    assert "css/announcements.css?v=20261027-6" in html
+    assert "js/announcements.js?v=20261027-7" in html
+    assert "css/announcements.css?v=20261027-7" in html
     script = client.get("/static/js/announcements.js").get_data(as_text=True)
     for wording in (
         "Stop speaking",

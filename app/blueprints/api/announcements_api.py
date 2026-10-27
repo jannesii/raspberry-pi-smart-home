@@ -276,8 +276,17 @@ _OCCURRENCE_ACTIONS = {"done": "done", "skip": "skipped"}
 @announcements_bp.route("/occurrences/<occurrence_id>/<action>", methods=["POST"])
 @root_admin_service
 def act_on_occurrence(service, occurrence_id, action):
-    """Done, Skip this occurrence, or Stop speaking (which acknowledges nothing)."""
+    """Done/Skip acknowledge; Snooze and Stop speaking only affect speech."""
     try:
+        if action == "snooze":
+            data = _body()
+            detail = service.snooze_occurrence(
+                occurrence_id,
+                minutes=data.get("minutes", 10),
+                request_id=data.get("request_id"),
+                by=current_user.get_id(),
+            )
+            return jsonify({"ok": True, **detail})
         if action == "stop":
             return jsonify({"ok": True, **service.stop_occurrence(occurrence_id)}), 202
         if action not in _OCCURRENCE_ACTIONS:
@@ -285,6 +294,8 @@ def act_on_occurrence(service, occurrence_id, action):
         detail = service.acknowledge_occurrence(
             occurrence_id, _OCCURRENCE_ACTIONS[action], by=current_user.get_id()
         )
+    except AnnouncementInputError as exc:
+        return _error(400, "bad_request", str(exc), field=exc.field)
     except AnnouncementStateError as exc:
         return _state_error(exc)
     return jsonify({"ok": True, **detail})

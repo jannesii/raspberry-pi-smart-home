@@ -11,7 +11,7 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
-from sqlalchemy import and_, insert, select, update
+from sqlalchemy import and_, exists, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
 from ..models import AnnouncementAcknowledgement, AnnouncementOccurrence, AnnouncementSchedule
@@ -21,6 +21,7 @@ from ..schema import (
     announcement_fallback,
     announcement_occurrence,
     announcement_schedule,
+    announcement_snooze,
 )
 from .announcements import encode_attempt
 
@@ -235,6 +236,39 @@ class AnnouncementScheduleMixin:
                     occurrence["instance_due_at"],
                 )
                 return False
+            # The next instance replaces older pending speech in this same
+            # transaction; no worker can see both as dispatchable.
+            older = [
+                occ.schedule_id == occurrence["schedule_id"],
+                occ.instance_due_at < occurrence["instance_due_at"],
+                occ.disposition.is_(None),
+                occ.expires_at > occurrence["instance_due_at"],
+            ]
+            conn.execute(
+                update(announcement_occurrence)
+                .where(*older, occ.status == "waiting")
+                .values(
+                    status="closed",
+                    disposition="superseded",
+                    disposition_reason="next_occurrence",
+                    next_attempt_at=None,
+                    next_attempt_purpose=None,
+                    waiting_reason=None,
+                    closed_at=occurrence["created_at"],
+                    updated_at=occurrence["created_at"],
+                )
+            )
+            conn.execute(
+                update(announcement_occurrence)
+                .where(*older, occ.status == "announcing")
+                .values(
+                    disposition="superseded",
+                    disposition_reason="next_occurrence",
+                    next_attempt_at=None,
+                    next_attempt_purpose=None,
+                    updated_at=occurrence["created_at"],
+                )
+            )
             conn.execute(insert(announcement_occurrence).values(**_encode_occurrence(occurrence)))
         return True
 
@@ -279,11 +313,15 @@ class AnnouncementScheduleMixin:
         occurrence_id: str,
         *,
         expected: Iterable[str] | None = None,
+        snapshot: dict | None = None,
         **values,
     ) -> bool:
         stmt = update(announcement_occurrence).where(announcement_occurrence.c.id == occurrence_id)
         if expected is not None:
             stmt = stmt.where(announcement_occurrence.c.status.in_(list(expected)))
+        for key, value in (snapshot or {}).items():
+            column = announcement_occurrence.c[key]
+            stmt = stmt.where(column.is_(None) if value is None else column == value)
         with self._sa_engine.begin() as conn:
             changed = conn.execute(stmt.values(**_encode_occurrence(values))).rowcount == 1
         if changed and "status" in values:
@@ -303,6 +341,7 @@ class AnnouncementScheduleMixin:
         *,
         expected: Iterable[str] = ("waiting",),
         not_expired_at: str | None = None,
+        expected_due_at: str | None = None,
         **values,
     ) -> bool:
         """Record an attempt and the occurrence transition atomically.
@@ -319,8 +358,21 @@ class AnnouncementScheduleMixin:
             occ.status.in_(list(expected)),
             occ.disposition.is_(None),
         ]
+        if expected_due_at is not None:
+            conditions.append(occ.due_at == expected_due_at)
         if not_expired_at is not None:
-            conditions.append(occ.expires_at > not_expired_at)
+            sched = announcement_schedule.c
+            conditions.extend(
+                [
+                    occ.expires_at > not_expired_at,
+                    occ.next_attempt_at <= not_expired_at,
+                    exists().where(
+                        sched.id == occ.schedule_id,
+                        sched.status == "active",
+                        sched.next_due_at.is_(None) | (sched.next_due_at > not_expired_at),
+                    ),
+                ]
+            )
         row = encode_attempt(attempt)
         with self._sa_engine.begin() as conn:
             changed = conn.execute(
@@ -491,3 +543,164 @@ class AnnouncementScheduleMixin:
             ).rowcount:
                 return "waiting"
         return None
+
+    def has_newer_announcement_occurrence(self, schedule_id: str, instance_due_at: str) -> bool:
+        """Use the schedule-instance index without loading its entire history."""
+        occ = announcement_occurrence.c
+        with self._sa_engine.connect() as conn:
+            return bool(
+                conn.execute(
+                    select(
+                        exists().where(
+                            occ.schedule_id == schedule_id, occ.instance_due_at > instance_due_at
+                        )
+                    )
+                ).scalar()
+            )
+
+    def list_announcement_snoozes(self, occurrence_ids):
+        with self._sa_engine.connect() as conn:
+            return [
+                dict(row)
+                for row in conn.execute(
+                    select(announcement_snooze)
+                    .where(announcement_snooze.c.occurrence_id.in_(list(occurrence_ids)))
+                    .order_by(announcement_snooze.c.snoozed_at, announcement_snooze.c.request_id)
+                ).mappings()
+            ]
+
+    def snooze_announcement_occurrence(self, row: dict, *, expected_due_at: str) -> str:
+        try:
+            return self._snooze_announcement_occurrence(row, expected_due_at=expected_due_at)
+        except IntegrityError:
+            # A request id may race across different schedules (and therefore
+            # different schedule locks). Preserve the first committed action.
+            with self._sa_engine.connect() as conn:
+                existing = (
+                    conn.execute(
+                        select(announcement_snooze).where(
+                            announcement_snooze.c.request_id == row["request_id"]
+                        )
+                    )
+                    .mappings()
+                    .first()
+                )
+            if existing is None:
+                raise
+            return self._same_snooze(existing, row)
+
+    @staticmethod
+    def _same_snooze(existing, row):
+        return (
+            "exists"
+            if (
+                existing["occurrence_id"] == row["occurrence_id"]
+                and existing["minutes"] == row["minutes"]
+            )
+            else "conflict"
+        )
+
+    def _snooze_announcement_occurrence(self, row: dict, *, expected_due_at: str) -> str:
+        """Postpone and stop existing speech atomically, preserving all counters.
+
+        Lock the schedule before the occurrence, matching materialization's
+        order. A newer recurrence or a pause/delete wins even when the worker
+        has not materialized its next instance yet.
+        """
+        occ = announcement_occurrence.c
+        sched = announcement_schedule.c
+        with self._sa_engine.begin() as conn:
+            existing = (
+                conn.execute(
+                    select(announcement_snooze).where(
+                        announcement_snooze.c.request_id == row["request_id"]
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            if existing:
+                return self._same_snooze(existing, row)
+            schedule_id = conn.execute(
+                select(occ.schedule_id).where(occ.id == row["occurrence_id"])
+            ).scalar_one_or_none()
+            schedule = (
+                conn.execute(
+                    select(announcement_schedule).where(sched.id == schedule_id).with_for_update()
+                )
+                .mappings()
+                .first()
+            )
+            existing = (
+                conn.execute(
+                    select(announcement_snooze).where(
+                        announcement_snooze.c.request_id == row["request_id"]
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            if existing:
+                return self._same_snooze(existing, row)
+            current = (
+                conn.execute(
+                    select(announcement_occurrence)
+                    .where(occ.id == row["occurrence_id"])
+                    .with_for_update()
+                )
+                .mappings()
+                .first()
+            )
+            if current is None:
+                return "not_found"
+            newer = conn.execute(
+                select(occ.id)
+                .where(
+                    occ.schedule_id == schedule_id, occ.instance_due_at > current["instance_due_at"]
+                )
+                .limit(1)
+            ).first()
+            if (
+                newer
+                or schedule["status"] != "active"
+                or current["disposition"] not in (None, "stopped")
+                or current["due_at"] != expected_due_at
+                or (schedule["next_due_at"] and schedule["next_due_at"] <= row["snoozed_at"])
+            ):
+                return "ineligible"
+            changed = conn.execute(
+                update(announcement_occurrence)
+                .where(
+                    occ.id == row["occurrence_id"],
+                    occ.due_at == expected_due_at,
+                    occ.disposition.is_(None) | (occ.disposition == "stopped"),
+                )
+                .values(
+                    status="waiting",
+                    disposition=None,
+                    disposition_reason=None,
+                    due_at=row["due_at"],
+                    expires_at=row["expires_at"],
+                    next_attempt_at=row["due_at"],
+                    next_attempt_purpose="snooze",
+                    waiting_reason=None,
+                    waiting_since=None,
+                    current_attempt_id=None,
+                    closed_at=None,
+                    updated_at=row["snoozed_at"],
+                )
+            ).rowcount
+            if not changed:
+                return "ineligible"
+            row["prior_disposition"] = current["disposition"]
+            conn.execute(insert(announcement_snooze).values(**row))
+            conn.execute(
+                update(announcement_attempt)
+                .where(
+                    announcement_attempt.c.occurrence_id == row["occurrence_id"],
+                    announcement_attempt.c.status.in_(("dispatching", "dispatched", "playing")),
+                    announcement_attempt.c.stop_requested_at.is_(None),
+                )
+                .values(stop_requested_at=row["snoozed_at"], updated_at=row["snoozed_at"])
+            )
+        return "created"

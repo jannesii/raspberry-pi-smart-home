@@ -21,6 +21,7 @@ from app.core.schema import (
     announcement_fallback_attempt,
     announcement_occurrence,
     announcement_schedule,
+    announcement_snooze,
     announcement_speaker_test,
 )
 
@@ -30,6 +31,7 @@ MIGRATIONS = (
     "migrations.versions.20261027_0022_announcement_fallbacks",
     "migrations.versions.20261027_0023_announcement_group_evidence",
     "migrations.versions.20261027_0024_announcement_acknowledgements",
+    "migrations.versions.20261027_0025_announcement_snooze",
 )
 TABLES = (
     announcement_speaker_test,
@@ -39,6 +41,7 @@ TABLES = (
     announcement_fallback,
     announcement_fallback_attempt,
     announcement_acknowledgement,
+    announcement_snooze,
 )
 
 
@@ -531,4 +534,56 @@ def test_acknowledgements_are_once_per_occurrence_and_survive_restart_in_either_
     assert detail["occurrence"]["fallback_reason"] is None
     assert detail["attempts"] == []
     assert cast.plays == []
+    ctrl.db.conn.close()
+
+
+def test_snooze_is_durable_idempotent_and_superseded_in_either_store(store, tmp_path, monkeypatch):
+    from datetime import datetime
+
+    from app.core.database import DatabaseManager
+    from app.services.announcements import AnnouncementStateError
+
+    engine, _migrations = store
+    monkeypatch.setattr(DatabaseManager, "_instance", None)
+    ctrl = Controller(db_path=str(tmp_path / "legacy.db"))
+    ctrl._sa_engine = engine
+    clock = [START]
+    synth, cast = FakeSynthesizer(), FakeCast()
+    first = build_service(ctrl, clock, (synth, cast), tmp_path / "cache")
+    second = build_service(ctrl, clock, (synth, cast), tmp_path / "cache")
+    _, saved = first.create_schedule(
+        {
+            "text": "Muista lääkkeet",
+            "target": "jbl-right",
+            "kind": "recurring",
+            "recurrence": {"weekdays": [5], "times": ["14:30", "14:35"]},
+        }
+    )
+    clock[0] = datetime.fromisoformat("2027-01-15T12:30:00+00:00").timestamp()
+
+    def postpone():
+        (item,) = first.schedule_detail(saved["schedule"]["id"])["occurrences"]
+        first.snooze_occurrence(
+            item["occurrence"]["id"], request_id="durable-snooze-request", minutes=30
+        )
+
+    synth.during = postpone
+    second.tick()
+    (item,) = first.schedule_detail(saved["schedule"]["id"])["occurrences"]
+    oid = item["occurrence"]["id"]
+    assert cast.plays == []
+    restarted = build_service(ctrl, clock, (synth, cast), tmp_path / "cache")
+    again = restarted.snooze_occurrence(oid, request_id="durable-snooze-request", minutes=30)
+    assert again["snoozes"] == item["snoozes"]
+    assert again["occurrence"]["announcements_started"] == 0
+    clock[0] += 300
+    restarted.tick()
+    second.tick()
+    old = restarted.occurrence_detail(oid)
+    assert old["occurrence"]["disposition"] == "superseded"
+    assert old["acknowledgement"] is None
+    assert old["snoozes"] == item["snoozes"]
+    assert len(cast.plays) == 1
+    with pytest.raises(AnnouncementStateError):
+        restarted.snooze_occurrence(oid, request_id="revive-snooze-request", minutes=30)
     ctrl.db.conn.close()
