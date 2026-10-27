@@ -261,3 +261,23 @@ def get_occurrence(service, occurrence_id):
     if detail is None:
         return _error(404, "not_found", "Occurrence not found.")
     return jsonify({"ok": True, **detail})
+
+
+_OCCURRENCE_ACTIONS = {"done": "done", "skip": "skipped"}
+
+
+@announcements_bp.route("/occurrences/<occurrence_id>/<action>", methods=["POST"])
+@root_admin_service
+def act_on_occurrence(service, occurrence_id, action):
+    """Done, Skip this occurrence, or Stop speaking (which acknowledges nothing)."""
+    try:
+        if action == "stop":
+            return jsonify({"ok": True, **service.stop_occurrence(occurrence_id)}), 202
+        if action not in _OCCURRENCE_ACTIONS:
+            return _error(404, "not_found", "Unknown occurrence action.")
+        detail = service.acknowledge_occurrence(
+            occurrence_id, _OCCURRENCE_ACTIONS[action], by=current_user.get_id()
+        )
+    except AnnouncementStateError as exc:
+        return _state_error(exc)
+    return jsonify({"ok": True, **detail})

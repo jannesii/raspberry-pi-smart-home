@@ -284,11 +284,15 @@ class OccurrenceMixin:
 
     def _occurrence_details(self, occurrences) -> list[dict]:
         attempts: dict[str, list] = {}
+        acks = {}
         if occurrences:
-            for attempt in self.ctrl.list_announcement_attempts(
-                occurrence_ids=[o.id for o in occurrences]
-            ):
+            ids = [o.id for o in occurrences]
+            for attempt in self.ctrl.list_announcement_attempts(occurrence_ids=ids):
                 attempts.setdefault(attempt.occurrence_id, []).append(asdict(attempt))
+            acks = {
+                a.occurrence_id: asdict(a)
+                for a in self.ctrl.list_announcement_acknowledgements(ids)
+            }
         for items in attempts.values():
             items.sort(key=lambda a: a["requested_at"])
         return [
@@ -301,12 +305,92 @@ class OccurrenceMixin:
                     ),
                 },
                 "attempts": attempts.get(o.id, []),
-                # Reminder acknowledgement (Done) is recorded separately (#35);
-                # delivery evidence never implies it.
-                "acknowledgement": None,
+                # The owner's Done/Skip, kept apart from delivery evidence:
+                # playback or a fallback never implies it.
+                "acknowledgement": acks.get(o.id),
+                "actions": self._actions(o, attempts.get(o.id, []), acks.get(o.id)),
             }
             for o in occurrences
         ]
+
+    @staticmethod
+    def _actions(occurrence, attempts: list[dict], acknowledgement) -> list[str]:
+        """Owner actions that would change something now (for the page)."""
+        actions = [] if acknowledgement else ["done", "skip"]
+        current = next((a for a in attempts if a["id"] == occurrence.current_attempt_id), None)
+        speaking = (
+            occurrence.status == "announcing"
+            and current is not None
+            and current["status"] in ("dispatching", "dispatched", "playing")
+            and current["stop_requested_at"] is None
+        )
+        pending_follow_up = (
+            occurrence.status == "waiting"
+            and occurrence.disposition is None
+            and occurrence.announcements_started + occurrence.retries_started > 0
+        )
+        if speaking or pending_follow_up:
+            actions.append("stop")
+        return actions
+
+    # Owner actions on occurrences ---------------------------------------------------
+    def acknowledge_occurrence(self, occurrence_id: str, action: str, *, by=None) -> dict:
+        """Done ('done') or Skip this occurrence ('skipped'); idempotent per action.
+
+        Records the owner's handling of this reminder only: never a medicine
+        dose, blood-pressure value or delivery evidence.
+        """
+        if action not in ("done", "skipped"):
+            raise self._state_error("not_found", "Unknown occurrence action.")
+        now = iso(self._clock())
+        outcome, _ack = self.ctrl.acknowledge_announcement_occurrence(
+            occurrence_id, action=action, ack_id=str(uuid4()), at=now, by=by
+        )
+        if outcome == "not_found":
+            raise self._state_error("not_found", "Occurrence not found.")
+        if outcome == "conflict":
+            raise self._state_error(
+                "already_acknowledged", "This reminder was already marked differently."
+            )
+        if outcome == "created":
+            self._next_probe.pop(occurrence_id, None)
+            logger.info("Occurrence %s acknowledged: %s", occurrence_id, action)
+            self._wake.set()
+        return self.occurrence_detail(occurrence_id)
+
+    def stop_occurrence(self, occurrence_id: str) -> dict:
+        """Stop speaking: end current speech and further automatic repeats.
+
+        Not an acknowledgement; Done and Skip stay available. The actual stop
+        outcome is what the speaker reports (attempt ``stop_outcome``).
+        """
+        occurrence = self.ctrl.get_announcement_occurrence(occurrence_id)
+        if occurrence is None:
+            raise self._state_error("not_found", "Occurrence not found.")
+        now = iso(self._clock())
+        stopped_attempt = False
+        if occurrence.current_attempt_id and occurrence.status == "announcing":
+            stopped_attempt = self.ctrl.update_announcement_attempt(
+                occurrence.current_attempt_id,
+                expected=("dispatching", "dispatched", "playing"),
+                stop_requested_at=now,
+                stop_outcome=None,
+                updated_at=now,
+            )
+        applied = self.ctrl.stop_announcement_occurrence(occurrence_id, at=now)
+        if not stopped_attempt and applied is None:
+            raise self._state_error(
+                "not_speaking", "Nothing is being spoken or repeated for this reminder."
+            )
+        self._next_probe.pop(occurrence_id, None)
+        logger.info(
+            "Stop speaking for occurrence %s (current speech=%s, follow-ups=%s)",
+            occurrence_id,
+            stopped_attempt,
+            applied,
+        )
+        self._wake.set()
+        return self.occurrence_detail(occurrence_id)
 
     def list_occurrences(self, limit: int = 50) -> list[dict]:
         occurrences = self.ctrl.list_announcement_occurrences(newest_first=True, limit=limit)
