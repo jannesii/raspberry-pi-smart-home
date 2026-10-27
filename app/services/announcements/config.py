@@ -25,7 +25,13 @@ class SpeakerTarget:
 
     ``host``/``name`` are locators; ``device_id`` (the Cast UUID) is the stable
     identity when known. ``members`` lists physical speaker keys so a group
-    target (#37) overlaps each member for queue serialization.
+    target overlaps each member for queue serialization.
+
+    A group (``kind='group'``) is the owner's existing Google Home group: its
+    ``host`` is the group leader's address, ``port`` the group's own Cast port
+    and ``device_id`` the group UUID (all read from discovery; nothing here
+    creates or changes a group). It plays one synchronized stream; there is
+    no per-member substitute.
     """
 
     key: str
@@ -40,21 +46,49 @@ class SpeakerTarget:
     def speaker_set(self) -> frozenset[str]:
         return frozenset(self.members or (self.key,))
 
+    @property
+    def is_group(self) -> bool:
+        return self.kind == GROUP
+
+    @property
+    def configured(self) -> bool:
+        # A group is only addressed by its UUID at its leader host: without
+        # both, a lookup could reach the leader speaker alone and silently
+        # replace the synchronized group with a single stream.
+        if self.is_group:
+            return bool(self.host and self.device_id)
+        return bool(self.host)
+
     def public(self) -> dict:
         return {
             "key": self.key,
             "name": self.name,
             "host": self.host,
+            "port": self.port,
             "device_id": self.device_id,
             "kind": self.kind,
+            "configured": self.configured,
             "members": sorted(self.speaker_set),
         }
+
+
+GROUP = "group"
+KINDS = ("speaker", GROUP)
 
 
 def default_targets() -> tuple[SpeakerTarget, ...]:
     return (
         SpeakerTarget(key="jbl-right", name="Jbl-Right", host="192.168.1.119"),
         SpeakerTarget(key="jbl-left", name="Jbl-Left", host="192.168.1.148"),
+        # The owner's existing Google Home group: unconfigured until its leader
+        # host, port and UUID are set in ANNOUNCEMENT_TARGETS (see discovery).
+        SpeakerTarget(
+            key="jbl-group",
+            name="Both JBLs (group)",
+            host=None,
+            kind=GROUP,
+            members=("jbl-right", "jbl-left"),
+        ),
     )
 
 
@@ -127,6 +161,18 @@ def parse_targets(raw: str | None) -> tuple[SpeakerTarget, ...]:
         )
     if len({t.key for t in targets}) != len(targets):
         raise ValueError("Announcement target keys must be unique")
+    speakers = {t.key for t in targets if not t.is_group}
+    for target in targets:
+        if target.kind not in KINDS:
+            raise ValueError(f"Announcement target {target.key}: kind must be speaker or group")
+        if not target.is_group and target.members:
+            raise ValueError(f"Announcement target {target.key}: only a group has members")
+        if target.is_group and (
+            len(set(target.members)) < 2 or not set(target.members) <= speakers
+        ):
+            raise ValueError(
+                f"Announcement group {target.key}: members must be two or more configured speakers"
+            )
     return tuple(targets)
 
 

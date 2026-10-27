@@ -417,6 +417,9 @@ class AnnouncementAttempt:
     media_restore: str | None = None
     purpose: str | None = None
     certain_not_played: bool | None = None
+    # Group targets: [{key, name, availability, in_group,
+    # left_group_during_playback}]; None for single speakers.
+    member_evidence: list[dict] | None = None
 
 
 @dataclass

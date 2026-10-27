@@ -721,8 +721,8 @@ def test_repeat_and_acknowledgement_controls_are_on_the_announcement_page(announ
     ):
         assert element in html
     assert "not a medicine dose or a blood-pressure reading" in html
-    assert "js/announcements.js?v=20261027-4" in html
-    assert "css/announcements.css?v=20261027-4" in html
+    assert "js/announcements.js?v=20261027-6" in html
+    assert "css/announcements.css?v=20261027-6" in html
     script = client.get("/static/js/announcements.js").get_data(as_text=True)
     for wording in (
         "Stop speaking",
@@ -849,3 +849,49 @@ def test_failed_retries_end_in_one_fallback_that_names_them(
     (message,) = discord.messages
     assert "Muista ottaa lääkkeet." in message
     assert "the speaker did not respond (also after 2 automatic retries)" in message
+
+
+def test_partial_group_announcement_is_never_repeated_or_retried(
+    announcement_app, client, doubles, discord, clock, tmp_path
+):
+    from announcement_support import GROUP, build_service, group_targets
+
+    _synth, cast = doubles
+    service = build_service(
+        announcement_app.ctrl,
+        clock,
+        doubles,
+        tmp_path / "cache",
+        discord=discord,
+        targets=group_targets(),
+    )
+    announcement_app.announcement_service = service
+    cast.speakers["192.168.1.148"].state = "unavailable"  # Jbl-Left misses the group
+    saved = save(
+        announcement_app,
+        client,
+        target="jbl-group",
+        max_announcements=3,
+        repeat_interval_minutes=4,
+    )["schedule"]
+    at(clock, "2027-01-15T12:30:00+00:00")
+    service.tick()
+    attempt_id = cast.plays[-1]["attempt_id"]
+    cast.report(GROUP, attempt_id, "playing")
+    service.tick()
+    cast.report(GROUP, attempt_id, "finished")
+    clock[0] += 20
+    service.tick()
+    cast.speakers["192.168.1.148"].state = "idle"
+    for minute in (34, 38, 44):
+        at(clock, f"2027-01-15T12:{minute}:00+00:00")
+        service.tick()
+    item = only_occurrence(client, saved["id"])
+    assert item["occurrence"]["delivery"] == "partial"
+    assert item["occurrence"]["status"] == "closed"
+    assert item["occurrence"]["fallback_reason"] == "partial"
+    assert (item["occurrence"]["announcements_started"], item["occurrence"]["retries_started"]) == (
+        1,
+        0,
+    )
+    assert len(cast.plays) == 1  # the member that heard it is never replayed

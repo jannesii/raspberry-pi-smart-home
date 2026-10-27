@@ -54,5 +54,10 @@ def test_recurring_reminder_browser_flow(tmp_path, width):
 
 
 @pytest.mark.parametrize("width", [393, 1440])
+def test_speaker_group_browser_flow(tmp_path, width):
+    run_flow(tmp_path, "announcements_group_flow.py", width, timeout=120)
+
+
+@pytest.mark.parametrize("width", [393, 1440])
 def test_repeat_stop_and_done_browser_flow(tmp_path, width):
     run_flow(tmp_path, "announcements_acknowledgement_flow.py", width, timeout=120)

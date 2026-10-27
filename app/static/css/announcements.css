@@ -439,6 +439,55 @@
   color: #8c98a4;
 }
 
+.announce-targets small.is-problem {
+  color: #ffb4b4;
+}
+
+.announce-targets label.is-group {
+  grid-column: 1 / -1;
+}
+
+.announce-targets label.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.announce-discovery {
+  margin-top: 14px;
+  border-top: 1px solid #2b2f33;
+  padding-top: 12px;
+}
+
+.announce-discovery-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.announce-discovery-head .announce-help {
+  flex: 1 1 320px;
+  margin: 0;
+}
+
+.announce-discovery-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: #dce3ea;
+  overflow-wrap: anywhere;
+}
+
+.announce-discovery-config pre {
+  max-width: 100%;
+  overflow-x: auto;
+  border-radius: 8px;
+  background: #101418;
+  color: #dce3ea;
+  padding: 10px;
+  font-size: 0.8rem;
+}
+
 .announce-tests {
   list-style: none;
   margin: 12px 0 0;

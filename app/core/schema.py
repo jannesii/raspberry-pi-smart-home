@@ -770,6 +770,11 @@ announcement_attempt = Table(
     # True when the transport established the audio was certainly not played,
     # the only failure an automatic retry may follow.
     Column("certain_not_played", Boolean),
+    # Group targets (evidence_scope='group'): JSON list of per-member
+    # availability/membership as observed around dispatch and playback. The
+    # group's playback report is the only playback evidence; members never
+    # report audibility.
+    Column("member_evidence", Text),
     CheckConstraint(
         "status IN ('requested', 'dispatching', 'dispatched', 'playing', "
         "'finished', 'failed', 'unknown', 'stopped')",

@@ -40,6 +40,7 @@ from .content import (
     parse_percent,
 )
 from .fallback import DiscordFallbackChannel, FallbackMixin
+from .groups import CastDiscoveryMixin, combine, observe_playback
 from .media import MediaCache, MediaError, PreparedMedia, compose, media_key
 from .occurrences import OccurrenceMixin
 from .schedules import DEFAULT_EXPIRY_MINUTES, QuietHours
@@ -77,7 +78,7 @@ def _wav_duration(path) -> float | None:
         return None
 
 
-class AnnouncementService(OccurrenceMixin, FallbackMixin):
+class AnnouncementService(OccurrenceMixin, FallbackMixin, CastDiscoveryMixin):
     def __init__(
         self,
         ctrl,
@@ -115,6 +116,7 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin):
         # so a track change is not mistaken for music ending.
         self._media_busy_seen: dict[str, float] = {}
         self._next_probe: dict[str, float] = {}
+        self._discovery: dict | None = None
         self._lock = threading.RLock()
         self._wake = threading.Event()
         self._stop = threading.Event()
@@ -179,10 +181,8 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin):
                 "configured": bool(self.config.media_origin),
                 "origin": self.config.media_origin,
             },
-            "targets": [
-                {**t.public(), "last_probe": self._last_probe.get(t.key)}
-                for t in self.config.targets
-            ],
+            "targets": [self._target_status(t) for t in self.config.targets],
+            "discovery": self.discovery_status(),
             "defaults": {
                 "language": DEFAULT_LANGUAGE,
                 "languages": list(LANGUAGES),
@@ -201,6 +201,50 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin):
             "music_restoration": {"available": False, "reason": "not_configured"},
             "fallback": self.fallback_status(),
         }
+
+    def _availability(self, target: SpeakerTarget) -> str:
+        """Last known availability; never optimistic when not checked."""
+        if not target.configured:
+            return "unconfigured"
+        probe = self._last_probe.get(target.key)
+        if probe is None:
+            return "not_checked"
+        return "unavailable" if probe["state"] == "unavailable" else "available"
+
+    def _target_status(self, target: SpeakerTarget) -> dict:
+        data = {
+            **target.public(),
+            "availability": self._availability(target),
+            "last_probe": self._last_probe.get(target.key),
+        }
+        if target.is_group:
+            data["member_status"] = []
+            for key in target.members:
+                member = self.config.target(key)
+                data["member_status"].append(
+                    {
+                        "key": key,
+                        "name": member.name if member else key,
+                        "availability": self._availability(member) if member else "unconfigured",
+                        "last_probe": self._last_probe.get(key),
+                    }
+                )
+        return data
+
+    def _selectable_target(self, key) -> SpeakerTarget:
+        """A configured target for a new test or schedule (input error otherwise)."""
+        chosen = self.config.target(key) if isinstance(key, str) else None
+        if chosen is None:
+            names = ", ".join(t.name for t in self.config.targets)
+            raise AnnouncementInputError("target", f"Choose a speaker: {names}.")
+        if not chosen.configured:
+            what = "speaker group" if chosen.is_group else "speaker"
+            raise AnnouncementInputError(
+                "target",
+                f"{chosen.name}: this {what} is not configured yet. Find its Cast identity "
+                "under Readiness and add it to ANNOUNCEMENT_TARGETS.",
+            )
+        return chosen
 
     # Browser preview (never dispatches) ---------------------------------------
     def request_preview(self, *, text, language=None, chime_percent=None, requested_by=None):
@@ -261,10 +305,7 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin):
         requested_by=None,
     ) -> tuple[str, dict]:
         content = self.content.prepare({"text": text, "language": language})
-        chosen = self.config.target(target) if isinstance(target, str) else None
-        if chosen is None:
-            names = ", ".join(t.name for t in self.config.targets)
-            raise AnnouncementInputError("target", f"Choose a speaker: {names}.")
+        chosen = self._selectable_target(target)
         volume = parse_percent(volume_percent, "volume_percent", DEFAULT_VOLUME_PERCENT)
         chime = parse_percent(chime_percent, "chime_percent", DEFAULT_CHIME_PERCENT)
         if request_id is None:
@@ -396,6 +437,7 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin):
             self._materialize_due()
             self._dispatch_work()
             self._process_fallbacks()
+            self._run_discovery()
             self._evict_if_due()
 
     def _prepare(self, content: PreparedContent, chime: int) -> PreparedMedia:
@@ -490,6 +532,8 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin):
 
     def _probe_target(self, target: SpeakerTarget):
         probe = self.transport.probe(target)
+        if target.is_group:
+            probe = self._probe_group(target, probe)
         now = self._clock()
         self._last_probe[target.key] = {
             "state": probe.state,
@@ -500,18 +544,48 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin):
             self._media_busy_seen[target.key] = now
         return probe
 
+    def _probe_group(self, group: SpeakerTarget, probe):
+        """Add each member's own probe: availability and media state, never audibility."""
+        member_probes = []
+        for key in group.members:
+            member = self.config.target(key)
+            if member is None or not member.configured:
+                member_probes.append((key, member.name if member else key, None, None))
+                continue
+            member_probes.append((key, member.name, member.device_id, self._probe_target(member)))
+        return combine(probe, member_probes)
+
+    def _member_device_ids(self, group: SpeakerTarget) -> dict:
+        ids = {}
+        for key in group.members:
+            member = self.config.target(key)
+            if member is not None and member.device_id:
+                ids[key] = member.device_id
+        return ids
+
+    @staticmethod
+    def _unavailable_reason(target: SpeakerTarget) -> str:
+        return "group_unavailable" if target.is_group else "speaker_unavailable"
+
+    @staticmethod
+    def _unconfigured_reason(target: SpeakerTarget) -> str:
+        return "group_not_configured" if target.is_group else "target_not_configured"
+
     def _music_settling(self, target: SpeakerTarget, now: float) -> bool:
         seen = self._media_busy_seen.get(target.key)
         return seen is not None and now - seen < self.config.music_idle_debounce_s
 
     @staticmethod
     def _media_values(target: SpeakerTarget, media: PreparedMedia, probe) -> dict:
-        return {
+        values = {
             "voice": media.voice,
             "media_key": media.key,
             "media_duration_s": round(media.duration_s, 3),
             "target_device_id": target.device_id or probe.device_id,
         }
+        if target.is_group:
+            values["member_evidence"] = [dict(m) for m in getattr(probe, "members", ())]
+        return values
 
     def _dispatch(self, attempt) -> None:
         """Dispatch a queued speaker test (tests only play on an idle speaker)."""
@@ -523,6 +597,9 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin):
         if target is None:
             self._fail(attempt, "target_not_configured")
             return
+        if not target.configured:
+            self._fail(attempt, self._unconfigured_reason(target))
+            return
         content = PreparedContent(text=attempt.text, language=attempt.language)
         failure, media = self._preflight(content, attempt.chime_percent)
         if failure:
@@ -531,7 +608,9 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin):
         probe = self._probe_target(target)
         media_values = self._media_values(target, media, probe)
         if probe.state == "unavailable":
-            self._fail(attempt, "speaker_unavailable", **media_values)
+            # A group that does not answer fails visibly; its members are never
+            # played separately as an unsynchronized substitute.
+            self._fail(attempt, self._unavailable_reason(target), **media_values)
             return
         if target.device_id and probe.device_id and probe.device_id != target.device_id:
             self._fail(attempt, "device_identity_mismatch", **media_values)
@@ -667,6 +746,8 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin):
                 self._finish(attempt, "unknown", "target_removed")
                 continue
             observed = self.transport.poll(attempt.id, target)
+            if target.is_group and attempt.member_evidence:
+                self._observe_members(attempt, target, observed)
             state = observed.state
             if state == "playing" and attempt.status == "dispatched":
                 self.ctrl.update_announcement_attempt(
@@ -706,6 +787,20 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin):
                 )
             ):
                 self._finish(attempt, "unknown", "no_finish_evidence")
+
+    def _observe_members(self, attempt, group: SpeakerTarget, observed) -> None:
+        updated = observe_playback(
+            attempt.member_evidence, observed.member_ids, self._member_device_ids(group)
+        )
+        if updated is None:
+            return
+        if self.ctrl.update_announcement_attempt(
+            attempt.id, expected=ACTIVE, member_evidence=updated, updated_at=_iso(self._clock())
+        ):
+            attempt.member_evidence = updated
+            left = [m["key"] for m in updated if m["left_group_during_playback"]]
+            if left:
+                logger.info("Group attempt %s: members left during playback %s", attempt.id, left)
 
     def _evict_if_due(self) -> None:
         now = self._clock()

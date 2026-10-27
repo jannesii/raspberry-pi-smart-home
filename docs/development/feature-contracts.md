@@ -437,7 +437,7 @@ Code: `app/blueprints/api/car_heater/weather.py` (`/sessions/<id>/weather`,
   `repeats{fit, offsets_minutes}` (announcement k at k × interval, before
   expiry). `_settle` returns a delivered occurrence to `waiting` with
   `next_attempt_purpose='repeat'` at previous `intent_at` + interval (or now if
-  later: no burst), else closes it; a delivered occurrence that expires while
+  later: no burst), else closes it (group `partial` is never repeated or retried); a delivered occurrence that expires while
   waiting closes without disposition or fallback.
 - Retries: only a `failed` attempt with `certain_not_played` (TransportError
   certain) is retried, at most `max_automatic_retries` (2) after

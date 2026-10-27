@@ -185,7 +185,9 @@ def test_production_wiring_reports_defaults_and_unconfigured_parts(tmp_path, mon
     assert [(t["key"], t["name"], t["host"]) for t in status["targets"]] == [
         ("jbl-right", "Jbl-Right", "192.168.1.119"),
         ("jbl-left", "Jbl-Left", "192.168.1.148"),
+        ("jbl-group", "Both JBLs (group)", None),  # the existing group, until configured
     ]
+    assert [t["configured"] for t in status["targets"]] == [True, True, False]
     assert status["defaults"]["language"] == "fi"
     monkeypatch.setenv("ANNOUNCEMENT_MEDIA_ORIGIN", "http://192.168.1.10:8099")
     monkeypatch.setenv(
