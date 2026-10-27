@@ -114,12 +114,15 @@ class AnnouncementMixin:
         *,
         statuses: Iterable[str] | None = None,
         speaker_test_ids: Iterable[str] | None = None,
+        occurrence_ids: Iterable[str] | None = None,
     ) -> list[AnnouncementAttempt]:
         stmt = select(announcement_attempt)
         if statuses is not None:
             stmt = stmt.where(announcement_attempt.c.status.in_(list(statuses)))
         if speaker_test_ids is not None:
             stmt = stmt.where(announcement_attempt.c.speaker_test_id.in_(list(speaker_test_ids)))
+        if occurrence_ids is not None:
+            stmt = stmt.where(announcement_attempt.c.occurrence_id.in_(list(occurrence_ids)))
         stmt = stmt.order_by(
             announcement_attempt.c.priority.desc(),
             announcement_attempt.c.requested_at,

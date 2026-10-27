@@ -33,12 +33,15 @@ from .config import (
 )
 from .content import (
     AnnouncementInputError,
+    AnnouncementStateError,
     ContentProvider,
     PreparedContent,
     StaticTextProvider,
     parse_percent,
 )
 from .media import MediaCache, MediaError, PreparedMedia, compose, media_key
+from .occurrences import OccurrenceMixin
+from .schedules import DEFAULT_EXPIRY_MINUTES, QuietHours
 from .synthesis import SynthesisError, Synthesizer
 from .transport import CastTransport, TransportError
 
@@ -47,20 +50,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+__all__ = ["AnnouncementService", "AnnouncementStateError"]
+
 ACTIVE = ("dispatching", "dispatched", "playing")
 TERMINAL = ("finished", "failed", "unknown", "stopped")
 PREVIEW_TTL_S = 1800
 PREVIEW_LIMIT = 20
 EVICTION_INTERVAL_S = 600
 VOLUME_EPSILON = 0.005
-
-
-class AnnouncementStateError(Exception):
-    """A request that conflicts with the current recorded state."""
-
-    def __init__(self, code: str, message: str):
-        super().__init__(message)
-        self.code = code
 
 
 def _iso(epoch: float) -> str:
@@ -79,7 +76,7 @@ def _wav_duration(path) -> float | None:
         return None
 
 
-class AnnouncementService:
+class AnnouncementService(OccurrenceMixin):
     def __init__(
         self,
         ctrl,
@@ -108,6 +105,12 @@ class AnnouncementService:
         self._previews: dict[str, dict] = {}
         self._last_probe: dict[str, dict] = {}
         self._last_eviction: float | None = None
+        self.quiet_hours = QuietHours.parse(config.quiet_hours)
+        # Last time each target was seen playing or in an unknown media state:
+        # ordinary speech waits until it has been idle for the debounce window
+        # so a track change is not mistaken for music ending.
+        self._media_busy_seen: dict[str, float] = {}
+        self._next_probe: dict[str, float] = {}
         self._lock = threading.RLock()
         self._wake = threading.Event()
         self._stop = threading.Event()
@@ -183,6 +186,14 @@ class AnnouncementService:
                 "max_text_length": self.config.max_text_length,
             },
             "cache": self.cache.stats(),
+            "schedules": {
+                "quiet_hours": self.quiet_hours.text() if self.quiet_hours else None,
+                "default_expiry_minutes": DEFAULT_EXPIRY_MINUTES,
+                "timezone": "Europe/Helsinki",
+            },
+            # Restoring music interrupted by an urgent announcement needs the
+            # optional Spotify connection (#38); until then it is not promised.
+            "music_restoration": {"available": False, "reason": "not_configured"},
         }
 
     # Browser preview (never dispatches) ---------------------------------------
@@ -284,12 +295,14 @@ class AnnouncementService:
         chime,
         now,
         speaker_test_id=None,
+        occurrence_id=None,
         priority=0,
         deadline=None,
     ) -> dict:
         return {
             "id": str(uuid4()),
             "speaker_test_id": speaker_test_id,
+            "occurrence_id": occurrence_id,
             "target_key": target.key,
             "target_name": target.name,
             "target_host": target.host,
@@ -373,7 +386,9 @@ class AnnouncementService:
             self._prepare_previews()
             self._handle_stops()
             self._poll_active()
-            self._dispatch_requested()
+            self._settle_occurrences()
+            self._materialize_due()
+            self._dispatch_work()
             self._evict_if_due()
 
     def _prepare(self, content: PreparedContent, chime: int) -> PreparedMedia:
@@ -422,19 +437,77 @@ class AnnouncementService:
             logger.info("Announcement attempt %s %s: %s", attempt.id, status, reason)
         return changed
 
-    def _dispatch_requested(self) -> None:
+    def _dispatch_work(self) -> None:
+        """Offer queued speaker tests and eligible occurrences in one order.
+
+        Order is priority (urgent first), then request/due time. Work whose
+        physical speakers overlap an active attempt or earlier queued work
+        waits; nothing cuts off speech that is already playing.
+        """
+        now = self._clock()
         busy: set[str] = set()
         for active in self.ctrl.list_announcement_attempts(statuses=ACTIVE):
             busy |= set(active.speaker_set)
-        for attempt in self.ctrl.list_announcement_attempts(statuses=("requested",)):
-            speakers = set(attempt.speaker_set)
+        work = [
+            (-a.priority, a.requested_at, a.id, "attempt", a)
+            for a in self.ctrl.list_announcement_attempts(statuses=("requested",))
+        ]
+        work += [
+            (-self._occurrence_priority(o), o.next_attempt_at or o.due_at, o.id, "occurrence", o)
+            for o in self._occurrence_candidates(now)
+        ]
+        work.sort(key=lambda item: item[:3])
+        for *_order, kind, item in work:
+            speakers = set(item.speaker_set)
             if speakers & busy:
                 busy |= speakers  # keep order: later work on these speakers waits too
+                if kind == "occurrence":
+                    self._set_waiting(item, "speaker_busy", now)
                 continue
-            busy |= speakers
-            self._dispatch(attempt)
+            if kind == "attempt":
+                busy |= speakers
+                self._dispatch(item)
+            elif self._dispatch_occurrence(item):
+                busy |= speakers
+
+    def _preflight(self, content: PreparedContent, chime: int):
+        """Configuration and media checks before any probe: (failure, media)."""
+        if not self.config.media_origin:
+            return "media_origin_not_configured", None
+        if not self.transport.status().get("available"):
+            return "cast_unavailable", None
+        try:
+            return None, self._prepare(content, chime)
+        except (SynthesisError, MediaError) as exc:
+            return exc.reason, None
+
+    def _probe_target(self, target: SpeakerTarget):
+        probe = self.transport.probe(target)
+        now = self._clock()
+        self._last_probe[target.key] = {
+            "state": probe.state,
+            "device_id": probe.device_id,
+            "observed_at": _iso(now),
+        }
+        if probe.state in ("playing", "unknown"):
+            self._media_busy_seen[target.key] = now
+        return probe
+
+    def _music_settling(self, target: SpeakerTarget, now: float) -> bool:
+        seen = self._media_busy_seen.get(target.key)
+        return seen is not None and now - seen < self.config.music_idle_debounce_s
+
+    @staticmethod
+    def _media_values(target: SpeakerTarget, media: PreparedMedia, probe) -> dict:
+        return {
+            "voice": media.voice,
+            "media_key": media.key,
+            "media_duration_s": round(media.duration_s, 3),
+            "target_device_id": target.device_id or probe.device_id,
+        }
 
     def _dispatch(self, attempt) -> None:
+        """Dispatch a queued speaker test (tests only play on an idle speaker)."""
         now = self._clock()
         if _iso(now) >= attempt.dispatch_deadline:
             self._fail(attempt, "queue_expired")
@@ -443,32 +516,13 @@ class AnnouncementService:
         if target is None:
             self._fail(attempt, "target_not_configured")
             return
-        if not self.config.media_origin:
-            self._fail(attempt, "media_origin_not_configured")
-            return
-        cast_status = self.transport.status()
-        if not cast_status.get("available"):
-            self._fail(attempt, "cast_unavailable")
-            return
         content = PreparedContent(text=attempt.text, language=attempt.language)
-        try:
-            media = self._prepare(content, attempt.chime_percent)
-        except (SynthesisError, MediaError) as exc:
-            self._fail(attempt, exc.reason)
+        failure, media = self._preflight(content, attempt.chime_percent)
+        if failure:
+            self._fail(attempt, failure)
             return
-        probe = self.transport.probe(target)
-        self._last_probe[target.key] = {
-            "state": probe.state,
-            "device_id": probe.device_id,
-            "observed_at": _iso(self._clock()),
-        }
-        device_id = target.device_id or probe.device_id
-        media_values = {
-            "voice": media.voice,
-            "media_key": media.key,
-            "media_duration_s": round(media.duration_s, 3),
-            "target_device_id": device_id,
-        }
+        probe = self._probe_target(target)
+        media_values = self._media_values(target, media, probe)
         if probe.state == "unavailable":
             self._fail(attempt, "speaker_unavailable", **media_values)
             return
@@ -479,7 +533,6 @@ class AnnouncementService:
             reason = "speaker_playing" if probe.state == "playing" else "speaker_state_unknown"
             self._fail(attempt, reason, **media_values)
             return
-        applied = attempt.volume_percent / 100
         intent_at = _iso(self._clock())
         # Durable dispatch intent before any Cast effect.
         if not self.ctrl.update_announcement_attempt(
@@ -489,14 +542,18 @@ class AnnouncementService:
             status="dispatching",
             intent_at=intent_at,
             volume_before=probe.volume,
-            volume_applied=applied,
+            volume_applied=attempt.volume_percent / 100,
             updated_at=intent_at,
             **media_values,
         ):
             return
+        self._send(self.ctrl.get_announcement_attempt(attempt.id), target, media, probe)
+
+    def _send(self, attempt, target: SpeakerTarget, media: PreparedMedia, probe) -> None:
+        """Cast effects for an attempt whose intent is already committed."""
+        applied = attempt.volume_applied
         token = self.grants.issue(media.key, attempt.id, self.config.media_grant_ttl_s)
         url = f"{self.config.media_origin}{media_path(token)}"
-        refreshed = self.ctrl.get_announcement_attempt(attempt.id)
         try:
             if probe.volume is None or abs(probe.volume - applied) > VOLUME_EPSILON:
                 self.transport.set_volume(target, applied)
@@ -505,11 +562,11 @@ class AnnouncementService:
             )
         except TransportError as exc:
             status = "failed" if exc.certain_not_played else "unknown"
-            self._finish(refreshed, status, exc.reason)
+            self._finish(attempt, status, exc.reason)
             return
         except Exception:
             logger.exception("Announcement dispatch %s raised unexpectedly", attempt.id)
-            self._finish(refreshed, "unknown", "dispatch_error")
+            self._finish(attempt, "unknown", "dispatch_error")
             return
         now_iso = _iso(self._clock())
         self.ctrl.update_announcement_attempt(
@@ -538,6 +595,8 @@ class AnnouncementService:
             return
         logger.info("Announcement attempt %s %s reason=%s", attempt.id, status, reason)
         self._restore_volume(attempt)
+        if attempt.occurrence_id:
+            self._settle_occurrence_of(attempt)
 
     def _restore_volume(self, attempt) -> None:
         target = self._target(attempt)

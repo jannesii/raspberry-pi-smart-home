@@ -1,4 +1,4 @@
-"""Root-Admin announcement API: status, browser preview, speaker tests and stop.
+"""Root-Admin announcement API: status, preview, speaker tests, schedules, history.
 
 Handlers validate and record requests only; synthesis and Cast work happen in
 the announcement service loop. Browser mutations need CSRF (global
@@ -144,3 +144,117 @@ def stop_test(service, test_id):
         status = 404 if exc.code == "not_found" else 409
         return _error(status, exc.code, str(exc))
     return jsonify({"ok": True, **detail}), 202
+
+
+# Schedules and reminder occurrences ------------------------------------------------
+def _state_error(exc: AnnouncementStateError):
+    status = 404 if exc.code == "not_found" else 409
+    return _error(status, exc.code, str(exc))
+
+
+_SCHEDULE_INPUT = (
+    "kind",
+    "text",
+    "language",
+    "target",
+    "volume_percent",
+    "chime_percent",
+    "due_local",
+    "fold",
+    "expiry_minutes",
+    "urgent",
+    "quiet_hours_override",
+)
+
+
+def _schedule_payload(data: dict) -> dict:
+    return {key: data.get(key) for key in _SCHEDULE_INPUT}
+
+
+@announcements_bp.route("/schedules", methods=["GET"])
+@root_admin_service
+def list_schedules(service):
+    return jsonify({"ok": True, "schedules": service.list_schedules()})
+
+
+@announcements_bp.route("/schedules", methods=["POST"])
+@root_admin_service
+def create_schedule(service):
+    data = _body()
+    try:
+        outcome, detail = service.create_schedule(
+            _schedule_payload(data),
+            request_id=data.get("request_id"),
+            requested_by=current_user.get_id(),
+        )
+    except AnnouncementInputError as exc:
+        return _error(400, "bad_request", str(exc), field=exc.field)
+    if outcome == "conflict":
+        return _error(409, "conflict", "This request id was already used for a different schedule.")
+    return jsonify({"ok": True, **detail}), 201 if outcome == "created" else 200
+
+
+@announcements_bp.route("/schedules/<schedule_id>", methods=["GET"])
+@root_admin_service
+def get_schedule(service, schedule_id):
+    detail = service.schedule_detail(schedule_id)
+    if detail is None:
+        return _error(404, "not_found", "Schedule not found.")
+    return jsonify({"ok": True, **detail})
+
+
+@announcements_bp.route("/schedules/<schedule_id>", methods=["PUT"])
+@root_admin_service
+def update_schedule(service, schedule_id):
+    data = _body()
+    revision = data.get("revision")
+    if revision is not None and (isinstance(revision, bool) or not isinstance(revision, int)):
+        return _error(400, "bad_request", "revision must be a whole number.", field="revision")
+    try:
+        detail = service.update_schedule(schedule_id, _schedule_payload(data), revision=revision)
+    except AnnouncementInputError as exc:
+        return _error(400, "bad_request", str(exc), field=exc.field)
+    except AnnouncementStateError as exc:
+        return _state_error(exc)
+    return jsonify({"ok": True, **detail})
+
+
+@announcements_bp.route("/schedules/<schedule_id>/<action>", methods=["POST"])
+@root_admin_service
+def change_schedule_state(service, schedule_id, action):
+    operations = {"pause": service.pause_schedule, "resume": service.resume_schedule}
+    if action not in operations:
+        return _error(404, "not_found", "Unknown schedule action.")
+    try:
+        detail = operations[action](schedule_id)
+    except AnnouncementStateError as exc:
+        return _state_error(exc)
+    return jsonify({"ok": True, **detail})
+
+
+@announcements_bp.route("/schedules/<schedule_id>", methods=["DELETE"])
+@root_admin_service
+def delete_schedule(service, schedule_id):
+    """Removes the schedule from future delivery; occurrence history is kept."""
+    try:
+        detail = service.delete_schedule(schedule_id)
+    except AnnouncementStateError as exc:
+        return _state_error(exc)
+    return jsonify({"ok": True, **detail})
+
+
+@announcements_bp.route("/occurrences", methods=["GET"])
+@root_admin_service
+def list_occurrences(service):
+    limit = request.args.get("limit", default=50, type=int)
+    limit = max(1, min(limit or 50, 200))
+    return jsonify({"ok": True, "occurrences": service.list_occurrences(limit)})
+
+
+@announcements_bp.route("/occurrences/<occurrence_id>", methods=["GET"])
+@root_admin_service
+def get_occurrence(service, occurrence_id):
+    detail = service.occurrence_detail(occurrence_id)
+    if detail is None:
+        return _error(404, "not_found", "Occurrence not found.")
+    return jsonify({"ok": True, **detail})

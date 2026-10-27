@@ -472,7 +472,7 @@ class ACController:
         elapsed = now - self._last_partial_power_warning_at
         if elapsed < self.PARTIAL_POWER_WARNING_INTERVAL_S:
             logger.debug(
-                "AC CONTROLLER: suppressing repeated missing power DPS warning " "elapsed_s=%.1f",
+                "AC CONTROLLER: suppressing repeated missing power DPS warning elapsed_s=%.1f",
                 elapsed,
             )
             return

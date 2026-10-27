@@ -723,6 +723,11 @@ announcement_attempt = Table(
     metadata,
     Column("id", Text, primary_key=True),
     Column("speaker_test_id", Text, ForeignKey("announcement_speaker_test.id")),
+    Column(
+        "occurrence_id",
+        Text,
+        ForeignKey("announcement_occurrence.id", name="fk_announcement_attempt_occurrence"),
+    ),
     Column("target_key", Text, nullable=False),
     Column("target_name", Text, nullable=False),
     Column("target_host", Text),
@@ -753,10 +758,18 @@ announcement_attempt = Table(
     Column("volume_restore", Text),
     Column("volume_restored_at", Text),
     Column("updated_at", Text, nullable=False),
+    # Media state an urgent announcement replaced ('playing' | 'unknown'), and
+    # whether that music could be restored ('unavailable' until #38 adds it).
+    Column("interrupted_media", Text),
+    Column("media_restore", Text),
     CheckConstraint(
         "status IN ('requested', 'dispatching', 'dispatched', 'playing', "
         "'finished', 'failed', 'unknown', 'stopped')",
         name="ck_announcement_attempt_status",
+    ),
+    CheckConstraint(
+        "(speaker_test_id IS NULL) <> (occurrence_id IS NULL)",
+        name="ck_announcement_attempt_source",
     ),
 )
 Index(
@@ -765,3 +778,131 @@ Index(
     announcement_attempt.c.requested_at,
 )
 Index("idx_announcement_attempt_speaker_test", announcement_attempt.c.speaker_test_id)
+Index("idx_announcement_attempt_occurrence", announcement_attempt.c.occurrence_id)
+
+# An owner-defined rule for when a reminder is due. Never hard-deleted while
+# occurrences reference it: deletion sets status='deleted' and keeps history.
+# ``kind='one_time'`` uses due_local/due_fold (Europe/Helsinki wall time) and
+# due_at (UTC); recurring kinds (#34) store their rule as JSON in
+# ``recurrence``. ``next_due_at`` is the next instance to materialize (NULL when
+# none, or while paused/deleted); ``revision`` increments on each edit and is
+# snapshotted by occurrences. Repeat fields (#35) default to one announcement.
+announcement_schedule = Table(
+    "announcement_schedule",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("request_id", Text, unique=True),
+    Column("kind", Text, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("revision", Integer, nullable=False),
+    Column("text", Text, nullable=False),
+    Column("language", Text, nullable=False),
+    Column("target_key", Text, nullable=False),
+    Column("volume_percent", Integer, nullable=False),
+    Column("chime_percent", Integer, nullable=False),
+    Column("urgent", Boolean, nullable=False),
+    Column("quiet_hours_override", Boolean, nullable=False),
+    Column("expiry_minutes", Integer, nullable=False),
+    Column("max_announcements", Integer, nullable=False),
+    Column("repeat_interval_minutes", Integer),
+    Column("due_local", Text),
+    Column("due_fold", Integer),
+    Column("due_at", Text),
+    Column("recurrence", Text),
+    Column("next_due_at", Text),
+    Column("created_at", Text, nullable=False),
+    Column("created_by", Text),
+    Column("updated_at", Text, nullable=False),
+    Column("paused_at", Text),
+    Column("deleted_at", Text),
+    CheckConstraint("kind IN ('one_time', 'recurring')", name="ck_announcement_schedule_kind"),
+    CheckConstraint(
+        "status IN ('active', 'paused', 'deleted')", name="ck_announcement_schedule_status"
+    ),
+    CheckConstraint("language IN ('fi', 'en')", name="ck_announcement_schedule_language"),
+    CheckConstraint("volume_percent BETWEEN 0 AND 100", name="ck_announcement_schedule_volume"),
+    CheckConstraint("chime_percent BETWEEN 0 AND 100", name="ck_announcement_schedule_chime"),
+    CheckConstraint("expiry_minutes BETWEEN 1 AND 240", name="ck_announcement_schedule_expiry"),
+    CheckConstraint("max_announcements >= 1", name="ck_announcement_schedule_announcements"),
+)
+Index(
+    "idx_announcement_schedule_next_due",
+    announcement_schedule.c.status,
+    announcement_schedule.c.next_due_at,
+)
+
+# One instance of a schedule, identified by (schedule_id, instance_due_at) and
+# created when that instance becomes due. It snapshots the schedule so later
+# edits never rewrite history. Three independent axes:
+# - status: scheduling lifecycle (waiting -> announcing -> closed);
+# - delivery: summary of speaker evidence from its attempts;
+# - disposition: why it closed without delivery or what the owner decided
+#   (missed/cancelled here; done/skipped/snoozed/superseded/stopped later).
+# fallback_reason marks durable eligibility for one logical fallback (#33).
+# Acknowledgement is not stored here; delivery never implies it.
+announcement_occurrence = Table(
+    "announcement_occurrence",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("schedule_id", Text, ForeignKey("announcement_schedule.id"), nullable=False),
+    Column("instance_due_at", Text, nullable=False),
+    Column("schedule_revision", Integer, nullable=False),
+    Column("created_at", Text, nullable=False),
+    Column("text", Text, nullable=False),
+    Column("language", Text, nullable=False),
+    Column("target_key", Text, nullable=False),
+    Column("target_name", Text, nullable=False),
+    Column("speaker_set", Text, nullable=False),
+    Column("volume_percent", Integer, nullable=False),
+    Column("chime_percent", Integer, nullable=False),
+    Column("urgent", Boolean, nullable=False),
+    Column("quiet_hours", Text),
+    Column("max_announcements", Integer, nullable=False),
+    Column("repeat_interval_minutes", Integer),
+    Column("due_at", Text, nullable=False),
+    Column("expires_at", Text, nullable=False),
+    Column("next_attempt_at", Text),
+    Column("status", Text, nullable=False),
+    Column("waiting_reason", Text),
+    Column("waiting_since", Text),
+    Column("waiting_history", Text, nullable=False),
+    Column("announcements_started", Integer, nullable=False),
+    Column("current_attempt_id", Text),
+    Column("delivery", Text, nullable=False),
+    Column("delivery_reason", Text),
+    Column("disposition", Text),
+    Column("disposition_reason", Text),
+    Column("closed_at", Text),
+    Column("fallback_reason", Text),
+    Column("fallback_eligible_at", Text),
+    Column("updated_at", Text, nullable=False),
+    UniqueConstraint("schedule_id", "instance_due_at", name="uq_announcement_occurrence_instance"),
+    CheckConstraint(
+        "status IN ('waiting', 'announcing', 'closed')",
+        name="ck_announcement_occurrence_status",
+    ),
+    CheckConstraint(
+        "delivery IN ('none', 'delivered', 'partial', 'failed', 'unknown')",
+        name="ck_announcement_occurrence_delivery",
+    ),
+    CheckConstraint(
+        "disposition IS NULL OR disposition IN ('missed', 'cancelled', 'done', 'skipped', "
+        "'snoozed', 'superseded', 'stopped')",
+        name="ck_announcement_occurrence_disposition",
+    ),
+    CheckConstraint(
+        "fallback_reason IS NULL OR fallback_reason IN ('failed', 'partial', 'unknown', "
+        "'expired_undelivered')",
+        name="ck_announcement_occurrence_fallback",
+    ),
+)
+Index(
+    "idx_announcement_occurrence_status",
+    announcement_occurrence.c.status,
+    announcement_occurrence.c.due_at,
+)
+Index(
+    "idx_announcement_occurrence_fallback",
+    announcement_occurrence.c.fallback_reason,
+    announcement_occurrence.c.fallback_eligible_at,
+)

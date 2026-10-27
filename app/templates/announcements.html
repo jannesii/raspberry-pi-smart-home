@@ -3,7 +3,7 @@
 {% block title %}Announcements{% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/announcements.css', v='20261027-1') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/announcements.css', v='20261027-2') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/flash.css') }}">
 {% endblock %}
 
@@ -16,7 +16,7 @@
       <p class="announce-eyebrow">Settings</p>
       <h1>Announcements</h1>
       <p class="announce-subtitle">Prepare a spoken reminder: a soft chime, a short pause, then your words.
-        Listen in this browser first, then test it deliberately on one speaker.</p>
+        Listen in this browser, test it on a speaker, or schedule it for a Helsinki date and time.</p>
     </div>
     <a class="announce-back-link" href="{{ url_for('web.get_settings_page') }}">Back to settings</a>
   </header>
@@ -32,6 +32,8 @@
       <div><dt>Speech engine</dt><dd id="announceStatusSynth">—</dd></div>
       <div><dt>Cast</dt><dd id="announceStatusCast">—</dd></div>
       <div><dt>Speaker media address</dt><dd id="announceStatusMedia">—</dd></div>
+      <div><dt>Quiet hours (Helsinki)</dt><dd id="announceStatusQuiet">—</dd></div>
+      <div><dt>Music restoration</dt><dd id="announceStatusRestore">—</dd></div>
     </dl>
   </section>
 
@@ -75,7 +77,7 @@
       <p id="announcePreviewState" class="announce-help">Preview plays here only; it never uses a speaker.</p>
 
       <fieldset class="announce-speaker">
-        <legend>Speaker test</legend>
+        <legend>Speaker</legend>
         <div id="announceTargets" class="announce-targets" role="radiogroup" aria-label="Speaker"></div>
         <label class="announce-field" for="announceVolume">
           <span>Speaker volume during the test <output id="announceVolumeValue" for="announceVolume">30 %</output></span>
@@ -90,7 +92,83 @@
           </button>
         </div>
       </fieldset>
+
+      <fieldset class="announce-speaker announce-schedule" aria-describedby="announceScheduleHelp">
+        <legend id="announceScheduleLegend">One-time reminder</legend>
+        <p id="announceScheduleHelp" class="announce-help">Date and time are Europe/Helsinki local time,
+          whatever timezone this device uses.</p>
+        <div class="announce-grid announce-grid-2">
+          <label class="announce-field" for="announceDate">
+            <span>Date (Helsinki)</span>
+            <input id="announceDate" name="due_date" type="date" required aria-describedby="announceDueError">
+          </label>
+          <label class="announce-field" for="announceTime">
+            <span>Time (Helsinki)</span>
+            <input id="announceTime" name="due_time" type="time" required aria-describedby="announceDueError">
+          </label>
+        </div>
+        <small id="announceDueError" class="announce-field-error" role="alert"></small>
+        <fieldset id="announceFoldGroup" class="announce-fold" hidden>
+          <legend>This time occurs twice when clocks move back. Which one?</legend>
+          <label><input type="radio" name="announceFold" value="0"> First (summer time, UTC+3)</label>
+          <label><input type="radio" name="announceFold" value="1"> Second (winter time, UTC+2)</label>
+        </fieldset>
+
+        <details id="announceAdvanced" class="announce-advanced">
+          <summary>Expiry, urgency and quiet hours</summary>
+          <label class="announce-field" for="announceExpiry">
+            <span>Expires after (minutes)</span>
+            <input id="announceExpiry" name="expiry_minutes" type="number" min="1" max="240" step="1" value="15"
+              inputmode="numeric" aria-describedby="announceExpiryHelp announceExpiryError">
+            <small id="announceExpiryHelp" class="announce-help">After this the reminder is never spoken, even if it was
+              waiting for music, quiet hours or the speaker. Waiting never extends it; it is recorded as missed.</small>
+            <small id="announceExpiryError" class="announce-field-error"></small>
+          </label>
+          <label class="announce-check" for="announceUrgent">
+            <input id="announceUrgent" name="urgent" type="checkbox" aria-describedby="announceUrgentHelp">
+            <span>Urgent: may interrupt music</span>
+          </label>
+          <small id="announceUrgentHelp" class="announce-help">Ordinary reminders wait while the speaker plays music or its
+            state is unclear. Urgent ones go first and may stop music; restoring that music is not available yet, so
+            it may stay stopped. Urgent does not allow speaking during quiet hours.</small>
+          <label class="announce-check" for="announceQuietOverride">
+            <input id="announceQuietOverride" name="quiet_hours_override" type="checkbox"
+              aria-describedby="announceQuietHelp">
+            <span>Allow speaking during quiet hours</span>
+          </label>
+          <small id="announceQuietHelp" class="announce-help">Without this, speech is held during quiet hours
+            (<span id="announceQuietText">22:00–07:00</span>) and the reminder may expire unspoken.</small>
+        </details>
+
+        <div class="announce-actions">
+          <button id="announcementScheduleCancel" class="announce-btn announce-btn-quiet" type="button" hidden>
+            Cancel edit
+          </button>
+          <button id="announcementScheduleButton" class="announce-btn announce-btn-primary" type="button">
+            Save reminder
+          </button>
+        </div>
+      </fieldset>
     </form>
+
+    <div class="announce-side">
+    <section class="announce-panel" aria-labelledby="announceSchedulesTitle">
+      <div class="announce-section-heading">
+        <h2 id="announceSchedulesTitle">Upcoming reminders</h2>
+        <span id="announceSchedulesCount">0 reminders</span>
+      </div>
+      <ol id="announceSchedulesList" class="announce-tests" aria-live="polite"></ol>
+    </section>
+
+    <section class="announce-panel" aria-labelledby="announceHistoryTitle">
+      <div class="announce-section-heading">
+        <h2 id="announceHistoryTitle">Reminder history</h2>
+        <span id="announceHistoryCount">0 occurrences</span>
+      </div>
+      <p class="announce-help">Delivery shows what the speaker reported, never that anyone heard it.
+        Acknowledging a reminder is separate and not recorded here yet.</p>
+      <ol id="announceHistoryList" class="announce-tests" aria-live="polite"></ol>
+    </section>
 
     <section class="announce-panel" aria-labelledby="announceTestsTitle">
       <div class="announce-section-heading">
@@ -100,10 +178,11 @@
       <p class="announce-help">Shows what the speaker reported. Playback evidence does not prove the message was heard.</p>
       <ol id="announceTestsList" class="announce-tests" aria-live="polite"></ol>
     </section>
+    </div>
   </section>
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/announcements.js', v='20261027-1') }}"></script>
+<script src="{{ url_for('static', filename='js/announcements.js', v='20261027-2') }}"></script>
 {% endblock %}
