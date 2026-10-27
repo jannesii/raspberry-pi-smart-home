@@ -426,8 +426,8 @@ def test_missing_integrations_are_reported_and_fail_tests_visibly(
     )
     status = client.get("/api/announcements/status").get_json()
     assert status["media_origin"] == {"configured": False, "origin": None}
-    assert [t["name"] for t in status["targets"]] == ["Jbl-Right", "Jbl-Left"]
-    assert [t["host"] for t in status["targets"]] == ["192.168.1.119", "192.168.1.148"]
+    assert [t["name"] for t in status["targets"]] == ["Jbl-Right", "Jbl-Left", "Both JBLs (group)"]
+    assert [t["host"] for t in status["targets"]] == ["192.168.1.119", "192.168.1.148", None]
     created = request_test(announcement_app, client)
     announcement_app.announcement_service.tick()
     assert attempt_of(client, created["test"]["id"])["reason"] == "media_origin_not_configured"

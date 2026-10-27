@@ -33,6 +33,7 @@ from app.services.announcements import (
     AnnouncementService,
     PlaybackObservation,
     SpeakerProbe,
+    SpeakerTarget,
     TransportError,
     default_targets,
 )
@@ -125,6 +126,38 @@ class SimulatedCrash(BaseException):
     """Process death inside an external effect: not handled by service code."""
 
 
+GROUP_HOST = "192.168.1.119"  # the group's leader; its Cast port differs from 8009
+GROUP_PORT = 32187
+GROUP = f"{GROUP_HOST}:{GROUP_PORT}"  # FakeCast key of the group receiver
+
+
+def group_targets(*, member_ids: bool = True) -> tuple[SpeakerTarget, ...]:
+    """Both JBLs plus the owner's existing Google Home group, as configured."""
+    return (
+        SpeakerTarget(
+            key="jbl-right",
+            name="Jbl-Right",
+            host="192.168.1.119",
+            device_id="uuid-right" if member_ids else None,
+        ),
+        SpeakerTarget(
+            key="jbl-left",
+            name="Jbl-Left",
+            host="192.168.1.148",
+            device_id="uuid-left" if member_ids else None,
+        ),
+        SpeakerTarget(
+            key="jbl-group",
+            name="Both JBLs",
+            host=GROUP_HOST,
+            port=GROUP_PORT,
+            device_id="uuid-group",
+            kind="group",
+            members=("jbl-right", "jbl-left"),
+        ),
+    )
+
+
 @dataclass
 class FakeSpeaker:
     host: str
@@ -132,6 +165,12 @@ class FakeSpeaker:
     state: str = "idle"  # idle | playing | unknown | unavailable
     volume: float | None = 0.4
     media: dict = field(default_factory=dict)  # attempt_id -> observation state
+    name: str = "JBL Link Portable"
+    port: int = 8009
+    # Group receivers: keys of member receivers, and whether the group reports
+    # its current membership (multizone status) at all.
+    group_of: tuple[str, ...] = ()
+    membership_reported: bool = True
 
 
 class FakeCast:
@@ -141,8 +180,15 @@ class FakeCast:
 
     def __init__(self):
         self.speakers = {
-            "192.168.1.119": FakeSpeaker("192.168.1.119", "uuid-right"),
-            "192.168.1.148": FakeSpeaker("192.168.1.148", "uuid-left"),
+            "192.168.1.119": FakeSpeaker("192.168.1.119", "uuid-right", name="Jbl-Right"),
+            "192.168.1.148": FakeSpeaker("192.168.1.148", "uuid-left", name="Jbl-Left"),
+            GROUP: FakeSpeaker(
+                GROUP_HOST,
+                "uuid-group",
+                name="Koti kaiuttimet",
+                port=GROUP_PORT,
+                group_of=("192.168.1.119", "192.168.1.148"),
+            ),
         }
         self.effects: list[tuple] = []
         self.plays: list[dict] = []
@@ -156,15 +202,51 @@ class FakeCast:
             return {"available": False, "engine": self.engine, "reason": "not_installed"}
         return {"available": True, "engine": self.engine, "reason": None}
 
+    @staticmethod
+    def _key(target) -> str | None:
+        if target.host is None:
+            return None
+        return target.host if target.port == 8009 else f"{target.host}:{target.port}"
+
+    def _speaker(self, target) -> FakeSpeaker:
+        return self.speakers[self._key(target)]
+
+    def _member_ids(self, speaker: FakeSpeaker):
+        """Members a group currently reports (those reachable), or None."""
+        if not speaker.group_of or not speaker.membership_reported:
+            return None
+        members = [self.speakers[key] for key in speaker.group_of]
+        return tuple(m.device_id for m in members if m.state != "unavailable")
+
     def probe(self, target) -> SpeakerProbe:
-        speaker = self.speakers.get(target.host)
+        speaker = self.speakers.get(self._key(target))
         if speaker is None or speaker.state == "unavailable":
             return SpeakerProbe(state="unavailable", volume=None, device_id=None)
-        return SpeakerProbe(state=speaker.state, volume=speaker.volume, device_id=speaker.device_id)
+        return SpeakerProbe(
+            state=speaker.state,
+            volume=speaker.volume,
+            device_id=speaker.device_id,
+            member_ids=self._member_ids(speaker),
+        )
+
+    def discover(self, hosts) -> list[dict]:
+        self.effects.append(("discover", tuple(hosts)))
+        return [
+            {
+                "device_id": s.device_id,
+                "name": s.name,
+                "model": "Google Cast Group" if s.group_of else "JBL Link Portable",
+                "cast_type": "group" if s.group_of else "audio",
+                "host": s.host,
+                "port": s.port,
+            }
+            for s in self.speakers.values()
+            if s.host in hosts and s.state != "unavailable"
+        ]
 
     def set_volume(self, target, level: float) -> None:
         self.effects.append(("set_volume", target.key, round(level, 3)))
-        self.speakers[target.host].volume = level
+        self._speaker(target).volume = level
 
     def play(self, attempt_id, target, media_url, *, content_type, title) -> None:
         self.effects.append(("play", target.key, attempt_id))
@@ -173,18 +255,22 @@ class FakeCast:
             raise SimulatedCrash()
         if self.play_error:
             raise self.play_error
-        speaker = self.speakers[target.host]
+        speaker = self._speaker(target)
         speaker.media[attempt_id] = "loading"
         speaker.state = "playing"
+        for key in speaker.group_of:  # group playback occupies its reachable members
+            if self.speakers[key].state != "unavailable":
+                self.speakers[key].state = "playing"
 
     def poll(self, attempt_id, target) -> PlaybackObservation:
-        state = self.speakers[target.host].media.get(attempt_id, "lost")
-        return PlaybackObservation(state=state)
+        speaker = self._speaker(target)
+        state = speaker.media.get(attempt_id, "lost")
+        return PlaybackObservation(state=state, member_ids=self._member_ids(speaker))
 
     def stop(self, attempt_id, target) -> str:
         self.effects.append(("stop", target.key, attempt_id))
         if self.stop_result == "stopped":
-            self.finish(target.host, attempt_id, "cancelled")
+            self.finish(self._key(target), attempt_id, "cancelled")
         return self.stop_result
 
     def release(self, attempt_id) -> None:
@@ -192,9 +278,14 @@ class FakeCast:
 
     # Test controls -----------------------------------------------------------
     def report(self, host: str, attempt_id: str, state: str) -> None:
-        self.speakers[host].media[attempt_id] = state
+        """``host`` is a FakeCast key: a speaker host or ``GROUP``."""
+        speaker = self.speakers[host]
+        speaker.media[attempt_id] = state
         if state in ("finished", "failed", "cancelled", "interrupted"):
-            self.speakers[host].state = "idle"
+            speaker.state = "idle"
+            for key in speaker.group_of:
+                if self.speakers[key].state == "playing":
+                    self.speakers[key].state = "idle"
 
     finish = report
 

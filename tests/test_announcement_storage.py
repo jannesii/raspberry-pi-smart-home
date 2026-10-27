@@ -27,6 +27,7 @@ MIGRATIONS = (
     "migrations.versions.20261027_0020_announcement_speaker_tests",
     "migrations.versions.20261027_0021_announcement_schedules",
     "migrations.versions.20261027_0022_announcement_fallbacks",
+    "migrations.versions.20261027_0023_announcement_group_evidence",
 )
 TABLES = (
     announcement_speaker_test,

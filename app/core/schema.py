@@ -762,6 +762,11 @@ announcement_attempt = Table(
     # whether that music could be restored ('unavailable' until #38 adds it).
     Column("interrupted_media", Text),
     Column("media_restore", Text),
+    # Group targets (evidence_scope='group'): JSON list of per-member
+    # availability/membership as observed around dispatch and playback. The
+    # group's playback report is the only playback evidence; members never
+    # report audibility.
+    Column("member_evidence", Text),
     CheckConstraint(
         "status IN ('requested', 'dispatching', 'dispatched', 'playing', "
         "'finished', 'failed', 'unknown', 'stopped')",

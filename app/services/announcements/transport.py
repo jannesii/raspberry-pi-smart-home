@@ -44,6 +44,9 @@ class SpeakerProbe:
     state: str  # idle | playing | unknown | unavailable
     volume: float | None
     device_id: str | None
+    # Group receivers only: Cast UUIDs the group reports as its current
+    # members, or None when the receiver reported no membership.
+    member_ids: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -51,6 +54,8 @@ class PlaybackObservation:
     # loading | playing | finished | failed | cancelled | interrupted | lost
     state: str
     detail: str | None = None
+    # Group receivers only: membership reported during playback (or None).
+    member_ids: tuple[str, ...] | None = None
 
 
 class CastTransport(Protocol):

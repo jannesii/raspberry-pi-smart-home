@@ -30,7 +30,19 @@ _TEST_FIELDS = ("text", "language", "target_key", "volume_percent", "chime_perce
 def _attempt(row) -> AnnouncementAttempt:
     values = dict(row)
     values["speaker_set"] = json.loads(values["speaker_set"])
+    evidence = values.get("member_evidence")
+    values["member_evidence"] = json.loads(evidence) if evidence else None
     return AnnouncementAttempt(**values)
+
+
+def encode_attempt(values: dict) -> dict:
+    """JSON-encode list columns of an attempt insert/update."""
+    row = dict(values)
+    if "speaker_set" in row:
+        row["speaker_set"] = json.dumps(sorted(row["speaker_set"]))
+    if row.get("member_evidence") is not None:
+        row["member_evidence"] = json.dumps(row["member_evidence"])
+    return row
 
 
 class AnnouncementMixin:
@@ -43,8 +55,7 @@ class AnnouncementMixin:
 
         Returns ("created" | "exists" | "conflict", test).
         """
-        row = dict(attempt)
-        row["speaker_set"] = json.dumps(sorted(attempt["speaker_set"]))
+        row = encode_attempt(attempt)
         try:
             with self._sa_engine.begin() as conn:
                 conn.execute(insert(announcement_speaker_test).values(**test))
@@ -141,6 +152,7 @@ class AnnouncementMixin:
     ) -> bool:
         """Apply ``values`` only while the attempt is in an ``expected`` status."""
         values.setdefault("updated_at", datetime.now(UTC).isoformat())
+        values = encode_attempt(values)
         stmt = update(announcement_attempt).where(announcement_attempt.c.id == attempt_id)
         if expected is not None:
             stmt = stmt.where(announcement_attempt.c.status.in_(list(expected)))
