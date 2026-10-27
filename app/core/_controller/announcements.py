@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 
 from ..models import AnnouncementAttempt, AnnouncementSpeakerTest
 from ..schema import announcement_attempt, announcement_speaker_test
+from .announcement_history import AnnouncementHistoryMixin
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -47,7 +48,7 @@ def encode_attempt(values: dict) -> dict:
     return row
 
 
-class AnnouncementMixin:
+class AnnouncementMixin(AnnouncementHistoryMixin):
     _sa_engine: Engine
 
     def create_announcement_speaker_test(

@@ -17,6 +17,7 @@ from app.core import Controller
 from app.core.schema import (
     announcement_acknowledgement,
     announcement_attempt,
+    announcement_consumed,
     announcement_fallback,
     announcement_fallback_attempt,
     announcement_occurrence,
@@ -34,8 +35,10 @@ MIGRATIONS = (
     "migrations.versions.20261027_0024_announcement_acknowledgements",
     "migrations.versions.20261027_0025_announcement_snooze",
     "migrations.versions.20261027_0026_announcement_spotify",
+    "migrations.versions.20261027_0027_announcement_history",
 )
 TABLES = (
+    announcement_consumed,
     announcement_spotify,
     announcement_speaker_test,
     announcement_attempt,

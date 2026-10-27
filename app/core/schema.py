@@ -1050,3 +1050,14 @@ announcement_spotify = Table(
     Column("devices", Text, nullable=False),
     CheckConstraint("id = 1", name="ck_announcement_spotify_singleton"),
 )
+
+# Identity-only deletion tombstones: no reminder text, account or configuration.
+announcement_consumed = Table(
+    "announcement_consumed",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("request_id", Text, unique=True),
+    Column("schedule_id", Text),
+    Column("instance_due_at", Text),
+    UniqueConstraint("schedule_id", "instance_due_at", name="uq_announcement_consumed_instance"),
+)

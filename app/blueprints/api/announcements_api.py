@@ -389,3 +389,17 @@ def spotify_devices(service):
     except SpotifyError as exc:
         return _error(409, "spotify_unavailable", str(exc))
     return jsonify(ok=True, devices=devices)
+
+
+@announcements_bp.route("/occurrences/<identity>", methods=["DELETE"])
+@announcements_bp.route("/tests/<identity>", methods=["DELETE"])
+@root_admin_service
+def delete_history(service, identity):
+    if _body().get("confirm") is not True:
+        return _error(400, "confirmation_required", "Confirm permanent history deletion.")
+    kind = "occurrences" if "/occurrences/" in request.path else "tests"
+    try:
+        service.delete_history(kind, identity)
+    except AnnouncementStateError as exc:
+        return _state_error(exc)
+    return jsonify(ok=True)
