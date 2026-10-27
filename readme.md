@@ -530,7 +530,7 @@ attention chime, about 0.5 s of silence, then the owner's text spoken locally in
 Finnish (default) or English. **Preview in browser** plays the complete audio in
 the page only; it never contacts a speaker. **Test on speaker** is a separate,
 deliberate action on Jbl-Right, Jbl-Left or the speaker group with a chosen volume; chime
-loudness is set separately. A test is its own permanent record. It is not a
+loudness is set separately. A test has its own retained history record. It is not a
 reminder occurrence, cannot be acknowledged and creates no schedule.
 
 A test starts only when the speaker reports idle. Playing, unknown or
@@ -585,7 +585,7 @@ Setup (owner commissioning; automated tests never use real speakers or engines):
    (`scheme://host[:port]` only, e.g. `https://jannenkoti.com`) so the message
    links to the reminder page; without it the message names the page instead.
    Sending a real Discord message is a separate, deliberate owner check.
-6. Apply migrations `20261027_0020` to `20261027_0024` with the normal
+6. Apply migrations through the current Alembic head with the normal
    migration procedure.
 
 **One-time reminders.** The same page saves a reminder for a date and time in
@@ -691,7 +691,7 @@ speaking; it requests one deliberate delivery without restoring repeats that
 Stop cancelled. At the next occurrence of the same schedule, older pending
 speech (including snoozes) becomes superseded, without an acknowledgement.
 Already playing speech can finish, but it gets no further automatic repeats.
-History deletion is a later slice.
+History can be deleted separately after active delivery and fallback work has settled.
 
 **Speaker group.** Choosing the group plays one synchronized stream through
 your existing Google Home group, and reminders and tests on the group wait for
@@ -709,7 +709,7 @@ membership, the group's report is shown without per-speaker confirmation.
 
 Prepared audio is cached in `ANNOUNCEMENT_CACHE_DIR` (default
 `announcement-cache/` beside `DB_PATH`) for up to 7 days or 64 MB. Evicting it
-never removes test history. Default volume 30 % and chime 40 % are starting
+never removes reminder or test history. Default volume 30 % and chime 40 % are starting
 points, not calibrated softness. The JBL/Google Home behavior, Eventlet
 compatibility of PyChromecast and the real media fetch are unverified until
 owner acceptance.
@@ -717,6 +717,13 @@ owner acceptance.
 ```sh
 .venv/bin/pytest -q tests/test_announcements.py tests/test_announcement_schedules.py tests/test_announcement_recurring.py tests/test_announcement_acknowledgements.py tests/test_announcement_fallback.py tests/test_announcement_group.py tests/test_alert_webhook.py tests/test_announcement_integrations.py tests/test_announcement_storage.py tests/test_announcements_browser.py
 ```
+
+Deliberate **Delete history** is separate from deleting a schedule and requires
+confirmation. Active audio, pending Discord fallback/retries and restoration must
+settle first; removing history never revives a consumed occurrence. History has
+no timed purge. See the [operations and owner commissioning checklist](docs/operations/spoken-announcements.md)
+for sensitive backup/restore handling, encryption-key recovery, cache lifecycle
+and the explicitly unverified physical JBL/Discord/Spotify acceptance checks.
 
 ### Weather observation archive
 
