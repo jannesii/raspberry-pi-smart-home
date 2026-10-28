@@ -6,6 +6,8 @@ from typing import Any
 
 import requests
 
+from ..environment import is_development
+
 logger = logging.getLogger(__name__)
 
 _BATCH_LOCK = threading.Lock()
@@ -22,6 +24,10 @@ def send_alert_webhook(
     username: str | None = None,
     extra: dict[str, Any] | None = None,
 ) -> bool:
+    if is_development():
+        # Report non-delivery so callers never treat a development alert as sent.
+        logger.info("Alert webhook disabled in development; not sent: %s", title or "alert")
+        return False
     url = (webhook_url or os.getenv("ALERT_WEBHOOK_URL") or "").strip()
     if not url:
         logger.debug("alert webhook not configured")
@@ -54,6 +60,10 @@ def record_alert(
     immediate: bool = False,
     extra: dict[str, Any] | None = None,
 ) -> bool:
+    if is_development():
+        # The batcher never runs in development; buffering would report false progress.
+        logger.info("Alert disabled in development; not recorded: %s", key)
+        return False
     if immediate or severity == "critical":
         return send_alert_webhook(
             title=title or key,

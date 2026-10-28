@@ -13,8 +13,9 @@ import logging
 from datetime import UTC, datetime, timedelta
 
 from flask import Blueprint, jsonify, render_template, request
-from flask_login import login_required
+from flask_login import current_user, login_required
 
+from ...environment import is_development
 from ...extensions import csrf
 from ...services.novpn import (
     add_device as novpn_add_device,
@@ -22,12 +23,30 @@ from ...services.novpn import (
     list_devices as novpn_list_devices,
     update_device_flags as novpn_update_device_flags,
 )
+from ...services.novpn.config import DEVELOPMENT_REFUSAL
 from ...utils import require_root_admin_or_redirect
 
 novpn_bp = Blueprint("api_novpn", __name__, url_prefix="/novpn")
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+
+@novpn_bp.before_request
+def refuse_novpn_changes_in_development():
+    """Report refusal instead of rewriting host config or restarting its services."""
+    view = (request.endpoint or "").rsplit(".", 1)[-1]
+    changes_host = request.method != "GET" or view == "novpn_quick_bypass"
+    if not (is_development() and changes_host and current_user.is_authenticated):
+        return None
+    logger.warning("Refused novpn host change in development endpoint=%s", request.endpoint)
+    return jsonify(
+        {
+            "ok": False,
+            "error": "unavailable_in_development",
+            "message": DEVELOPMENT_REFUSAL,
+        }
+    ), 409
 
 
 @novpn_bp.route("/devices", methods=["GET"])

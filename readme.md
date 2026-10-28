@@ -147,11 +147,9 @@ Common optional settings:
 | `PORT` | Local app port, default `5555` |
 | `ALLOWED_WS_ORIGINS` | JSON list, default `["http://127.0.0.1:5555"]`; set to your browser origin |
 | `API_ALLOWED_ORIGINS` | JSON CORS allowlist, default `[]`; same-origin requests need no entry |
-| `RATE_LIMIT_STORAGE_URI` | Rate-limit Redis URL, default `redis://localhost:6379` |
-| `REDIS_URL` | ESP32 bridge/command Redis URL, default `redis://localhost:6379` |
-
-The main Socket.IO message queue uses `redis://localhost:6379` directly;
-changing `REDIS_URL` does not move that queue.
+| `REDIS_URL` | Redis for the Socket.IO message queue, ESP32 bridge and heater commands, default `redis://localhost:6379` |
+| `RATE_LIMIT_STORAGE_URI` | Rate-limit storage, default `REDIS_URL` |
+| `APP_ENV` | Unset or `production`; `development` applies the [development safety contract](docs/operations/development-environment.md) |
 
 Configure only the integrations you use:
 
@@ -222,6 +220,11 @@ a disposable PostgreSQL cluster on a private Unix socket when `initdb` and
 the PostgreSQL cases are skipped. Run these as a non-root user. Keep validation
 isolated from live devices and production data. The pre-commit configuration is
 at the repository root. Install the hook with `.venv/bin/pre-commit install`.
+
+To run the app itself for browser testing, start the isolated development
+instance with `scripts/dev.py`; see the
+[development environment guide](docs/operations/development-environment.md).
+Never start a second copy with the production `jannenkoti.env`.
 
 [AGENTS.md](AGENTS.md) describes the code layout, working conventions, and
 validation expectations. Pre-commit and CI enforce its size budget. Keep this

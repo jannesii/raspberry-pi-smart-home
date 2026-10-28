@@ -7,6 +7,7 @@ from flask import Flask
 
 from app.sockets._handlers import SocketEventHandler
 
+from ..environment import is_development
 from ..extensions import socketio
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,21 @@ def _build_tuya_ac_device(device_id: str, ip: str, local_key: str):
     return device
 
 
+class _DisabledInDevelopment(Exception):
+    """An integration that development keeps off by default."""
+
+
+def _skip_in_development(integration: str) -> None:
+    """Keep household, notification and scheduled external effects off in development.
+
+    Credentials present in the development environment are not consent to use them;
+    the app reports these integrations as unavailable instead.
+    """
+    if is_development():
+        logger.info("%s disabled in development", integration)
+        raise _DisabledInDevelopment(integration)
+
+
 def _make_notify(handler: SocketEventHandler) -> Any:
     """Create a notifier that emits events to browser views via SocketEventHandler."""
 
@@ -116,6 +132,7 @@ def init_services(app: Flask) -> dict[str, Any]:
     )
 
     try:
+        _skip_in_development("AC thermostat")
         if not all([AC_DEVICE_ID, AC_IP, AC_LOCAL_KEY]):
             raise ValueError(
                 "Missing one of AC_DEV_ID, AC_IP, or AC_LOCAL_KEY environment variables"
@@ -157,11 +174,14 @@ def init_services(app: Flask) -> dict[str, Any]:
             t.start()
             services["ac_thermostat"] = ac_thermostat
             logger.info("Tuya AC controller started for device %s", AC_DEVICE_ID)
+    except _DisabledInDevelopment:
+        pass
     except Exception as e:
         logger.exception("Failed to initialize AC thermostat: %s", e)
 
     # --- Hue time-based routine ---
     try:
+        _skip_in_development("Hue")
         from .hue import HueController
 
         hue_bridge_ip = os.getenv("HUE_BRIDGE_IP")
@@ -185,6 +205,8 @@ def init_services(app: Flask) -> dict[str, Any]:
             hue_ctrl.start_time_based_routine(apply_immediately=False)
             services["hue_controller"] = hue_ctrl
             logger.info("Hue time-based routine started.")
+    except _DisabledInDevelopment:
+        pass
     except Exception as e:
         logger.exception("Failed to initialize Hue routine: %s", e)
 
@@ -193,7 +215,7 @@ def init_services(app: Flask) -> dict[str, Any]:
     try:
         from .car_heater import CarHeaterService
 
-        car_heater_service = CarHeaterService(app.ctrl)
+        car_heater_service = CarHeaterService(app.ctrl, redis_url=app.config.get("REDIS_URL"))
         # Expose via both app attributes and config for compatibility
         app.car_heater_service = car_heater_service
         services["car_heater_service"] = car_heater_service
@@ -216,6 +238,7 @@ def init_services(app: Flask) -> dict[str, Any]:
 
     # --- Sodexo scheduler ---
     try:
+        _skip_in_development("Sodexo")
         from .sodexo import start_sodexo_webhook_thread
 
         webhook_url = os.getenv("SODEXO_WEBHOOK_URL")
@@ -238,15 +261,20 @@ def init_services(app: Flask) -> dict[str, Any]:
         )
         s = "weekdays" if skip_weekends else "everyday"
         logger.info(f"Sodexo-Scheduler started ({s} {hour}:{minute} Europe/Helsinki).")
+    except _DisabledInDevelopment:
+        pass
     except Exception as e:
         logger.exception("Failed to initialize Sodexo scheduler: %s", e)
 
     # --- Alert webhook batcher ---
     try:
+        _skip_in_development("Alert webhook")
         from .alert_webhook import start_alert_batcher
 
         start_alert_batcher()
         logger.info("Alert webhook batcher started.")
+    except _DisabledInDevelopment:
+        pass
     except Exception as e:
         logger.exception("Failed to start alert webhook batcher: %s", e)
 
@@ -263,7 +291,9 @@ def init_services(app: Flask) -> dict[str, Any]:
         logger.exception("Failed to initialize weather service: %s", e)
 
     # --- Weather observation archive (independent of heating and devices) ---
-    if _env_bool("WEATHER_ARCHIVE_ENABLED", True):
+    if is_development():
+        logger.info("Weather archive disabled in development")
+    elif _env_bool("WEATHER_ARCHIVE_ENABLED", True):
         try:
             from .weather.observation_archive import ObservationCollector
 
@@ -370,6 +400,7 @@ def init_services(app: Flask) -> dict[str, Any]:
 
     # --- YNAB categorizer ---
     try:
+        _skip_in_development("YNAB categorizer")
         ynab_api_key = app.config.get("YNAB_API_KEY")
         ynab_budget_id = app.config.get("YNAB_BUDGET_ID")
         ynab_timeout_s = int(app.config.get("YNAB_HTTP_TIMEOUT_S", 15))
@@ -398,11 +429,14 @@ def init_services(app: Flask) -> dict[str, Any]:
             app.ynab_categorizer_service = ynab_service  # type: ignore[attr-defined]
             services["ynab_categorizer_service"] = ynab_service
             logger.info("YNAB categorizer service initialized for budget=%s", ynab_budget_id)
+    except _DisabledInDevelopment:
+        pass
     except Exception as e:
         logger.exception("Failed to initialize YNAB categorizer service: %s", e)
 
     # Medicine calculator
     try:
+        _skip_in_development("Medicine reminders")
         from .medicine import MedicineAlertService
 
         medicine_service = MedicineAlertService(app.ctrl)
@@ -410,6 +444,8 @@ def init_services(app: Flask) -> dict[str, Any]:
         app.medicine_service = medicine_service
         services["medicine_service"] = medicine_service
         logger.info("Medicine service initialized.")
+    except _DisabledInDevelopment:
+        pass
     except Exception as e:
         logger.exception("Failed to initialize medicine calculator service: %s", e)
 

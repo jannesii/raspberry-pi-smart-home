@@ -12,6 +12,14 @@ import os
 from datetime import timedelta
 from typing import Any
 
+from .environment import (
+    DEVELOPMENT,
+    PRODUCTION_REDIS_URL,
+    EnvironmentConfigError,
+    development_problems,
+    selected_environment,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -69,6 +77,13 @@ def _env_bool(env_var: str, default: bool) -> bool:
 
 def load_settings() -> dict[str, Any]:
     logger.debug("load_settings called")
+    environment = selected_environment()
+    if environment == DEVELOPMENT:
+        problems = development_problems(os.environ)
+        if problems:
+            raise EnvironmentConfigError(
+                "Development configuration refused: " + "; ".join(problems)
+            )
     secret = os.getenv("SECRET_KEY")
     if not secret:
         raise RuntimeError("SECRET_KEY is missing - add to environment.")
@@ -76,6 +91,8 @@ def load_settings() -> dict[str, Any]:
     whitelist = _json_list("RATE_LIMIT_WHITELIST", [])
     allowed_ws = _json_list("ALLOWED_WS_ORIGINS", ["http://127.0.0.1:5555"])
     allowed_api_cors = _json_list("API_ALLOWED_ORIGINS", [])
+
+    redis_url = os.getenv("REDIS_URL") or PRODUCTION_REDIS_URL
 
     settings: dict[str, Any] = {
         # Flask
@@ -92,6 +109,9 @@ def load_settings() -> dict[str, Any]:
         # Database
         "DB_PATH": os.getenv("DB_PATH"),
         "DATABASE_URL": os.getenv("DATABASE_URL"),
+        # Redis: Socket.IO message queue, ESP32 bridges and command publishers
+        "REDIS_URL": redis_url,
+        "RATELIMIT_STORAGE_URI": os.getenv("RATE_LIMIT_STORAGE_URI") or redis_url,
         # Rate limit whitelist for request_filter
         "whitelist": whitelist,
         # Explicit API CORS allowlist
@@ -112,7 +132,8 @@ def load_settings() -> dict[str, Any]:
     }
 
     logger.debug(
-        "load_settings completed db_path_set=%s database_url_set=%s api_cors_origins=%d",
+        "load_settings completed environment=%s db_path_set=%s database_url_set=%s api_cors_origins=%d",
+        environment,
         bool(settings["DB_PATH"]),
         bool(settings["DATABASE_URL"]),
         len(settings["API_ALLOWED_ORIGINS"]),

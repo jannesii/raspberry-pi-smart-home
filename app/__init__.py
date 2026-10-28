@@ -168,7 +168,7 @@ def _configure_socketio(app, ctrl):
     socketio.init_app(
         app,
         async_mode="eventlet",
-        message_queue="redis://localhost:6379",
+        message_queue=app.config["REDIS_URL"],
         cors_allowed_origins=allowed_ws_origins,
         max_http_buffer_size=10 * 1024 * 1024,
         ping_interval=10,
