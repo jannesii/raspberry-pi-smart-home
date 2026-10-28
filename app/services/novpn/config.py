@@ -4,10 +4,26 @@ import os
 import re
 import subprocess
 
+from ...environment import is_development
+
 logger = logging.getLogger(__name__)
 
 NOVPN_CONFIG_PATH = os.path.expanduser("~/.config/novpn/devices.conf")
 _DEVICE_CMD = "/usr/local/bin/novpn-device.sh"
+
+
+DEVELOPMENT_REFUSAL = "Network bypass changes are disabled in development."
+
+
+class HostActionRefused(RuntimeError):
+    """Raised when development tries to change shared host configuration."""
+
+
+def refuse_host_changes_in_development(action: str) -> None:
+    """Development shares the host: never rewrite host config or restart its services."""
+    if is_development():
+        logger.warning("Refused host change in development: %s", action)
+        raise HostActionRefused(DEVELOPMENT_REFUSAL)
 
 
 def _ensure_parent_dir(path: str) -> None:
@@ -90,6 +106,7 @@ def _restart_novpn_master() -> bool:
 
     Returns True if restart succeeded, False otherwise.
     """
+    refuse_host_changes_in_development("restart novpn-master")
     try:
         cmd: list[str] = ["/usr/bin/systemctl", "restart", "novpn-master"]
         # Use sudo if not running as root
@@ -187,6 +204,7 @@ def update_device_flags(
 
     Preserves comments and unrelated lines. Creates the file if missing.
     """
+    refuse_host_changes_in_development("update novpn device flags")
     mac_norm = _normalize_mac(mac)
     _ensure_parent_dir(path)
 
@@ -234,6 +252,7 @@ def add_device(
 
     Returns (ok, device). On failure, returns (False, None).
     """
+    refuse_host_changes_in_development("add novpn device")
     nm = (name or "").strip()
     if not nm:
         raise ValueError("Name is required.")
@@ -299,6 +318,7 @@ def update_device_meta(
     - If new_mac duplicates another device, raises ValueError.
     - If device not found, returns (False, None).
     """
+    refuse_host_changes_in_development("edit novpn device")
     om = _normalize_mac(original_mac)
     nm_mac = _normalize_mac(new_mac) if new_mac else None
     nm_name = None if name is None else str(name).replace('"', "")
@@ -359,6 +379,7 @@ def delete_device(
 
     If device not found, returns (False, None).
     """
+    refuse_host_changes_in_development("delete novpn device")
     mac_norm = _normalize_mac(mac)
     try:
         with open(path, encoding="utf-8") as f:

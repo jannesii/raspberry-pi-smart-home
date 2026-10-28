@@ -7,6 +7,7 @@ import logging
 from flask import render_template, request
 from flask_login import login_required
 
+from ...environment import is_development
 from ...services.dhcp import read_static_leases
 from ...services.novpn import (
     add_device as novpn_add_device,
@@ -15,6 +16,7 @@ from ...services.novpn import (
     update_device_flags as novpn_update_device_flags,
     update_device_meta as novpn_update_device_meta,
 )
+from ...services.novpn.config import DEVELOPMENT_REFUSAL
 from ...utils import (
     flash_error,
     flash_success,
@@ -38,7 +40,10 @@ def novpn_settings():
     if guard:
         return guard
     try:
-        if request.method == "POST":
+        if request.method == "POST" and is_development():
+            logger.warning("Refused novpn settings change in development")
+            flash_error(DEVELOPMENT_REFUSAL)
+        elif request.method == "POST":
             if "add_device" in request.form:
                 # Manual add: require both name and MAC
                 name = (request.form.get("new_name") or "").strip()

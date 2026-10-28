@@ -12,6 +12,15 @@ import os
 from datetime import timedelta
 from typing import Any
 
+from .environment import (
+    DEVELOPMENT,
+    DEVELOPMENT_PUBLIC_ORIGIN,
+    PRODUCTION_REDIS_URL,
+    EnvironmentConfigError,
+    development_problems,
+    selected_environment,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -67,8 +76,37 @@ def _env_bool(env_var: str, default: bool) -> bool:
     raise RuntimeError(f"{env_var} must be a boolean")
 
 
+def _development_browser_settings() -> dict[str, Any]:
+    """Keep development's browser state apart from production's.
+
+    Browsers share cookies between ports of one host, so production's default
+    cookie names would collide when both are opened via localhost.
+    """
+    port = os.getenv("PORT") or "5557"
+    return {
+        "SESSION_COOKIE_NAME": "jannenkoti_dev_session",
+        "REMEMBER_COOKIE_NAME": "jannenkoti_dev_remember",
+        "REMEMBER_COOKIE_SECURE": True,
+        "REMEMBER_COOKIE_HTTPONLY": True,
+        "REMEMBER_COOKIE_SAMESITE": "Lax",
+        "ALLOWED_WS_ORIGINS": _json_list(
+            "ALLOWED_WS_ORIGINS",
+            [DEVELOPMENT_PUBLIC_ORIGIN, f"http://127.0.0.1:{port}", f"http://localhost:{port}"],
+        ),
+    }
+
+
 def load_settings() -> dict[str, Any]:
     logger.debug("load_settings called")
+    environment = selected_environment()
+    if environment == DEVELOPMENT:
+        # Candidate production wiring defaults on; it must never run in dev.
+        os.environ["ANNOUNCEMENTS_ENABLED"] = "false"
+        problems = development_problems(os.environ)
+        if problems:
+            raise EnvironmentConfigError(
+                "Development configuration refused: " + "; ".join(problems)
+            )
     secret = os.getenv("SECRET_KEY")
     if not secret:
         raise RuntimeError("SECRET_KEY is missing - add to environment.")
@@ -76,6 +114,8 @@ def load_settings() -> dict[str, Any]:
     whitelist = _json_list("RATE_LIMIT_WHITELIST", [])
     allowed_ws = _json_list("ALLOWED_WS_ORIGINS", ["http://127.0.0.1:5555"])
     allowed_api_cors = _json_list("API_ALLOWED_ORIGINS", [])
+
+    redis_url = os.getenv("REDIS_URL") or PRODUCTION_REDIS_URL
 
     settings: dict[str, Any] = {
         # Flask
@@ -92,6 +132,9 @@ def load_settings() -> dict[str, Any]:
         # Database
         "DB_PATH": os.getenv("DB_PATH"),
         "DATABASE_URL": os.getenv("DATABASE_URL"),
+        # Redis: Socket.IO message queue, ESP32 bridges and command publishers
+        "REDIS_URL": redis_url,
+        "RATELIMIT_STORAGE_URI": os.getenv("RATE_LIMIT_STORAGE_URI") or redis_url,
         # Rate limit whitelist for request_filter
         "whitelist": whitelist,
         # Explicit API CORS allowlist
@@ -111,8 +154,12 @@ def load_settings() -> dict[str, Any]:
         "YNAB_HTTP_RETRIES": _env_int("YNAB_HTTP_RETRIES", 2),
     }
 
+    if environment == DEVELOPMENT:
+        settings.update(_development_browser_settings())
+
     logger.debug(
-        "load_settings completed db_path_set=%s database_url_set=%s api_cors_origins=%d",
+        "load_settings completed environment=%s db_path_set=%s database_url_set=%s api_cors_origins=%d",
+        environment,
         bool(settings["DB_PATH"]),
         bool(settings["DATABASE_URL"]),
         len(settings["API_ALLOWED_ORIGINS"]),

@@ -979,6 +979,11 @@ class SessionManager:
         path = (self._cfg.test_output_path or "").strip()
         if not path:
             return
+        from app.environment import is_development
+
+        if is_development():
+            # The default path is inside the production checkout.
+            path = os.path.join(os.environ["DEV_STATE_DIR"], os.path.basename(path))
         try:
             dir_name = os.path.dirname(path)
             if dir_name:

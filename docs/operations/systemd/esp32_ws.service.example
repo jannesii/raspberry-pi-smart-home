@@ -1,0 +1,37 @@
+# ESP32 gateway unit for the release layout (reviewable; not installed).
+# Install only during the owner-authorized cutover in docs/operations/releases.md.
+#
+# Runs the gateway code and dependencies of the same release as the app; see
+# jannenkoti.service.example. The gateway keeps its own process, sync worker
+# and thread pool, separate from the app's Eventlet worker.
+[Unit]
+Description=ESP32 WebSocket Service for Jannenkoti (release from jannenkoti-releases/current)
+After=network.target redis.service
+Wants=redis.service
+
+[Service]
+Type=simple
+User=jannesi
+Group=jannesi
+WorkingDirectory=/home/jannesi/jannenkoti-releases/current/code/esp32_ws
+Environment="PATH=/home/jannesi/jannenkoti-releases/current/venv/bin"
+EnvironmentFile=/home/jannesi/Code/server/esp32_ws/esp32_ws.env
+
+ExecStart=/home/jannesi/jannenkoti-releases/current/venv/bin/gunicorn \
+    --worker-class sync \
+    --workers 1 \
+    --threads 16 \
+    --bind localhost:5556 \
+    --access-logfile - \
+    --error-logfile - \
+    main:app
+
+# WebSocket requests are long-lived and Gunicorn can keep the master process
+# around during shutdown. Stop the whole cgroup immediately on restart/stop.
+KillSignal=SIGKILL
+TimeoutStopSec=1
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

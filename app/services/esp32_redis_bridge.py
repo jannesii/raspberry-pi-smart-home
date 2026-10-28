@@ -84,7 +84,8 @@ class ESP32RedisBridge:
             return
 
         try:
-            self._redis = redis.from_url(REDIS_URL, decode_responses=True)
+            redis_url = self._app.config.get("REDIS_URL") or REDIS_URL
+            self._redis = redis.from_url(redis_url, decode_responses=True)
             self._redis.ping()
             logger.info("ESP32RedisBridge: Redis connection established")
         except Exception as e:

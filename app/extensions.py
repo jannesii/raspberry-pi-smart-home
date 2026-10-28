@@ -5,23 +5,18 @@ import them without creating circular imports. `create_app()` is responsible
 for calling `init_app(...)` with runtime configuration.
 """
 
-import os
-
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_login import LoginManager
 from flask_socketio import SocketIO
 from flask_wtf.csrf import CSRFProtect
 
-# Rate limiter — configure storage via env, default to local Redis
-_rate_storage = os.getenv("RATE_LIMIT_STORAGE_URI", "redis://localhost:6379")
-_rate_storage_opts = {"socket_connect_timeout": 30}
-
+# Rate limiter — storage comes from RATELIMIT_STORAGE_URI in the app config so it
+# follows the selected environment's Redis (see app.config.load_settings).
 limiter = Limiter(
     key_func=get_remote_address,
     default_limits=[],
-    storage_uri=_rate_storage,
-    storage_options=_rate_storage_opts,
+    storage_options={"socket_connect_timeout": 30},
     strategy="moving-window",
 )
 

@@ -64,7 +64,13 @@ class CarHeaterService(BoundedHeatingMixin):
     to push to the device in real-time.
     """
 
-    def __init__(self, controller: "Controller | None" = None, *, clock=time.time) -> None:
+    def __init__(
+        self,
+        controller: "Controller | None" = None,
+        *,
+        clock=time.time,
+        redis_url: str | None = None,
+    ) -> None:
         self._lock = threading.RLock()
         self._clock = clock
         self._commands: list[dict[str, Any]] = []
@@ -74,7 +80,7 @@ class CarHeaterService(BoundedHeatingMixin):
 
         # Initialize Redis client for pub/sub
         try:
-            self._redis = redis.from_url(REDIS_URL, decode_responses=True)
+            self._redis = redis.from_url(redis_url or REDIS_URL, decode_responses=True)
             self._redis.ping()
             self._redis_available = True
             logger.info("Redis connection established for car heater commands")

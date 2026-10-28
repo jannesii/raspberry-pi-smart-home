@@ -40,3 +40,20 @@ class ControllerBase:
                 logger.debug("ControllerBase failed to init SQLAlchemy engine", exc_info=True)
                 self._sa_engine = None
                 self._use_sa = False
+
+    def database_available(self) -> bool | None:
+        """Whether the application database answers a trivial query.
+
+        ``None`` when no SQLAlchemy engine is configured. Used by readiness checks.
+        """
+        if self._sa_engine is None:
+            return None
+        from sqlalchemy import text
+
+        try:
+            with self._sa_engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+        except Exception as exc:
+            logger.warning("Database availability check failed: %s", type(exc).__name__)
+            return False
+        return True

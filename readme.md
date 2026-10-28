@@ -148,11 +148,9 @@ Common optional settings:
 | `PORT` | Local app port, default `5555` |
 | `ALLOWED_WS_ORIGINS` | JSON list, default `["http://127.0.0.1:5555"]`; set to your browser origin |
 | `API_ALLOWED_ORIGINS` | JSON CORS allowlist, default `[]`; same-origin requests need no entry |
-| `RATE_LIMIT_STORAGE_URI` | Rate-limit Redis URL, default `redis://localhost:6379` |
-| `REDIS_URL` | ESP32 bridge/command Redis URL, default `redis://localhost:6379` |
-
-The main Socket.IO message queue uses `redis://localhost:6379` directly;
-changing `REDIS_URL` does not move that queue.
+| `REDIS_URL` | Redis for the Socket.IO message queue, ESP32 bridge and heater commands, default `redis://localhost:6379` |
+| `RATE_LIMIT_STORAGE_URI` | Rate-limit storage, default `REDIS_URL` |
+| `APP_ENV` | Unset or `production`; `development` applies the [development safety contract](docs/operations/development-environment.md) |
 
 Configure only the integrations you use:
 
@@ -202,6 +200,12 @@ Run the app behind an HTTPS reverse proxy with WebSocket support and set
 background services hold in-process state. Install and run the ESP32 gateway
 as its own process; review the paths in its supplied systemd unit for your host.
 
+Production releases are prepared as exact committed candidates with their own
+dependencies and verification evidence, then explicitly deployed, checked and
+recovered with `scripts/release.py`; see the
+[release guide](docs/operations/releases.md). Preparation does not deploy, and
+deployment briefly stops the app and gateway. Migrations are not deployed yet.
+
 Browser mutations use session authentication and CSRF protection. YNAB,
 medicine, and network-bypass operations require Root-Admin. Device HTTP APIs
 accept `Authorization: Bearer <token>` or `X-API-Key`; query-string keys are
@@ -216,7 +220,6 @@ From the repository root, using the virtual environment created above:
 .venv/bin/ruff check app tests run.py esp32_ws
 .venv/bin/ruff format --check app tests run.py esp32_ws
 .venv/bin/pre-commit run --config .pre-commit-config.yaml --all-files
-python3 scripts/check_agent_instructions.py
 ```
 
 Tests use SQLite through SQLAlchemy Core. The sensor-location tests also start
@@ -225,6 +228,14 @@ a disposable PostgreSQL cluster on a private Unix socket when `initdb` and
 the PostgreSQL cases are skipped. Run these as a non-root user. Keep validation
 isolated from live devices and production data. The pre-commit configuration is
 at the repository root. Install the hook with `.venv/bin/pre-commit install`.
+
+To try a feature worktree in the browser, run the one isolated development
+instance with `scripts/dev.py setup --worktree PATH`, then `start`, `status`,
+`stop` or `reset --yes`; it is served at `https://dev.jannenkoti.com`. See the
+[development environment guide](docs/operations/development-environment.md)
+for provisioning and safety rules. Never start a second copy with the
+production `jannenkoti.env`; `scripts/restart.sh` restarts production only
+from the production checkout.
 
 [AGENTS.md](AGENTS.md) describes the code layout, working conventions, and
 validation expectations. Pre-commit and CI enforce its size budget. Keep this
@@ -952,3 +963,8 @@ Music restoration and volume results appear separately from spoken delivery
 and Done/Skip. Numeric volume equality cannot prove unobserved changes; the
 Cast listener also revokes volume ownership when it observes a newer change.
 Real Spotify/JBL/group behavior still needs deliberate owner listening tests.
+Development can explicitly select individual speakers and a separate Discord
+fallback channel for authorized announcement acceptance. The default remains
+safe, and LAN capability audio is separate from browser management. See the
+[selected acceptance guide](docs/operations/development-environment.md#selected-announcement-acceptance)
+for enabling, inspecting and disabling it and the remaining Spotify/group limits.

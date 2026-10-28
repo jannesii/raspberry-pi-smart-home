@@ -168,7 +168,7 @@ def _configure_socketio(app, ctrl):
     socketio.init_app(
         app,
         async_mode="eventlet",
-        message_queue="redis://localhost:6379",
+        message_queue=app.config["REDIS_URL"],
         cors_allowed_origins=allowed_ws_origins,
         max_http_buffer_size=10 * 1024 * 1024,
         ping_interval=10,
@@ -230,6 +230,27 @@ def _register_assets(app) -> None:
     register_assets(app)
 
 
+def _register_environment_context(app) -> None:
+    import os
+
+    from .environment import DEVELOPMENT, selected_environment
+
+    environment = selected_environment()
+    # Set by scripts/dev.py: the selected worktree's branch and commit.
+    label = os.getenv("DEV_WORKTREE_LABEL", "") if environment == DEVELOPMENT else ""
+    logger.debug("_register_environment_context environment=%s", environment)
+
+    @app.context_processor
+    def _inject_environment():
+        from .development_acceptance import summary
+
+        return {
+            "app_environment": environment,
+            "development_label": label,
+            "development_acceptance": summary() if environment == DEVELOPMENT else "",
+        }
+
+
 def create_app():
     logger.info("Starting application")
     logger.debug("Debug logging enabled")
@@ -247,4 +268,5 @@ def create_app():
     _init_services(app)
     _register_blueprints(app)
     _register_assets(app)
+    _register_environment_context(app)
     return app, socketio

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source "$(dirname "${BASH_SOURCE[0]}")/production-guard.sh"
 echo "[INFO] Activating venv..."
 source /home/jannesi/Code/server/.venv/bin/activate
 
