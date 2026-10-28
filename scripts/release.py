@@ -919,13 +919,28 @@ def readiness(ops: Operations, expected: str | None, deadline: float | None = No
 
 def wait_ready(ops: Operations, expected: str | None) -> dict:
     deadline = time.monotonic() + ops.readiness_timeout
+    last_complete = None
+
+    def expired(result):
+        return {
+            **result,
+            "ready": False,
+            "problems": [*result["problems"], "readiness deadline expired"],
+        }
+
     while True:
         result = readiness(ops, expected, deadline)
-        if result["ready"] or time.monotonic() >= deadline:
+        if time.monotonic() >= deadline:
+            # A final interrupted probe did not establish newer service/HTTP
+            # state. Keep the last completed observation and explicitly report
+            # expiry; stale observations never count as successful readiness.
+            return expired(last_complete or result)
+        if result["ready"]:
             return result
+        last_complete = result
         time.sleep(min(1, max(0, deadline - time.monotonic())))
         if time.monotonic() >= deadline:
-            return result
+            return expired(result)
 
 
 def _database_revisions(venv: Path, production_env: Path) -> tuple[set[str] | None, str]:
