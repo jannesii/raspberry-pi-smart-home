@@ -449,4 +449,9 @@ def init_services(app: Flask) -> dict[str, Any]:
     except Exception as e:
         logger.exception("Failed to initialize medicine calculator service: %s", e)
 
+    from ..development_acceptance import initialize as initialize_acceptance
+
+    acceptance = initialize_acceptance(app)
+    if acceptance is not None:
+        services["announcement_service"] = acceptance
     return services

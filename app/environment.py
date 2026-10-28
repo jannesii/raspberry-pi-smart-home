@@ -149,6 +149,9 @@ def development_problems(values: Mapping[str, str | None]) -> list[str]:
         path = required(name)
         if path and state_path is not None and not Path(path).resolve().is_relative_to(state_path):
             problems.append(f"{name} must be inside DEV_STATE_DIR")
+    from .development_acceptance import problems as acceptance_problems
+
+    problems.extend(acceptance_problems(values))
     return problems
 
 

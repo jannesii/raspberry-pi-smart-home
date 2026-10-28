@@ -156,3 +156,62 @@ PostgreSQL, Redis servers, a stand-in production environment and a substitute
 dependency installer. Without those binaries the cases are skipped; the
 browser flow is skipped without Playwright. The real `pip` installation path,
 the tunnel and phone access are checked during commissioning.
+
+## Selected announcement acceptance
+
+Ordinary development forces the announcement candidate's production builder off,
+even when `ANNOUNCEMENTS_ENABLED=true` or real credentials appear in the development
+file. It never inherits the calling shell's integration credentials. Speaker
+acceptance uses a separate restricted adapter; it requires the announcement
+candidate code in the selected worktree. The original feature branches can stay
+separate: create a temporary combined worktree and merge both feature revisions
+there, preserving the original checkouts and their pending commissioning notes.
+Resolve the service-registration merge by retaining both the production
+announcement registration and the development acceptance initialization. The
+production registration remains disabled in development by the configuration
+loader. No announcement implementation is copied into the environment feature.
+
+Only enable acceptance after the owner explicitly authorizes the named real
+speakers/channel. Stop development before editing the protected development
+configuration. For example (replace the illustrative LAN addresses):
+
+```dotenv
+DEV_ACCEPTANCE='{"speakers":[{"key":"acceptance-right","name":"Acceptance right","host":"192.168.1.200","port":8009}]}'
+DEV_ACCEPTANCE_MEDIA_ORIGIN=http://192.168.1.100:5558
+```
+
+Start development normally. `scripts/dev.py status` and the development banner
+show configured speaker addresses and the separately selected Discord channel
+label. The running banner reflects the process's startup configuration; changes
+to the file require stop/start. Status reads the configuration file, so confirm
+the running banner after a restart. No credential, webhook URL or audio capability
+appears in either summary. The media listener binds only the specified LAN IP and
+separate port. It exposes only `/announcement-media/<capability>.wav`, sharing
+the candidate's existing capability store; capabilities expire after at most two
+minutes and are revoked when the candidate ends the attempt. Invalid/expired
+capabilities and all management paths return 404. It does not use browser cookies
+and suppresses URL access logging because capabilities are bearer credentials.
+Keep its port off the tunnel and router forwarding rules.
+
+Browser login stays at `https://dev.jannenkoti.com`. A successful browser preview
+or HTTPS request does not establish that a speaker can fetch LAN audio, play it,
+use an appropriate volume, or restore music. Those remain explicitly authorized
+owner checks in the announcement feature's commissioning guide.
+
+Discord fallback is disabled even if `ALERT_WEBHOOK_URL` is present. To explicitly
+select a channel, add `"discord":{"label":"Acceptance channel","webhook":"https://discord.com/api/webhooks/ID/TOKEN"}`
+to `DEV_ACCEPTANCE` alongside selected speakers. Store this only in the protected
+environment file; the label must identify the intended channel and contain no
+secret. The webhook is scoped to that channel by Discord. This does not enable
+the ordinary alert batcher, heater control, automations, host operations or any
+other notification destination.
+
+Spotify acceptance and synchronized Cast groups are refused in this initial
+adapter: account scoping and group membership need their own explicit boundaries.
+Inherited Spotify credentials cannot enable account access or restoration. Do
+not interpret speaker-only acceptance as Spotify/group feature acceptance.
+
+To return to safe development, stop the instance, remove `DEV_ACCEPTANCE` (or set
+it to `{}`), then start again. Confirm `Acceptance: off (safe development)` in the
+running UI. Stopping also closes the media listener and invalidates its in-memory
+capabilities. Do not change a running instance's file and assume effects stopped.

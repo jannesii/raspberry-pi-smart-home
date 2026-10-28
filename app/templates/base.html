@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
 
   <!-- Global styles -->
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css', v='20261028-1') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css', v='20261028-2') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/navbar.css') }}">
 
   <!-- Page-specific styles -->
@@ -22,6 +22,7 @@
   {% if app_environment == 'development' %}
     <div class="env-banner" role="status">
       <strong>Kehitysympäristö</strong>
+      <span>{{ development_acceptance }}</span>
       {% if development_label %}<span class="env-banner__label">{{ development_label }}</span>{% endif %}
     </div>
   {% endif %}

@@ -140,6 +140,7 @@ class Config:
         env = {name: os.environ[name] for name in INHERITED_VARIABLES if name in os.environ}
         env.update(self.values)
         env.update(extra)
+        env["ANNOUNCEMENTS_ENABLED"] = "false"
         return env
 
 
@@ -617,6 +618,12 @@ def status(args: argparse.Namespace) -> int:
     _check_state_dir(config)
     worktree = _selected_worktree(config)
     print(f"Environment: {DEVELOPMENT}")
+    from app.development_acceptance import AcceptanceConfigError, summary
+
+    try:
+        print(summary(config.values))
+    except AcceptanceConfigError as exc:
+        raise Refused(str(exc)) from None
     print(f"Worktree: {_describe_worktree(worktree) if worktree else 'none selected (run setup)'}")
     busy = _busy_with(config)
     if busy:

@@ -242,7 +242,13 @@ def _register_environment_context(app) -> None:
 
     @app.context_processor
     def _inject_environment():
-        return {"app_environment": environment, "development_label": label}
+        from .development_acceptance import summary
+
+        return {
+            "app_environment": environment,
+            "development_label": label,
+            "development_acceptance": summary() if environment == DEVELOPMENT else "",
+        }
 
 
 def create_app():

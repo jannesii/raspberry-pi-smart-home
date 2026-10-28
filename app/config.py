@@ -100,6 +100,8 @@ def load_settings() -> dict[str, Any]:
     logger.debug("load_settings called")
     environment = selected_environment()
     if environment == DEVELOPMENT:
+        # Candidate production wiring defaults on; it must never run in dev.
+        os.environ["ANNOUNCEMENTS_ENABLED"] = "false"
         problems = development_problems(os.environ)
         if problems:
             raise EnvironmentConfigError(

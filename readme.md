@@ -713,3 +713,9 @@ migration is needed. Run the isolated checks with:
 .venv/bin/pytest -q tests/test_weather_evidence_export.py tests/test_weather_evidence_restore.py
 .venv/bin/pytest -q tests/test_car_heater_sessions_browser.py -k weather
 ```
+
+Development can explicitly select individual speakers and a separate Discord
+fallback channel for authorized announcement acceptance. The default remains
+safe, and LAN capability audio is separate from browser management. See the
+[selected acceptance guide](docs/operations/development-environment.md#selected-announcement-acceptance)
+for enabling, inspecting and disabling it and the remaining Spotify/group limits.
