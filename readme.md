@@ -199,8 +199,10 @@ background services hold in-process state. Install and run the ESP32 gateway
 as its own process; review the paths in its supplied systemd unit for your host.
 
 Production releases are prepared as exact committed candidates with their own
-dependencies and verification evidence using `scripts/release.py`; see the
-[release guide](docs/operations/releases.md). Preparation does not deploy.
+dependencies and verification evidence, then explicitly deployed, checked and
+recovered with `scripts/release.py`; see the
+[release guide](docs/operations/releases.md). Preparation does not deploy, and
+deployment briefly stops the app and gateway. Migrations are not deployed yet.
 
 Browser mutations use session authentication and CSRF protection. YNAB,
 medicine, and network-bypass operations require Root-Admin. Device HTTP APIs

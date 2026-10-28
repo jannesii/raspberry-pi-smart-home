@@ -15,6 +15,7 @@ def register_blueprints(app: Flask) -> None:
     """Register all application blueprints."""
     from .api import api_bp
     from .auth import auth_bp
+    from .health import health_bp
     from .villenkoti import villenkoti_bp
     from .web import web_bp
 
@@ -22,3 +23,4 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(web_bp)
     app.register_blueprint(api_bp)
     app.register_blueprint(villenkoti_bp)
+    app.register_blueprint(health_bp)

@@ -23,6 +23,7 @@ import secrets
 import threading
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from time import monotonic
 from typing import Any
 
@@ -51,6 +52,24 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+def _release_revision() -> str | None:
+    """Revision of the prepared release this gateway runs from (see release.py).
+
+    Deployment readiness compares it with the app's; None outside a release.
+    """
+    try:
+        record = json.loads(
+            (Path(__file__).resolve().parents[1].parent / "release.json").read_text()
+        )
+    except (OSError, ValueError):
+        return None
+    revision = record.get("revision") if isinstance(record, dict) else None
+    return revision if isinstance(revision, str) else None
+
+
+RELEASE_REVISION = _release_revision()
 
 # Configuration
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
@@ -652,6 +671,7 @@ def health():
     logger.debug("Health endpoint called connected_devices=%s", len(connections))
     return {
         "status": "healthy",
+        "revision": RELEASE_REVISION,
         "connected_devices": len(connections),
         "devices": [
             {

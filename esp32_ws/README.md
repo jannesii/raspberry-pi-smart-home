@@ -31,6 +31,10 @@ before startup because the manager connects when the module is imported.
 
 ## Deployment and configuration
 
+Once production runs from prepared releases, use the release-layout unit in
+[docs/operations/systemd](../docs/operations/systemd/esp32_ws.service.example)
+instead ([release guide](../docs/operations/releases.md)).
+
 The [supplied systemd unit](esp32_ws.service) uses the main virtual environment,
 Gunicorn with one worker, `--threads 16`, and `localhost:5556`. Each connected
 device holds one thread, and a dropped socket keeps its thread until the idle
@@ -113,7 +117,8 @@ journalctl -u esp32_ws -f --no-pager
 ```
 
 `/` reports service information. `/health` reports connected devices and their
-message/status/transport-ping counters. These endpoints have no authentication;
+message/status/transport-ping counters, plus the `revision` of the prepared
+release it runs from (`null` outside one), which release readiness checks. These endpoints have no authentication;
 keep diagnostic access restricted. `status: healthy` is not an end-to-end
 check of current Redis connectivity or main-app persistence.
 

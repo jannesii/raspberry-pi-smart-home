@@ -1,0 +1,30 @@
+# Production app unit for the release layout (reviewable; not installed).
+# Install only during the owner-authorized cutover in docs/operations/releases.md.
+#
+# `current` is resolved each time the service starts. scripts/release.py moves
+# it only while this unit and esp32_ws.service are both stopped, so the app and
+# the gateway always start from the same release. Keep exactly one Eventlet
+# worker: background services hold in-process state.
+[Unit]
+Description=Jannenkoti Flask+SocketIO (release from jannenkoti-releases/current)
+After=network.target
+
+[Service]
+User=jannesi
+WorkingDirectory=/home/jannesi/jannenkoti-releases/current/code
+Environment="PATH=/home/jannesi/jannenkoti-releases/current/venv/bin"
+# Configuration and persistent state stay outside the replaceable release.
+EnvironmentFile=/home/jannesi/Code/server/jannenkoti.env
+ExecStart=/home/jannesi/jannenkoti-releases/current/venv/bin/gunicorn \
+    --workers 1 \
+    --worker-class eventlet \
+    --worker-connections 1000 \
+    --bind localhost:5555 \
+    --timeout 120 \
+    --max-requests 1000 \
+    --max-requests-jitter 100 \
+    run:app
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

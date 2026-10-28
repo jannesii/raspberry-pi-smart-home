@@ -95,6 +95,7 @@ def world(tmp_path):
         "WEB_USERNAME=owner\n"
         f"WEB_PASSWORD={PRODUCTION_SECRET}\n"
         f"DB_PATH={production / 'legacy.db'}\n"
+        "USE_SQLA_READS=1\n"
     )
 
     root = tmp_path / "releases"
@@ -326,7 +327,10 @@ def test_reports_dependency_and_configuration_readiness_before_downtime(world):
     (world["source"] / "requirements.txt").write_text("pytest\nruff\nnot-installed-anywhere==1.0\n")
     revision = commit_all(world["source"], "new dependency")
     world["production_env"].write_text(
-        world["production_env"].read_text().replace("WEB_USERNAME=owner\n", "")
+        world["production_env"]
+        .read_text()
+        .replace("WEB_USERNAME=owner\n", "")
+        .replace("USE_SQLA_READS=1\n", "USE_SQLA_READS=0\n")
     )
     world["production_digest"] = tree_digest(world["production"])
 
@@ -337,6 +341,8 @@ def test_reports_dependency_and_configuration_readiness_before_downtime(world):
     assert "requirement not-installed-anywhere is not installed" in report["blockers"]
     assert report["configuration"]["ready"] is False
     assert "production setting WEB_USERNAME is missing" in report["blockers"]
+    # Without it the app would not use the PostgreSQL database readiness checks.
+    assert "production setting USE_SQLA_READS must be enabled" in report["blockers"]
     assert PRODUCTION_SECRET not in json.dumps(report) + result.stdout + result.stderr
     assert_production_untouched(world)
 

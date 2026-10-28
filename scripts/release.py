@@ -1,34 +1,47 @@
 #!/usr/bin/env python3
-"""Prepare and inspect exact production release candidates.
+"""Prepare, deploy, inspect and recover exact production releases.
 
     .venv/bin/python scripts/release.py prepare <revision> --release-root DIR
-    .venv/bin/python scripts/release.py status [<candidate>] --release-root DIR
+    .venv/bin/python scripts/release.py status [<candidate>] [--live] --release-root DIR
     .venv/bin/python scripts/release.py accept <candidate> --scope feature --note TEXT ...
+    .venv/bin/python scripts/release.py deploy <candidate> --release-root DIR
+    .venv/bin/python scripts/release.py recover --release-root DIR
+    .venv/bin/python scripts/release.py restart --release-root DIR
     .venv/bin/python scripts/release.py prune [--keep N] --release-root DIR
 
 Preparation exports one committed revision into its own release directory,
 installs its dependencies into a separate virtualenv there, runs the required
 checks with them and records the evidence. It never migrates the production
 database, restarts services or switches the running release, and it never copies
-production configuration or state into the candidate. The release root may also
-be given as ``JANNENKOTI_RELEASE_ROOT``. See docs/operations/releases.md.
+production configuration or state into the candidate.
+
+Only ``deploy``, ``recover`` and ``restart`` stop and start the production
+services, through the service manager, and only while holding the release-root
+lock. They never change the database schema or restore database data. The
+release root may also be given as ``JANNENKOTI_RELEASE_ROOT``. See
+docs/operations/releases.md.
 """
 
 from __future__ import annotations
 
 import argparse
 import contextlib
+import dataclasses
 import fcntl
 import hashlib
 import json
 import logging
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
 import tarfile
 import tempfile
+import time
+import urllib.error
+import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -40,7 +53,18 @@ DEFAULT_PRODUCTION_ENV = Path("/home/jannesi/Code/server/jannenkoti.env")
 LEGACY_PRODUCTION_CODE = Path("/home/jannesi/Code/server")
 DEFAULT_KEEP = 3
 
-OK, FAILED, REFUSED, BUSY = 0, 1, 2, 3
+# ATTENTION: production may not be serving a verified release; act on the guidance.
+OK, FAILED, REFUSED, BUSY, ATTENTION = 0, 1, 2, 3, 4
+
+# The production units; both run from ``<release root>/current`` (see
+# docs/operations/systemd). Stopped together, so no old worker overlaps a new one.
+APP_SERVICE = "jannenkoti.service"
+GATEWAY_SERVICE = "esp32_ws.service"
+SERVICES = (APP_SERVICE, GATEWAY_SERVICE)
+DEFAULT_SERVICE_MANAGER = "sudo systemctl"
+DEFAULT_APP_URL = "http://127.0.0.1:5555"
+DEFAULT_GATEWAY_URL = "http://127.0.0.1:5556"
+DEFAULT_READINESS_TIMEOUT = 60.0
 
 # The full suite is always required: on one Pi it is cheaper than deciding
 # per release whether a change touches shared behavior.
@@ -63,6 +87,7 @@ PASSED_PROXIES = ("http_proxy", "https_proxy", "no_proxy")
 CACHE_DIRECTORIES = frozenset({"__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache"})
 CREDENTIAL_FILE = re.compile(r"(^|/)([^/]*\.env|alembic\.ini)$")
 MIGRATION_REVISION = re.compile(r"""^revision(?:\s*:\s*str)?\s*=\s*["']([^"']+)["']""", re.M)
+DOWN_REVISION = re.compile(r"^down_revision(?:\s*:[^=]*)?\s*=\s*(.+)$", re.M)
 
 _LIST_DISTRIBUTIONS = (
     "import importlib.metadata as m, re\n"
@@ -242,6 +267,9 @@ def configuration_problems(production_env: Path) -> list[str]:
     database_url = values.get("DATABASE_URL", "")
     if database_url and not database_url.startswith("postgresql"):
         problems.append("production setting DATABASE_URL must use PostgreSQL")
+    if values.get("USE_SQLA_READS", "").strip().lower() not in ("1", "true", "yes", "on"):
+        # The app reaches DATABASE_URL, and its readiness check, only with this set.
+        problems.append("production setting USE_SQLA_READS must be enabled")
     if values.get("APP_ENV", "").strip().lower() not in ("", "production"):
         problems.append("production setting APP_ENV must be production or unset")
     return problems
@@ -272,6 +300,24 @@ def migration_requirement(code: Path, reference: Path) -> dict:
         "new": new,
         "missing": sorted(production - candidate),
     }
+
+
+def migration_heads(code: Path) -> set[str] | None:
+    """Revisions no other migration of ``code`` builds on: the schema it expects."""
+    versions = code / "migrations" / "versions"
+    if not versions.is_dir():
+        return None
+    revisions, parents = set(), set()
+    for path in versions.glob("*.py"):
+        text = path.read_text(errors="ignore")
+        match = MIGRATION_REVISION.search(text)
+        if not match:
+            continue
+        revisions.add(match.group(1))
+        down = DOWN_REVISION.search(text)
+        if down:
+            parents.update(re.findall(r"""["']([^"']+)["']""", down.group(1)))
+    return revisions - parents
 
 
 # --- Evaluation --------------------------------------------------------------
@@ -639,9 +685,19 @@ def command_status(args: argparse.Namespace) -> int:
     ]
     reports.sort(key=lambda r: r.get("created_at") or "")
     protected = {path.name: name for path, name in _active_releases(root).items()}
+    production = production_report(root)
+    live = None
+    if args.live:
+        current = production["current"]
+        live = readiness(_operations(args), current["revision"] if current else None)
+    exit_status = FAILED if live is not None and not live["ready"] else OK
     if args.json:
-        print(json.dumps({"candidates": reports, "releases": protected}, indent=2, sort_keys=True))
-        return OK
+        payload = {"candidates": reports, "releases": protected, "production": production}
+        if live is not None:
+            payload["live"] = live
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return exit_status
+    print_production(production, live)
     if not reports:
         print(f"No candidates under {root}")
     for report in reports:
@@ -651,7 +707,7 @@ def command_status(args: argparse.Namespace) -> int:
             f"{'deployable' if report['deployable'] else 'blocked':<10} "
             f"{report.get('created_at') or ''} {label}".rstrip()
         )
-    return OK
+    return exit_status
 
 
 def command_accept(args: argparse.Namespace) -> int:
@@ -678,6 +734,473 @@ def command_accept(args: argparse.Namespace) -> int:
         logger.info("Recorded owner %s acceptance for %s", args.scope, args.candidate)
     print_report(evaluate(directory, args.production_env, _production_code(args, root)))
     return OK
+
+
+# --- Deployment --------------------------------------------------------------
+
+# Runs with a release's own interpreter; the URL arrives in the environment so
+# it never appears in a process listing, and errors are reported without it.
+_DATABASE_REVISIONS = (
+    "import json, os\n"
+    "try:\n"
+    "    from sqlalchemy import create_engine, text\n"
+    "    from sqlalchemy.pool import NullPool\n"
+    "    engine = create_engine(os.environ['RELEASE_DATABASE_URL'], poolclass=NullPool,\n"
+    "                           connect_args={'connect_timeout': 10})\n"
+    "    with engine.connect() as conn:\n"
+    "        rows = conn.execute(text('SELECT version_num FROM alembic_version')).scalars()\n"
+    "        print(json.dumps({'revisions': sorted(rows)}))\n"
+    "except Exception as exc:\n"
+    "    reason = str(getattr(exc, 'orig', None) or exc).strip().splitlines()\n"
+    "    detail = type(exc).__name__ + (': ' + reason[0][:200] if reason else '')\n"
+    "    print(json.dumps({'error': detail}))\n"
+)
+OPERATION_FILE = "operation.json"
+OPERATION_LOG = "operations.log"
+
+
+@dataclasses.dataclass(frozen=True)
+class Operations:
+    """How to reach the production services; substituted as a whole in tests."""
+
+    service_manager: list[str]
+    app_url: str
+    gateway_url: str
+    readiness_timeout: float
+
+
+def _operations(args: argparse.Namespace) -> Operations:
+    explicit = args.service_manager and args.app_url and args.gateway_url
+    if "PYTEST_CURRENT_TEST" in os.environ and not explicit:
+        # Tests must never reach the host's service manager or production ports.
+        raise Refused("under tests pass --service-manager, --app-url and --gateway-url")
+    if args.readiness_timeout <= 0:
+        raise Refused("--readiness-timeout must be positive")
+    return Operations(
+        service_manager=shlex.split(args.service_manager or DEFAULT_SERVICE_MANAGER),
+        app_url=(args.app_url or DEFAULT_APP_URL).rstrip("/"),
+        gateway_url=(args.gateway_url or DEFAULT_GATEWAY_URL).rstrip("/"),
+        readiness_timeout=args.readiness_timeout,
+    )
+
+
+def _service(ops: Operations, action: str, *units: str) -> int:
+    quiet = action == "is-active"
+    if not quiet:
+        logger.info("Service manager: %s %s", action, " ".join(units))
+    try:
+        result = subprocess.run(
+            [*ops.service_manager, action, *units],
+            stdout=subprocess.DEVNULL if quiet else None,
+            env=_child_env(),
+            timeout=120,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        logger.warning("Service manager %s failed: %s", action, exc)
+        return 1
+    if result.returncode != 0 and not quiet:
+        logger.warning("Service manager %s exited with status %s", action, result.returncode)
+    return result.returncode
+
+
+def _http_json(url: str) -> tuple[int | None, dict]:
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(url, timeout=5) as response:
+            status, raw = response.status, response.read()
+    except urllib.error.HTTPError as exc:
+        status, raw = exc.code, exc.read()
+    except (OSError, ValueError):
+        return None, {}
+    try:
+        body = json.loads(raw or b"{}")
+    except ValueError:
+        body = {}
+    return status, body if isinstance(body, dict) else {}
+
+
+def readiness(ops: Operations, expected: str | None) -> dict:
+    """Probe the running services once. Reads only; no device or automation effects.
+
+    Each process reports the revision it was started from, so a running process
+    of the wrong release, or a unit pointing elsewhere, is not ready.
+    """
+    problems: list[str] = []
+    services = {}
+    for unit in SERVICES:
+        services[unit] = "active" if _service(ops, "is-active", unit) == 0 else "inactive"
+        if services[unit] != "active":
+            problems.append(f"{unit} is not active")
+    probes = {}
+    for name, url, field, healthy in (
+        ("app", ops.app_url + "/healthz", "database", "ok"),
+        ("gateway", ops.gateway_url + "/health", "status", "healthy"),
+    ):
+        status, body = _http_json(url)
+        if status is None:
+            probes[name] = None
+            problems.append(f"{name} health check at {url} is unreachable")
+            continue
+        probes[name] = {"revision": body.get("revision"), field: body.get(field), "http": status}
+        if body.get("revision") != expected:
+            problems.append(
+                f"{name} runs revision {body.get('revision') or 'unknown'}, expected {expected}"
+            )
+        if body.get(field) != healthy:
+            problems.append(f"{name} {field} is {body.get(field) or 'unknown'} (HTTP {status})")
+    return {"ready": not problems, "services": services, **probes, "problems": problems}
+
+
+def wait_ready(ops: Operations, expected: str | None) -> dict:
+    deadline = time.monotonic() + ops.readiness_timeout
+    while True:
+        result = readiness(ops, expected)
+        if result["ready"] or time.monotonic() >= deadline:
+            return result
+        time.sleep(1)
+
+
+def _database_revisions(venv: Path, production_env: Path) -> tuple[set[str] | None, str]:
+    from dotenv import dotenv_values
+
+    url = ""
+    if production_env.is_file():
+        url = (dotenv_values(production_env).get("DATABASE_URL") or "").strip()
+    if not url:
+        return None, f"DATABASE_URL is not readable from {production_env}"
+    python = venv / "bin" / "python"
+    if not python.exists():
+        return None, f"{venv} has no Python"
+    try:
+        result = subprocess.run(
+            [str(python), "-I", "-c", _DATABASE_REVISIONS],
+            capture_output=True,
+            text=True,
+            env=_child_env(PYTHONDONTWRITEBYTECODE="1", RELEASE_DATABASE_URL=url),
+            timeout=60,
+            check=False,
+        )
+        payload = json.loads(result.stdout.strip().splitlines()[-1])
+    except subprocess.TimeoutExpired:
+        return None, "the database query timed out"
+    except (ValueError, IndexError):
+        return None, "the database query did not run"
+    if "error" in payload:
+        return None, payload["error"]
+    return set(payload["revisions"]), ""
+
+
+def database_compatibility(directory: Path, production_env: Path) -> tuple[bool | None, str]:
+    """Whether the production schema is exactly the one ``directory``'s code expects.
+
+    ``None`` means compatibility is unknown, which never counts as compatible.
+    """
+    heads = migration_heads(directory / "code")
+    if not heads:
+        return None, f"release {directory.name} has no migration history"
+    revisions, error = _database_revisions(directory / "venv", production_env)
+    if revisions is None:
+        return None, f"cannot read the database schema revision ({error})"
+    expected = ", ".join(sorted(heads))
+    if revisions == heads:
+        return True, f"database schema {expected} matches release {directory.name}"
+    actual = ", ".join(sorted(revisions)) or "no revision"
+    return False, f"database schema is {actual}; release {directory.name} expects {expected}"
+
+
+def _link_target(root: Path, name: str) -> Path | None:
+    link = root / name
+    return link.resolve() if link.is_symlink() and link.exists() else None
+
+
+def _point(root: Path, name: str, target: Path | None) -> None:
+    link = root / name
+    if target is None:
+        if link.is_symlink():
+            link.unlink()
+        return
+    temporary = root / f".{name}.link"
+    temporary.unlink(missing_ok=True)
+    temporary.symlink_to(Path(_candidates_dir(root).name) / target.name)
+    os.replace(temporary, link)
+
+
+def _revision_of(directory: Path | None) -> str | None:
+    return (_read_record(directory) or {}).get("revision") if directory else None
+
+
+class _Operation:
+    """The inspectable record of one deploy, recover or restart."""
+
+    def __init__(self, root: Path, name: str, target: Path, replaced: Path | None):
+        self.root = root
+        self.record = {
+            "operation": name,
+            "state": "started",
+            "pid": os.getpid(),
+            "candidate": target.name,
+            "revision": _revision_of(target),
+            "replaced": replaced.name if replaced else None,
+            "started_at": _now(),
+            "steps": [],
+        }
+        self._save()
+
+    def step(self, message: str) -> None:
+        logger.info("%s", message)
+        self.record["steps"].append(f"{_now()} {message}")
+        self._save()
+
+    def finish(self, state: str, problems=(), guidance=()) -> None:
+        self.record.update(
+            state=state, finished_at=_now(), problems=list(problems), guidance=list(guidance)
+        )
+        self.record.pop("pid", None)
+        self._save()
+        with (self.root / OPERATION_LOG).open("a") as log:
+            log.write(json.dumps(self.record, sort_keys=True) + "\n")
+        operation = self.record["operation"].capitalize()
+        if state == "succeeded":
+            print(f"{operation} of {self.record['candidate']} succeeded and is ready.")
+            return
+        print(
+            f"{operation} of {self.record['candidate']} did not succeed ({state}).",
+            file=sys.stderr,
+        )
+        for problem in problems:
+            print(f"  - {problem}", file=sys.stderr)
+        for line in guidance:
+            print(line, file=sys.stderr)
+
+    def _save(self) -> None:
+        temporary = self.root / f".{OPERATION_FILE}.tmp"
+        temporary.write_text(json.dumps(self.record, indent=2, sort_keys=True) + "\n")
+        os.replace(temporary, self.root / OPERATION_FILE)
+
+
+def _cutover(
+    root: Path, ops: Operations, op: _Operation, target: Path, previous: Path | None
+) -> list[str]:
+    """Stop both services, select ``target``, start them and wait for readiness.
+
+    The links change only after both services report inactive, so workers of two
+    releases never run together. Returns the problems; empty means ready.
+    """
+    op.step(f"Maintenance window starts: stopping {' and '.join(SERVICES)}")
+    stopped = _service(ops, "stop", *SERVICES) == 0
+    still_active = [unit for unit in SERVICES if _service(ops, "is-active", unit) == 0]
+    if not stopped or still_active:
+        op.step("Services did not stop; starting them again without switching the release")
+        _service(ops, "start", *reversed(SERVICES))
+        return [
+            f"services did not stop ({', '.join(still_active) or 'service manager failed'}); "
+            f"{target.name} was not selected"
+        ]
+    _point(root, "current", target)
+    _point(root, "previous", previous)
+    op.step(f"Selected {target.name} ({_revision_of(target)}); starting the services")
+    _service(ops, "start", *reversed(SERVICES))
+    result = wait_ready(ops, _revision_of(target))
+    op.record["readiness"] = result
+    if result["ready"]:
+        op.step(f"Maintenance window ends: {target.name} is ready")
+    else:
+        op.step("Readiness failed: " + "; ".join(result["problems"]))
+    return result["problems"]
+
+
+def _inspect_guidance(root: Path) -> list[str]:
+    return [
+        "Inspect: release.py status --live, "
+        f"{root / OPERATION_FILE}, and journalctl -u {APP_SERVICE} -u {GATEWAY_SERVICE} -n 200.",
+        "The database schema and data were not changed. Restoring a database backup is a "
+        "separate owner decision that discards later writes; never use it to undo a code failure.",
+    ]
+
+
+def command_deploy(args: argparse.Namespace) -> int:
+    root = _release_root(args)
+    ops = _operations(args)
+    with _locked(root):
+        directory = _candidates_dir(root) / args.candidate
+        if _read_record(directory) is None:
+            raise Refused(f"no candidate {args.candidate} under {root}")
+        current, previous = _link_target(root, "current"), _link_target(root, "previous")
+        if current == directory.resolve():
+            raise Refused(f"candidate {args.candidate} is already the running release")
+        # Every check before the maintenance window; production is untouched on refusal.
+        report = evaluate(directory, args.production_env, _production_code(args, root))
+        migrations = report.get("migrations") or {}
+        if migrations.get("required"):
+            raise Refused(
+                f"candidate {args.candidate} needs database migrations "
+                f"({', '.join(migrations['new'])}); deploying migrations is not supported yet"
+            )
+        if not report["deployable"]:
+            raise Refused(
+                f"candidate {args.candidate} is not deployable:\n  - "
+                + "\n  - ".join(report["blockers"])
+            )
+        compatible, detail = database_compatibility(directory, args.production_env)
+        if not compatible:
+            state = "unknown" if compatible is None else "not established"
+            raise Refused(f"database compatibility {state}: {detail}")
+        logger.info("Pre-deployment checks passed: %s", detail)
+
+        op = _Operation(root, "deploy", directory, current)
+        problems = _cutover(root, ops, op, directory, current or previous)
+        if not problems:
+            op.finish("succeeded")
+            return OK
+        return _recover_after_failure(root, ops, op, args, problems, current, previous)
+
+
+def _recover_after_failure(
+    root: Path,
+    ops: Operations,
+    op: _Operation,
+    args: argparse.Namespace,
+    problems: list[str],
+    restore: Path | None,
+    restore_previous: Path | None,
+) -> int:
+    """Return to the release that ran before, only when the schema still fits it."""
+    if restore is None:
+        op.finish(
+            "failed",
+            problems,
+            [
+                "No earlier release exists to recover to: production ran from the legacy "
+                "checkout. Reinstall the saved legacy unit files and restart them (see "
+                "docs/operations/releases.md), or fix the candidate and deploy again.",
+                *_inspect_guidance(root),
+            ],
+        )
+        return ATTENTION
+    compatible, detail = database_compatibility(restore, args.production_env)
+    op.step(f"Automatic recovery check: {detail}")
+    if not compatible:
+        state = "unknown" if compatible is None else "not established"
+        op.finish(
+            "failed",
+            problems,
+            [
+                f"Automatic recovery to {restore.name} was not attempted: database "
+                f"compatibility {state}. Production still selects {op.record['candidate']}.",
+                "Establish the database state before choosing between fixing forward and "
+                "release.py recover.",
+                *_inspect_guidance(root),
+            ],
+        )
+        return ATTENTION
+    recovery = _cutover(root, ops, op, restore, restore_previous)
+    if not recovery:
+        op.finish(
+            "recovered",
+            problems,
+            [
+                f"Production runs the previous release {restore.name} again and is ready. "
+                f"{op.record['candidate']} is kept for inspection.",
+                *_inspect_guidance(root),
+            ],
+        )
+        return FAILED
+    op.finish(
+        "recovery-failed",
+        problems + [f"recovery to {restore.name}: {problem}" for problem in recovery],
+        ["Production is not verified ready.", *_inspect_guidance(root)],
+    )
+    return ATTENTION
+
+
+def command_recover(args: argparse.Namespace) -> int:
+    root = _release_root(args)
+    ops = _operations(args)
+    with _locked(root):
+        current, previous = _link_target(root, "current"), _link_target(root, "previous")
+        if previous is None:
+            raise Refused(f"no previous release is retained under {root}")
+        compatible, detail = database_compatibility(previous, args.production_env)
+        if not compatible:
+            state = "unknown" if compatible is None else "not established"
+            raise Refused(
+                f"recovery to {previous.name} refused: database compatibility {state}: "
+                f"{detail}. Running code against a schema it does not expect could make "
+                "things worse; restoring a database backup is a separate owner decision "
+                "(see docs/operations/releases.md)"
+            )
+        op = _Operation(root, "recover", previous, current)
+        problems = _cutover(root, ops, op, previous, current)
+        if not problems:
+            op.finish("succeeded")
+            return OK
+        op.finish(
+            "failed", problems, ["Production is not verified ready.", *_inspect_guidance(root)]
+        )
+        return ATTENTION
+
+
+def command_restart(args: argparse.Namespace) -> int:
+    root = _release_root(args)
+    ops = _operations(args)
+    with _locked(root):
+        current = _link_target(root, "current")
+        if current is None:
+            raise Refused(f"no release is deployed under {root}")
+        op = _Operation(root, "restart", current, current)
+        problems = _cutover(root, ops, op, current, _link_target(root, "previous"))
+        if not problems:
+            op.finish("succeeded")
+            return OK
+        op.finish(
+            "failed", problems, ["Production is not verified ready.", *_inspect_guidance(root)]
+        )
+        return ATTENTION
+
+
+def production_report(root: Path) -> dict:
+    report: dict = {"root": str(root)}
+    for name in ("current", "previous"):
+        target = _link_target(root, name)
+        report[name] = (
+            {"candidate": target.name, "revision": _revision_of(target)} if target else None
+        )
+    try:
+        last = json.loads((root / OPERATION_FILE).read_text())
+    except (OSError, ValueError):
+        last = None
+    if last and last.get("state") == "started" and not _process_alive(last.get("pid")):
+        last["state"] = "interrupted"
+    report["last_operation"] = last
+    return report
+
+
+def print_production(report: dict, live: dict | None) -> None:
+    print(f"Production ({report['root']})")
+    for name in ("current", "previous"):
+        entry = report[name]
+        detail = f"{entry['candidate']} revision {entry['revision']}" if entry else "none"
+        print(f"  {name:<14}{detail}")
+    last = report["last_operation"]
+    if last:
+        print(
+            f"  {'last':<14}{last['operation']} {last['candidate']} {last['state']} "
+            f"{last.get('finished_at') or last.get('started_at')}"
+        )
+        for problem in last.get("problems") or []:
+            print(f"    - {problem}")
+    if live is None:
+        return
+    services = ", ".join(f"{unit} {state}" for unit, state in live["services"].items())
+    print(f"  {'services':<14}{services}")
+    for name, field in (("app", "database"), ("gateway", "status")):
+        probe = live.get(name)
+        detail = f"revision {probe['revision']}, {field} {probe[field]}" if probe else "unreachable"
+        print(f"  {name:<14}{detail}")
+    print(f"  {'ready':<14}{'yes' if live['ready'] else 'no'}")
+    for problem in live["problems"]:
+        print(f"    - {problem}")
 
 
 def command_prune(args: argparse.Namespace) -> int:
@@ -735,10 +1258,43 @@ def main(argv: list[str] | None = None) -> int:
     prepare_parser.add_argument("--keep", type=int, default=DEFAULT_KEEP)
     prepare_parser.set_defaults(handler=command_prepare)
 
-    status_parser = commands.add_parser("status", parents=[common], help="inspect candidates")
+    operations = argparse.ArgumentParser(add_help=False)
+    operations.add_argument(
+        "--service-manager", help=f"service manager command (default: {DEFAULT_SERVICE_MANAGER})"
+    )
+    operations.add_argument("--app-url", help=f"app base URL (default: {DEFAULT_APP_URL})")
+    operations.add_argument(
+        "--gateway-url", help=f"gateway base URL (default: {DEFAULT_GATEWAY_URL})"
+    )
+    operations.add_argument(
+        "--readiness-timeout", type=float, default=DEFAULT_READINESS_TIMEOUT, help="seconds"
+    )
+
+    status_parser = commands.add_parser(
+        "status", parents=[common, operations], help="inspect candidates and production"
+    )
     status_parser.add_argument("candidate", nargs="?")
     status_parser.add_argument("--json", action="store_true")
+    status_parser.add_argument(
+        "--live", action="store_true", help="probe the running services' revision and readiness"
+    )
     status_parser.set_defaults(handler=command_status)
+
+    deploy_parser = commands.add_parser(
+        "deploy", parents=[common, operations], help="switch production to a prepared candidate"
+    )
+    deploy_parser.add_argument("candidate")
+    deploy_parser.set_defaults(handler=command_deploy)
+
+    recover_parser = commands.add_parser(
+        "recover", parents=[common, operations], help="return production to the previous release"
+    )
+    recover_parser.set_defaults(handler=command_recover)
+
+    restart_parser = commands.add_parser(
+        "restart", parents=[common, operations], help="restart the running release and verify it"
+    )
+    restart_parser.set_defaults(handler=command_restart)
 
     accept_parser = commands.add_parser("accept", parents=[common], help="record owner acceptance")
     accept_parser.add_argument("candidate")
