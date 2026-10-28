@@ -150,3 +150,46 @@ def test_rewritten_applied_migration_blocks_preparation_rehearsal_and_deployment
     deploy = release(world, "deploy", revision[:12])
     assert deploy.returncode == 2
     assert systemctl_calls(world) == []
+
+
+def test_expired_partial_probe_preserves_last_completed_failure_diagnostics(world):
+    first = prepared(world)
+    assert release(world, "deploy", first[:12]).returncode == 0
+    second = prepared(world, "DATABASE = None\nFEATURE = True\n")
+    (world["controls"] / "pin-release").write_text(str(world["root"] / "releases" / first[:12]))
+    script = (
+        world["systemctl"]
+        .read_text()
+        .replace(
+            'note(" ".join(sys.argv[1:]))',
+            """note(" ".join(sys.argv[1:]))
+if action == "start":
+    (controls / "probe-count").write_text("-1000" if (controls / "stall-used").exists() else "0")
+    (controls / "stall-used").touch()
+if action == "is-active" and (controls / "probe-count").exists():
+    count = int((controls / "probe-count").read_text()) + 1
+    (controls / "probe-count").write_text(str(count))
+    if count >= 3:
+        time.sleep(3)
+""",
+        )
+    )
+    script += """
+if action == "start":
+    import socket
+    for name in ("app_port", "gateway_port"):
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            try:
+                with socket.create_connection(("127.0.0.1", int(CONFIG[name])), timeout=0.1):
+                    break
+            except OSError:
+                time.sleep(0.02)
+"""
+    world["systemctl"].write_text(script)
+    result = release(world, "deploy", second[:12], readiness=2.5)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert f"app runs revision {first}, expected {second}" in result.stderr
+    assert f"gateway runs revision {first}, expected {second}" in result.stderr
+    assert "is not active" not in result.stderr
+    assert "readiness deadline expired" in result.stderr
