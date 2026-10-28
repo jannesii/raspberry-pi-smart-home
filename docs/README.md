@@ -10,6 +10,7 @@ that are useful beyond the code itself.
 | [Feature contracts](development/feature-contracts.md) | Non-obvious behavior to preserve | Affected feature code and regression tests |
 | [Database operations](operations/database.md) | Schema changes and legacy imports | Schema, Alembic environment, migration mixin |
 | [Development environment](operations/development-environment.md) | Development lifecycle, provisioning and isolation | `app/environment.py`, `scripts/dev.py`, service initialization |
+| [Release preparation](operations/releases.md) | Exact verified release candidates | `scripts/release.py` |
 | [YNAB review](features/ynab.md) | Setup, review workflow, and test mode | YNAB service, API, and browser UI |
 | [Decision records](adr/) | Durable decisions and their reasons | The code and docs each decision governs |
 
