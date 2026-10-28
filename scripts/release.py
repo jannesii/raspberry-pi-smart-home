@@ -6,6 +6,8 @@
     .venv/bin/python scripts/release.py accept <candidate> --scope feature --note TEXT ...
     .venv/bin/python scripts/release.py deploy <candidate> --release-root DIR
     .venv/bin/python scripts/release.py recover --release-root DIR
+    .venv/bin/python scripts/release.py rehearse <candidate> --disposable-env FILE --restore-env FILE ...
+    .venv/bin/python scripts/release.py restore --backup NAME --acknowledge-data-loss ...
     .venv/bin/python scripts/release.py restart --release-root DIR
     .venv/bin/python scripts/release.py prune [--keep N] --release-root DIR
 
@@ -17,7 +19,7 @@ production configuration or state into the candidate.
 
 Only ``deploy``, ``recover`` and ``restart`` stop and start the production
 services, through the service manager, and only while holding the release-root
-lock. They never change the database schema or restore database data. The
+lock. Rehearsed migrations require a restricted backup before deployment. The
 release root may also be given as ``JANNENKOTI_RELEASE_ROOT``. See
 docs/operations/releases.md.
 """
@@ -419,6 +421,18 @@ def evaluate(directory: Path, production_env: Path, production_code: Path) -> di
     rehearsal = _evidence_status(
         record.get("evidence", {}).get("migration-rehearsal"), current_code, current_dependencies
     )
+    evidence = record.get("evidence", {}).get("migration-rehearsal", {})
+    if rehearsal == "passed" and migrations["required"]:
+        import release_database as db
+
+        try:
+            baseline = db.revisions(db.database_url(production_env))
+            if evidence.get("baseline") != baseline or evidence.get(
+                "reference_code"
+            ) != code_identity(production_code / "migrations"):
+                rehearsal = "stale"
+        except db.DatabaseFailure:
+            rehearsal = "unknown"
     migrations["rehearsal"] = rehearsal if migrations["required"] is not False else "not required"
     if migrations["required"] is None:
         blockers.append(
@@ -572,7 +586,7 @@ def prune(root: Path, keep: int) -> list[str]:
     candidates = []
     for directory in sorted(_candidates_dir(root).glob("*")):
         record = _read_record(directory)
-        if record is None or directory.resolve() in protected:
+        if record is None or directory.resolve() in protected or record.get("backups"):
             continue
         candidates.append((record.get("created_at", ""), directory))
     candidates.sort(reverse=True)
@@ -596,6 +610,10 @@ def command_prepare(args: argparse.Namespace) -> int:
         directory = _candidates_dir(root) / revision[:12]
         if directory.exists():
             existing = _read_record(directory) or {}
+            if existing.get("backups"):
+                raise Refused(
+                    "candidate has recovery backups; preserve its record and prepare another revision"
+                )
             if directory.resolve() in _active_releases(root):
                 raise Refused(f"candidate {directory.name} is the running or previous release")
             if existing.get("state") == "prepared" and not args.replace:
@@ -961,6 +979,9 @@ class _Operation:
         with (self.root / OPERATION_LOG).open("a") as log:
             log.write(json.dumps(self.record, sort_keys=True) + "\n")
         operation = self.record["operation"].capitalize()
+        if state == "restored":
+            print("Named database backup restored; services remain stopped.")
+            return
         if state == "succeeded":
             print(f"{operation} of {self.record['candidate']} succeeded and is ready.")
             return
@@ -980,7 +1001,12 @@ class _Operation:
 
 
 def _cutover(
-    root: Path, ops: Operations, op: _Operation, target: Path, previous: Path | None
+    root: Path,
+    ops: Operations,
+    op: _Operation,
+    target: Path,
+    previous: Path | None,
+    migration=None,
 ) -> list[str]:
     """Stop both services, select ``target``, start them and wait for readiness.
 
@@ -997,6 +1023,16 @@ def _cutover(
             f"services did not stop ({', '.join(still_active) or 'service manager failed'}); "
             f"{target.name} was not selected"
         ]
+    if migration:
+        import release_database as db
+
+        op.step("Services stopped; applying rehearsed database migrations")
+        try:
+            migration()
+        except db.DatabaseFailure as exc:
+            op.record["migration_failed"] = True
+            op.step("Migration failed or partially applied; services remain stopped")
+            return [str(exc)]
     _point(root, "current", target)
     _point(root, "previous", previous)
     op.step(f"Selected {target.name} ({_revision_of(target)}); starting the services")
@@ -1014,9 +1050,135 @@ def _inspect_guidance(root: Path) -> list[str]:
     return [
         "Inspect: release.py status --live, "
         f"{root / OPERATION_FILE}, and journalctl -u {APP_SERVICE} -u {GATEWAY_SERVICE} -n 200.",
-        "The database schema and data were not changed. Restoring a database backup is a "
+        "Inspect the operation record for migration and backup state. Restoring a database backup is a "
         "separate owner decision that discards later writes; never use it to undo a code failure.",
     ]
+
+
+def command_restore(args: argparse.Namespace) -> int:
+    if not args.acknowledge_data_loss:
+        raise Refused(
+            "restoration discards later writes; pass --acknowledge-data-loss only after an explicit owner decision"
+        )
+    import release_database as db
+
+    root = _release_root(args)
+    ops = _operations(args)
+    with _locked(root):
+        if Path(args.backup).name != args.backup:
+            raise Refused("name one retained backup without a path")
+        matches = []
+        for directory in _candidates_dir(root).glob("*"):
+            for entry in (_read_record(directory) or {}).get("backups", []):
+                if entry["name"] == args.backup:
+                    matches.append((directory, entry))
+        if len(matches) != 1:
+            raise Refused("backup is missing or ambiguous in retained release records")
+        directory, entry = matches[0]
+        backup = root / "backups" / args.backup
+        if (
+            not backup.is_file()
+            or backup.is_symlink()
+            or hashlib.sha256(backup.read_bytes()).hexdigest() != entry["sha256"]
+        ):
+            raise Refused("backup identity cannot be established")
+        url = db.database_url(args.production_env)
+        if entry.get("database_identity") != db.identity(url):
+            raise Refused("backup belongs to a different database target")
+        op = _Operation(root, "restore", directory, _link_target(root, "current"))
+        op.record["backup"] = args.backup
+        op.step(
+            "Owner acknowledged loss of later writes; stopping services for backup " + args.backup
+        )
+        if _service(ops, "stop", *SERVICES) or any(
+            _service(ops, "is-active", unit) == 0 for unit in SERVICES
+        ):
+            op.finish("failed", ["services did not stop; no data restored"])
+            return ATTENTION
+        try:
+            db.replace(url, backup)
+            if db.revisions(url) != entry["baseline"]:
+                raise db.DatabaseFailure("restored baseline differs from recorded backup")
+        except db.DatabaseFailure as exc:
+            op.finish(
+                "restore-failed",
+                [str(exc)],
+                ["Services remain stopped; establish database state before restarting."],
+            )
+            return ATTENTION
+        op.finish(
+            "restored",
+            guidance=[
+                "Database restored; services remain stopped. Select compatible code with recover, or fix forward before restarting."
+            ],
+        )
+        print("Restored named backup; later writes were discarded. Services remain stopped.")
+        return OK
+
+
+def command_rehearse(args: argparse.Namespace) -> int:
+    if not args.disposable_env or not args.restore_env:
+        raise Refused("pass disposable --disposable-env and --restore-env targets")
+    import release_database as db
+
+    root = _release_root(args)
+    with _locked(root):
+        directory = _candidates_dir(root) / args.candidate
+        record = _read_record(directory)
+        if not record or record.get("state") != "prepared":
+            raise Refused("prepare the exact candidate before rehearsal")
+        report = evaluate(directory, args.production_env, _production_code(args, root))
+        if not report["code"]["matches"] or not report["dependencies"]["matches"]:
+            raise Refused("candidate changed since preparation")
+        production = db.database_url(args.production_env)
+        first = db.disposable_url(args.disposable_env, production)
+        second = db.disposable_url(args.restore_env, production)
+        if first == second:
+            raise Refused("use two distinct disposable PostgreSQL databases")
+        # Check both targets and the baseline before the first database mutation.
+        db.require_empty(first)
+        db.require_empty(second)
+        baseline = db.revisions(production)
+        expected = migration_heads(_production_code(args, root))
+        if set(baseline) != expected or len(baseline) != 1:
+            raise Refused("production baseline does not match the reference release")
+        code = directory / "code"
+        seed, verify = code / "migrations/rehearsal.sql", code / "migrations/rehearsal-verify.sql"
+        if not seed.is_file() or not verify.is_file():
+            raise Refused(
+                "candidate needs committed synthetic rehearsal.sql and rehearsal-verify.sql"
+            )
+        evidence = {
+            "code": report["code"]["identity"],
+            "dependencies": report["dependencies"]["identity"],
+            "baseline": baseline,
+            "reference_code": code_identity(_production_code(args, root) / "migrations"),
+            "at": _now(),
+            "status": "failed",
+        }
+        record.setdefault("evidence", {})["migration-rehearsal"] = evidence
+        _write_record(directory, record)
+        try:
+            db.migrate(directory, first, baseline[0])
+            db.run(["psql", "-X", "--set", "ON_ERROR_STOP=1", "--file", str(seed)], url=first)
+            with tempfile.TemporaryDirectory() as temporary:
+                backup = Path(temporary) / "rehearsal.dump"
+                db.dump(first, backup)
+                db.restore(second, backup)
+                if db.signature(first) != db.signature(second):
+                    raise db.DatabaseFailure("restored synthetic state differs")
+            for url in (first, second):
+                db.migrate(directory, url)
+                db.run(["psql", "-X", "--set", "ON_ERROR_STOP=1", "--file", str(verify)], url=url)
+                if set(db.revisions(url)) != migration_heads(code):
+                    raise db.DatabaseFailure("migration did not establish candidate schema")
+            if db.signature(first) != db.signature(second):
+                raise db.DatabaseFailure("restored migration outcome differs")
+            evidence["status"] = "passed"
+        finally:
+            _write_record(directory, record)
+    print("Migration rehearsal and disposable restore passed for " + args.candidate)
+    return OK
 
 
 def command_deploy(args: argparse.Namespace) -> int:
@@ -1032,24 +1194,88 @@ def command_deploy(args: argparse.Namespace) -> int:
         # Every check before the maintenance window; production is untouched on refusal.
         report = evaluate(directory, args.production_env, _production_code(args, root))
         migrations = report.get("migrations") or {}
-        if migrations.get("required"):
+        if migrations.get("required") and migrations.get("rehearsal") != "passed":
             raise Refused(
                 f"candidate {args.candidate} needs database migrations "
-                f"({', '.join(migrations['new'])}); deploying migrations is not supported yet"
+                f"({', '.join(migrations['new'])}); valid migration rehearsal is required"
             )
         if not report["deployable"]:
             raise Refused(
                 f"candidate {args.candidate} is not deployable:\n  - "
                 + "\n  - ".join(report["blockers"])
             )
-        compatible, detail = database_compatibility(directory, args.production_env)
+        migrating = bool(migrations.get("required"))
+        if migrating:
+            import release_database as db
+
+            detail = "rehearsal matches the current database baseline"
+            compatible = True
+        else:
+            compatible, detail = database_compatibility(directory, args.production_env)
         if not compatible:
             state = "unknown" if compatible is None else "not established"
             raise Refused(f"database compatibility {state}: {detail}")
         logger.info("Pre-deployment checks passed: %s", detail)
 
+        migration = None
+        if migrating:
+            url = db.database_url(args.production_env)
+            baseline = db.revisions(url)
+            record = _read_record(directory)
+            if baseline != record.get("evidence", {}).get("migration-rehearsal", {}).get(
+                "baseline"
+            ):
+                raise Refused("database baseline changed after rehearsal validation")
+            backup_dir = root / "backups"
+            backup_dir.mkdir(mode=0o700, exist_ok=True)
+            backup_dir.chmod(0o700)
+            name = args.candidate + "-" + datetime.now(UTC).strftime("%Y%m%dT%H%M%S%f") + ".dump"
+            backup = backup_dir / name
+            # A backup failure is before the maintenance window and before any migration.
+            db.dump(url, backup)
+            if db.revisions(url) != baseline:
+                raise Refused(
+                    "database baseline changed during backup; inspect retained dump before proceeding"
+                )
+            record = _read_record(directory)
+            record.setdefault("backups", []).append(
+                {
+                    "name": name,
+                    "baseline": baseline,
+                    "created_at": _now(),
+                    "sha256": hashlib.sha256(backup.read_bytes()).hexdigest(),
+                    "database_identity": db.identity(url),
+                }
+            )
+            _write_record(directory, record)
+
+            def migration():
+                if db.revisions(url) != baseline:
+                    raise db.DatabaseFailure(
+                        "database baseline changed after backup; refusing migration"
+                    )
+                db.migrate(directory, url)
+                compatible, reason = database_compatibility(directory, args.production_env)
+                if not compatible:
+                    raise db.DatabaseFailure(reason)
+
         op = _Operation(root, "deploy", directory, current)
-        problems = _cutover(root, ops, op, directory, current or previous)
+        if migrating:
+            op.record["backup"] = name
+            op.step("Restricted pre-migration backup recorded: " + name)
+        problems = _cutover(root, ops, op, directory, current or previous, migration)
+        if op.record.get("migration_failed"):
+            op.finish(
+                "migration-failed",
+                problems,
+                [
+                    "No automatic code recovery, downgrade or data restore was attempted.",
+                    "Establish database state and fix forward, or separately authorize restore "
+                    "of the named backup; restoration discards later writes.",
+                    "Services remain stopped. Inspect operation.json and retained backups.",
+                ],
+            )
+            return ATTENTION
         if not problems:
             op.finish("succeeded")
             return OK
@@ -1148,6 +1374,9 @@ def command_restart(args: argparse.Namespace) -> int:
         current = _link_target(root, "current")
         if current is None:
             raise Refused(f"no release is deployed under {root}")
+        compatible, detail = database_compatibility(current, args.production_env)
+        if not compatible:
+            raise Refused("restart refused: database compatibility is not established: " + detail)
         op = _Operation(root, "restart", current, current)
         problems = _cutover(root, ops, op, current, _link_target(root, "previous"))
         if not problems:
@@ -1286,6 +1515,17 @@ def main(argv: list[str] | None = None) -> int:
     deploy_parser.add_argument("candidate")
     deploy_parser.set_defaults(handler=command_deploy)
 
+    rehearse_parser = commands.add_parser("rehearse", parents=[common])
+    rehearse_parser.add_argument("candidate")
+    rehearse_parser.add_argument("--disposable-env", type=Path)
+    rehearse_parser.add_argument("--restore-env", type=Path)
+    rehearse_parser.set_defaults(handler=command_rehearse)
+
+    restore_parser = commands.add_parser("restore", parents=[common, operations])
+    restore_parser.add_argument("--backup", required=True)
+    restore_parser.add_argument("--acknowledge-data-loss", action="store_true")
+    restore_parser.set_defaults(handler=command_restore)
+
     recover_parser = commands.add_parser(
         "recover", parents=[common, operations], help="return production to the previous release"
     )
@@ -1306,6 +1546,8 @@ def main(argv: list[str] | None = None) -> int:
     prune_parser.add_argument("--keep", type=int, default=DEFAULT_KEEP)
     prune_parser.set_defaults(handler=command_prune)
 
+    import release_database
+
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="[release] %(message)s")
     try:
@@ -1313,6 +1555,9 @@ def main(argv: list[str] | None = None) -> int:
     except Refused as exc:
         print(f"Release {args.command} refused: {exc}", file=sys.stderr)
         return REFUSED
+    except release_database.DatabaseFailure as exc:
+        print(f"Release {args.command} failed: {exc}", file=sys.stderr)
+        return FAILED
     except Busy as exc:
         print(f"Release {args.command} not started: {exc}", file=sys.stderr)
         return BUSY

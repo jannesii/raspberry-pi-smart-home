@@ -713,3 +713,8 @@ migration is needed. Run the isolated checks with:
 .venv/bin/pytest -q tests/test_weather_evidence_export.py tests/test_weather_evidence_restore.py
 .venv/bin/pytest -q tests/test_car_heater_sessions_browser.py -k weather
 ```
+
+Migration-bearing releases require representative synthetic PostgreSQL rehearsal,
+a restricted pre-migration backup and separate explicit authorization to restore
+data. See [the release guide](docs/operations/releases.md#migration-rehearsal-and-backup)
+for rehearsal and recovery commands.
