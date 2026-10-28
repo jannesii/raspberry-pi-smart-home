@@ -6,8 +6,8 @@ separate from working checkouts
 This guide covers preparing and accepting a candidate, deploying it, checking
 the running release and recovering the previous one. Preparing a candidate never
 migrates the production database, restarts a service or switches the running
-release. Deploying candidates that need database migrations is not supported
-yet: `deploy` refuses them.
+release. Candidates with database migrations require an exact, successful
+PostgreSQL rehearsal and a restricted backup before deployment.
 
 ## Release root
 
@@ -102,13 +102,14 @@ candidate is deployable by `status <candidate>` and the production database
 schema revision is exactly the candidate's migration head. It reads that
 revision with the candidate's own dependencies and `DATABASE_URL` from
 `--production-env`; an unreadable revision counts as unknown, never as
-compatible. A candidate that needs migrations is refused.
+compatible. A candidate needing migrations instead requires a rehearsal bound
+to the current baseline; deployment creates its backup before stopping services.
 
 The maintenance window then:
 
 1. stops `jannenkoti.service` and `esp32_ws.service` together and confirms
    both are inactive, so workers of two releases never overlap;
-2. points `current` at the candidate and `previous` at the release that ran
+2. applies required rehearsed migrations (if any), then points `current` at the candidate and `previous` at the release that ran
    before (the first deployment has no previous release);
 3. starts both services, which run from `current` (see the units below);
 4. waits up to `--readiness-timeout` seconds (default 60) for readiness.
@@ -144,7 +145,7 @@ probes only read; they trigger no device command, notification or automation.
 | Exit | Meaning |
 | --- | --- |
 | `0` | Ready on the requested release |
-| `1` | Deployment failed readiness and production was recovered to the previous release, which is ready |
+| `1` | Preparation/database operation failed, or deployment failed readiness and compatible code was recovered |
 | `2` | Refused before any change |
 | `3` | Another release operation holds the release root |
 | `4` | Production is not verified ready; follow the printed guidance |
@@ -229,3 +230,83 @@ gateway as isolated processes from `current`.
 real app and gateway health endpoints. The real `pip` installation, a full suite
 inside a real candidate, the real units and `systemctl` are exercised only by an
 actual release.
+
+
+## Migration rehearsal and backup
+
+A migration-bearing candidate must include two reviewed, committed synthetic SQL
+fixtures: `migrations/rehearsal.sql` seeds representative application rows at the
+production baseline; `migrations/rehearsal-verify.sql` checks preserved state at
+the candidate head. Verification must raise an SQL error when an invariant fails
+(for example in a PostgreSQL DO block); merely printing rows is not a check.
+Fixtures are trusted candidate code, never production data. If executable
+Alembic infrastructure or these fixtures are missing, rehearsal refuses safely.
+Do not claim migration release readiness until suitable fixtures are committed.
+
+Provision two **empty disposable PostgreSQL databases** on a private Unix socket,
+with names starting `release_test_`. Each separate environment file contains
+`DATABASE_URL` and `RELEASE_DISPOSABLE=yes`. The tool rejects TCP and system
+socket targets, production database names, nonempty targets and identical URLs.
+Disposable provisioning is an explicit operator step; the tool never creates a
+cluster, installs software or drops a rehearsal database for reuse.
+
+```bash
+.venv/bin/python scripts/release.py rehearse <candidate> \
+  --disposable-env /path/to/rehearsal.env \
+  --restore-env /path/to/restore-check.env
+```
+
+Rehearsal checks the actual production Alembic baseline against the reference
+code, creates that baseline using candidate migrations, seeds synthetic state,
+dumps it with real `pg_dump`, restores it into the second disposable database,
+and compares logical dumps. Both databases are migrated and the committed
+verification SQL runs against both. New connections verify persisted state.
+This is representative synthetic coverage, not a clone or proof about all
+possible production rows. One linear Alembic baseline is supported; ambiguous
+or multiple heads refuse rather than guessing. Keep the databases for inspection
+and remove their disposable cluster manually when finished.
+
+Evidence records candidate code/dependencies, baseline revisions and reference
+migration identity. Changed dependencies, candidate code, reference migrations or production
+baseline invalidate the rehearsal. Normal candidate status reports the result.
+
+`deploy` creates a consistent custom-format PostgreSQL dump before downtime,
+with directory mode 0700 and file mode 0600. Failure blocks before stopping
+services or applying migrations. The backup filename, checksum, database target
+identity and baseline are retained in the candidate record; credentials are not
+recorded. Backups and candidate records owning backups are never automatically
+pruned or replaced. Review disk space and remove obsolete copies explicitly only
+when another recovery basis exists.
+
+After both services stop, the baseline is checked again, migrations run with the
+candidate interpreter, and the resulting revision must match the candidate.
+Database subprocesses have a 180-second bound, connection timeouts, a 120-second
+statement timeout and a 10-second lock timeout. Normal readiness remains bounded.
+A migration failure, including a possibly partial application, keeps services
+stopped and forbids automatic code recovery. After a successful migration but
+failed readiness, the prior release is recovered only if the actual database
+revision matches its expected head. Unknown or incompatible state requires
+inspection and a fix-forward or explicit restoration decision.
+
+## Explicit database restoration
+
+Restoration is destructive: **all writes since the named backup can be lost**.
+`deploy`, `recover`, `restart` and generic acceptance never authorize restoration.
+After a separate explicit owner decision, name a retained backup and acknowledge
+the loss of later writes:
+
+```bash
+.venv/bin/python scripts/release.py restore \
+  --backup <exact-backup-name.dump> --acknowledge-data-loss
+```
+
+The command verifies the retained checksum and original database target, stops
+both services, recreates the application's public schema and restores the dump.
+It verifies the saved baseline and leaves services stopped. It does not silently
+select older code or restart automation. Inspect status, then use compatible code
+recovery or fix forward. A failed restore may already have changed data: services
+remain stopped and the operation record states the failure. This workflow assumes
+the application's ordinary public schema; bespoke external schemas/roles require
+a separately reviewed restore procedure. Backups contain sensitive household data
+and must remain private. Real host provisioning, migration and restoration still
+require owner authorization; automated checks only use disposable targets.
