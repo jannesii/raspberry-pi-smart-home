@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}{% endblock %}</title>
+  <title>{% if app_environment == 'development' %}[DEV] {% endif %}{% block title %}{% endblock %}</title>
 
   <!-- Favicon -->
   <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}" sizes="any">
@@ -12,13 +12,19 @@
   <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
 
   <!-- Global styles -->
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css', v='20261028-1') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/navbar.css') }}">
 
   <!-- Page-specific styles -->
   {% block styles %}{% endblock %}
 </head>
 <body>
+  {% if app_environment == 'development' %}
+    <div class="env-banner" role="status">
+      <strong>Kehitysympäristö</strong>
+      {% if development_label %}<span class="env-banner__label">{{ development_label }}</span>{% endif %}
+    </div>
+  {% endif %}
   {% block nav %}
     {% include 'navbar.html' %}
   {% endblock %}

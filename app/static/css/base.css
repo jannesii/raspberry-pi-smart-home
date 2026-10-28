@@ -14,3 +14,26 @@
     align-items: center;
     min-height: 100vh;
   }
+
+/* Development indicator (APP_ENV=development only) */
+.env-banner {
+  position: sticky;
+  top: 0;
+  z-index: 1100;
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2px 12px;
+  padding: 6px 16px;
+  background: repeating-linear-gradient(135deg, #8a4b00 0 12px, #9c5500 12px 24px);
+  border-bottom: 2px solid #ffb547;
+  color: #fff;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.env-banner__label {
+  font-family: monospace;
+  overflow-wrap: anywhere;
+}
