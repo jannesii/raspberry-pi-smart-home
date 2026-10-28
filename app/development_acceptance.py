@@ -108,6 +108,7 @@ def media_address(values=None):
         origin = urlsplit(values.get("DEV_ACCEPTANCE_MEDIA_ORIGIN") or "")
         host = ipaddress.ip_address(origin.hostname or "")
         port = origin.port
+        browser_port = int(values.get("PORT") or 5557)
     except ValueError:
         raise AcceptanceConfigError(
             "DEV_ACCEPTANCE_MEDIA_ORIGIN needs a literal LAN IP and separate port"
@@ -122,7 +123,7 @@ def media_address(values=None):
         or not (host.is_private or host.is_loopback)
         or host.is_unspecified
         or host.is_multicast
-        or port in {5555, 5556, int(values.get("PORT") or 5557)}
+        or port in {5555, 5556, browser_port}
     ):
         raise AcceptanceConfigError("DEV_ACCEPTANCE_MEDIA_ORIGIN needs a separate LAN HTTP port")
     return str(host), port
