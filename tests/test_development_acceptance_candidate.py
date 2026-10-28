@@ -10,6 +10,13 @@ from urllib.parse import urlsplit
 
 import pytest
 import requests
+from test_development_launch import (  # noqa: F401
+    capture_server,
+    dev_browser,
+    postgres_socket_dir,
+    redis_pair,
+    running_dev,
+)
 
 support = pytest.importorskip(
     "announcement_support", reason="requires temporary combined announcement candidate"
@@ -110,3 +117,12 @@ def test_actual_candidate_only_dispatches_selected_speaker_and_serves_lan_capabi
     assert app.announcement_service.fallback_channel.status()["available"] is False
     assert app.announcement_service.spotify.configured is False
     assert all(effect[1] == "jbl-right" for effect in cast.effects)
+
+
+def test_combined_operator_startup_keeps_candidate_default_builder_off(request):
+    browser = request.getfixturevalue("dev_browser")
+    runtime = request.getfixturevalue("running_dev")
+    response = browser.request("GET", "/api/announcements/status")
+    assert response.status_code == 503, response.text
+    assert response.json()["error"] == "service_unavailable"
+    assert "Announcement service disabled by ANNOUNCEMENTS_ENABLED" in runtime["log"].read_text()
