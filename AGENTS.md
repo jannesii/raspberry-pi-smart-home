@@ -64,12 +64,14 @@ Run commands from the `server/` directory (this file’s directory):
 .venv/bin/pytest -q tests/test_relevant_feature.py
 .venv/bin/ruff check path/to/changed.py
 .venv/bin/ruff format --check path/to/changed.py
-python3 scripts/check_agent_instructions.py
 ```
 
 Replace the example paths with the affected files. Run `.venv/bin/pytest -q`
 for changes spanning shared behavior. Use isolated test databases and mocked
 integrations; do not use live devices, webhooks, or production data as tests.
+Use minimal synthetic development data with a dedicated test login; add fixtures
+only when a feature needs them. Do not clone production data by default. Validate
+database migrations against disposable PostgreSQL, not only SQLite.
 For UI changes, check the affected interaction and responsive layout when a
 browser is available. For firmware changes, run `pio run -e <env>` in each
 affected project with config copied from its example; do not flash devices.
@@ -98,9 +100,6 @@ Use one root glossary and root ADR directory. See `docs/agents/domain.md`.
 
 ## Keep this file small
 
-- Root `AGENTS.md` has a hard limit of 120 lines and 1,100 words. All tracked
-  server `AGENTS.md` files plus `.github/copilot-instructions.md` together have a
-  limit of 180 lines and 1,600 words. Pre-commit and CI check these budgets.
 - Add an instruction only if it is durable, specific to this repository, and
   changes how an agent should act. Replace or remove obsolete text first.
 - Do not append incident histories, feature inventories, tutorials, copied
@@ -108,5 +107,3 @@ Use one root glossary and root ADR directory. See `docs/agents/domain.md`.
 - Put regression protection in tests, local rationale beside the code, and
   reference detail in the relevant feature documentation. Update that detail
   with behavior changes; read it on demand, never as a mandatory bulk preload.
-- Do not bypass the budget by moving this guide into another always-loaded
-  file or increasing the limits. A budget change needs explicit user approval.

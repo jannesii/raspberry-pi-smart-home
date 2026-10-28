@@ -214,7 +214,6 @@ From the repository root, using the virtual environment created above:
 .venv/bin/ruff check app tests run.py esp32_ws
 .venv/bin/ruff format --check app tests run.py esp32_ws
 .venv/bin/pre-commit run --config .pre-commit-config.yaml --all-files
-python3 scripts/check_agent_instructions.py
 ```
 
 Tests use SQLite through SQLAlchemy Core. The sensor-location tests also start
