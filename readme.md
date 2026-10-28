@@ -719,3 +719,7 @@ fallback channel for authorized announcement acceptance. The default remains
 safe, and LAN capability audio is separate from browser management. See the
 [selected acceptance guide](docs/operations/development-environment.md#selected-announcement-acceptance)
 for enabling, inspecting and disabling it and the remaining Spotify/group limits.
+Migration-bearing releases require representative synthetic PostgreSQL rehearsal,
+a restricted pre-migration backup and separate explicit authorization to restore
+data. See [the release guide](docs/operations/releases.md#migration-rehearsal-and-backup)
+for rehearsal and recovery commands.

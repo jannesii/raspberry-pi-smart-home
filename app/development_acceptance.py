@@ -195,10 +195,9 @@ def initialize(app):
 
 def start_media_listener(service, host, port):
     """Share capability state in-process; expose no management routes/cookies."""
-    import threading
-
+    import eventlet
+    from eventlet import wsgi
     from flask import Flask, abort, send_file
-    from werkzeug.serving import WSGIRequestHandler, make_server
 
     media = Flask("development-acceptance-media", static_folder=None)
 
@@ -212,11 +211,17 @@ def start_media_listener(service, host, port):
         response.headers["Referrer-Policy"] = "no-referrer"
         return response
 
-    class QuietHandler(WSGIRequestHandler):
-        def log_request(self, code="-", size="-"):
-            # The URL contains a bearer capability; never print it.
-            pass
+    # Werkzeug's native selector loop blocks Eventlet's hub. Use the same
+    # cooperative server family as the main app, without capability URL logs.
+    listener = eventlet.listen((host, port))
+    green = eventlet.spawn(wsgi.server, listener, media, log_output=False)
 
-    server = make_server(host, port, media, request_handler=QuietHandler)
-    threading.Thread(target=server.serve_forever, name="AcceptanceMedia", daemon=True).start()
-    return server
+    class MediaListener:
+        def shutdown(self):
+            listener.close()
+            green.kill()
+
+        def server_close(self):
+            listener.close()
+
+    return MediaListener()
