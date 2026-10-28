@@ -14,6 +14,7 @@ from typing import Any
 
 from .environment import (
     DEVELOPMENT,
+    DEVELOPMENT_PUBLIC_ORIGIN,
     PRODUCTION_REDIS_URL,
     EnvironmentConfigError,
     development_problems,
@@ -75,6 +76,26 @@ def _env_bool(env_var: str, default: bool) -> bool:
     raise RuntimeError(f"{env_var} must be a boolean")
 
 
+def _development_browser_settings() -> dict[str, Any]:
+    """Keep development's browser state apart from production's.
+
+    Browsers share cookies between ports of one host, so production's default
+    cookie names would collide when both are opened via localhost.
+    """
+    port = os.getenv("PORT") or "5557"
+    return {
+        "SESSION_COOKIE_NAME": "jannenkoti_dev_session",
+        "REMEMBER_COOKIE_NAME": "jannenkoti_dev_remember",
+        "REMEMBER_COOKIE_SECURE": True,
+        "REMEMBER_COOKIE_HTTPONLY": True,
+        "REMEMBER_COOKIE_SAMESITE": "Lax",
+        "ALLOWED_WS_ORIGINS": _json_list(
+            "ALLOWED_WS_ORIGINS",
+            [DEVELOPMENT_PUBLIC_ORIGIN, f"http://127.0.0.1:{port}", f"http://localhost:{port}"],
+        ),
+    }
+
+
 def load_settings() -> dict[str, Any]:
     logger.debug("load_settings called")
     environment = selected_environment()
@@ -130,6 +151,9 @@ def load_settings() -> dict[str, Any]:
         "YNAB_HTTP_TIMEOUT_S": _env_int("YNAB_HTTP_TIMEOUT_S", 15),
         "YNAB_HTTP_RETRIES": _env_int("YNAB_HTTP_RETRIES", 2),
     }
+
+    if environment == DEVELOPMENT:
+        settings.update(_development_browser_settings())
 
     logger.debug(
         "load_settings completed environment=%s db_path_set=%s database_url_set=%s api_cors_origins=%d",

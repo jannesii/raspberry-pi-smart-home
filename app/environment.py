@@ -29,6 +29,8 @@ DEVELOPMENT = "development"
 # Production has always used this instance implicitly; development must not.
 PRODUCTION_REDIS_URL = "redis://localhost:6379"
 PRODUCTION_PORTS = frozenset({5555, 5556})
+# The existing Cloudflare Tunnel routes this origin to http://localhost:5557.
+DEVELOPMENT_PUBLIC_ORIGIN = "https://dev.jannenkoti.com"
 _LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", ""})
 
 

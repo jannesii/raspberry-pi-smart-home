@@ -1,4 +1,14 @@
 #!/usr/bin/env bash
+# Restarts the production services. Refuse from any other checkout so a
+# worktree never falls through to restarting production with production code.
+PRODUCTION_CHECKOUT=/home/jannesi/Code/server
+checkout="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+if [ "$checkout" != "$PRODUCTION_CHECKOUT" ]; then
+  echo "[ERROR] This restarts production and only runs from $PRODUCTION_CHECKOUT." >&2
+  echo "[ERROR] For development use: .venv/bin/python scripts/dev.py start|stop|status" >&2
+  exit 2
+fi
+
 echo "[INFO] Activating venv..."
 source /home/jannesi/Code/server/.venv/bin/activate
 
