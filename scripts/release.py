@@ -42,8 +42,6 @@ import sys
 import tarfile
 import tempfile
 import time
-import urllib.error
-import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -304,6 +302,28 @@ def migration_requirement(code: Path, reference: Path) -> dict:
     }
 
 
+def historical_migration_problems(code: Path, reference: Path) -> list[str]:
+    """Applied migration files are immutable, even when revision IDs are retained."""
+
+    def history(directory):
+        result = {}
+        for path in (directory / "migrations/versions").glob("*.py"):
+            match = MIGRATION_REVISION.search(path.read_text(errors="ignore"))
+            if match:
+                revision = match.group(1)
+                if revision in result:
+                    raise Refused("duplicate migration revision " + revision)
+                result[revision] = path.read_bytes()
+        return result
+
+    candidate, baseline = history(code), history(reference)
+    return [
+        f"applied migration {revision} changed or is missing from candidate"
+        for revision, payload in baseline.items()
+        if candidate.get(revision) != payload
+    ]
+
+
 def migration_heads(code: Path) -> set[str] | None:
     """Revisions no other migration of ``code`` builds on: the schema it expects."""
     versions = code / "migrations" / "versions"
@@ -418,6 +438,7 @@ def evaluate(directory: Path, production_env: Path, production_code: Path) -> di
             awaiting.append(blockers[-1])
 
     migrations = migration_requirement(code, production_code)
+    blockers.extend(historical_migration_problems(code, production_code))
     rehearsal = _evidence_status(
         record.get("evidence", {}).get("migration-rehearsal"), current_code, current_dependencies
     )
@@ -802,7 +823,7 @@ def _operations(args: argparse.Namespace) -> Operations:
     )
 
 
-def _service(ops: Operations, action: str, *units: str) -> int:
+def _service(ops: Operations, action: str, *units: str, timeout: float = 120) -> int:
     quiet = action == "is-active"
     if not quiet:
         logger.info("Service manager: %s %s", action, " ".join(units))
@@ -811,7 +832,7 @@ def _service(ops: Operations, action: str, *units: str) -> int:
             [*ops.service_manager, action, *units],
             stdout=subprocess.DEVNULL if quiet else None,
             env=_child_env(),
-            timeout=120,
+            timeout=timeout,
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -822,32 +843,54 @@ def _service(ops: Operations, action: str, *units: str) -> int:
     return result.returncode
 
 
-def _http_json(url: str) -> tuple[int | None, dict]:
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+_HTTP_PROBE = """
+import json, sys, urllib.error, urllib.request
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+try:
     try:
-        with opener.open(url, timeout=5) as response:
-            status, raw = response.status, response.read()
-    except urllib.error.HTTPError as exc:
-        status, raw = exc.code, exc.read()
-    except (OSError, ValueError):
+        response = opener.open(sys.argv[1], timeout=float(sys.argv[2]))
+    except urllib.error.HTTPError as error:
+        response = error
+    with response:
+        status, raw = response.code, response.read(65536)
+    body = json.loads(raw or b"{}")
+    print(json.dumps([status, body if isinstance(body, dict) else {}]))
+except Exception:
+    print(json.dumps([None, {}]))
+"""
+
+
+def _http_json(url: str, timeout: float = 5) -> tuple[int | None, dict]:
+    # A socket inactivity timeout alone does not bound slow headers/body streams.
+    # Bound the entire HTTP exchange in a child, including error-body reads.
+    try:
+        result = subprocess.run(
+            [sys.executable, "-I", "-c", _HTTP_PROBE, url, str(timeout)],
+            env=_child_env(),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+        status, body = json.loads(result.stdout)
+        return status, body
+    except (OSError, ValueError, subprocess.TimeoutExpired):
         return None, {}
-    try:
-        body = json.loads(raw or b"{}")
-    except ValueError:
-        body = {}
-    return status, body if isinstance(body, dict) else {}
 
 
-def readiness(ops: Operations, expected: str | None) -> dict:
+def readiness(ops: Operations, expected: str | None, deadline: float | None = None) -> dict:
     """Probe the running services once. Reads only; no device or automation effects.
 
     Each process reports the revision it was started from, so a running process
     of the wrong release, or a unit pointing elsewhere, is not ready.
     """
+    deadline = deadline if deadline is not None else time.monotonic() + ops.readiness_timeout
     problems: list[str] = []
     services = {}
     for unit in SERVICES:
-        services[unit] = "active" if _service(ops, "is-active", unit) == 0 else "inactive"
+        remaining = deadline - time.monotonic()
+        active = remaining > 0 and _service(ops, "is-active", unit, timeout=remaining) == 0
+        services[unit] = "active" if active else "inactive"
         if services[unit] != "active":
             problems.append(f"{unit} is not active")
     probes = {}
@@ -855,12 +898,16 @@ def readiness(ops: Operations, expected: str | None) -> dict:
         ("app", ops.app_url + "/healthz", "database", "ok"),
         ("gateway", ops.gateway_url + "/health", "status", "healthy"),
     ):
-        status, body = _http_json(url)
+        remaining = deadline - time.monotonic()
+        status, body = _http_json(url, timeout=min(5, remaining)) if remaining > 0 else (None, {})
         if status is None:
             probes[name] = None
             problems.append(f"{name} health check at {url} is unreachable")
             continue
         probes[name] = {"revision": body.get("revision"), field: body.get(field), "http": status}
+        if status != 200:
+            logger.info("%s health check returned HTTP %s", name, status)
+            problems.append(f"{name} health check returned HTTP {status}")
         if body.get("revision") != expected:
             problems.append(
                 f"{name} runs revision {body.get('revision') or 'unknown'}, expected {expected}"
@@ -873,10 +920,12 @@ def readiness(ops: Operations, expected: str | None) -> dict:
 def wait_ready(ops: Operations, expected: str | None) -> dict:
     deadline = time.monotonic() + ops.readiness_timeout
     while True:
-        result = readiness(ops, expected)
+        result = readiness(ops, expected, deadline)
         if result["ready"] or time.monotonic() >= deadline:
             return result
-        time.sleep(1)
+        time.sleep(min(1, max(0, deadline - time.monotonic())))
+        if time.monotonic() >= deadline:
+            return result
 
 
 def _database_revisions(venv: Path, production_env: Path) -> tuple[set[str] | None, str]:
@@ -1130,6 +1179,9 @@ def command_rehearse(args: argparse.Namespace) -> int:
         report = evaluate(directory, args.production_env, _production_code(args, root))
         if not report["code"]["matches"] or not report["dependencies"]["matches"]:
             raise Refused("candidate changed since preparation")
+        historical = historical_migration_problems(directory / "code", _production_code(args, root))
+        if historical:
+            raise Refused("; ".join(historical))
         production = db.database_url(args.production_env)
         first = db.disposable_url(args.disposable_env, production)
         second = db.disposable_url(args.restore_env, production)

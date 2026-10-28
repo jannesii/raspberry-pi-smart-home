@@ -37,9 +37,13 @@ def disposable_url(environment: Path, production: str) -> str:
     # Resolve connection aliases conservatively; disposable targets must use a
     # named private socket, never a TCP connection or the system socket.
     host = str(parsed.query.get("host", ""))
+    canonical = Path(host).resolve() if host.startswith("/") else None
+    forbidden = (Path("/run").resolve(), Path("/var/run").resolve())
     if (
         not host.startswith("/")
-        or host.startswith(("/run/", "/var/run/"))
+        or canonical is None
+        or not canonical.is_dir()
+        or any(canonical == path or path in canonical.parents for path in forbidden)
         or not parsed.database
         or not parsed.database.startswith("release_test_")
         or make_url(production).database == parsed.database
@@ -47,7 +51,9 @@ def disposable_url(environment: Path, production: str) -> str:
         raise DatabaseFailure(
             "disposable target must use a private socket and release_test_ database"
         )
-    return url
+    # Pass the validated canonical path onward, closing aliases between validation
+    # and connection and ensuring child PostgreSQL tools use the same destination.
+    return parsed.update_query_dict({"host": str(canonical)}).render_as_string(hide_password=False)
 
 
 def run(command: list[str], *, url: str, cwd: Path | None = None) -> None:

@@ -263,7 +263,9 @@ and compares logical dumps. Both databases are migrated and the committed
 verification SQL runs against both. New connections verify persisted state.
 This is representative synthetic coverage, not a clone or proof about all
 possible production rows. One linear Alembic baseline is supported; ambiguous
-or multiple heads refuse rather than guessing. Keep the databases for inspection
+or multiple heads refuse rather than guessing. Applied migration files must remain
+byte-for-byte identical to the reference history; changed or missing historical
+migrations block preparation, rehearsal and deployment even when IDs are retained. Keep the databases for inspection
 and remove their disposable cluster manually when finished.
 
 Evidence records candidate code/dependencies, baseline revisions and reference
@@ -280,7 +282,9 @@ when another recovery basis exists.
 
 After both services stop, the baseline is checked again, migrations run with the
 candidate interpreter, and the resulting revision must match the candidate.
-Database subprocesses have a 180-second bound, connection timeouts, a 120-second
+Readiness uses one monotonic deadline across service probes, HTTP headers/bodies
+and retry pauses, and health responses must use HTTP 200. Database subprocesses
+have a 180-second bound, connection timeouts, a 120-second
 statement timeout and a 10-second lock timeout. Normal readiness remains bounded.
 A migration failure, including a possibly partial application, keeps services
 stopped and forbids automatic code recovery. After a successful migration but

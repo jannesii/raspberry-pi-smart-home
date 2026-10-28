@@ -18,7 +18,24 @@ from test_release_preparation import commit_all
 
 # Reuse the private socket cluster and explicitly substituted service manager.
 postgres = deployment.postgres
-world = deployment.world
+
+
+@pytest.fixture
+def world(tmp_path, postgres):
+    fixture = deployment.world.__wrapped__(tmp_path, postgres)
+    value = next(fixture)
+    # Model a real applied migration: candidate history must match the reference.
+    baseline = (
+        'from alembic import op\nrevision = "0001"\ndown_revision = None\n'
+        'def upgrade():\n    op.execute("CREATE TABLE samples (value text)")\n'
+    )
+    for code in (value["source"], value["production"]):
+        (code / "migrations/versions/0001_base.py").write_text(baseline)
+    commit_all(value["source"], "executable baseline")
+    try:
+        yield value
+    finally:
+        fixture.close()
 
 
 def test_rehearsal_refuses_missing_disposable_target_without_host_effects(world):
