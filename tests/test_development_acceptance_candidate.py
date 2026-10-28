@@ -6,6 +6,7 @@ service construction, target policy, capability lifetime and HTTP are real.
 
 import functools
 import json
+import os
 from urllib.parse import urlsplit
 
 import pytest
@@ -52,6 +53,16 @@ def accepted_app(request, monkeypatch, tmp_path):
             }
         ),
     )
+    if getattr(request, "param", False):
+        chosen = json.loads(os.environ["DEV_ACCEPTANCE"])
+        chosen["discord"] = {
+            "label": "Acceptance",
+            "webhook": "https://discord.com/api/webhooks/123/selected-secret",
+        }
+        monkeypatch.setenv("DEV_ACCEPTANCE", json.dumps(chosen))
+    from app.services import alert_webhook
+
+    monkeypatch.setattr(alert_webhook.requests, "post", request.getfixturevalue("discord").post)
     monkeypatch.setenv("DEV_ACCEPTANCE_MEDIA_ORIGIN", f"http://127.0.0.1:{free_port()}")
     monkeypatch.setenv("ALERT_WEBHOOK_URL", "https://discord.com/api/webhooks/123/inherited-secret")
     monkeypatch.setenv("SPOTIFY_CLIENT_ID", "inherited-id")
@@ -126,3 +137,29 @@ def test_combined_operator_startup_keeps_candidate_default_builder_off(request):
     assert response.status_code == 503, response.text
     assert response.json()["error"] == "service_unavailable"
     assert "Announcement service disabled by ANNOUNCEMENTS_ENABLED" in runtime["log"].read_text()
+
+
+@pytest.mark.parametrize("accepted_app", [False, True], indirect=True)
+def test_only_explicit_discord_destination_receives_fallback(accepted_app, request):
+    app, cast, time = accepted_app
+    client = support.login(app.test_client())
+    synth, _ = request.getfixturevalue("doubles")
+    synth.failure = "synthesis_failed"
+    result = client.post(
+        "/api/announcements/schedules",
+        json={
+            "text": "Acceptance reminder",
+            "target": "jbl-right",
+            "due_local": "2027-01-15T14:30",
+        },
+        headers=support.headers(app, client),
+    )
+    assert result.status_code == 201, result.get_json()
+    time[0] += 1800
+    app.announcement_service.tick()
+    recorded = request.getfixturevalue("discord").requests
+    selected = app.announcement_service.fallback_channel.configured
+    assert len(recorded) == (1 if selected else 0)
+    if selected:
+        assert recorded[0]["url"] == "https://discord.com/api/webhooks/123/selected-secret"
+    assert cast.effects == []
