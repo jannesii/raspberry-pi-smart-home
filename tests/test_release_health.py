@@ -45,8 +45,11 @@ def test_health_reports_database_access_without_a_login(controller):
     assert response.status_code == 200
     body = response.get_json()
     assert body["database"] == "ok"
-    # A working checkout is not a prepared release.
-    assert body["revision"] is None
+    # A working checkout is not a prepared release; a prepared candidate runs
+    # this suite from releases/<candidate>/code beside its release record.
+    record = ROOT.parent / "release.json"
+    expected = json.loads(record.read_text())["revision"] if record.exists() else None
+    assert body["revision"] == expected
 
 
 def test_health_reports_unavailable_database_as_not_ready(controller, tmp_path):
