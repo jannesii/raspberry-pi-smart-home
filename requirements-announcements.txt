@@ -1,5 +1,0 @@
-# Optional Cast transport for spoken announcements (MIT). Install into the app
-# environment only when commissioning speakers; the app reports Cast as
-# unavailable without it. Piper (GPL-3.0-or-later) is deliberately NOT listed:
-# install piper-tts in its own virtual environment and set PIPER_COMMAND.
-PyChromecast==14.0.10

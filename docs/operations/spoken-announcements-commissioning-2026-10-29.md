@@ -1052,3 +1052,58 @@ No new model, cloud service or voice-selection implementation was introduced.
   `migrations/rehearsal-verify.sql`). Checked on a disposable private-socket
   PostgreSQL 17 cluster: seed at `20261021_0019`, upgrade to head, verify
   passes; tampered data makes verification raise.
+
+### Production release e8c658d4b7d2
+
+- Commit `e8c658d` on `codex/spec40-announcement-verification`; local `main`
+  fast-forwarded from `162d2a6` (not pushed). Release tooling unchanged.
+- `release.py prepare main`: candidate `e8c658d4b7d2`, 73 packages (same
+  dependency identity as the previous release, so no PyChromecast), lint passed,
+  candidate suite **886 passed, 50 skipped** (7:59). Dev stopped during
+  preparation; lowest available memory 2.6 GB.
+- Feature acceptance recorded from the owner's release decision. Rehearsal on
+  two `release_test_` databases in a private-socket PostgreSQL 17 cluster
+  passed (baseline `20261021_0019` → `20261027_0027`, dump/restore identical,
+  verification passed on both). The cluster was removed afterwards.
+- `release.py deploy` at 21:38:52–21:39:12 EET, exit 0: restricted backup
+  `e8c658d4b7d2-20261029T193853493533.dump` (71 MB, 0600) before downtime;
+  services stopped, eight migrations applied, `current` → e8c658d4b7d2,
+  `previous` → 162d2a670249, ready.
+- `status --live`: both units active, app and gateway report the revision,
+  database ok, ready yes. https://jannenkoti.com/login → 200. Journal: four
+  ESP32 sensors re-authenticated, no schema errors; "Announcement service ready
+  synthesizer=piper_not_installed cast=pychromecast_not_installed", so
+  announcements are inert in production as decided.
+- `/tmp` was cleared of pytest temporary directories before and after.
+  Dev restarted on `e8c658d` with the same two speakers.
+- Remaining: production enabling (PyChromecast in requirements, Piper and
+  voices, speaker/media settings) needs a separate owner-approved step;
+  issues #30 and #39 remain open.
+- Owner request (approximately 21:41 EET): set the reminder link. Added
+  `ANNOUNCEMENT_PUBLIC_ORIGIN=https://jannenkoti.com` to production
+  `jannenkoti.env` (prior file backed up 0600 under
+  `~/.local/state/jannenkoti-env-backups/`; no other setting changed), then
+  `release.py restart` at 21:41:45 EET, exit 0, ready. Startup log reports
+  `reminder_link_configured=True` with no "ignored" warning. Production also
+  reports `fallback_webhook_configured=True`: while speech is unavailable, a
+  reminder scheduled in production would fail and send a real Discord fallback.
+
+### Enabling announcements in production
+
+- Owner (approximately 21:45 EET): "the rest of the stuff that needed to be
+  enabled can be enabled now".
+- Piper: production-only environment under `~/jannenkoti-announcements/`
+  (outside releases and checkouts, mode 0700) with the same pins as dev
+  (`piper-tts` 1.8.0, `piper-requirements.txt`), `pip check` clean. Voices
+  copied from the dev directory; all four files match the recorded SHA-256
+  manifest; model cards and attribution copied beside them. Local synthesis
+  only: Finnish 2.68 s of audio in 3.55 s, English 2.22 s in 3.53 s (cold,
+  including model load). Nothing played.
+- PyChromecast 14.0.10 and its dependencies (casttube, ifaddr, protobuf,
+  zeroconf; same versions as the passing dev environment) pinned in
+  `requirements.txt`, since release environments install only that file;
+  `requirements-announcements.txt` removed and the readme updated.
+- LAN media listener: installing a new nginx site on `192.168.1.50:8097`
+  (only `/announcement-media/`, access log off, everything else 404) was
+  refused by the agent's permission policy for exposing a local service. It
+  was handed to the owner as `~/jannenkoti-announcement-media-setup.sh`.
