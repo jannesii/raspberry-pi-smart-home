@@ -806,8 +806,8 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin, CastDiscoveryMixin):
             )
         if attempt.interrupted_media and owned:
             owned = self.spotify.owns(attempt.id, attempt.volume_applied, target)
-        self._restore_volume(attempt, owned=owned)
-        outcome = self.spotify.restore(attempt.id, target, owned=owned)
+        volume_owned = self._restore_volume(attempt, owned=owned)
+        outcome = self.spotify.restore(attempt.id, target, owned=owned and volume_owned)
         if (
             outcome is None
             and self.ctrl.get_announcement_attempt(attempt.id).media_restore == "pending"
@@ -820,12 +820,12 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin, CastDiscoveryMixin):
         if attempt.occurrence_id:
             self._settle_occurrence_of(attempt)
 
-    def _restore_volume(self, attempt, *, owned=None) -> None:
+    def _restore_volume(self, attempt, *, owned=None) -> bool:
         target = self._target(attempt)
         before, applied = attempt.volume_before, attempt.volume_applied
         outcome = None
         if applied is None:
-            return
+            return owned is not False
         if owned is False:
             outcome = "skipped_newer_intent"
         elif before is None or abs(before - applied) <= VOLUME_EPSILON:
@@ -836,9 +836,15 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin, CastDiscoveryMixin):
             probe = self.transport.probe(target)
             if probe.device_id != attempt.target_device_id:
                 outcome = "skipped_newer_intent"
-            elif probe.volume is None or probe.state not in ("idle",):
-                outcome = "unknown" if probe.volume is None else "skipped_newer_intent"
-            elif abs(probe.volume - applied) > VOLUME_EPSILON:
+            elif probe.volume is None or probe.state in ("unknown", "unavailable"):
+                outcome = "unknown"
+            elif (
+                probe.state != "idle"
+                or abs(probe.volume - applied) > VOLUME_EPSILON
+                # A status query can yield during an owner's change. Recheck
+                # the retained subscription immediately before restoring.
+                or not self.transport.owns(attempt.id, target, volume=True)
+            ):
                 outcome = "skipped_newer_intent"
             else:
                 try:
@@ -854,6 +860,7 @@ class AnnouncementService(OccurrenceMixin, FallbackMixin, CastDiscoveryMixin):
             updated_at=now,
         )
         logger.info("Announcement attempt %s volume restore: %s", attempt.id, outcome)
+        return outcome not in ("unknown", "skipped_newer_intent")
 
     def _handle_stops(self) -> None:
         for attempt in self.ctrl.list_announcement_attempts(statuses=("dispatched", "playing")):

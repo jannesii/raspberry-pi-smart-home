@@ -437,7 +437,7 @@ def test_recurring_controls_are_on_the_announcement_page(announcement_app, clien
         assert element in html
     assert "Europe/Helsinki local time" in html
     assert "js/announcements.js?v=20261027-10" in html
-    assert "css/announcements.css?v=20261027-10" in html
+    assert "css/announcements.css?v=20261029-3" in html
 
 
 def test_spring_gap_fallback_explains_clock_change_without_suggesting_server_outage(

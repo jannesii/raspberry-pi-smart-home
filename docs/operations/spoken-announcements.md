@@ -5,6 +5,10 @@ doubles. They cannot establish audibility, group synchronization, voice quality,
 physical volume ownership or delivery to an actual Discord account. The owner
 commissioning record below remains **UNVERIFIED** until observed and dated.
 
+Current session: [29 October 2026 commissioning results](spoken-announcements-commissioning-2026-10-29.md).
+Development commissioning must also follow the explicit integration boundaries
+in [selected announcement acceptance](development-environment.md#selected-announcement-acceptance).
+
 ## Prepare a deployment
 
 Use [the announcement setup guide](../../readme.md#spoken-announcements) for

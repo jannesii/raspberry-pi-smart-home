@@ -91,7 +91,7 @@ with sync_playwright() as pw:
     page.reload()
     expect(occurrence).to_contain_text("Speaker reported playback")
     expect(occurrence).to_contain_text("Acknowledged")
-    expect(occurrence).to_contain_text("Not recorded")
+    expect(occurrence).to_contain_text("Not acknowledged")
     expect(page.locator(".announce-reminder").first).to_contain_text("Due time passed")
 
     # Failed speech: one Discord fallback, shown separately from acknowledgement.
@@ -108,7 +108,7 @@ with sync_playwright() as pw:
     failed = page.locator(".announce-occurrence", has_text="Ei ääntä")
     expect(failed).to_contain_text("Accepted by Discord")
     expect(failed).to_contain_text("Reason: spoken delivery failed")
-    expect(failed).to_contain_text("Not recorded")
+    expect(failed).to_contain_text("Not acknowledged")
     assert context.request.get(origin + "/test/discord").json() == {"requests": 1}
     occurrence_id = failed.get_attribute("data-occurrence-id")
     page.goto(f"{origin}/settings/announcements?occurrence={occurrence_id}")

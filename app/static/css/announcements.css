@@ -23,6 +23,7 @@
   margin-top: 6px;
   font-size: 3rem;
   line-height: 1;
+  overflow-wrap: anywhere;
 }
 
 .announce-subtitle {
@@ -139,6 +140,7 @@
 .announce-field input[type="number"] {
   box-sizing: border-box;
   width: 100%;
+  min-width: 0;
   min-height: 44px;
   border: 1px solid #3a424b;
   border-radius: 8px;
@@ -234,6 +236,10 @@
   gap: 4px 16px;
 }
 
+.announce-weekdays[hidden] {
+  display: none;
+}
+
 .announce-repeat legend,
 .announce-weekdays legend {
   width: 100%;
@@ -269,6 +275,7 @@
 .announce-time-row input[type="time"] {
   box-sizing: border-box;
   width: 100%;
+  min-width: 0;
   min-height: 44px;
   border: 1px solid #3a424b;
   border-radius: 8px;
@@ -277,6 +284,25 @@
   padding: 10px 12px;
   font: inherit;
   font-size: 1rem;
+}
+
+/* iOS native date/time appearance can force content-box sizing with padding.
+   Keep the native picker, but let our field sizing control the painted box.
+   https://bugs.webkit.org/show_bug.cgi?id=301648 */
+.announce-field input[type="date"],
+.announce-field input[type="time"],
+.announce-time-row input[type="time"] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  max-width: 100%;
+}
+
+.announce-field input[type="date"]::-webkit-date-and-time-value,
+.announce-field input[type="time"]::-webkit-date-and-time-value,
+.announce-time-row input[type="time"]::-webkit-date-and-time-value {
+  min-height: 1.2em;
+  text-align: left;
 }
 
 .announce-time-row input:focus-visible {
@@ -583,6 +609,13 @@
 
   .announce-actions .announce-btn {
     flex: 1 1 auto;
+  }
+}
+
+@media (max-width: 540px) {
+  #announceOnceFields .announce-grid-2 {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
   }
 }
 

@@ -163,11 +163,13 @@ class PyChromecastTransport:
         connect_timeout_s: float = 10.0,
         command_timeout_s: float = 10.0,
         membership_timeout_s: float = 2.0,
+        media_status_timeout_s: float = 2.0,
     ):
         self.connect_timeout_s = connect_timeout_s
         self.command_timeout_s = command_timeout_s
         # How long a probe waits for a group's membership report (else unknown).
         self.membership_timeout_s = membership_timeout_s
+        self.media_status_timeout_s = media_status_timeout_s
         self._sessions: dict[str, tuple] = {}
         self._volume_sessions: dict[str, list] = {}
         self._lock = threading.Lock()
@@ -269,15 +271,45 @@ class PyChromecastTransport:
             )
         return found
 
+    def _probe_player(self, cast) -> str:
+        """Distinguish an explicit empty media response from missing status.
+
+        Receiver readiness does not imply media readiness. In particular JBL's
+        idle Default Media Receiver answers MEDIA_STATUS with status=[], which
+        PyChromecast leaves as its initial UNKNOWN state on a fresh connection.
+        """
+        media = cast.media_controller
+        player = getattr(media.status, "player_state", None) or "UNKNOWN"
+        if cast.is_idle or cast.status.app_id != DEFAULT_MEDIA_RECEIVER or player != "UNKNOWN":
+            return player
+        observed = {}
+        ready = threading.Event()
+
+        def receive(sent, response):
+            if sent and isinstance(response, dict) and response.get("type") == "MEDIA_STATUS":
+                statuses = response.get("status")
+                if isinstance(statuses, list):
+                    if not statuses:
+                        observed["player"] = "IDLE"
+                    elif isinstance(statuses[0], dict):
+                        observed["player"] = statuses[0].get("playerState")
+            ready.set()
+
+        try:
+            media.update_status(callback_function=receive)
+        except Exception:
+            return "UNKNOWN"
+        ready.wait(timeout=self.media_status_timeout_s)
+        return observed.get("player") or "UNKNOWN"
+
     def probe(self, target: SpeakerTarget) -> SpeakerProbe:
         try:
             cast = self._connect(target)
         except TransportError:
             return SpeakerProbe(state="unavailable", volume=None, device_id=None)
         try:
+            player = self._probe_player(cast)
             status = cast.status
-            media = cast.media_controller.status
-            player = getattr(media, "player_state", None)
             if cast.is_idle or (status.app_id == DEFAULT_MEDIA_RECEIVER and player == "IDLE"):
                 state = "idle"
             elif player in ("PLAYING", "BUFFERING"):
@@ -307,6 +339,20 @@ class PyChromecastTransport:
 
     def play(self, attempt_id, target, media_url, *, content_type, title) -> None:
         cast = self._connect(target)
+        # The SDK sends a load to whichever running app accepts media commands;
+        # another app (e.g. Spotify) then discards it unfetched. Take the
+        # receiver over first so our load reaches the Default Media Receiver.
+        running = getattr(cast.status, "app_id", None)
+        if running and running != DEFAULT_MEDIA_RECEIVER:
+            logger.info("Attempt %s launching media receiver over app %s", attempt_id, running)
+            try:
+                cast.start_app(DEFAULT_MEDIA_RECEIVER, timeout=self.command_timeout_s)
+            except Exception as exc:
+                cast.disconnect(timeout=self.command_timeout_s)
+                logger.warning(
+                    "Attempt %s media receiver launch failed: %s", attempt_id, type(exc).__name__
+                )
+                raise TransportError("launch_failed", certain_not_played=True) from exc
         listener = _MediaListener(media_url)
         listener.volume = getattr(cast.status, "volume_level", None)
         try:

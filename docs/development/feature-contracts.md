@@ -371,6 +371,16 @@ Code: `app/blueprints/api/car_heater/weather.py` (`/sessions/<id>/weather`,
   held over synthesis or provider waits. Terminal history deletion uses atomic
   Controller guards plus an in-memory finishing guard until restoration and
   occurrence settlement end. Stops recorded before a tick precede previews.
+- Cast probes distinguish receiver readiness from media readiness. For a fresh
+  Default Media Receiver connection, an explicit `MEDIA_STATUS` response with an
+  empty session list establishes idle; no usable reply within the bounded wait
+  remains unknown. Volume restoration rechecks the retained ownership listener
+  after probing. Unknown state leaves volume unchanged without claiming newer
+  owner intent, and loss of volume ownership also prevents music restoration.
+- Playback launches the Default Media Receiver first when another Cast app
+  (e.g. Spotify) is running: PyChromecast would otherwise send the load to that
+  app, which discards it unfetched. A failed launch is `launch_failed` with
+  `certain_not_played`.
 - Optional Spotify connect, enable (including refresh) and device discovery are
   queued to a feature-local worker independent of tick. OAuth callback validates
   the session/state/owner then redirects immediately. Settings status exposes

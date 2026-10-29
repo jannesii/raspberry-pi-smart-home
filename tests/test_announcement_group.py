@@ -604,4 +604,4 @@ def test_page_offers_the_read_only_speaker_check(announcement_app, client):
     assert 'id="announcementDiscoveryButton"' in html
     assert "never creates or changes your Google Home group" in html
     assert "js/announcements.js?v=20261027-10" in html
-    assert "css/announcements.css?v=20261027-10" in html
+    assert "css/announcements.css?v=20261029-3" in html
