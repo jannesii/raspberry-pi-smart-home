@@ -48,7 +48,7 @@
 /* B's timeline. */
 .heating-layout .departure-timeline { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 28px 0 16px; padding: 0; list-style: none; }
 .heating-layout .departure-timeline::before { content: ''; position: absolute; top: 5px; left: 5px; right: 18%; height: 1px; background: #6d6556; }
-.heating-layout .departure-timeline li { position: relative; padding: 24px 0 0; border: 0; min-width: 0; }
+.heating-layout .departure-timeline li { position: relative; display: block; padding: 24px 0 0; border: 0; min-width: 0; }
 .heating-layout .departure-timeline li::before { content: ''; position: absolute; top: 0; left: 0; width: 11px; height: 11px; border-radius: 50%; background: var(--heat-accent); }
 .heating-layout .departure-timeline strong { font-size: 13px; font-weight: 500; color: var(--heat-muted); }
 .heating-layout .departure-timeline time { display: block; font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -74,6 +74,8 @@
 .heating-layout button { cursor: pointer; padding: 10px 16px; background: var(--heat-raised); border: 1px solid #4a5157; font-weight: 550; }
 .heating-layout button:disabled { opacity: .5; cursor: not-allowed; }
 .heating-layout :focus-visible { outline: 3px solid var(--heat-focus); outline-offset: 3px; }
+/* Native date fields move focus inside themselves (e.g. to the picker button). */
+.heating-layout input:focus-within, .heating-layout select:focus { outline: 3px solid var(--heat-focus); outline-offset: 3px; }
 .bounded-manual-controls label { display: block; color: var(--heat-muted); font-size: 14px; margin: 16px 0 6px; }
 .bounded-manual-controls input { width: 100%; max-width: 12rem; padding: 10px 12px; background: #15181a; border: 1px solid #5a6168; color-scheme: dark; }
 #boundedHeatingStatus, .heater-state-detail { overflow-wrap: anywhere; }
@@ -110,13 +112,11 @@
 .heating-layout .comfort-actions button { flex: 1 1 140px; }
 .comfort-feedback { color: var(--heat-muted); font-size: 14px; overflow-wrap: anywhere; }
 .comfort-feedback:empty { display: none; }
-.legacy-ready-by { margin: 16px 0 8px; border-top: 1px solid var(--heat-line); }
-.legacy-ready-by > summary { min-height: 48px; display: flex; align-items: center; cursor: pointer; color: var(--heat-muted); font-weight: 550; }
-.legacy-ready-by > summary { justify-content: space-between; list-style: none; }
-.legacy-ready-by > summary::-webkit-details-marker { display: none; }
-.legacy-ready-by > summary::after { content: '+'; font-size: 22px; }
-.legacy-ready-by[open] > summary::after { content: '−'; }
-.legacy-ready-by .ready-by-section { margin-top: 12px; }
+/* Ready by (cabin target) shares Comfort heating's expandable section. */
+.ready-by-fields { display: flex; flex-wrap: wrap; gap: 12px; }
+.ready-by-fields label { flex: 1 1 140px; margin-top: 16px !important; }
+.ready-by-fields input { max-width: none !important; margin-top: 6px; }
+.ready-by-tools .session-facts[hidden] { display: none; }
 .weather-reading { display: flex; justify-content: space-between; align-items: end; gap: 16px; flex-wrap: wrap; margin: 8px 0 12px; }
 .weather-value { font-size: 30px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .heating-layout .condition-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 14px; margin: 20px 0 16px; padding: 0; list-style: none; }
@@ -126,7 +126,6 @@
 .condition-tile .sensor-value { font-size: 22px; font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .condition-tile .sensor-state { font-size: 12px; color: var(--heat-muted); }
 .condition-tile .sensor-stale .sensor-state, .condition-tile .sensor-cached .sensor-state { color: var(--heat-accent); }
-.heater-details-heading { margin: 24px 0 8px; }
 
 @media (min-width: 768px) {
   .heating-layout { grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); gap: 48px; }

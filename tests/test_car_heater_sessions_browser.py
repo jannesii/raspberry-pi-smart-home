@@ -351,3 +351,44 @@ def test_authenticated_calibration_settings_browser_flow(tmp_path, width):
         finally:
             host.terminate()
             host.wait(timeout=10)
+
+
+@pytest.mark.parametrize("width", [393, 1440])
+def test_complete_car_heater_interface_browser_journey(tmp_path, width):
+    """Heating, Sessions, Settings, review, capture and outcome in one isolated app."""
+    pytest.importorskip("playwright")
+    scripts = Path(__file__).parent / "browser"
+    host_file = tmp_path / "host.json"
+    with (tmp_path / "host.log").open("w+") as log:
+        host = subprocess.Popen(
+            [
+                sys.executable,
+                str(scripts / "car_heater_sessions_host.py"),
+                str(tmp_path),
+                "complete",
+            ],
+            stdout=log,
+            stderr=log,
+        )
+        try:
+            deadline = time.monotonic() + 20
+            while not host_file.exists() and host.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.1)
+            assert host_file.exists(), "Isolated complete host did not start; see host.log"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(scripts / "car_heater_complete_flow.py"),
+                    str(host_file),
+                    str(width),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=240,
+            )
+            if "Executable doesn't exist" in result.stderr:
+                pytest.skip("Run python -m playwright install chromium")
+            assert result.returncode == 0, result.stdout + result.stderr
+        finally:
+            host.terminate()
+            host.wait(timeout=10)

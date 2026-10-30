@@ -13,7 +13,7 @@
   line-height: 1.5;
 }
 .heater-dialog::backdrop { background: rgb(0 0 0 / .8); }
-.heater-dialog button, #diagnostics button, #carHeaterLogsModal button {
+.heater-dialog button, #carHeaterLogsModal button {
   min-height: 44px;
   min-width: 44px;
   padding: 10px 14px;
@@ -27,10 +27,6 @@
   outline-offset: 3px;
 }
 #diagnostics { scroll-margin-top: 90px; }
-#diagnostics .cmd-status-item { gap: 16px; align-items: baseline; }
-#diagnostics .cmd-status-badge { color: #c5cdd5; white-space: normal; text-align: right; }
-#diagnostics .cmd-status-badge.status-error { color: #f0b0a8; }
-#diagnostics .advanced-btn-row { flex-wrap: wrap; gap: 10px; }
 #diagnostics .diagnostics-health dd { overflow-wrap: anywhere; }
 
 #carHeaterLogsModal { width: min(92vw, 860px); }

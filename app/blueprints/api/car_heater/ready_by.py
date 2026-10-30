@@ -1,9 +1,7 @@
-"""Car Heater Ready-by module - Schedule management endpoints.
+"""Ready-by (cabin target) schedule endpoints: get, create/replace, cancel.
 
-Handles:
-- Get current schedule
-- Create new schedule
-- Cancel schedule
+Mutations are authenticated and browser-CSRF protected, like the matching
+Socket.IO event.
 """
 
 from __future__ import annotations
@@ -16,7 +14,6 @@ from typing import TYPE_CHECKING, Any
 from flask import current_app, jsonify, request
 from flask_login import current_user, login_required
 
-from ....extensions import csrf
 from ._blueprint import car_bp
 
 logger = logging.getLogger(__name__)
@@ -24,6 +21,17 @@ logger.setLevel(logging.INFO)
 
 if TYPE_CHECKING:
     from ....services.car_heater import ReadyByService
+
+
+def _emit_to_views() -> None:
+    """Show HTTP changes in every open view, as the Socket.IO event does."""
+    sio = getattr(current_app, "sio_handler", None)
+    if sio is None:
+        return
+    try:
+        sio.emit_ready_by_status_to_views()
+    except Exception:
+        logger.debug("Ready-by status broadcast failed", exc_info=True)
 
 
 # ==============================================================================
@@ -50,7 +58,6 @@ def get_ready_by_schedule():
 
 
 @car_bp.route("/ready_by/schedule", methods=["POST"])
-@csrf.exempt
 @login_required
 def create_ready_by_schedule():
     """Create a new Ready-by schedule."""
@@ -94,8 +101,10 @@ def create_ready_by_schedule():
             target_temp_c,
         )
 
+        _emit_to_views()
         return jsonify({"ok": True, "schedule": asdict(schedule)}), 200
     except ValueError as exc:
+        logger.info("Ready-by schedule refused for %s: %s", current_user.get_id(), exc)
         return jsonify(error=str(exc)), 409
     except Exception as e:
         logger.exception("Failed to create Ready-by schedule: %s", e)
@@ -103,7 +112,6 @@ def create_ready_by_schedule():
 
 
 @car_bp.route("/ready_by/schedule", methods=["DELETE"])
-@csrf.exempt
 @login_required
 def cancel_ready_by_schedule():
     """Cancel the current Ready-by schedule."""
@@ -119,6 +127,7 @@ def cancel_ready_by_schedule():
         turn_off = bool(data.get("turn_off", False))
 
         schedule = svc.cancel(reason=reason, turn_off=turn_off)
+        _emit_to_views()
 
         if schedule is None:
             return jsonify({"ok": True, "schedule": None, "message": "No active schedule"}), 200

@@ -20,6 +20,78 @@ from werkzeug.serving import make_server
 
 import app  # noqa: F401
 
+
+def add_device_frames(flask_app, heater, clock):
+    """POST /test/frame: one firmware-shaped frame through the real ingest paths."""
+    from flask import request
+    from test_car_heater_sensors import _DummySIOHandler, _DummySocketIO
+
+    from app.blueprints.api.car_heater import status as car_status
+    from app.services.esp32_redis_bridge import ESP32RedisBridge
+
+    flask_app.sio_handler = _DummySIOHandler()
+
+    @flask_app.post("/test/frame")
+    def device_frame():
+        """One firmware-shaped frame through the real HTTP or WebSocket ingest."""
+        spec = request.get_json()
+        run = heater.get_bounded_session()
+        session_id = {"current": run and run["session_id"], "old": "old-session"}
+        now = clock()
+        frame = {
+            "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "firmware_version": "3.1.1",
+            "shelly_connected": spec.get("connected", True),
+            "temperature": None,
+            "sensors": {
+                "glass_reference": {"status": "missing", "temperature_c": None},
+                "cabin": {
+                    "status": "ok",
+                    "temperature_c": -2.5,
+                    "humidity_pct": 0,
+                    "age_ms": 0,
+                },
+            },
+        }
+        if spec.get("connected", True):
+            relay = spec.get("relay", False)
+            frame["shelly"] = json.dumps(
+                {"output": relay, "apower": spec.get("power", 0), "aenergy": {"total": 1}}
+            )
+            frame["bounded"] = {
+                "protocol": 1,
+                "ready": True,
+                "relay_on": relay,
+                "power_w": spec.get("power", 0),
+                "boot_id": "relay-one",
+                "device_boot_id": "esp-one",
+                **(
+                    {"session_id": session_id[spec["session"]], "phase": spec.get("phase")}
+                    if spec.get("session")
+                    else {}
+                ),
+            }
+        if spec.get("ack"):
+            ack = spec["ack"]
+            result = {"action": ack["action"]}
+            if "success" in ack:
+                result["success"] = ack["success"]
+            if "session" in ack:
+                result["session_id"] = session_id[ack["session"]]
+            frame["action_results"] = [result]
+        if "logs" in spec:
+            frame["logs"] = spec["logs"]
+        if spec.get("transport") == "ws":
+            frame["received_at"] = now.isoformat()
+            ESP32RedisBridge(
+                app=flask_app, socketio=_DummySocketIO(), sio_handler=flask_app.sio_handler
+            )._emit_status(frame)
+        else:
+            _, code = car_status.handle_status_update_request(frame, commands_enabled=True)
+            assert code == 200
+        return {"ok": True}
+
+
 if __name__ == "__main__":
     work = Path(sys.argv[1])
     patch = pytest.MonkeyPatch()
@@ -74,78 +146,14 @@ if __name__ == "__main__":
 
         from datetime import UTC, datetime
 
-        from flask import request
-        from test_car_heater_sensors import _DummySIOHandler, _DummySocketIO
-
         from app.blueprints.api.car_heater import status as car_status
-        from app.services.esp32_redis_bridge import ESP32RedisBridge
 
-        flask_app.sio_handler = _DummySIOHandler()
         diagnostics_now = (
             datetime(2026, 11, 2, 5, 10, tzinfo=UTC) if sys.argv[2] == "diagnostics" else None
         )
         if diagnostics_now is not None:
             patch.setattr(car_status, "_utc_now", lambda: diagnostics_now)
-
-        @flask_app.post("/test/frame")
-        def device_frame():
-            """One firmware-shaped frame through the real HTTP or WebSocket ingest."""
-            spec = request.get_json()
-            run = heater.get_bounded_session()
-            session_id = {"current": run and run["session_id"], "old": "old-session"}
-            now = diagnostics_now or datetime.now(UTC)
-            frame = {
-                "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
-                "firmware_version": "3.1.1",
-                "shelly_connected": spec.get("connected", True),
-                "temperature": None,
-                "sensors": {
-                    "glass_reference": {"status": "missing", "temperature_c": None},
-                    "cabin": {
-                        "status": "ok",
-                        "temperature_c": -2.5,
-                        "humidity_pct": 0,
-                        "age_ms": 0,
-                    },
-                },
-            }
-            if spec.get("connected", True):
-                relay = spec.get("relay", False)
-                frame["shelly"] = json.dumps(
-                    {"output": relay, "apower": spec.get("power", 0), "aenergy": {"total": 1}}
-                )
-                frame["bounded"] = {
-                    "protocol": 1,
-                    "ready": True,
-                    "relay_on": relay,
-                    "power_w": spec.get("power", 0),
-                    "boot_id": "relay-one",
-                    "device_boot_id": "esp-one",
-                    **(
-                        {"session_id": session_id[spec["session"]], "phase": spec.get("phase")}
-                        if spec.get("session")
-                        else {}
-                    ),
-                }
-            if spec.get("ack"):
-                ack = spec["ack"]
-                result = {"action": ack["action"]}
-                if "success" in ack:
-                    result["success"] = ack["success"]
-                if "session" in ack:
-                    result["session_id"] = session_id[ack["session"]]
-                frame["action_results"] = [result]
-            if "logs" in spec:
-                frame["logs"] = spec["logs"]
-            if spec.get("transport") == "ws":
-                frame["received_at"] = now.isoformat()
-                ESP32RedisBridge(
-                    app=flask_app, socketio=_DummySocketIO(), sio_handler=flask_app.sio_handler
-                )._emit_status(frame)
-            else:
-                _, code = car_status.handle_status_update_request(frame, commands_enabled=True)
-                assert code == 200
-            return {"ok": True}
+        add_device_frames(flask_app, heater, lambda: diagnostics_now or datetime.now(UTC))
 
     if len(sys.argv) > 2 and sys.argv[2] == "departure":
         from datetime import UTC, datetime
@@ -182,6 +190,81 @@ if __name__ == "__main__":
         def departure_weather():
             observation.value = request.get_json()["temperature"]
             return {"ok": True}
+
+    if len(sys.argv) > 2 and sys.argv[2] == "complete":
+        # The whole interface on one isolated app: the real planner, bounded
+        # sessions, comfort, calibration and photo/outcome persistence. The
+        # server clock follows real time (so phone capture times stay valid)
+        # plus an offset that jumps to the saved departure's start.
+        import time
+        from datetime import UTC, datetime, timedelta
+        from zoneinfo import ZoneInfo
+
+        from test_departure_heating import departure
+
+        from app.blueprints.api.car_heater import status as car_status
+        from app.services.car_heater import KeepAtTempService, KFactorCalibrator, ReadyByService
+
+        planner, heater, clock, observation = next(departure.__wrapped__(flask_app, patch))
+        offset = [0.0]
+
+        def advance_clock():
+            # Whole seconds, as the planner judges observation age.
+            clock[0] = float(int(time.time() + offset[0]))
+            observation.time = datetime.fromtimestamp(clock[0], UTC).isoformat()
+
+        def server_now():
+            return datetime.fromtimestamp(clock[0], UTC)
+
+        advance_clock()
+        flask_app.before_request(advance_clock)
+        patch.setattr(car_status, "_utc_now", server_now)
+        comfort = KeepAtTempService(heater, flask_app.ctrl)
+        kfactor = KFactorCalibrator(flask_app.ctrl)
+        kfactor.set_car_heater_service(heater)
+        kfactor.set_keep_at_temp_service(comfort)
+        ready_by = ReadyByService(
+            car_heater_service=heater,
+            kfactor_calibrator=kfactor,
+            keep_at_temp_service=comfort,
+            ctrl=flask_app.ctrl,
+        )
+        kfactor.set_ready_by_service(ready_by)
+        flask_app.keep_at_temp_service = comfort
+        flask_app.kfactor_calibrator = kfactor
+        flask_app.ready_by_service = ready_by
+
+        def suspend_heater_modes():
+            comfort.enabled = False
+            kfactor.enabled = False
+
+        heater.bind_mode_suspension(suspend_heater_modes)
+        add_device_frames(flask_app, heater, server_now)
+        # A Ready-by (cabin target) schedule saved earlier, on a whole minute.
+        ready_at = server_now().astimezone(ZoneInfo("Europe/Helsinki")) + timedelta(days=2)
+        ready_by.schedule(ready_by_ts=ready_at.replace(second=0, microsecond=0), target_temp_c=-8)
+
+        @flask_app.post("/test/departure-start")
+        def complete_departure_start():
+            """Jump the server clock just past the saved plan's start and run it."""
+            plan = planner.get_plan()
+            start = datetime.fromisoformat(plan["planned_start_at"]).timestamp()
+            offset[0] = start + 60 - time.time()
+            advance_clock()
+            heater.observe_bounded_status(
+                {
+                    "bounded": {
+                        "protocol": 1,
+                        "ready": True,
+                        "relay_on": False,
+                        "power_w": 0,
+                        "boot_id": "relay-one",
+                        "device_boot_id": "esp-one",
+                    }
+                }
+            )
+            heater.tick_departure()
+            return {"now": clock[0]}
 
     if len(sys.argv) > 2 and sys.argv[2] == "review":
         import hashlib

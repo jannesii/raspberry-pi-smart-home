@@ -13,7 +13,7 @@
 .calibration-field { display: grid; gap: 6px; align-content: start; min-width: 0; }
 .calibration-form .calibration-field label { margin-top: 12px; }
 .calibration-form input[type="number"], .calibration-form input[type="text"] { max-width: 12rem; }
-.calibration-form .evidence-choice { font-weight: 600; margin-top: 8px; }
+.calibration-form .evidence-choice { display: flex; align-items: center; gap: 12px; min-height: 48px; font-weight: 600; margin-top: 8px; }
 .heater-evidence .calibration-advanced { margin-top: 16px; border: 1px solid var(--evidence-border); border-radius: 8px; padding: 0 14px 12px; }
 .heater-evidence .calibration-advanced > summary { padding: 12px 0; }
 .heater-evidence .calibration-advanced[open] > summary { border-bottom: 1px solid var(--evidence-border); margin-bottom: 8px; }

@@ -51,6 +51,19 @@ def handle_ready_by_schedule(handler: SocketEventHandler, data: dict[str, Any]) 
         return
 
     action = (data.get("action") or "").strip()
+    if action in ("schedule", "cancel"):
+        # Same browser-mutation protection as the HTTP endpoints.
+        from flask_login import current_user
+        from flask_wtf.csrf import ValidationError, validate_csrf
+
+        try:
+            if not current_user.is_authenticated:
+                raise ValueError("Authentication required")
+            validate_csrf(data.get("csrf_token"))
+        except (ValidationError, ValueError) as exc:
+            logger.warning("Ready-by socket %s refused: %s", action, exc)
+            handler.socketio.emit("error", {"message": str(exc)})
+            return
 
     try:
         if action == "schedule":
