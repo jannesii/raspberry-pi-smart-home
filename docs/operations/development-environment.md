@@ -211,6 +211,16 @@ adapter: account scoping and group membership need their own explicit boundaries
 Inherited Spotify credentials cannot enable account access or restoration. Do
 not interpret speaker-only acceptance as Spotify/group feature acceptance.
 
+Cloud speech also needs explicit selection. Add `"speech":"azure"` alongside
+the selected speakers in `DEV_ACCEPTANCE`, then add `AZURE_SPEECH_KEY`,
+`AZURE_SPEECH_REGION` and optionally `AZURE_SPEECH_VOICE_FI` to the protected
+development environment. Use a free F0 Speech resource; default Finnish voice
+is Noora, with Selma available. The acceptance summary includes `Azure Speech
+(cloud)`. Without that selection, development uses local Piper even if Azure
+credentials or `ANNOUNCEMENT_SPEECH_ENGINE=azure` are present. Cloud synthesis
+sends preview/reminder text to Microsoft; reuse of cached audio makes no speech
+request. This selection does not enable additional speakers, accounts or webhooks.
+
 To return to safe development, stop the instance, remove `DEV_ACCEPTANCE` (or set
 it to `{}`), then start again. Confirm `Acceptance: off (safe development)` in the
 running UI. Stopping also closes the media listener and invalidates its in-memory

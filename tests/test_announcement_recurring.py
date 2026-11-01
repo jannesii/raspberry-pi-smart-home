@@ -436,7 +436,7 @@ def test_recurring_controls_are_on_the_announcement_page(announcement_app, clien
     ):
         assert element in html
     assert "Europe/Helsinki local time" in html
-    assert "js/announcements.js?v=20261027-10" in html
+    assert "js/announcements.js?v=20261101-1" in html
     assert "css/announcements.css?v=20261029-3" in html
 
 

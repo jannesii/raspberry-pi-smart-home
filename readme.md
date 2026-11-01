@@ -164,7 +164,7 @@ Configure only the integrations you use:
 | Weather archive | `WEATHER_ARCHIVE_ENABLED` (default `true`): archive FMI station observations every ten minutes and the parking-point forecast every thirty minutes. `WEATHER_FORECAST_POINT` (default `62.8000,22.8260`): forecast point as `lat,lon`; an invalid value leaves forecast collection off. Needs outbound HTTPS to `opendata.fmi.fi` and migrations `20261016_0016`/`20261016_0017`/`20261017_0018`; see [weather observation archive](#weather-observation-archive) and [parking-point forecast archive](#parking-point-forecast-archive) |
 | Sodexo | `SODEXO_WEBHOOK_URL`, `SODEXO_POST_HOUR`, `SODEXO_POST_MINUTE` |
 | Alerts | `ALERT_WEBHOOK_URL`, `ALERT_WEBHOOK_BATCH_SECONDS` |
-| Spoken announcements | `ANNOUNCEMENTS_ENABLED` (default `true`), `ANNOUNCEMENT_MEDIA_ORIGIN` (speaker-reachable `http(s)://host[:port]`), `ANNOUNCEMENT_TARGETS` (JSON; defaults Jbl-Right `192.168.1.119`, Jbl-Left `192.168.1.148` and an unconfigured speaker group), `ANNOUNCEMENT_CACHE_DIR`, `PIPER_COMMAND`, `PIPER_VOICE_DIR`, `PIPER_VOICE_FI`/`PIPER_VOICE_EN`, `ANNOUNCEMENT_QUIET_HOURS` (Helsinki `HH:MM-HH:MM`, default `22:00-07:00`, `off` disables), `ANNOUNCEMENT_PUBLIC_ORIGIN` (browser origin such as `https://jannenkoti.com` for the reminder link in Discord fallbacks); fallbacks use `ALERT_WEBHOOK_URL`; PyChromecast in `requirements.txt` and migrations `20261027_0020`–`20261027_0027`; see [spoken announcements](#spoken-announcements) |
+| Spoken announcements | `ANNOUNCEMENTS_ENABLED` (default `true`), `ANNOUNCEMENT_MEDIA_ORIGIN` (speaker-reachable `http(s)://host[:port]`), `ANNOUNCEMENT_TARGETS` (JSON; defaults Jbl-Right `192.168.1.119`, Jbl-Left `192.168.1.148` and an unconfigured speaker group), `ANNOUNCEMENT_CACHE_DIR`, `ANNOUNCEMENT_SPEECH_ENGINE` (`piper` default / `azure`), `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION`, `AZURE_SPEECH_VOICE_FI` (Noora default / Selma), `PIPER_COMMAND`, `PIPER_VOICE_DIR`, `PIPER_VOICE_FI`/`PIPER_VOICE_EN`, `ANNOUNCEMENT_QUIET_HOURS` (Helsinki `HH:MM-HH:MM`, default `22:00-07:00`, `off` disables), `ANNOUNCEMENT_PUBLIC_ORIGIN` (browser origin such as `https://jannenkoti.com` for the reminder link in Discord fallbacks); fallbacks use `ALERT_WEBHOOK_URL`; PyChromecast in `requirements.txt` and migrations `20261027_0020`–`20261027_0027`; see [spoken announcements](#spoken-announcements) |
 
 See [app/config.py](app/config.py) for core parsing/defaults and
 [service initialization](app/services/__init__.py) plus individual services for
@@ -556,7 +556,9 @@ attempt becomes *unknown* and is never replayed automatically.
 
 Setup (owner commissioning; automated tests never use real speakers or engines):
 
-1. **Speech engine.** Install [Piper](https://github.com/OHF-Voice/piper1-gpl)
+1. **Speech engine.** Choose local Piper (default) or explicitly select Azure
+   Speech for Finnish female voices. For local synthesis, install
+   [Piper](https://github.com/OHF-Voice/piper1-gpl)
    (`piper-tts`, GPL-3.0-or-later) in its **own** virtual environment. The app
    runs it as a subprocess and never imports it. Download
    `fi_FI-harri-medium` (dataset CC0) and `en_GB-alba-medium` (dataset CC BY 4.0;
@@ -565,6 +567,29 @@ Setup (owner commissioning; automated tests never use real speakers or engines):
    `PIPER_COMMAND=/opt/piper/bin/piper` and `PIPER_VOICE_DIR=<dir>`; each voice
    needs `<voice>.onnx` and `<voice>.onnx.json`. There is no cloud fallback.
    Measure first-synthesis latency and listen for pronunciation on the Pi.
+   For **Azure Speech**, provision a `SpeechServices` resource using the **free
+   F0 SKU**, then configure the protected server environment:
+
+   ```dotenv
+   ANNOUNCEMENT_SPEECH_ENGINE=azure
+   AZURE_SPEECH_REGION=northeurope
+   AZURE_SPEECH_KEY=<Speech resource key; never commit this>
+   AZURE_SPEECH_VOICE_FI=fi-FI-NooraNeural
+   ```
+
+   Finnish defaults to Noora; `fi-FI-SelmaNeural` is the supported alternative.
+   English uses `en-GB-SoniaNeural`. Azure receives announcement text when new
+   audio is synthesized. The existing disk cache reuses audio across playback
+   and app restarts. Changing text, language, voice, engine or chime, or losing an
+   evicted cache file, requires synthesis again; volume changes do not. Cache
+   entries expire after seven days without use or when the 64 MiB cache is full.
+   [F0 currently includes 500,000 neural characters/month](https://azure.microsoft.com/en-gb/pricing/details/speech/).
+   Use F0 specifically; the app does not verify the SKU of arbitrary credentials.
+   It never upgrades Azure resources or switches providers automatically. Quota,
+   authentication and connection failures are visible; cached audio remains
+   usable. Readiness checks configuration only, so use **Preview in browser**
+   to verify the key, voice and pronunciation. Development requires an additional
+   [explicit cloud speech selection](docs/operations/development-environment.md#selected-announcement-acceptance).
 2. **Cast.** PyChromecast (MIT) is pinned in `requirements.txt`, so every
    release environment includes it. Without it, readiness shows Cast unavailable
    and tests fail visibly. Optionally pin each speaker's Cast UUID in

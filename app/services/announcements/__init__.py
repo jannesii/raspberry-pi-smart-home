@@ -1,4 +1,4 @@
-"""Spoken announcements: content, media, local synthesis, Cast delivery.
+"""Spoken announcements: content, media, speech synthesis, Cast delivery.
 
 See ``service.AnnouncementService`` for the public processing interface.
 """
@@ -41,15 +41,14 @@ __all__ = [
 
 
 def build_announcement_service(ctrl, *, db_path: str | None) -> AnnouncementService:
-    """Production wiring: Piper subprocess + PyChromecast, both optional."""
-    from .config import piper_settings_from_env
+    """Production wiring: explicitly selected speech provider + PyChromecast."""
     from .fallback import DiscordFallbackChannel
     from .spotify import SpotifyHTTP, SpotifyRestoration
-    from .synthesis import PiperSubprocessSynthesizer
+    from .synthesis import build_synthesizer
 
     base = Path(db_path).resolve().parent if db_path else Path.cwd()
     config = config_from_env(base / "announcement-cache")
-    synthesizer = PiperSubprocessSynthesizer(**piper_settings_from_env())
+    synthesizer = build_synthesizer()
     service = AnnouncementService(
         ctrl,
         spotify=SpotifyRestoration(

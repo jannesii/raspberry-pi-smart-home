@@ -18,8 +18,21 @@ separate deployment actions; this checklist does not authorize performing them.
 Before enabling schedules, preserve a recoverable database backup and the current
 protected environment, and rehearse restoration in an isolated environment.
 
-- Install Piper in its separate environment and PyChromecast in the app environment
-  only after deployment approval. Keep Piper's executable and both `.onnx` and
+- Choose local Piper or explicitly configured Azure Speech. For Azure, provision
+  only a `SpeechServices` **F0** resource; configure `ANNOUNCEMENT_SPEECH_ENGINE=azure`,
+  `AZURE_SPEECH_REGION`, `AZURE_SPEECH_KEY` and optionally `AZURE_SPEECH_VOICE_FI`
+  (`fi-FI-NooraNeural` by default, or `fi-FI-SelmaNeural`). English uses Sonia.
+  Store the key only in the protected environment and its secure backup, never
+  in source control or logs. New synthesis sends reminder text to Microsoft;
+  disk-cache playback does not contact Azure. F0 is a resource provisioning
+  choice, not a runtime check of arbitrary keys. Never replace it with S0 to
+  resolve quota errors without a separate owner decision about paid usage.
+  Readiness validates configuration without a network call; verify a neutral
+  browser preview before enabling schedules. There is no automatic provider
+  fallback or tier upgrade. Existing Discord delivery fallback remains separate.
+- Install PyChromecast in the app environment only after deployment approval.
+  For local speech, install Piper in its separate environment. Keep Piper's
+  executable and both `.onnx` and
   `.onnx.json` voice files readable by the service account. Check each selected
   model's own model card/license and retain required attribution; dataset licenses
   alone do not establish all model redistribution rights. There is no automatic

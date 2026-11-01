@@ -404,6 +404,14 @@ Code: `app/blueprints/api/car_heater/weather.py` (`/sessions/<id>/weather`,
 - One asset per announcement: generated chime, then 0.5 s silence, then speech at
   the speech sample rate. Cache keys hash text, language, voice, engine and chime;
   eviction never touches attempt rows, which keep only `media_key`.
+- Speech defaults to a local Piper subprocess. `ANNOUNCEMENT_SPEECH_ENGINE=azure`
+  explicitly selects Azure REST synthesis with Finnish Noora (or Selma) and
+  English Sonia. Only cache misses send text to Microsoft. Azure resources must
+  be provisioned as free F0; runtime keys do not establish the resource tier.
+  HTTP errors, invalid audio and timeouts produce safe reasons, never provider
+  bodies, keys or reminder text in logs. No provider switch or tier upgrade
+  happens automatically. Development requires `"speech":"azure"` in
+  `DEV_ACCEPTANCE`; inherited cloud credentials alone cannot enable outbound TTS.
 - Attempt `status`: `requested` → `dispatching` (intent committed before any Cast
   effect) → `dispatched` → `playing` → `finished`/`failed`/`unknown`/`stopped`.
   Updates are conditional on the expected status. On construction, the service

@@ -27,7 +27,7 @@ def selection(values=None):
         raise AcceptanceConfigError("DEV_ACCEPTANCE must be a JSON object") from None
     if not isinstance(data, dict):
         raise AcceptanceConfigError("DEV_ACCEPTANCE must be a JSON object")
-    if set(data) - {"speakers", "discord"}:
+    if set(data) - {"speakers", "discord", "speech"}:
         raise AcceptanceConfigError(
             "DEV_ACCEPTANCE contains an unknown integration; Spotify is unsupported"
         )
@@ -95,6 +95,10 @@ def selection(values=None):
             or parsed.query
         ):
             raise AcceptanceConfigError("DEV_ACCEPTANCE discord needs an HTTPS Discord webhook")
+    if "speech" in data and data["speech"] != "azure":
+        raise AcceptanceConfigError("DEV_ACCEPTANCE speech must be azure when selected")
+    if data.get("speech") and not speakers:
+        raise AcceptanceConfigError("DEV_ACCEPTANCE speech requires selected speakers")
     if discord and not speakers:
         raise AcceptanceConfigError("DEV_ACCEPTANCE discord requires selected speakers")
     if speakers:
@@ -136,7 +140,16 @@ def summary(values=None):
     ]
     if data.get("discord"):
         targets.append(f"Discord {data['discord']['label']}")
+    if data.get("speech") == "azure":
+        targets.append("Azure Speech (cloud)")
     return "Acceptance: " + (", ".join(targets) if targets else "off (safe development)")
+
+
+def speech_synthesizer(data):
+    """Inherited Azure credentials cannot opt development into cloud speech."""
+    from .services.announcements.synthesis import build_synthesizer
+
+    return build_synthesizer(engine="azure" if data.get("speech") == "azure" else "piper")
 
 
 def problems(values):
@@ -162,10 +175,8 @@ def initialize(app):
         from .services.announcements.config import (
             AnnouncementConfig,
             SpeakerTarget,
-            piper_settings_from_env,
         )
         from .services.announcements.fallback import DiscordFallbackChannel
-        from .services.announcements.synthesis import PiperSubprocessSynthesizer
         from .services.announcements.transport import PyChromecastTransport
     except ImportError:
         raise AcceptanceConfigError(
@@ -182,7 +193,7 @@ def initialize(app):
     service = AnnouncementService(
         app.ctrl,
         config=config,
-        synthesizer=PiperSubprocessSynthesizer(**piper_settings_from_env()),
+        synthesizer=speech_synthesizer(data),
         transport=PyChromecastTransport(),
         fallback_channel=DiscordFallbackChannel((data.get("discord") or {}).get("webhook")),
         # Default candidate Spotify has no HTTP client/key: inherited credentials
