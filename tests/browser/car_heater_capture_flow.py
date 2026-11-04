@@ -89,6 +89,9 @@ def observe_upload_retry_interrupt_finish(context, origin, viewport):
         else None,
     )
     page.clock.install(time=START)
+    # Keep upload/network latency from consuming the exact countdown below.
+    # Resume after the countdown assertion so later async settling can use timers.
+    page.clock.pause_at(START + timedelta(minutes=1))
     page.goto(f"{origin}/car_heater/sessions/{session_id}/capture")
     start = page.get_by_role("button", name="Start observation", exact=True)
     expect(start).to_be_disabled()
@@ -102,6 +105,7 @@ def observe_upload_retry_interrupt_finish(context, origin, viewport):
     start.click()
     expect(summary).to_have_text("1 saved")
     expect(page.locator("#captureCountdown")).to_have_text("10:00")
+    page.clock.resume()
     page.get_by_role("button", name="Capture now", exact=True).click()
     expect(summary).to_have_text("2 saved")
 

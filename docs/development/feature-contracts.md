@@ -32,6 +32,11 @@ Tests: `tests/test_car_heater*.py`, `tests/test_ready_by.py`.
   kFactor, alert, and persistence work as HTTP status.
 - Ready-by reaching its target enables Keep at Temperature, persists
   `completed`, and ends that tick before start-time logic can run again.
+- Ready-by schedule create/replace/cancel (`/api/car_heater/ready_by/schedule`
+  and the `ready_by_schedule` event) require login and browser CSRF on both
+  transports. The Heating page sends Helsinki wall time (naive ISO); creation is
+  refused while a bounded session is not confirmed stopped; cancel never sends OFF
+  from the page (`turn_off=false`).
 - Comfort (Keep at Temperature) changes go through
   `KeepAtTempService.apply_changes` from both `PATCH /api/car_heater/comfort`
   and the CSRF-checked `keep_at_temp_settings` event: partial, validated,

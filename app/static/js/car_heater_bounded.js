@@ -140,8 +140,6 @@
         phase: pending ? 'requested' : active ? run.phase : 'none'
       }
     }));
-    const readyBy = byId('btnReadyBySchedule');
-    if (readyBy) { readyBy.disabled = active || pending; readyBy.title = active || pending ? LOCK_REASON : ''; }
     const facts = {boundedMode: '—', boundedFinish: '—', boundedRemaining: remainingText(run)};
     if (run) {
       facts.boundedMode = run.mode === 'departure' ? 'Departure' : run.mode === 'manual' ? 'Manual' : '—';

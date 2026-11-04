@@ -82,28 +82,61 @@ car LAN; do not expose its RPC/script endpoints to the Internet.
 
 ## Using the app
 
-Open **Heating**, pick 30/60/120/180 minutes or type a positive duration (default
-60, maximum 180), and press **Start timed heating**. The heater state under the
-next departure reads Start requested, then confirmed ON only from relay evidence.
-Manual heating shows the mode, original finish (Helsinki time) and remaining time
-judged by the server clock; a new selection cannot extend it, and other starts
-show why they are unavailable. **Stop heating**, beside **Observe windshield**,
-submits OFF immediately. Stopping, Stop not confirmed (with **Request OFF again**)
-and OFF confirmed remain distinct; acknowledgements alone never confirm OFF. If
-device telemetry is absent or older than 30 seconds, the relay state is unknown
-even after OFF was requested. Device report, FMI observation and each sensor
-reading show their own age; missing values show —.
+The car-heater pages have three views, **Heating**, **Sessions** and **Settings**,
+under one navigation. Times are Europe/Helsinki and 24-hour, whatever the phone's
+timezone; missing values show —. Use the phone for everyday heating and capture,
+and a desktop for reviewing sessions and charts.
 
-**Review this heating session** opens the permanent session and its request,
-execution, relay, draw and OFF milestones. Saving a departure outcome still does
-not control heating. Old comfort/calibration/Ready-by intentions do not resume
-when the timed session ends; select comfort explicitly after confirmed shutdown.
+**Heating** leads with the next departure. Edit its date/time (or **Tomorrow**),
+**Preview departure**, then **Save departure**; typing and preview never schedule.
+The timeline shows heating start, departure and latest finish. Below it, the
+heater state reads Start requested, then confirmed ON only from relay evidence.
+**Stop heating** submits OFF immediately, without a dialog. Stopping, Stop not
+confirmed (with **Request OFF again**) and OFF confirmed remain distinct;
+acknowledgements alone never confirm OFF. If device telemetry is absent or older
+than 30 seconds, the relay state is unknown even after OFF was requested. Device
+report, FMI observation and each sensor reading show their own age.
 
-**Comfort heating** below manual heating keeps cabin air near its target with the
+**Manual heating** takes 30/60/120/180 minutes or a typed duration (default 60,
+maximum 180) and **Start timed heating**. It shows the mode, original finish and
+remaining time judged by the server clock; a new selection cannot extend it.
+While a timed session runs, or until its OFF is confirmed, every other start
+(manual, comfort, Ready-by, departure replacement) is unavailable with the
+reason shown, and the server refuses it too. Old comfort/calibration/Ready-by
+intentions never resume when the timed session ends.
+
+**Comfort heating** (collapsed) keeps cabin air near its target with the
 hysteresis saved in **Settings → Heating preferences**. Start, Save target and
-Stop are the only actions that save; a start during a timed session or before its
-OFF is confirmed is refused with the reason. Stopping comfort does not switch the
-relay off.
+Stop are the only actions that save; stopping comfort does not switch the relay
+off. **Ready by (cabin target)** (collapsed below it) schedules cabin air to reach
+a target by a Helsinki date and time; **Save Ready-by** creates or replaces the
+schedule and **Cancel Ready-by** removes it without switching the relay. It uses
+the calibrated cabin model and then comfort heating; it does not mean the windows
+are clear. Its tuning is in **Settings → Calibration**.
+
+**Observe windshield** (beside Stop during a session, or from a session in
+**Sessions**) opens capture. Enable the camera, frame the windshield and **Start
+observation**; it photographs now and every 10 minutes while the page stays
+visible, and **Capture now** adds a photo. Only **Saved** photos are evidence;
+**Not saved** ones stay until **Retry failed uploads** succeeds. **Finish
+observation** opens the departure outcome; neither Finish nor saving an outcome
+changes heating. **Stop heating** on the capture page only requests OFF.
+
+**Sessions** lists attempts newest first with outcome (or Outcome not recorded)
+and photos, filtered by Helsinki date. A session review starts with the outcome
+and heating timeline, then glass/cabin temperature, humidity and power charts,
+photos with capture times, observation windows and weather evidence with
+original-reply downloads. The glass indicator stays experimental.
+
+**Settings** groups **Heating preferences**, **Installation & devices**,
+**Calibration** and **Diagnostics**. Diagnostics shows browser/device/relay
+health, the latest device telemetry, **View Charts**, command stages (Queued and
+Sent are not execution), **Get Logs** and **Restart ESP**/**Restart Shelly**,
+which ask for confirmation and never stop the heater, plus weather collection
+health and exports. See the readme's
+[complete interface table](../../readme.md#complete-car-heater-interface) for every
+retained function. The emulated browser checks do not establish iPhone camera,
+lens or wake-lock behaviour; check those on the phone during commissioning.
 
 ## Isolated checks
 
@@ -112,6 +145,7 @@ From the repository root:
 ```sh
 .venv/bin/pytest -q tests/test_bounded_heating.py
 .venv/bin/pytest -q tests/test_car_heater_sessions_browser.py
+.venv/bin/pytest -q tests/test_car_heater_redesign_completion.py
 node --test tests/device/bounded_relay.test.cjs
 ```
 

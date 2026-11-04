@@ -1,9 +1,7 @@
 /**
- * Car Heater Page - iOS-Optimized JavaScript
- * Handles real-time updates, controls, and UI state
+ * Car heater Heating and Settings views: live status, freshness, Diagnostics
+ * command stages and maintenance commands over Socket.IO with HTTP fallback.
  */
-
-console.log('🚗 car_heater.js loaded');
 
 let statusPollTimer = null;
 
@@ -30,16 +28,6 @@ function fmtNum(v, unit = '', digits = 1) {
   if (v === null || v === undefined) return '—';
   const n = Number(v);
   if (!Number.isFinite(n)) return '—';
-  return `${n.toFixed(digits)}${unit}`;
-}
-
-function fmtCompact(v, unit = '', digits = 0) {
-  if (v === null || v === undefined) return '—';
-  const n = Number(v);
-  if (!Number.isFinite(n)) return '—';
-  if (n >= 1000) {
-    return `${(n / 1000).toFixed(1)}k${unit}`;
-  }
   return `${n.toFixed(digits)}${unit}`;
 }
 
@@ -152,16 +140,10 @@ function updateWeatherDisplay(weather) {
 }
 
 // ============================================
-// Details Section Updates
+// Diagnostics: latest device telemetry
 // ============================================
 
 function updateDetailsSection(status) {
-  // Pills
-  const pillVoltage = document.getElementById('pillVoltage');
-  const pillCurrent = document.getElementById('pillCurrent');
-  const pillEnergyTotal = document.getElementById('pillEnergyTotal');
-
-  // Detail list items
   const detailPower = document.getElementById('detailPower');
   const detailAmbient = document.getElementById('detailAmbient');
   const detailDeviceTemp = document.getElementById('detailDeviceTemp');
@@ -174,27 +156,14 @@ function updateDetailsSection(status) {
 
   if (!status) return;
 
-  // Update pills
-  if (pillVoltage) {
-    pillVoltage.querySelector('span:last-child').textContent = fmtNum(status.voltage_v, 'V', 0);
-  }
-  if (pillCurrent) {
-    pillCurrent.querySelector('span:last-child').textContent = fmtNum(status.current_a, 'A', 2);
-  }
-  if (pillEnergyTotal) {
-    pillEnergyTotal.querySelector('span:last-child').textContent = fmtCompact(status.energy_total_wh, 'Wh');
-  }
-
-  // Update detail list
   if (detailPower) detailPower.textContent = fmtNum(status.instant_power_w, ' W', 1);
   if (detailAmbient) detailAmbient.textContent = fmtNum(status.ambient_temp, ' °C', 2);
   if (detailDeviceTemp) {
-    detailDeviceTemp.textContent = fmtNum(status.device_temp_c, ' °C', 1);
-    // Highlight if hot
+    // A hot relay is stated in text; color only reinforces it.
     const temp = Number(status.device_temp_c);
-    detailDeviceTemp.classList.remove('value-warning', 'value-danger');
-    if (temp >= 50) detailDeviceTemp.classList.add('value-danger');
-    else if (temp >= 40) detailDeviceTemp.classList.add('value-warning');
+    const hot = status.device_temp_c == null || !Number.isFinite(temp) ? '' : temp >= 50 ? ' · very hot' : temp >= 40 ? ' · hot' : '';
+    detailDeviceTemp.textContent = fmtNum(status.device_temp_c, ' °C', 1) + hot;
+    detailDeviceTemp.classList.toggle('value-warning', hot !== '');
   }
   if (detailVoltage) detailVoltage.textContent = fmtNum(status.voltage_v, ' V', 1);
   if (detailCurrent) detailCurrent.textContent = fmtNum(status.current_a, ' A', 2);
@@ -291,19 +260,15 @@ function applyCarHeaterPayload(data, source = 'unknown') {
     if (lastQueuedAction && cmdStatus && Object.prototype.hasOwnProperty.call(cmdStatus, lastQueuedAction)) {
       const status = cmdStatus[lastQueuedAction];
       if (status === 'sent') {
-        setQueueStatus('sent', 'Sent to heater');
+        setQueueStatus('sent', 'Sent · awaiting device acknowledgement');
       } else if (status === 'success') {
-        setQueueStatus('sent', 'Action successful');
+        setQueueStatus('sent', 'Device acknowledged success');
         lastQueuedAction = null;
       } else if (status === 'failed') {
-        setQueueStatus('error', 'Action failed');
+        setQueueStatus('error', 'Device reported failure');
         lastQueuedAction = null;
       }
     }
-  }
-
-  if (data.charge_mode || data.chargeMode) {
-    updateChargeModeUI(data.charge_mode || data.chargeMode);
   }
 
   if (data.weather) {
@@ -428,77 +393,24 @@ function handleCarHeaterActionResult(data) {
 }
 
 // ============================================
-// Charge Mode
+// Maintenance feedback (Diagnostics)
 // ============================================
 
-let chargeModeState = null;
-
-function updateChargeModeUI(state) {
-  chargeModeState = state || null;
-
-  const toggle = document.getElementById('chargeModeToggle');
-  const statusText = document.getElementById('chargeModeStatusText');
-  if (!toggle || !statusText) return;
-
-  const enabled = !!(state && state.enabled);
-  const powerCut = !!(state && state.power_cut);
-  const threshold = state && state.threshold_w != null ? Number(state.threshold_w) : 40;
-
-  toggle.checked = enabled;
-  statusText.classList.remove('active', 'cut');
-
-  if (powerCut) {
-    const ts = state.power_cut_at;
-    statusText.textContent = ts ? `Power cut at ${fmtTs(ts)}` : 'Power cut';
-    statusText.classList.add('cut');
-  } else if (enabled) {
-    statusText.textContent = `Active (cut at ${threshold}W)`;
-    statusText.classList.add('active');
-  } else {
-    statusText.textContent = 'Idle';
-  }
-}
-
-// ============================================
-// Queue Status Banner
-// ============================================
-
-let queueBannerTimeout = null;
 let lastQueuedAction = null;
 
+// Settings group anchors scroll below the app navbar.
 function updateNavHeightVar() {
   const nav = document.querySelector('nav.navbar');
-  if (!nav) return;
-  const height = nav.getBoundingClientRect().height;
-  document.documentElement.style.setProperty('--nav-height', `${height}px`);
+  if (nav) document.documentElement.style.setProperty('--nav-height', `${nav.getBoundingClientRect().height}px`);
 }
 
+// Feedback stays beside the maintenance buttons rather than in a floating
+// banner; the command stages above hold the lasting per-command state.
 function setQueueStatus(mode, text) {
-  const banner = document.getElementById('queueBanner');
-  const bannerText = document.getElementById('queueBannerText');
-  if (!banner || !bannerText) return;
-
-  updateNavHeightVar();
-
-  // Clear any existing timeout
-  if (queueBannerTimeout) {
-    clearTimeout(queueBannerTimeout);
-    queueBannerTimeout = null;
-  }
-
-  banner.classList.remove('visible', 'pending', 'sent', 'idle');
-
-  if (mode) {
-    banner.classList.add('visible', mode);
-    bannerText.textContent = text;
-
-    // Auto-hide after 5 seconds for 'sent' status
-    if (mode === 'sent') {
-      queueBannerTimeout = setTimeout(() => {
-        banner.classList.remove('visible');
-      }, 5000);
-    }
-  }
+  const el = document.getElementById('maintenanceStatus');
+  if (!el) return;
+  el.textContent = mode ? text : '';
+  el.classList.toggle('status-error', mode === 'error');
 }
 
 // ============================================
@@ -518,11 +430,6 @@ function queueCommand(action) {
 
   if (action === 'get_logs') {
     window.dispatchEvent(new CustomEvent('car_heater_get_logs_requested'));
-  }
-
-  // Haptic feedback on iOS
-  if (window.navigator && window.navigator.vibrate) {
-    window.navigator.vibrate(10);
   }
 
   // Prefer Socket.IO for low latency
@@ -580,12 +487,6 @@ document.addEventListener('DOMContentLoaded', () => {
     updateCommandStatusUI(window.CAR_HEATER_CMD_STATUS);
   }
 
-  if (typeof window.CAR_HEATER_CHARGE_STATE !== 'undefined') {
-    updateChargeModeUI(window.CAR_HEATER_CHARGE_STATE);
-  } else {
-    updateChargeModeUI(null);
-  }
-
   // Weather display
   if (typeof window.CAR_HEATER_WEATHER !== 'undefined') {
     updateWeatherDisplay(window.CAR_HEATER_WEATHER);
@@ -630,34 +531,6 @@ document.addEventListener('DOMContentLoaded', () => {
     restartTrigger?.focus();
   });
 
-  // Charge mode toggle
-  const chargeModeToggle = document.getElementById('chargeModeToggle');
-  if (chargeModeToggle) {
-    chargeModeToggle.addEventListener('change', () => {
-      const newEnabled = chargeModeToggle.checked;
-
-      try {
-        if (window.socket) {
-          window.socket.emit('car_heater_charge_mode', { enabled: newEnabled });
-        }
-      } catch (err) {
-        console.warn('Socket emit failed for charge mode toggle:', err);
-      }
-
-      // Optimistic UI update
-      const nextState = Object.assign(
-        { enabled: false, power_cut: false, power_cut_at: null, threshold_w: 40, last_instant_power_w: null },
-        chargeModeState || {},
-        { enabled: newEnabled, power_cut: false, power_cut_at: null }
-      );
-      updateChargeModeUI(nextState);
-
-      if (newEnabled) {
-        queueCommand('turn_on');
-      }
-    });
-  }
-
   // Socket.IO event handlers
   if (window.socket) {
     window.socket.on('connect', () => {
@@ -681,13 +554,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     window.socket.on('car_heater_action_result', handleCarHeaterActionResult);
-
-    window.socket.on('car_heater_charge_mode', data => {
-      console.log('📡 car_heater_charge_mode:', data);
-      if (data) {
-        updateChargeModeUI(data);
-      }
-    });
   } else {
     startStatusPolling();
   }

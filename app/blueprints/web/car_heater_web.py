@@ -53,30 +53,25 @@ def get_car_heater_page():
     if last_status is not None:
         last_status["report_age_s"] = device_report_age_s(last_status.get("timestamp"))
 
-    # Command status from in-memory CarHeaterService (if available)
+    # Command status from in-memory CarHeaterService (if available). Battery
+    # charge mode has no controls on this page; its backend is separate work.
     command_status = None
-    charge_mode_state = None
     try:
         svc: CarHeaterService | None = getattr(current_app, "car_heater_service", None)
         if svc is not None:
             command_status = asdict(svc.get_command_status())
             logger.debug("Car heater command status: %s", command_status)
-            try:
-                charge_mode_state = asdict(svc.get_charge_mode_state())
-                logger.debug("Car heater charge mode state: %s", charge_mode_state)
-            except Exception:
-                charge_mode_state = None
     except Exception as e:
         logger.exception("Failed to get car heater command status: %s", e)
 
-    # Ready-by schedule (if available)
+    # Ready-by (cabin target) schedule and its enabled setting, if available.
     ready_by_data = None
-    try:
-        ready_by_svc: ReadyByService | None = getattr(current_app, "ready_by_service", None)
-        ready_by_data = ready_by_svc.ready_by_payload
-        logger.debug("Ready-by schedule data: %s", ready_by_data)
-    except Exception as e:
-        logger.exception("Failed to get ready-by schedule: %s", e)
+    ready_by_svc: ReadyByService | None = getattr(current_app, "ready_by_service", None)
+    if ready_by_svc is not None:
+        try:
+            ready_by_data = ready_by_svc.ready_by_payload
+        except Exception:
+            logger.exception("Failed to read the Ready-by schedule")
 
     # Weather data
     weather_data = None
@@ -93,7 +88,6 @@ def get_car_heater_page():
         heater_view="settings" if request.path.endswith("/settings") else "heating",
         last_status=last_status,
         command_status=command_status,
-        charge_mode_state=charge_mode_state,
         ready_by_schedule=ready_by_data,
         calibration_groups=settings_form_groups(),
         weather_data=weather_data,

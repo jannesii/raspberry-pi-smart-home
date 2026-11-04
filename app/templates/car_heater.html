@@ -4,16 +4,16 @@
 
 {% block styles %}
 <meta name="csrf-token" content="{{ csrf_token() }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater.css', v='20261021-2') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater.css', v='20261030-1') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/flash.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_chart.css', v='20261021-1') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_settings.css', v='20261021-1') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_logs.css', v='20261021-1') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_sessions.css', v='20261021-1') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_departure.css', v='20261021-2') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_heating.css', v='20261021-3') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_settings.css', v='20261030-2') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_logs.css', v='20261030-1') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_sessions.css', v='20261030-1') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_departure.css', v='20261030-1') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_heating.css', v='20261030-2') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_preferences.css', v='20261021-1') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_calibration.css', v='20261021-1') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/car_heater_calibration.css', v='20261030-1') }}">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 {% endblock %}
@@ -21,19 +21,19 @@
 {% block content %}
 {% include 'settings_flash.html' %}
 <div class="container car-heater-page">
-  <!-- Sticky Header -->
-  <header class="page-header">
-    <h2>Car Heater</h2>
+  <header class="heater-page-header">
+    {% if heater_view == 'settings' %}
+    <p class="heater-page-eyebrow">CAR HEATER · CONFIGURATION AND MAINTENANCE</p>
+    <h1 id="heaterPageHeading">Settings</h1>
+    {% else %}
+    <p class="heater-page-eyebrow">CAR HEATER · EVERYDAY HEATING</p>
+    <h1 id="heaterPageHeading">Heating</h1>
+    {% endif %}
   </header>
 
   {% include 'car_heater_navigation.html' %}
 
-  <!-- Queue Status Banner -->
-  <div id="queueBanner" class="queue-banner">
-    <span id="queueBannerText">Action queued…</span>
-  </div>
-
-  <!-- Desktop Grid Layout -->
+  <!-- Layout A: departure column beside manual controls and conditions -->
   <div class="heating-layout" {% if heater_view == 'settings' %}hidden{% endif %}>
     <section class="heating-principal departure-planner" aria-labelledby="departureHeading">
       <h2 id="departureHeading" class="heating-eyebrow">Next departure</h2>
@@ -126,77 +126,38 @@
           <p id="comfortLockReason" class="heating-lock-reason"></p>
           <p id="comfortFeedback" class="comfort-feedback" role="status" aria-live="polite"></p>
           <p class="heating-support">Stopping comfort heating leaves the relay as it is. If the heater reports ON, use Stop heating.</p>
-          <details class="legacy-ready-by">
-            <summary>Ready by (legacy cabin target)</summary>
-            <p class="heating-support">The earlier cabin-temperature schedule, kept until its replacement. Use Departure plan for defrost.</p>
-            <div class="ready-by-section">
-              <div class="ready-by-header">
-                <div class="ready-by-title-row">
-                  <div class="ready-by-icon">🎯</div>
-                  <div class="ready-by-title-info">
-                    <h4>Ready by Time</h4>
-                    <p id="readyByStatusText" class="ready-by-status">No schedule</p>
-                  </div>
-                </div>
-              </div>
-              <!-- Progress bar (shown when scheduled/running) -->
-              <div id="readyByProgress" class="ready-by-progress" style="display: none;">
-                <div class="progress-bar">
-                  <div id="readyByProgressFill" class="progress-fill"></div>
-                </div>
-                <div class="progress-labels">
-                  <span id="readyByProgressStart">Start</span>
-                  <span id="readyByProgressEnd">Target time</span>
-                </div>
-              </div>
-              <div class="ready-by-inputs">
-                <div class="ready-by-input-group">
-                  <label class="ready-by-input-label" for="readyByTimeInput">Ready by</label>
-                  <input type="datetime-local" id="readyByTimeInput" name="readyByTimeInput"
-                         autocomplete="off">
-                </div>
-                <div class="ready-by-input-group">
-                  <label class="ready-by-input-label" for="readyByTargetInput">Target</label>
-                  <div class="temp-input-wrapper">
-                    <input type="number" id="readyByTargetInput" name="readyByTargetInput"
-                           inputmode="decimal" step="0.5" min="-40" max="40"
-                           placeholder="-5" value="-5" autocomplete="off">
-                    <span class="temp-input-unit">°C</span>
-                  </div>
-                </div>
-              </div>
-              <div class="ready-by-info" id="readyByInfoPanel" style="display: none;">
-                <div class="ready-by-info-row">
-                  <span class="ready-by-info-label">ETA:</span>
-                  <span id="readyByEtaText" class="ready-by-info-value">—</span>
-                </div>
-                <div class="ready-by-info-row">
-                  <span class="ready-by-info-label">Planned start:</span>
-                  <span id="readyByPlannedStart" class="ready-by-info-value">—</span>
-                </div>
-                <div class="ready-by-info-row">
-                  <span class="ready-by-info-label">Current cabin:</span>
-                  <span id="readyByCabinTemp" class="ready-by-info-value">—</span>
-                </div>
-                <div class="ready-by-info-row">
-                  <span class="ready-by-info-label">Outside:</span>
-                  <span id="readyByOutsideTemp" class="ready-by-info-value">—</span>
-                </div>
-                <div class="ready-by-info-row">
-                  <span class="ready-by-info-label">Model params:</span>
-                  <span id="readyByModelParams" class="ready-by-info-value ready-by-params">—</span>
-                </div>
-              </div>
-              <div class="ready-by-actions">
-                <button id="btnReadyBySchedule" class="ready-by-btn schedule-btn" type="button">
-                  <span class="btn-icon">📅</span> Schedule
-                </button>
-                <button id="btnReadyByCancel" class="ready-by-btn cancel-btn" type="button" disabled>
-                  <span class="btn-icon">✕</span> Cancel
-                </button>
-              </div>
+        </details>
+        <details class="comfort-tools ready-by-tools" id="readyBySection">
+          <summary>
+            <span>Ready by (cabin target)</span>
+            <span id="readyBySummaryState" class="comfort-summary-state">—</span>
+          </summary>
+          <p class="heating-support">Warms cabin air to a target by a chosen time using the calibrated warm-up model, then comfort heating keeps that target. This is the earlier cabin-temperature schedule: it is separate from departure defrost, and reaching the target does not mean the windows are clear.</p>
+          <p id="readyByState" class="comfort-state" aria-live="polite" aria-atomic="true">Loading Ready-by schedule…</p>
+          <dl id="readyByFacts" class="session-facts ready-by-facts" hidden>
+            <div><dt>Ready by</dt><dd id="readyByWhen">—</dd></div>
+            <div><dt>Planned start</dt><dd id="readyByPlannedStart">—</dd></div>
+            <div><dt>Estimated warm-up</dt><dd id="readyByEta">—</dd></div>
+            <div><dt>Cabin</dt><dd id="readyByCabin">—</dd></div>
+            <div><dt>Outside</dt><dd id="readyByOutside">—</dd></div>
+            <div><dt>Model</dt><dd id="readyByModel">—</dd></div>
+          </dl>
+          <form id="readyByForm" class="comfort-form" novalidate>
+            <div class="ready-by-fields">
+              <label for="readyByDate">Ready-by date<input id="readyByDate" type="date" required></label>
+              <label for="readyByTime">Ready-by time<input id="readyByTime" type="text" inputmode="numeric" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" maxlength="5" placeholder="07:00" title="24-hour time, for example 07:00" value="07:00" autocomplete="off" required></label>
             </div>
-          </details>
+            <label for="readyByTarget">Ready-by cabin target (°C)</label>
+            <input id="readyByTarget" type="number" inputmode="decimal" step="0.5" min="-40" max="40" value="-5" autocomplete="off" required>
+            <p class="heating-support">Europe/Helsinki time, 24-hour. Edits stay unsaved until Save Ready-by; saving replaces any earlier Ready-by schedule. Tuning is in <a href="{{ url_for('web.car_heater_settings_page') }}#calibration">Settings → Calibration</a>.</p>
+            <div class="comfort-actions">
+              <button type="submit" id="readyBySchedule" class="heating-primary" aria-describedby="readyByLockReason">Save Ready-by</button>
+              <button type="button" id="readyByCancel" disabled>Cancel Ready-by</button>
+            </div>
+          </form>
+          <p id="readyByLockReason" class="heating-lock-reason"></p>
+          <p id="readyByFeedback" class="comfort-feedback" role="status" aria-live="polite"></p>
+          <p class="heating-support">Cancelling leaves the relay as it is. If the heater reports ON, use Stop heating.</p>
         </details>
       </section>
 
@@ -250,8 +211,7 @@
       </section>
     </aside>
   </div><!-- /heating-layout -->
-  <section class="heater-evidence heater-settings" {% if heater_view != 'settings' %}hidden{% endif %} aria-labelledby="heaterSettingsHeading">
-    <h2 id="heaterSettingsHeading">Settings</h2>
+  <section class="heater-evidence heater-settings" {% if heater_view != 'settings' %}hidden{% endif %} aria-labelledby="heaterPageHeading">
     <nav class="settings-groups" aria-label="Settings groups">
       <a href="#heatingPreferences">Heating preferences</a>
       <a href="#installationDevices">Installation &amp; devices</a>
@@ -434,122 +394,59 @@
       <dt>Device health</dt><dd id="diagnosticsDevice" role="status">No device report yet.</dd>
       <dt>Relay connection</dt><dd id="diagnosticsRelay">Unknown</dd>
     </dl>
-    <h4 class="heater-details-heading">Latest device telemetry</h4>
-  <section class="ios-card">
-    <div class="ios-card-header">
-      <h3>Details</h3>
-    </div>
-    <div class="status-pills-compact">
-      <span id="pillVoltage" class="status-pill">
-        <span class="pill-icon">⚡</span>
-        <span>—</span>
-      </span>
-      <span id="pillCurrent" class="status-pill">
-        <span class="pill-icon">〰️</span>
-        <span>—</span>
-      </span>
-      <span id="pillEnergyTotal" class="status-pill">
-        <span class="pill-icon">📊</span>
-        <span>—</span>
-      </span>
-    </div>
-    <ul class="ios-list details-grid">
-      <li class="ios-list-item">
-        <span class="item-label">Instant Power</span>
-        <span id="detailPower" class="item-value">—</span>
-      </li>
-      <li class="ios-list-item">
-        <span class="item-label">Ambient Temperature</span>
-        <span id="detailAmbient" class="item-value">—</span>
-      </li>
-      <li class="ios-list-item">
-        <span class="item-label">Device Temperature</span>
-        <span id="detailDeviceTemp" class="item-value">—</span>
-      </li>
-      <li class="ios-list-item">
-        <span class="item-label">Voltage</span>
-        <span id="detailVoltage" class="item-value">—</span>
-      </li>
-      <li class="ios-list-item">
-        <span class="item-label">Current</span>
-        <span id="detailCurrent" class="item-value">—</span>
-      </li>
-      <li class="ios-list-item">
-        <span class="item-label">Energy in last minute</span>
-        <span id="detailEnergyToday" class="item-value">—</span>
-      </li>
-      <li class="ios-list-item">
-        <span class="item-label">Energy Total</span>
-        <span id="detailEnergyTotal" class="item-value">—</span>
-      </li>
-      <li class="ios-list-item">
-        <span class="item-label">Source</span>
-        <span id="detailSource" class="item-value">—</span>
-      </li>
-    </ul>
-    <div class="timestamp-footer">
-      Last updated: <span id="lastUpdateTime">—</span>
-    </div>
-  </section>
-  <!-- Charts Button -->
-  <button id="btnOpenCarHeaterCharts" class="charts-button" type="button">
-    View Charts
-  </button>
+    <h4 id="deviceTelemetryHeading">Latest device telemetry</h4>
+    <p class="settings-help">The device's last report, received <span id="lastUpdateTime">—</span> (Helsinki). Values it did not report stay —.</p>
+    <dl id="deviceTelemetry" class="settings-facts diagnostics-facts" aria-labelledby="deviceTelemetryHeading">
+      <dt>Heater power</dt><dd id="detailPower">—</dd>
+      <dt>Voltage</dt><dd id="detailVoltage">—</dd>
+      <dt>Current</dt><dd id="detailCurrent">—</dd>
+      <dt>Energy in last minute</dt><dd id="detailEnergyToday">—</dd>
+      <dt>Energy counter</dt><dd id="detailEnergyTotal">—</dd>
+      <dt>Relay device temperature</dt><dd id="detailDeviceTemp">—</dd>
+      <dt>Device ambient temperature</dt><dd id="detailAmbient">—</dd>
+      <dt>Transport</dt><dd id="detailSource">—</dd>
+    </dl>
 
-  <!-- Command Status & Advanced -->
-  <section class="ios-card cmd-status-card">
-    <div class="cmd-status-section">
-      <h4 class="cmd-status-title">Command stages</h4>
-      <div class="cmd-status-list">
-        <div class="cmd-status-item">
-          <span class="cmd-status-name">Turn ON</span>
-          <span id="cmdStatus_turn_on" class="cmd-status-badge" role="status">No command result</span>
-        </div>
-        <div class="cmd-status-item">
-          <span class="cmd-status-name">Turn OFF</span>
-          <span id="cmdStatus_turn_off" class="cmd-status-badge" role="status">No command result</span>
-        </div>
-        <div class="cmd-status-item">
-          <span class="cmd-status-name">Get Logs</span>
-          <span id="cmdStatus_get_logs" class="cmd-status-badge" role="status">No command result</span>
-        </div>
-        <div class="cmd-status-item">
-          <span class="cmd-status-name">Restart ESP</span>
-          <span id="cmdStatus_esp_restart" class="cmd-status-badge" role="status">No command result</span>
-        </div>
-        <div class="cmd-status-item">
-          <span class="cmd-status-name">Restart Shelly</span>
-          <span id="cmdStatus_shelly_restart" class="cmd-status-badge" role="status">No command result</span>
-        </div>
-      </div>
-    </div>
-    <div class="advanced-actions">
-      <div class="advanced-actions-title">Logs &amp; maintenance</div>
-      <div class="advanced-btn-row">
-        <button id="btnGetLogs" class="advanced-btn" type="button">Get Logs</button>
-        <button id="btnEspRestart" class="advanced-btn btn-danger" type="button">Restart ESP</button>
-        <button id="btnShellyRestart" class="advanced-btn btn-danger" type="button">Restart Shelly</button>
-      </div>
-    </div>
-  </section>
+    <h4>Detailed measurements</h4>
+    <p class="settings-help">Permanent glass, cabin, device, power, voltage and current history for one Helsinki day.</p>
+    <button id="btnOpenCarHeaterCharts" class="evidence-button" type="button">View Charts</button>
 
-  <section class="weather-health" aria-labelledby="weatherHealthHeading">
-    <h3 id="weatherHealthHeading">Weather collection</h3>
-    <p>Station observations are archived every ten minutes and the parking-point forecast is checked every thirty minutes, with or without heating. Station history is backfilled 24 hours on first start, and gaps up to seven days old are repaired after an outage; backfilled values keep their real retrieval time. Only forecast versions actually received are kept; forecasts never control heating. Values a source did not report are source limitations, not collector failures.</p>
-    <ul id="weatherHealthList" class="weather-health-list"></ul>
-    <p id="weatherHealthStatus" role="status" aria-atomic="true">Loading collection status…</p>
-    <button id="btnRefreshWeatherHealth" class="evidence-button" type="button">Refresh collection status</button>
-    <form id="weatherExport" class="weather-export" method="get" action="/api/car_heater/weather/export" novalidate>
-      <h4>Export archived weather</h4>
-      <label for="weatherExportKind">Evidence<select id="weatherExportKind" name="kind"><option value="observation">Station observations (up to 7 days)</option><option value="forecast">Forecast values (up to 2 days)</option><option value="coverage">Coverage and gaps (up to 7 days)</option></select></label>
-      <label for="weatherExportStart">From (Helsinki date)<input id="weatherExportStart" name="start_date" type="date" required></label>
-      <label for="weatherExportEnd">To, inclusive<input id="weatherExportEnd" name="end_date" type="date" required aria-describedby="weatherExportError"></label>
-      <p id="weatherExportError" class="weather-export-error" role="alert"></p>
-      <label for="weatherExportFormat">Format<select id="weatherExportFormat" name="format"><option value="csv">CSV</option><option value="json">JSON (adds coverage and gaps)</option></select></label>
-      <button class="evidence-button" type="submit">Download export</button>
-      <p>Observations are selected by source time and include every revision; forecasts by valid time and include every version received; coverage lists collected stretches, gaps and unchecked forecast stretches. Exports keep source text, units, received missing values and backfill labels. Original replies remain separate downloads.</p>
-    </form>
-  </section>
+    <h4 id="commandStagesHeading">Command stages</h4>
+    <p class="settings-help">Queued means the server accepted the request and Sent means it was delivered; neither proves execution. Only a device acknowledgement reports success or failure.</p>
+    <dl id="commandStages" class="settings-facts diagnostics-facts" aria-labelledby="commandStagesHeading">
+      <dt>Turn ON</dt><dd><span id="cmdStatus_turn_on" class="command-stage" role="status">No command result</span></dd>
+      <dt>Turn OFF</dt><dd><span id="cmdStatus_turn_off" class="command-stage" role="status">No command result</span></dd>
+      <dt>Get Logs</dt><dd><span id="cmdStatus_get_logs" class="command-stage" role="status">No command result</span></dd>
+      <dt>Restart ESP</dt><dd><span id="cmdStatus_esp_restart" class="command-stage" role="status">No command result</span></dd>
+      <dt>Restart Shelly</dt><dd><span id="cmdStatus_shelly_restart" class="command-stage" role="status">No command result</span></dd>
+    </dl>
+
+    <h4>Logs &amp; maintenance</h4>
+    <p class="settings-help">Restarts ask for confirmation first and never stop the heater; use Stop heating in Heating to request OFF.</p>
+    <div class="settings-actions">
+      <button id="btnGetLogs" class="evidence-button" type="button">Get Logs</button>
+      <button id="btnEspRestart" class="evidence-button maintenance-restart" type="button">Restart ESP</button>
+      <button id="btnShellyRestart" class="evidence-button maintenance-restart" type="button">Restart Shelly</button>
+    </div>
+    <p id="maintenanceStatus" class="settings-feedback" role="status" aria-live="polite"></p>
+
+    <section class="weather-health" aria-labelledby="weatherHealthHeading">
+      <h4 id="weatherHealthHeading">Weather collection</h4>
+      <p>Station observations are archived every ten minutes and the parking-point forecast is checked every thirty minutes, with or without heating. Station history is backfilled 24 hours on first start, and gaps up to seven days old are repaired after an outage; backfilled values keep their real retrieval time. Only forecast versions actually received are kept; forecasts never control heating. Values a source did not report are source limitations, not collector failures.</p>
+      <ul id="weatherHealthList" class="weather-health-list"></ul>
+      <p id="weatherHealthStatus" role="status" aria-atomic="true">Loading collection status…</p>
+      <button id="btnRefreshWeatherHealth" class="evidence-button" type="button">Refresh collection status</button>
+      <form id="weatherExport" class="weather-export" method="get" action="/api/car_heater/weather/export" novalidate>
+        <h5>Export archived weather</h5>
+        <label for="weatherExportKind">Evidence<select id="weatherExportKind" name="kind"><option value="observation">Station observations (up to 7 days)</option><option value="forecast">Forecast values (up to 2 days)</option><option value="coverage">Coverage and gaps (up to 7 days)</option></select></label>
+        <label for="weatherExportStart">From (Helsinki date)<input id="weatherExportStart" name="start_date" type="date" required></label>
+        <label for="weatherExportEnd">To, inclusive<input id="weatherExportEnd" name="end_date" type="date" required aria-describedby="weatherExportError"></label>
+        <p id="weatherExportError" class="weather-export-error" role="alert"></p>
+        <label for="weatherExportFormat">Format<select id="weatherExportFormat" name="format"><option value="csv">CSV</option><option value="json">JSON (adds coverage and gaps)</option></select></label>
+        <button class="evidence-button" type="submit">Download export</button>
+        <p>Observations are selected by source time and include every revision; forecasts by valid time and include every version received; coverage lists collected stretches, gaps and unchecked forecast stretches. Exports keep source text, units, received missing values and backfill labels. Original replies remain separate downloads.</p>
+      </form>
+    </section>
     </section>
   </section>
 
@@ -558,7 +455,6 @@
 <script>
   window.CAR_HEATER_LAST_STATUS = {{ last_status | tojson }};
   window.CAR_HEATER_CMD_STATUS = {{ command_status | tojson }};
-  window.CAR_HEATER_CHARGE_STATE = {{ charge_mode_state | tojson }};
   window.CAR_HEATER_READY_BY = {{ ready_by_schedule | tojson }};
   window.CAR_HEATER_WEATHER = {{ weather_data | tojson }};
 </script>
@@ -575,17 +471,16 @@
 {% endblock %}
 
 {% block scripts %}
-<script defer src="{{ url_for('static', filename='js/car_heater_bounded.js', v='20261021-4') }}"></script>
+<script defer src="{{ url_for('static', filename='js/car_heater_bounded.js', v='20261030-1') }}"></script>
 <script defer src="{{ url_for('static', filename='js/car_heater_departure.js', v='20261021-2') }}"></script>
 <script defer src="{{ url_for('static', filename='js/car_heater_weather_health.js', v='20261021-1') }}"></script>
 <script defer src="{{ url_for('static', filename='js/car_heater_preferences.js', v='20261021-2') }}"></script>
 <script defer src="{{ url_for('static', filename='js/car_heater_calibration.js', v='20261021-2') }}"></script>
 <script src="{{ url_for('static', filename='js/init_sio.js', v='20260504-1') }}"></script>
-<script src="{{ url_for('static', filename='js/car_heater.js', v='20261021-5') }}"></script>
+<script src="{{ url_for('static', filename='js/car_heater.js', v='20261030-1') }}"></script>
+<script defer src="{{ url_for('static', filename='js/car_heater_ready_by.js', v='20261030-2') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater_logs.js', v='20261021-1') }}"></script>
 <script src="{{ url_for('static', filename='js/flash.js') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater_session_charts.js', v='20261021-2') }}"></script>
 <script src="{{ url_for('static', filename='js/car_heater_chart.js', v='20261021-1') }}"></script>
-<script src="{{ url_for('static', filename='js/car_heater_settings_base.js', v='20261021-1') }}"></script>
-<script src="{{ url_for('static', filename='js/car_heater_settings_schedule.js', v='20261021-1') }}"></script>
 {% endblock %}

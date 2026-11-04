@@ -28,6 +28,7 @@
 .heater-navigation a { flex: 1; min-height: 48px; padding: 10px 12px; text-align: center; color: var(--evidence-text); background: var(--evidence-surface); border-radius: 8px; text-decoration: none; }
 .heater-navigation a[aria-current="page"] { color: var(--evidence-bg); background: var(--evidence-accent); font-weight: 650; }
 .heater-evidence a { color: var(--evidence-accent); }
+.heater-evidence a.evidence-back { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; }
 .heater-evidence .heater-navigation a[aria-current="page"] { color: var(--evidence-bg); }
 .evidence-form { display: grid; gap: 16px; max-width: 680px; }
 .evidence-form label, .evidence-inline label { display: grid; gap: 6px; }
@@ -52,7 +53,8 @@
 .evidence-attempt p { margin: 4px 0; }
 .heater-evidence dl { display: grid; grid-template-columns: minmax(140px, 1fr) 2fr; gap: 8px 16px; }
 .heater-evidence dd { margin: 0; white-space: pre-wrap; }
-.heater-evidence :focus-visible, .heater-navigation :focus-visible { outline: 3px solid var(--evidence-accent); outline-offset: 3px; }
+.heater-evidence :focus-visible, .heater-navigation :focus-visible,
+.heater-evidence input:focus-within, .heater-evidence select:focus, .heater-evidence textarea:focus { outline: 3px solid var(--evidence-accent); outline-offset: 3px; }
 .car-heater-page [hidden], .heater-evidence [hidden] { display: none !important; }
 .heater-settings { margin-top: 16px; }
 .heater-evidence a.evidence-observe { display: inline-flex; align-items: center; justify-content: center; margin-top: 16px; color: var(--evidence-bg); text-decoration: none; }
@@ -107,7 +109,7 @@
   .heater-evidence dd { margin-bottom: 12px; }
 }
 .weather-health { margin-top: 24px; }
-.weather-health h3 { font-size: 1.1rem; margin: 0 0 8px; }
+.weather-health h3, .weather-health h4 { font-size: 1.1rem; margin: 0 0 8px; }
 .weather-health-list { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 12px; }
 .weather-health-item { border: 1px solid var(--evidence-border); border-radius: 8px; padding: 12px; background: var(--evidence-surface); min-width: 0; }
 .weather-health-item strong { display: block; overflow-wrap: anywhere; }

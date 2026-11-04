@@ -16,7 +16,7 @@
 .departure-planner input, .departure-planner select { width: 100%; min-width: 0; }
 .departure-planner button:disabled { opacity: .5; cursor: default; }
 #departureSave { background: #235aba; border-color: #7eaaff; }
-.departure-planner :focus-visible { outline: 3px solid #a6bfff; outline-offset: 3px; }
+.departure-planner :focus-visible, .departure-planner input:focus-within, .departure-planner select:focus { outline: 3px solid #a6bfff; outline-offset: 3px; }
 .departure-planner summary { cursor: pointer; padding: 12px 0; }
 .departure-planner a { color: #a6bfff; display: inline-block; padding: 12px 0; }
 .departure-planner [hidden] { display: none; }

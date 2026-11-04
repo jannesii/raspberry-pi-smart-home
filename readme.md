@@ -96,19 +96,6 @@ work and device connections.
 Session cookies always have the `Secure` flag. If login does not persist over
 local HTTP, use a local HTTPS reverse proxy. Production must use HTTPS.
 
-## Car-heater UI design preview
-
-Compare three throwaway layouts with synthetic heating, session and photo states:
-
-```sh
-python3 scripts/run_car_heater_ui_prototype.py
-```
-
-Open `http://127.0.0.1:8765/car_heater?variant=A`. See the
-[prototype guide](docs/reviews/car-heater-ui-prototype.md) for the layout comparison
-and phone access. This preview runs separately from the Flask app and uses no
-live devices or database.
-
 ## TMP117 windshield holder
 
 A parametric PETG taped base, screwed airflow cover, removable board retainers,
@@ -379,7 +366,7 @@ evidence stays missing. Late samples use hollow markers. The history API keeps
 its existing `rows`, `sensor_rows` and `energy_today_wh`, adding `sensor_series`
 (sample state/times and explicit failed reads), UTC `start`/`end` boundaries and
 `max_gap_seconds`. No schema migration or firmware change is required for #17.
-Other slices' retained controls, including legacy Ready-by, remain reachable.
+See [Complete car-heater interface](#complete-car-heater-interface) for where every retained control lives.
 
 Session list/detail/create and outcome endpoints are authenticated under
 `/api/car_heater/sessions`; browser mutations require the normal CSRF token.
@@ -433,8 +420,21 @@ come from the server's persisted reply. Starting is unavailable, with the reason
 shown, while a timed session runs or until its OFF is confirmed, and the server
 refuses such a start too. A timed start switches comfort off; it never resumes on
 its own. **Stop comfort heating** leaves the relay as it is; use **Stop heating**
-if the heater reports ON. The legacy cabin-target **Ready by** stays inside this
-section until it is retired.
+if the heater reports ON.
+
+**Heating → Ready by (cabin target)**, collapsed below Comfort heating, is the
+earlier cabin-temperature schedule, restyled and kept. Enter a Helsinki date,
+24-hour time and cabin target; nothing is saved until **Save Ready-by**, and
+saving replaces any earlier Ready-by schedule (this is how it is edited). The
+section shows its status, planned start, estimated warm-up, cabin/outside
+temperature and model; **Cancel Ready-by** never switches the relay. It warms
+cabin air with the calibrated model and then hands the target to comfort
+heating, so it says nothing about clear windows; use the departure plan for
+defrost. Saving is unavailable, with the reason, while a timed session runs or
+until its OFF is confirmed, and the server refuses such a request too. Its
+tuning (**Allow Ready-by schedules**, reach tolerance, command cooldown) stays in
+**Settings → Calibration**. Ready-by create/cancel over HTTP and Socket.IO need
+the browser CSRF token.
 
 **Settings** groups **Heating preferences** (comfort hysteresis, with an
 explanation and an explicit **Save preferences**), **Installation & devices**,
@@ -465,6 +465,49 @@ blocks turning it on, in the page and at the server, until OFF is confirmed.
 recorded sessions and fitted parameters and leaves autonomous calibration off;
 **Reset cooldown** never starts heating. **Recorded calibration data** loads
 recent sessions, bucket coverage and statistics when opened.
+
+### Complete car-heater interface
+
+Milestone 2 (#18) completes the redesign: **Heating**, **Sessions** and
+**Settings** share one navigation, header and calm dark style, with English
+labels and Europe/Helsinki 24-hour times. The old card layout, floating command
+banner, battery-charge page code and the throwaway UI prototype are gone from
+the app; the prototype source remains in Git history (see the
+[prototype guide](docs/reviews/car-heater-ui-prototype.md)). Charge-mode backend
+code is unchanged. Every retained function has its place:
+
+| Function | Where it lives now |
+| --- | --- |
+| Departure plan, Tomorrow, preview/save/cancel, clock changes and grace | Heating → Next departure |
+| Confirmed heater state, device freshness, Stop / Request OFF again | Heating, under the next departure |
+| Manual timed heating, original finish, remaining time | Heating → Manual heating |
+| Comfort heating and its target | Heating → Comfort heating (collapsed) |
+| Ready by (cabin target): schedule, replace, cancel | Heating → Ready by (collapsed) |
+| Outside observation, glass/cabin readings, heater power | Heating → Conditions |
+| Session list, date filter, recording an attempt | Sessions |
+| Session review, outcome, photos, weather evidence, original replies | Sessions → a session |
+| Observation capture and Finish → outcome | Heating/Sessions → Observe windshield |
+| Comfort hysteresis | Settings → Heating preferences |
+| Installation record, history and reported device facts | Settings → Installation & devices |
+| Calibration status, window, Ready-by tuning, model tuning, resets, recorded data | Settings → Calibration |
+| Connection/device/relay health, latest telemetry, detailed charts | Settings → Diagnostics |
+| Command stages, Get Logs, confirmed ESP/Shelly restarts | Settings → Diagnostics → Logs & maintenance |
+| Weather collection health and authenticated exports | Settings → Diagnostics → Weather collection |
+
+The isolated journey drives the real pages through Ready-by edit/cancel,
+preference save/reload, departure save/reload and start, comfort and manual
+conflicts (including requests that bypass the page), capture with a failed and
+retried upload, outcome entry without heating changes, Stop pending/unknown/
+confirmed and a confirmed restart. Each view is checked for horizontal overflow,
+44 px touch targets, labels, text contrast, visible focus and reduced motion:
+
+```sh
+.venv/bin/pytest -q tests/test_car_heater_redesign_completion.py
+CAR_HEATER_SCREENSHOTS=.scratch/screens .venv/bin/pytest -q tests/test_car_heater_sessions_browser.py -k complete
+```
+
+Emulated phones do not establish iPhone camera, ultra-wide, wake-lock or touch
+feel; those, and physical commissioning, remain the owner's checks in #12.
 
 ### Departure defrost planning
 
