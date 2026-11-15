@@ -165,6 +165,38 @@ class DepartureService:
                 expected_preview.get(key) != preview[key] for key in keys
             ):
                 raise ValueError("Weather or timing changed; preview departure again before saving")
+        return self._store(preview)
+
+    def save_window(self, start_at, stop_at, *, fold=None):
+        """TEMPORARY (until cabin sensors are installed): explicit start/stop window.
+
+        Reuses the departure lifecycle so the relay-local finish, restart
+        safety and session records stay identical; remove with its form/route.
+        """
+        start = departure_epoch(start_at, fold)
+        stop = departure_epoch(stop_at, fold)
+        if start <= self._clock():
+            raise ValueError("Choose a future start time")
+        if not 0 < stop - start <= 10800:
+            raise ValueError("Stop must be after start and at most 180 minutes later")
+        weather = self.weather_snapshot()
+        preview = {
+            "fold": fold,
+            "departure_at": iso(stop),
+            "planned_start_at": iso(start),
+            "finish_at": iso(stop),
+            "preheat_minutes": math.ceil((stop - start) / 60),
+            "grace_minutes": 0,
+            "weather": weather,
+            "fallback_reason": None,
+            "manual_window": True,
+        }
+        logger.info(
+            "Saving temporary manual heating window start=%s stop=%s", iso(start), iso(stop)
+        )
+        return self._store(preview)
+
+    def _store(self, preview):
         with self._lock:
             if self._plan and self._plan["status"] in ("running", "stopping", "interrupted"):
                 self.tick()

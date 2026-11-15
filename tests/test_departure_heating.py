@@ -620,3 +620,41 @@ def test_departure_preview_is_independent_of_experimental_calibration(
     after = client.post("/api/car_heater/departure/preview", json=request, headers=auth)
     assert after.get_json() == before.get_json()
     assert after.get_json()["preheat_minutes"] == 150
+
+
+def test_temporary_fixed_window_starts_at_start_and_finishes_at_stop(
+    departure, session_app, client
+):
+    _planner, heater, clock, _weather = departure
+    response = client.post(
+        "/api/car_heater/departure/window",
+        json={"start_at": "2027-01-16T06:30", "stop_at": "2027-01-16T08:00"},
+        headers=headers(session_app, client),
+    )
+    assert response.status_code == 201
+    plan = response.get_json()
+    assert plan["planned_start_at"] == "2027-01-16T04:30:00+00:00"
+    assert plan["finish_at"] == "2027-01-16T06:00:00+00:00"
+    assert plan["preheat_minutes"] == 90
+    clock[0] = datetime.fromisoformat(plan["planned_start_at"]).timestamp()
+    heater.observe_bounded_status(
+        {
+            "bounded": {
+                "protocol": 1,
+                "ready": True,
+                "relay_on": False,
+                "power_w": 0,
+                "boot_id": "relay",
+                "device_boot_id": "esp",
+            }
+        }
+    )
+    commands = heater.get_queued_commands()
+    assert [c["action"] for c in commands] == ["turn_on"]
+    assert commands[0]["finish_at"] == datetime.fromisoformat(plan["finish_at"]).timestamp()
+    too_long = client.post(
+        "/api/car_heater/departure/window",
+        json={"start_at": "2027-01-17T05:00", "stop_at": "2027-01-17T08:01"},
+        headers=headers(session_app, client),
+    )
+    assert too_long.status_code == 409

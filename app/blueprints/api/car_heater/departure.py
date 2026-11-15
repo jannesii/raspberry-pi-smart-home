@@ -51,3 +51,21 @@ def departure_plan():
         ), 201
     except ValueError as exc:
         return jsonify(error=str(exc)), 409
+
+
+# TEMPORARY: fixed start/stop window until cabin sensors allow normal planning.
+@car_bp.post("/departure/window")
+@login_required
+def departure_window():
+    service = getattr(current_app, "departure_service", None)
+    if service is None:
+        return jsonify(error="Departure planner unavailable"), 503
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify(error="Expected a JSON object"), 400
+    try:
+        return jsonify(
+            service.save_window(data.get("start_at"), data.get("stop_at"), fold=data.get("fold"))
+        ), 201
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 409

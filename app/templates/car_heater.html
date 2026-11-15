@@ -78,6 +78,18 @@
       <div id="departurePreview" hidden></div>
       <p id="departureFeedback" role="status" aria-live="polite"></p>
       <p class="departure-hint">Use 24-hour time (HH:MM). Edits stay unsaved until Save departure. Cancelling an upcoming plan does not stop current heating. Use Stop heating to request OFF.</p>
+      <!-- TEMPORARY: fixed start/stop window until cabin sensors are installed. -->
+      <h3 class="heating-section-title">Temporary: fixed start and stop</h3>
+      <form id="windowForm">
+        <div class="departure-fields">
+          <label for="windowDate">Start date<input id="windowDate" type="date" required></label>
+          <label for="windowStart">Start<input id="windowStart" type="text" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" maxlength="5" value="06:30" required></label>
+          <label for="windowStop">Stop<input id="windowStop" type="text" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" maxlength="5" value="08:00" required></label>
+        </div>
+        <div class="departure-actions"><button type="submit" id="windowSave">Schedule heating</button></div>
+      </form>
+      <p id="windowFeedback" role="status" aria-live="polite"></p>
+      <p class="departure-hint">At most 180 minutes. Replaces any upcoming departure plan; cancel it with Cancel upcoming departure.</p>
     </section>
 
     <aside class="heating-secondary" aria-label="Heater controls and conditions">
@@ -472,7 +484,7 @@
 
 {% block scripts %}
 <script defer src="{{ url_for('static', filename='js/car_heater_bounded.js', v='20261030-1') }}"></script>
-<script defer src="{{ url_for('static', filename='js/car_heater_departure.js', v='20261021-2') }}"></script>
+<script defer src="{{ url_for('static', filename='js/car_heater_departure.js', v='20261115-1') }}"></script>
 <script defer src="{{ url_for('static', filename='js/car_heater_weather_health.js', v='20261021-1') }}"></script>
 <script defer src="{{ url_for('static', filename='js/car_heater_preferences.js', v='20261021-2') }}"></script>
 <script defer src="{{ url_for('static', filename='js/car_heater_calibration.js', v='20261021-2') }}"></script>

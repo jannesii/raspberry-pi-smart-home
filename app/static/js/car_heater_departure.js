@@ -157,6 +157,27 @@
         if (!saved && byId('departureBigDate')) byId('departureBigDate').textContent = 'Departure plan unavailable';
       }
     }
+    // TEMPORARY fixed start/stop window; stop at or before start means the next day.
+    if (byId('windowForm')) {
+      byId('windowDate').value = tomorrowDate();
+      byId('windowForm').addEventListener('submit', async event => {
+        event.preventDefault(); if (busy || activeRun) return;
+        const date = byId('windowDate').value, start = byId('windowStart').value, stop = byId('windowStop').value;
+        let stopDate = date;
+        if (stop <= start) {
+          const next = new Date(date + 'T12:00:00Z'); next.setUTCDate(next.getUTCDate() + 1);
+          stopDate = next.toISOString().slice(0, 10);
+        }
+        busy = true; generation += 1; controls();
+        byId('windowFeedback').textContent = 'Scheduling…';
+        try {
+          const result = await request('POST', {start_at: `${date}T${start}`, stop_at: `${stopDate}T${stop}`}, '/window');
+          render(result);
+          byId('windowFeedback').textContent = `Scheduled ${format(result.planned_start_at)} – ${format(result.finish_at)}.`;
+        } catch (error) { byId('windowFeedback').textContent = error.message; }
+        finally { busy = false; controls(); }
+      });
+    }
     byId('departureDate').value = tomorrowDate();
     refresh(true); window.setInterval(() => refresh(), 5000);
   });
