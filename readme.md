@@ -246,7 +246,9 @@ at the repository root. Install the hook with `.venv/bin/pre-commit install`.
 
 To preview a desktop checkout or worktree, use `scripts/dev.py setup --worktree PATH`,
 then `start`, `status`, `stop` or `reset --yes`. Development runs on local
-PostgreSQL and private Redis at `https://192.168.1.100:5557`. See the
+PostgreSQL and private Redis. Browse it at `https://dev.jannenkoti.com` through
+the Pi’s Cloudflare Tunnel. Application rate limits are disabled in development.
+See the
 [development environment guide](docs/operations/development-environment.md)
 for desktop setup, TLS trust and daily use.
 

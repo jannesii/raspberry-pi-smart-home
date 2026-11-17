@@ -1,10 +1,11 @@
 # Development environment
 
-Run one selected desktop checkout or worktree at
-`https://192.168.1.100:5557` ([ADR 0005](../adr/0005-operate-pi-production-from-desktop-development.md)).
+Browse one selected desktop checkout or worktree at
+`https://dev.jannenkoti.com` ([ADR 0005](../adr/0005-operate-pi-production-from-desktop-development.md)).
 The desktop runs native PostgreSQL, an on-demand private Redis and one
 Eventlet Gunicorn worker. Dependencies, writable files and synthetic data
-belong to development. The production Pi can be offline.
+belong to development. The launcher and its local readiness checks work with
+the Pi offline. Public browser access requires the Pi and its tunnel.
 
 ## Desktop setup
 
@@ -38,20 +39,13 @@ install -d -m 700 ~/.config/jannenkoti-dev ~/.local/state/jannenkoti-dev
 
    ```fish
    set -l certdir "$HOME/.config/jannenkoti-dev"
-   env CAROOT="$certdir/mkcert" mkcert -install
    env CAROOT="$certdir/mkcert" mkcert -cert-file "$certdir/server.pem" -key-file "$certdir/server.key" 192.168.1.100
    chmod 600 "$certdir/server.key"
    ```
 
-   For this example use `$certdir/mkcert/rootCA.pem` as the CA file. Import the
-   public CA certificate into the desktop browser's trust store if it uses a
-   separate store. Install and trust the same public CA on the phone. On
-   iPhone, enable full trust for the installed root under **Settings → General
-   → About → Certificate Trust Settings**. Transfer only the public root
-   certificate. Keep the CA private key and the server key on the desktop.
-   [mkcert mobile trust instructions](https://github.com/FiloSottile/mkcert#mobile-devices)
-   and [Apple certificate trust instructions](https://support.apple.com/en-us/102390)
-   cover the phone setup.
+   For this example use `$certdir/mkcert/rootCA.pem` as the CA file. The Pi
+   needs only this public certificate. Keep the CA private key and server key
+   on the desktop. Browsers use Cloudflare's public TLS certificate.
 
 3. **Configuration.** Copy the example once and set its absolute paths, dedicated
    database password, new session secret and dedicated development login
@@ -62,11 +56,21 @@ install -d -m 700 ~/.config/jannenkoti-dev ~/.local/state/jannenkoti-dev
    install -m 600 "$repo/docs/operations/development-host/dev.env.example" ~/.config/jannenkoti-dev/dev.env
    ```
 
-4. **LAN access.** If the desktop firewall blocks inbound access, allow TCP
-   5557 to `192.168.1.100` only from the home subnet. Bind PostgreSQL and
-   Redis to loopback. Use the LAN address directly from a phone on the same
-   network. Keep the development port off public tunnels and router
-   forwarding rules.
+4. **Tunnel ingress.** The Pi must be able to reach TCP 5557 on
+   `192.168.1.100`. Keep PostgreSQL and Redis on loopback. Install the public
+   development CA at `/etc/cloudflared/jannenkoti-dev-ca.pem` on the Pi and set
+   the existing development hostname rule in the Cloudflared configuration:
+
+   ```yaml
+   - hostname: dev.jannenkoti.com
+     service: https://192.168.1.100:5557
+     originRequest:
+       caPool: /etc/cloudflared/jannenkoti-dev-ca.pem
+   ```
+
+   Validate ingress before restarting the shared tunnel, then check both the
+   development and production login pages. The development app must be running
+   to serve the public hostname. Use a dedicated development password.
 
 ## Daily use
 
@@ -98,8 +102,9 @@ dev reset --yes
   with persistence off. Stop and start to load Python edits. Run setup again
   after changing requirements or migrations. Logs are in
   `$DEV_STATE_DIR/instance/` as `app.log`, `redis.log` and `setup.log`.
-- **status** reports the selection, revision, running state and HTTPS address.
-  The browser banner shows the revision captured at startup.
+- **status** reports the selection, revision, local listener health and browser
+  address. Check the public URL separately to verify the tunnel. The browser
+  banner shows the revision captured at startup.
 - **stop** signals only the app and Redis processes recorded by the launcher.
 - **reset --yes** requires a stopped instance and a marked local database
   owned by an unprivileged development role. It recreates the development
@@ -113,7 +118,7 @@ for a different development configuration. An explicitly supplied
 operation needs only the development file. Keep both configuration and TLS
 files outside the checkout and the reset directory. `run --env-file FILE`
 is the foreground app-only entry point used for isolated checks with
-pre-existing dependencies and Redis. Use `start` for everyday LAN development.
+pre-existing dependencies and Redis. Use `start` for everyday development.
 
 | Exit | Meaning |
 | --- | --- |
@@ -125,13 +130,15 @@ pre-existing dependencies and Redis. Use `start` for everyday LAN development.
 
 ## Browser access and sample data
 
-Sign in at `https://192.168.1.100:5557` with the dedicated development login.
+Sign in at `https://dev.jannenkoti.com` with the dedicated development login.
 Setup and reset seed that login as Root-Admin and three synthetic sensor
 locations named `Kehitys …`. The sticky **Kehitysympäristö** banner shows the
 branch and commit, and tab titles start with `[DEV]`.
 
 The distinct development session and remember cookies use `Secure` and
 `HttpOnly`. Root-Admin, authentication, CSRF and API-key checks still apply.
+Application rate limits are disabled in development. The tunnel presents the
+Pi's address to the app, so its visitors would otherwise share one login limit.
 Socket.IO accepts the configured development HTTPS origin. The authenticated
 car-heater capture page allows same-origin camera access over HTTPS. The
 browser still controls camera permission.
@@ -145,6 +152,7 @@ browser still controls camera permission.
 | `DB_PATH`, `VILLENKOTI_DB_PATH` | Absolute file paths under `DEV_STATE_DIR`. KFactor test-mode output also goes there. |
 | `SECRET_KEY`, `WEB_USERNAME`, `WEB_PASSWORD` | Dedicated development values. |
 | `DEV_BIND_HOST`, `PORT` | Defaults are `192.168.1.100` and `5557`. Use an assigned private IPv4 address with a matching certificate. |
+| `DEV_BROWSER_ORIGIN` | Set to `https://dev.jannenkoti.com` for the tunnel. When omitted, browsers use the local HTTPS listener origin. |
 | `DEV_TLS_CERT`, `DEV_TLS_KEY`, `DEV_TLS_CA` | Absolute PEM paths for the server certificate, private key and public CA certificate. Use mode `600` for the key. |
 | `USE_SQLA_READS` | Forced to `1` by setup, reset and start. |
 
@@ -168,8 +176,8 @@ logs `<integration> disabled in development` for each one it keeps off:
   Redis. No gateway runs there, so commands stay queued and no device acts.
   On-demand weather forecast reads still reach FMI.
 
-Browser Socket.IO, the ESP32 telemetry bridge, heater command publishing and rate
-limits all use `REDIS_URL`.
+Browser Socket.IO, the ESP32 telemetry bridge and heater command publishing use
+`REDIS_URL`.
 
 ## Verification
 
@@ -178,7 +186,7 @@ operator commands from outside the selected checkout against disposable
 PostgreSQL and Redis. The Chromium flow uses a disposable trusted CA and
 checks login, secure cookies, the development indicator, Socket.IO origins
 and the car-heater capture preview with a synthetic camera. See the
-[desktop commissioning record](development-host/commissioning.md) for LAN
+[desktop commissioning record](development-host/commissioning.md) for tunnel
 verification and outstanding device checks.
 
 ## Selected announcement acceptance
@@ -217,7 +225,7 @@ capabilities and all management paths return 404. It does not use browser cookie
 and suppresses URL access logging because capabilities are bearer credentials.
 Keep its port off router forwarding rules.
 
-Browser login stays at `https://192.168.1.100:5557`. A successful browser preview
+Browser login stays at `https://dev.jannenkoti.com`. A successful browser preview
 or HTTPS request does not establish that a speaker can fetch LAN audio, play it,
 use an appropriate volume, or restore music. Those remain explicitly authorized
 owner checks in the announcement feature's commissioning guide.

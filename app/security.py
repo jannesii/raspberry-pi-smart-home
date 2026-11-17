@@ -33,6 +33,9 @@ def configure_rate_limiting(app) -> None:
       - CIDR ranges, e.g. "192.168.10.0/24"
     """
     limiter.init_app(app)
+    if not app.config.get("RATELIMIT_ENABLED", True):
+        logger.info("Rate limiting disabled in development")
+        return
 
     try:
         from ipaddress import ip_address, ip_network

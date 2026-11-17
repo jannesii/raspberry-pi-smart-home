@@ -130,6 +130,7 @@ def load_settings() -> dict[str, Any]:
         "DATABASE_URL": os.getenv("DATABASE_URL"),
         # Redis: Socket.IO message queue, ESP32 bridges and command publishers
         "REDIS_URL": redis_url,
+        "RATELIMIT_ENABLED": environment != DEVELOPMENT,
         "RATELIMIT_STORAGE_URI": os.getenv("RATE_LIMIT_STORAGE_URI") or redis_url,
         # Rate limit whitelist for request_filter
         "whitelist": whitelist,

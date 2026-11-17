@@ -626,6 +626,30 @@ def test_reset_preserves_tls_files_placed_in_state(environment, selected):
         key.unlink(missing_ok=True)
 
 
+def test_tunnel_browser_origin_keeps_local_listener(environment, selected):
+    public = "https://dev.jannenkoti.com"
+    env_file = write_env(
+        environment["work"] / "tunnel.env", {**environment["values"], "DEV_BROWSER_ORIGIN": public}
+    )
+    result = dev(environment, "start", env_file=env_file)
+    assert result.returncode == 0, result.stdout + result.stderr
+    try:
+        assert public in result.stdout
+        browser = Browser(environment["url"], ca=environment["ca"])
+        assert [browser.request("GET", "/login").status_code for _ in range(6)] == [200] * 6
+        for origin, status in (
+            (public, 200),
+            (environment["url"], 400),
+            ("https://jannenkoti.com", 400),
+        ):
+            response = browser.request(
+                "GET", "/socket.io/?EIO=4&transport=polling", headers={"Origin": origin}
+            )
+            assert response.status_code == status
+    finally:
+        dev(environment, "stop", env_file=env_file)
+
+
 @pytest.fixture(scope="module")
 def started(environment, selected):
     result = dev(environment, "start")
@@ -691,7 +715,7 @@ def test_development_keeps_authentication_csrf_and_device_api_rules(environment,
     add_user(owner, "dev-viewer")
 
     viewer = Browser(started, ca=environment["ca"])
-    # The JSON login has its own rate-limit budget; the form login's is spent.
+    # Exercise the JSON login with the new viewer identity.
     signed_in = viewer.request(
         "POST", "/login_api", json={"username": "dev-viewer", "password": "synthetic-pass"}
     )

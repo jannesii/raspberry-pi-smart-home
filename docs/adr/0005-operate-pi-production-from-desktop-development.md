@@ -6,11 +6,11 @@ keeping production on the Pi and preserving the development isolation contract
 from ADR 0004. This supersedes ADR 0004's placement of the development runtime on
 the Pi. Reuse native PostgreSQL and Redis rather than introducing containers;
 PostgreSQL runs locally as a service, while the development app and its private
-Redis remain on demand. Development browser access will use the desktop's fixed
-LAN address at `https://192.168.1.100:5557`, rather than the existing public
-development domain. A local development certificate trusted on the desktop and
-phone preserves secure cookies and browser camera access. The Pi's fixed address
-is `192.168.1.50` and desktop operations address it through `raspi`.
+Redis remain on demand. Browsers use `https://dev.jannenkoti.com` through
+the Pi's existing Cloudflare Tunnel. The Pi connects to the desktop at
+`https://192.168.1.100:5557` and validates the desktop's TLS certificate with
+the public development CA. The Pi's fixed address is `192.168.1.50` and desktop
+operations address it through `raspi`.
 
 Production deployment remains an explicit owner action for an exact committed
 revision. Desktop commands will use the `raspi` SSH alias and the existing Pi

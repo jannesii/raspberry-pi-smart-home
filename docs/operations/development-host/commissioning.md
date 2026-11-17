@@ -21,15 +21,19 @@
   synthetic camera at the desktop LAN address. Chromium returned
   `NotFoundError` when tested with real desktop camera input.
 
-## Owner checks still open
+## Cloudflare Tunnel follow-up on 17 November 2026
 
-1. Transfer the public root `~/.config/jannenkoti-dev/jannenkoti-dev-ca.cer`
-   to the phone and install it. On iPhone, enable full trust according to
-   [Apple's certificate trust instructions](https://support.apple.com/en-us/102390).
-2. On the home Wi-Fi, open `https://192.168.1.100:5557` and confirm it loads
-   without a certificate warning. Sign in as `dev-tester` using the
-   development password in the protected desktop configuration and confirm
-   the **Kehitysympäristö** banner.
-3. Open an observation in **Car heater → Sessions**, allow camera access
-   and verify the live preview with the phone camera. Record the result
-   here. Actual desktop camera capture can be repeated with a webcam.
+- The Pi's development ingress now routes `https://dev.jannenkoti.com` to
+  `https://192.168.1.100:5557`. The Pi verified the desktop certificate with
+  the public development CA.
+- Verified public HTTPS login, the development banner, anonymous redirect,
+  authenticated settings, and the secure WebSocket connection. Development
+  Socket.IO rejected the production origin. The production login page
+  responded successfully after the shared tunnel restarted.
+
+## Phone commissioning
+
+The owner confirmed that the phone camera worked at
+`https://dev.jannenkoti.com`. They signed in, manually created a heating
+session, and captured and saved a picture to that session. This completes
+the phone commissioning check through the public HTTPS hostname.

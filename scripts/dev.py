@@ -48,6 +48,7 @@ from app.environment import (
     APP_ENV_VAR,
     DEVELOPMENT,
     DEVELOPMENT_PORT as DEFAULT_PORT,
+    development_listener_url,
     development_origin,
     development_problems,
     production_overlap_problems,
@@ -137,6 +138,10 @@ class Config:
     @property
     def origin(self) -> str:
         return development_origin(self.values)
+
+    @property
+    def listener_url(self) -> str:
+        return development_listener_url(self.values)
 
     def process_env(self, **extra: str) -> dict[str, str]:
         env = {name: os.environ[name] for name in INHERITED_VARIABLES if name in os.environ}
@@ -541,7 +546,7 @@ def _tls_settings(config: Config) -> tuple[list[str], ssl.SSLContext]:
 
 
 def _https_ready(config: Config, context: ssl.SSLContext) -> bool:
-    origin = urlsplit(config.origin)
+    origin = urlsplit(config.listener_url)
     connection = http.client.HTTPSConnection(origin.netloc, context=context, timeout=3)
     try:
         connection.request("GET", "/login")
@@ -630,7 +635,7 @@ def start(args: argparse.Namespace) -> int:
         tls_args, context = _tls_settings(config)
         _check_database(config)
         _stop_process(config, "redis")  # a leftover from an interrupted start
-        bind = urlsplit(config.origin).netloc
+        bind = urlsplit(config.listener_url).netloc
         _check_bind(bind.rsplit(":", 1)[0], port)
         _check_bind("127.0.0.1", redis_port)
         redis_server = shutil.which("redis-server")
@@ -798,7 +803,7 @@ def run(args: argparse.Namespace) -> int:
     env = config.process_env()
     _managed_redis_port(config)
     tls_args = _tls_settings(config)[0] if env.get("DEV_TLS_CERT") else []
-    bind = urlsplit(config.origin).netloc
+    bind = urlsplit(config.listener_url).netloc
     logger.info("Starting development app from %s on %s", ROOT, config.origin)
     _check_state_dir(config, ROOT)
     with _exclusive(config, "run") as lock:

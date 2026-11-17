@@ -31,6 +31,7 @@ PRODUCTION_REDIS_URL = "redis://localhost:6379"
 PRODUCTION_PORTS = frozenset({5555, 5556})
 DEVELOPMENT_BIND_HOST = "192.168.1.100"
 DEVELOPMENT_PORT = "5557"
+DEVELOPMENT_TUNNEL_ORIGIN = "https://dev.jannenkoti.com"
 _LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", ""})
 
 
@@ -53,6 +54,10 @@ def is_development() -> bool:
 
 
 def development_origin(values: Mapping[str, str]) -> str:
+    return values.get("DEV_BROWSER_ORIGIN") or development_listener_url(values)
+
+
+def development_listener_url(values: Mapping[str, str]) -> str:
     port = values.get("PORT") or DEVELOPMENT_PORT
     if values.get("DEV_TLS_CERT"):
         return f"https://{values.get('DEV_BIND_HOST') or DEVELOPMENT_BIND_HOST}:{port}"
@@ -114,6 +119,13 @@ def _check_redis(name: str, url: str, production_url: str) -> str | None:
 def development_problems(values: Mapping[str, str | None]) -> list[str]:
     """Return why ``values`` are not a self-contained development configuration."""
     problems: list[str] = []
+    browser_origin = values.get("DEV_BROWSER_ORIGIN")
+    if browser_origin and (
+        browser_origin != DEVELOPMENT_TUNNEL_ORIGIN or not values.get("DEV_TLS_CERT")
+    ):
+        problems.append(
+            f"DEV_BROWSER_ORIGIN must be {DEVELOPMENT_TUNNEL_ORIGIN} with TLS configured"
+        )
 
     def required(name: str) -> str | None:
         value = (values.get(name) or "").strip()

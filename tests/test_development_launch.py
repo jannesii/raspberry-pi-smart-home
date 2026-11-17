@@ -452,7 +452,7 @@ class Browser:
 
 @pytest.fixture(scope="module")
 def dev_browser(running_dev):
-    """The dedicated test identity's session; login is rate limited, so log in once."""
+    """Authenticated session for the dedicated test identity."""
     browser = Browser(running_dev["url"])
     response = browser.login(
         running_dev["values"]["WEB_USERNAME"], running_dev["values"]["WEB_PASSWORD"]
@@ -571,8 +571,8 @@ def test_development_redis_traffic_stays_on_its_own_redis_server(redis_pair, dev
     # Heater command publisher and the browser Socket.IO queue.
     assert {b"esp32:commands", b"flask-socketio"} <= channels
     assert drain(watchers["production"], 0.5) == []
-    # Rate-limit counters from the login also live on the development server.
-    assert development.keys("LIMITS*")
+    # Development requests do not create rate-limit counters.
+    assert development.keys("LIMITS*") == []
     assert production.keys("*") == []
 
 
