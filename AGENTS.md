@@ -66,9 +66,12 @@ Run commands from the `server/` directory (this file’s directory):
 .venv/bin/ruff format --check path/to/changed.py
 ```
 
-Replace the example paths with the affected files. Run `.venv/bin/pytest -q`
-for changes spanning shared behavior. Use isolated test databases and mocked
-integrations; do not use live devices, webhooks, or production data as tests.
+Replace the example paths with the affected files. For changes spanning shared
+behavior, run the full suite with
+`.venv/bin/python scripts/test.py --tmp-dir /tmp`. Use ordinary pytest for
+focused checks. See [Development](readme.md#development) for runner options and
+retained results. Use isolated test databases and mocked integrations; do not
+use live devices, webhooks, or production data as tests.
 Use minimal synthetic development data with a dedicated test login; add fixtures
 only when a feature needs them. Do not clone production data by default. Validate
 database migrations against disposable PostgreSQL, not only SQLite.
