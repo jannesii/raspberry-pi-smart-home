@@ -14,9 +14,9 @@ from typing import Any
 
 from .environment import (
     DEVELOPMENT,
-    DEVELOPMENT_PUBLIC_ORIGIN,
     PRODUCTION_REDIS_URL,
     EnvironmentConfigError,
+    development_origin,
     development_problems,
     selected_environment,
 )
@@ -82,17 +82,13 @@ def _development_browser_settings() -> dict[str, Any]:
     Browsers share cookies between ports of one host, so production's default
     cookie names would collide when both are opened via localhost.
     """
-    port = os.getenv("PORT") or "5557"
     return {
         "SESSION_COOKIE_NAME": "jannenkoti_dev_session",
         "REMEMBER_COOKIE_NAME": "jannenkoti_dev_remember",
         "REMEMBER_COOKIE_SECURE": True,
         "REMEMBER_COOKIE_HTTPONLY": True,
         "REMEMBER_COOKIE_SAMESITE": "Lax",
-        "ALLOWED_WS_ORIGINS": _json_list(
-            "ALLOWED_WS_ORIGINS",
-            [DEVELOPMENT_PUBLIC_ORIGIN, f"http://127.0.0.1:{port}", f"http://localhost:{port}"],
-        ),
+        "ALLOWED_WS_ORIGINS": [development_origin(os.environ)],
     }
 
 

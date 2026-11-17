@@ -7,6 +7,7 @@ from functools import wraps
 
 from flask import current_app, g, jsonify, request
 
+from .environment import is_development
 from .extensions import limiter
 
 logger = logging.getLogger(__name__)
@@ -53,7 +54,7 @@ def configure_rate_limiting(app) -> None:
                     if addr.startswith(s[:-1]):
                         return True
                     continue
-                if "/" in s and ip_address and ip_network:
+                if "/" in s and ip_address is not None and ip_network is not None:
                     try:
                         if ip_address(addr) in ip_network(s, strict=False):
                             return True
@@ -106,9 +107,17 @@ def apply_security_headers(app) -> None:
         response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        camera = "()"
+        if (
+            request.endpoint == "web.car_heater_capture_page"
+            and request.is_secure
+            and response.status_code == 200
+            and is_development()
+        ):
+            camera = "(self)"
         response.headers.setdefault(
             "Permissions-Policy",
-            "camera=(), microphone=(), geolocation=(), payment=(), usb=(), fullscreen=(self)",
+            f"camera={camera}, microphone=(), geolocation=(), payment=(), usb=(), fullscreen=(self)",
         )
         return response
 

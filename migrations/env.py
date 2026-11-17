@@ -13,7 +13,8 @@ from sqlalchemy import engine_from_config, pool
 # Same file the service loads (run.py, systemd EnvironmentFile), independent of
 # the working directory. An exported DATABASE_URL wins, so restore checks can
 # target an isolated database explicitly.
-load_dotenv(Path(__file__).resolve().parents[1] / "jannenkoti.env", override=False)
+if os.environ.get("APP_ENV", "").strip().lower() != "development":
+    load_dotenv(Path(__file__).resolve().parents[1] / "jannenkoti.env", override=False)
 
 # Alembic Config object, provides access to values in alembic.ini
 config = context.config
@@ -36,14 +37,15 @@ def _get_db_url() -> str:
         logger.debug("_get_db_url resolved DATABASE_URL")
         return db_url
     url = config.get_main_option("sqlalchemy.url")
-    logger.debug("_get_db_url using alembic.ini url=%s", url)
+    if url is None:
+        raise RuntimeError("DATABASE_URL or sqlalchemy.url is required for migrations")
+    logger.debug("_get_db_url using alembic.ini")
     return url
 
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
     url = _get_db_url()
-    logger.debug("run_migrations_offline url=%s", url)
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -58,7 +60,6 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
     url = _get_db_url()
-    logger.debug("run_migrations_online url=%s", url)
     configuration = config.get_section(config.config_ini_section) or {}
     configuration["sqlalchemy.url"] = url
     connectable = engine_from_config(

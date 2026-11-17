@@ -244,13 +244,11 @@ the PostgreSQL cases are skipped. Run these as a non-root user. Keep validation
 isolated from live devices and production data. The pre-commit configuration is
 at the repository root. Install the hook with `.venv/bin/pre-commit install`.
 
-To try a feature worktree in the browser, run the one isolated development
-instance with `scripts/dev.py setup --worktree PATH`, then `start`, `status`,
-`stop` or `reset --yes`; it is served at `https://dev.jannenkoti.com`. See the
+To preview a desktop checkout or worktree, use `scripts/dev.py setup --worktree PATH`,
+then `start`, `status`, `stop` or `reset --yes`. Development runs on local
+PostgreSQL and private Redis at `https://192.168.1.100:5557`. See the
 [development environment guide](docs/operations/development-environment.md)
-for provisioning and safety rules. Never start a second copy with the
-production `jannenkoti.env`; `scripts/restart.sh` restarts production only
-from the production checkout.
+for desktop setup, TLS trust and daily use.
 
 [AGENTS.md](AGENTS.md) describes the code layout, working conventions, and
 validation expectations. Pre-commit and CI enforce its size budget. Keep this

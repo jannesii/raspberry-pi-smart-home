@@ -199,6 +199,7 @@ if __name__ == "__main__":
 
         # 2. Settings: a comfort preference saves explicitly and survives reload.
         view("Settings")
+        expect(page.locator("#prefComfortState")).not_to_have_text("—")
         hysteresis = page.get_by_label("Comfort hysteresis (°C)", exact=True)
         hysteresis.fill("1")
         page.get_by_role("button", name="Save preferences", exact=True).click()
@@ -271,6 +272,7 @@ if __name__ == "__main__":
         # until retried, and Finish leads to the outcome without heating changes.
         page.get_by_role("link", name="Observe windshield", exact=True).click()
         expect(page.get_by_role("heading", level=1)).to_have_text("Watch the windshield")
+        page.wait_for_load_state("domcontentloaded")
         page.get_by_role("button", name="Enable camera", exact=True).click()
         expect(page.locator("#cameraStatus")).to_contain_text("Preview live")
         page.get_by_role("button", name="Start observation", exact=True).click()

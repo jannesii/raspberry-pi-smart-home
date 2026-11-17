@@ -162,7 +162,7 @@ def problems(values):
 
 def initialize(app):
     """Build the actual candidate with only selected destinations, or refuse."""
-    from .environment import is_development
+    from .environment import development_origin, is_development
 
     if not is_development():
         return None
@@ -185,7 +185,7 @@ def initialize(app):
     host, port = media_address()
     config = AnnouncementConfig(
         media_origin=f"http://{host}:{port}",
-        public_origin="https://dev.jannenkoti.com",
+        public_origin=development_origin(os.environ),
         targets=tuple(SpeakerTarget(**target) for target in data["speakers"]),
         cache_dir=Path(os.environ["DEV_STATE_DIR"]) / "announcement-cache",
         media_grant_ttl_s=120,

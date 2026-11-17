@@ -29,8 +29,8 @@ DEVELOPMENT = "development"
 # Production has always used this instance implicitly; development must not.
 PRODUCTION_REDIS_URL = "redis://localhost:6379"
 PRODUCTION_PORTS = frozenset({5555, 5556})
-# The existing Cloudflare Tunnel routes this origin to http://localhost:5557.
-DEVELOPMENT_PUBLIC_ORIGIN = "https://dev.jannenkoti.com"
+DEVELOPMENT_BIND_HOST = "192.168.1.100"
+DEVELOPMENT_PORT = "5557"
 _LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", ""})
 
 
@@ -52,6 +52,13 @@ def is_development() -> bool:
     return selected_environment() == DEVELOPMENT
 
 
+def development_origin(values: Mapping[str, str]) -> str:
+    port = values.get("PORT") or DEVELOPMENT_PORT
+    if values.get("DEV_TLS_CERT"):
+        return f"https://{values.get('DEV_BIND_HOST') or DEVELOPMENT_BIND_HOST}:{port}"
+    return f"http://127.0.0.1:{port}"
+
+
 def _canonical_host(host: str) -> str:
     """Name every way of reaching this machine "localhost", so aliases still match.
 
@@ -62,7 +69,7 @@ def _canonical_host(host: str) -> str:
     if host in _LOCAL_HOSTS or host.startswith("/"):
         return "localhost"
     try:
-        addresses = {info[4][0] for info in socket.getaddrinfo(host, None)}
+        addresses = {str(info[4][0]) for info in socket.getaddrinfo(host, None)}
     except OSError:
         return host
     for address in addresses:
@@ -135,8 +142,8 @@ def development_problems(values: Mapping[str, str | None]) -> list[str]:
 
     port = (values.get("PORT") or "").strip()
     if port:
-        if not port.isdigit():
-            problems.append("PORT must be an integer")
+        if not port.isascii() or not port.isdigit() or len(port) > 5 or not 1 <= int(port) <= 65535:
+            problems.append("PORT must be an integer from 1 to 65535")
         elif int(port) in PRODUCTION_PORTS:
             problems.append("PORT must not be a production service port")
 
@@ -147,8 +154,14 @@ def development_problems(values: Mapping[str, str | None]) -> list[str]:
         state_path = None
     for name in ("DB_PATH", "VILLENKOTI_DB_PATH"):
         path = required(name)
-        if path and state_path is not None and not Path(path).resolve().is_relative_to(state_path):
-            problems.append(f"{name} must be inside DEV_STATE_DIR")
+        if path and state_path is not None:
+            target = Path(path).resolve()
+            if (
+                not Path(path).is_absolute()
+                or target == state_path
+                or not target.is_relative_to(state_path)
+            ):
+                problems.append(f"{name} must be an absolute file path inside DEV_STATE_DIR")
     from .development_acceptance import problems as acceptance_problems
 
     problems.extend(acceptance_problems(values))

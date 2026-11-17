@@ -6,9 +6,9 @@
     .venv/bin/python scripts/dev.py reset --yes
     .venv/bin/python scripts/dev.py run --env-file ~/.config/jannenkoti-dev/dev.env
 
-Every command reads only the development environment file (default
-``~/.config/jannenkoti-dev/dev.env``) and refuses targets shared with the
-production environment reference. The app and its tools receive that file plus
+Every command reads the development environment file (default
+``~/.config/jannenkoti-dev/dev.env``). An explicit production reference adds
+overlap checks. The app and its tools receive the development file plus
 a few process basics (PATH, HOME, locale), never the caller's environment or a
 checkout's ``jannenkoti.env``. Nothing here restarts or reconfigures host
 services; see docs/operations/development-environment.md.
@@ -22,16 +22,18 @@ from __future__ import annotations
 import argparse
 import fcntl
 import hashlib
+import http.client
+import ipaddress
 import json
 import logging
 import os
 import shutil
 import signal
 import socket
+import ssl
 import subprocess
 import sys
 import time
-import urllib.request
 from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -45,6 +47,8 @@ from dotenv import dotenv_values
 from app.environment import (
     APP_ENV_VAR,
     DEVELOPMENT,
+    DEVELOPMENT_PORT as DEFAULT_PORT,
+    development_origin,
     development_problems,
     production_overlap_problems,
 )
@@ -52,10 +56,7 @@ from app.environment import (
 logger = logging.getLogger("dev")
 
 DEFAULT_ENV_FILE = Path("~/.config/jannenkoti-dev/dev.env").expanduser()
-DEFAULT_PRODUCTION_ENV = Path("/home/jannesi/Code/server/jannenkoti.env")
-DEFAULT_PORT = "5557"
-# The existing Cloudflare Tunnel route to http://localhost:5557.
-PUBLIC_URL = "https://dev.jannenkoti.com"
+PRODUCTION_CHECKOUT = Path("/home/jannesi/Code/server")
 # Only process basics pass through; everything else must come from the env file.
 INHERITED_VARIABLES = ("PATH", "HOME", "LANG", "LC_ALL", "TZ", "TMPDIR")
 # A worktree must contain these to enforce development isolation itself.
@@ -65,6 +66,7 @@ STATE_MARKER = ".jannenkoti-development"
 DATABASE_MARKER = "jannenkoti development"
 # Reset keeps the installed dependencies and this tool's control files.
 KEPT_STATE = frozenset({STATE_MARKER, "venv", "instance"})
+TLS_PATH_SETTINGS = ("DEV_TLS_CERT", "DEV_TLS_KEY", "DEV_TLS_CA")
 
 OK, FAILED, REFUSED, NOT_RUNNING, BUSY = 0, 1, 2, 3, 4
 
@@ -89,7 +91,7 @@ def _read_env_file(path: Path) -> dict[str, str] | None:
     if not path.is_file():
         return None
     try:
-        values = dotenv_values(path)
+        values = dotenv_values(path, interpolate=False)
     except OSError:
         return None
     return {key: value for key, value in values.items() if value is not None}
@@ -98,31 +100,30 @@ def _read_env_file(path: Path) -> dict[str, str] | None:
 class Config:
     """A validated development configuration and the production reference."""
 
-    def __init__(self, env_file: Path, production_env: Path, *, strict: bool = True):
+    def __init__(self, env_file: Path, production_env: Path | None, *, strict: bool = True):
+        self.env_file = env_file.resolve()
         dev_values = _read_env_file(env_file)
         if dev_values is None:
             raise Refused(f"cannot read the development environment file {env_file}")
-        self.production_checkout = production_env.resolve().parent
+        self.production_checkout = (
+            production_env.resolve().parent if production_env else PRODUCTION_CHECKOUT.resolve()
+        )
+        dev_values["PORT"] = (dev_values.get("PORT") or "").strip() or DEFAULT_PORT
         if not strict:
             # Stopping and inspecting only touch processes this tool recorded.
             self.values = {**dev_values, APP_ENV_VAR: DEVELOPMENT}
-            self.values.setdefault("PORT", DEFAULT_PORT)
             state = self.values.get("DEV_STATE_DIR", "")
             if not (state and Path(state).is_absolute() and Path(state).is_dir()):
                 raise Refused("DEV_STATE_DIR must be an existing absolute directory")
             self.state_dir = Path(state).resolve()
             return
-        production_values = _read_env_file(production_env)
+        production_values = _read_env_file(production_env) if production_env else {}
         if production_values is None:
-            raise Refused(
-                f"cannot read the production environment reference {production_env}; "
-                "pass --production-env so shared targets can be detected"
-            )
+            raise Refused(f"cannot read the production environment reference {production_env}")
         if dev_values.get(APP_ENV_VAR, DEVELOPMENT).strip().lower() != DEVELOPMENT:
             raise Refused(f"{APP_ENV_VAR} in the development environment file must be development")
 
         values = {**dev_values, APP_ENV_VAR: DEVELOPMENT}
-        values.setdefault("PORT", DEFAULT_PORT)
         problems = development_problems(values)
         problems += [
             p for p in production_overlap_problems(values, production_values) if p not in problems
@@ -130,16 +131,24 @@ class Config:
         if problems:
             raise Refused(*problems)
         self.values = values
+        self.values["PORT"] = str(int(values["PORT"] or DEFAULT_PORT))
         self.state_dir = Path(values["DEV_STATE_DIR"]).resolve()
 
     @property
-    def local_url(self) -> str:
-        return f"http://127.0.0.1:{self.values['PORT']}"
+    def origin(self) -> str:
+        return development_origin(self.values)
 
     def process_env(self, **extra: str) -> dict[str, str]:
         env = {name: os.environ[name] for name in INHERITED_VARIABLES if name in os.environ}
         env.update(self.values)
         env.update(extra)
+        env = {
+            name: value
+            for name, value in env.items()
+            if name not in ("GUNICORN_CMD_ARGS", "PYTHONPATH", "PYTHONHOME")
+            and not name.startswith("PG")
+        }
+        env["ALLOWED_WS_ORIGINS"] = json.dumps([self.origin])
         env["ANNOUNCEMENTS_ENABLED"] = "false"
         return env
 
@@ -156,7 +165,7 @@ def _git(worktree: Path, *args: str) -> str | None:
 
 def _checked_worktree(path: Path, config: Config) -> Path:
     worktree = path.expanduser().resolve()
-    if worktree == config.production_checkout:
+    if worktree in (config.production_checkout, PRODUCTION_CHECKOUT.resolve()):
         raise Refused(f"{worktree} is the production checkout; select a feature worktree")
     toplevel = _git(worktree, "rev-parse", "--show-toplevel") if worktree.is_dir() else None
     if toplevel is None or Path(toplevel).resolve() != worktree:
@@ -174,11 +183,23 @@ def _check_state_dir(config: Config, worktree: Path | None = None) -> None:
     """Accept only a state directory that setup created or claimed while empty."""
     state = config.state_dir
     marker = state / STATE_MARKER
-    if marker.is_file():
-        return
-    for protected in filter(None, (worktree, config.production_checkout, Path.home())):
+    selected = worktree or _selected_worktree(config)
+    if selected and state.is_relative_to(selected.resolve()):
+        raise Refused("DEV_STATE_DIR must be outside the selected worktree")
+    for protected in filter(
+        None,
+        (
+            selected,
+            config.production_checkout,
+            PRODUCTION_CHECKOUT,
+            Path.home(),
+            config.env_file,
+        ),
+    ):
         if protected.resolve().is_relative_to(state):
             raise Refused(f"DEV_STATE_DIR must not contain {protected}")
+    if marker.is_file() and not marker.is_symlink():
+        return
     if worktree is None or any(state.iterdir()):
         raise Refused(
             f"DEV_STATE_DIR {state} is not marked as development state; "
@@ -190,30 +211,83 @@ def _check_state_dir(config: Config, worktree: Path | None = None) -> None:
 
 def _database_engine(config: Config):
     from sqlalchemy import create_engine
+    from sqlalchemy.engine import make_url
     from sqlalchemy.pool import NullPool
 
-    return create_engine(config.values["DATABASE_URL"], poolclass=NullPool)
+    try:
+        url = make_url(config.values["DATABASE_URL"])
+    except Exception:
+        raise Refused("DATABASE_URL must specify local PostgreSQL") from None
+    socket_dir = url.query.get("host")
+    local = (url.host in ("127.0.0.1", "::1") and not url.query) or (
+        url.host is None
+        and url.query.keys() == {"host"}
+        and isinstance(socket_dir, str)
+        and socket_dir.startswith("/")
+        and "," not in socket_dir
+    )
+    if not local or url.drivername != "postgresql+psycopg" or not url.database or not url.username:
+        raise Refused(
+            "DATABASE_URL must specify a local PostgreSQL database and role via loopback or a Unix socket"
+        )
+    return create_engine(url, connect_args={"connect_timeout": 5}, poolclass=NullPool)
 
 
-def _check_database(config: Config) -> None:
+def _verify_database(
+    conn, config: Config, *, claim: bool = False, allow_unclaimed: bool = False
+) -> None:
     """Require the owner's provisioning marker so no other database is ever reset."""
     from sqlalchemy import text
 
-    try:
-        with _database_engine(config).connect() as conn:
-            name, comment = conn.execute(
-                text(
-                    "SELECT current_database(), shobj_description(oid, 'pg_database') "
-                    "FROM pg_database WHERE datname = current_database()"
-                )
-            ).one()
-    except Exception as exc:
-        raise Failed(f"cannot connect to the development database ({type(exc).__name__})") from exc
-    if comment != DATABASE_MARKER:
+    if claim:
+        # PostgreSQL scopes advisory locks to this database, including connections
+        # that reach the same cluster through different local addresses.
+        conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('jannenkoti development setup'))"))
+    name, comment, dedicated_owner = conn.execute(
+        text(
+            "SELECT datname, shobj_description(d.oid, 'pg_database'), "
+            "d.datdba = r.oid AND NOT (r.rolsuper OR r.rolcreatedb OR r.rolcreaterole "
+            "OR r.rolreplication OR r.rolbypassrls) "
+            "AND NOT EXISTS (SELECT 1 FROM pg_auth_members WHERE member = r.oid) "
+            "FROM pg_database d CROSS JOIN pg_roles r "
+            "WHERE datname = current_database() AND rolname = session_user"
+        )
+    ).one()
+    state_id = hashlib.sha256(os.fsencode(config.state_dir)).hexdigest()
+    bound_marker = f"{DATABASE_MARKER}\nstate-sha256={state_id}"
+    if (
+        comment
+        and comment.startswith(f"{DATABASE_MARKER}\nstate-sha256=")
+        and comment != bound_marker
+    ):
+        raise Refused("the development database is registered to another DEV_STATE_DIR")
+    if comment not in (DATABASE_MARKER, bound_marker):
         raise Refused(
             f"database {name} is not marked as the development database; "
             "provision it with docs/operations/development-host/postgresql.sql"
         )
+    if not dedicated_owner:
+        raise Refused("DATABASE_URL must use the dedicated unprivileged development database owner")
+    if comment == DATABASE_MARKER:
+        if not claim and not allow_unclaimed:
+            raise Refused(
+                "the development database is not registered to this state; run setup first"
+            )
+        if claim:
+            database = conn.dialect.identifier_preparer.quote_identifier(name)
+            conn.exec_driver_sql(f"COMMENT ON DATABASE {database} IS '{bound_marker}'")
+
+
+def _check_database(config: Config, *, claim: bool = False, allow_unclaimed: bool = False) -> None:
+    from sqlalchemy.exc import SQLAlchemyError
+
+    try:
+        with _database_engine(config).begin() as conn:
+            _verify_database(conn, config, claim=claim, allow_unclaimed=allow_unclaimed)
+    except SQLAlchemyError as exc:
+        raise Failed(
+            f"cannot verify the local development database ({type(exc).__name__})"
+        ) from None
 
 
 def _run_logged(argv: list[str], *, cwd: Path, env: dict[str, str], log: Path, what: str) -> None:
@@ -294,6 +368,8 @@ def _prepare_database(config: Config, worktree: Path) -> None:
 
 def _control_dir(config: Config) -> Path:
     path = config.state_dir / "instance"
+    if path.is_symlink():
+        raise Refused("development instance directory must not be a symlink")
     path.mkdir(exist_ok=True)
     return path
 
@@ -330,7 +406,7 @@ def _exclusive(config: Config, operation: str):
         handle.write(operation)
         handle.flush()
         try:
-            yield
+            yield handle
         finally:
             handle.seek(0)
             handle.truncate()
@@ -376,7 +452,11 @@ def _live_process(config: Config, name: str) -> int | None:
     except (OSError, ValueError):
         return None
     pid = record.get("pid")
-    if isinstance(pid, int) and record.get("start_time") == _start_time(pid):
+    if (
+        isinstance(pid, int)
+        and record.get("start_time")
+        and record["start_time"] == _start_time(pid)
+    ):
         return pid
     return None
 
@@ -401,10 +481,13 @@ def _stop_process(config: Config, name: str) -> bool:
     return pid is not None
 
 
-def _port_in_use(port: int) -> bool:
+def _check_bind(host: str, port: int) -> None:
     with socket.socket() as sock:
-        sock.settimeout(1)
-        return sock.connect_ex(("127.0.0.1", port)) == 0
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind((host, port))
+        except OSError as exc:
+            raise Refused(f"cannot bind {host}:{port}: {exc.strerror}") from None
 
 
 def _managed_redis_port(config: Config) -> int:
@@ -418,17 +501,59 @@ def _managed_redis_port(config: Config) -> int:
         raise Refused(
             "REDIS_URL must be redis://127.0.0.1:<port> so start can run development's own Redis"
         )
-    if parts.password:
-        raise Refused("REDIS_URL must not contain a password; development Redis is local-only")
+    if parts.username is not None or parts.password is not None:
+        raise Refused("REDIS_URL must not contain credentials; development Redis is local-only")
+    rate_limit_url = config.values.get("RATE_LIMIT_STORAGE_URI")
+    if rate_limit_url and rate_limit_url not in (config.values["REDIS_URL"], "memory://"):
+        raise Refused("RATE_LIMIT_STORAGE_URI must use the private REDIS_URL or memory://")
     return port
 
 
-def _http_ready(url: str, timeout: float = 3) -> bool:
+def _tls_settings(config: Config) -> tuple[list[str], ssl.SSLContext]:
+    from app.environment import DEVELOPMENT_BIND_HOST
+
+    host = config.values.get("DEV_BIND_HOST") or DEVELOPMENT_BIND_HOST
     try:
-        with urllib.request.urlopen(f"{url}/login", timeout=timeout) as response:
-            return response.status == 200
-    except (OSError, ValueError):
+        address = ipaddress.IPv4Address(host or "")
+        if not address.is_private or address.is_unspecified or address.is_reserved:
+            raise ValueError
+    except ValueError:
+        raise Refused("DEV_BIND_HOST must be a private or loopback IPv4 address") from None
+    paths = []
+    for name in TLS_PATH_SETTINGS:
+        path = Path(config.values.get(name, ""))
+        if (
+            not path.is_absolute()
+            or not path.is_file()
+            or path.resolve().is_relative_to(config.state_dir)
+        ):
+            raise Refused(f"{name} must be an absolute file path outside DEV_STATE_DIR")
+        if name == "DEV_TLS_KEY" and path.stat().st_mode & 0o077:
+            raise Refused("DEV_TLS_KEY must be private (chmod 600)")
+        paths.append(str(path))
+    cert, key, ca = paths
+    try:
+        ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER).load_cert_chain(cert, key, password="")
+        context = ssl.create_default_context(cafile=ca)
+    except (OSError, ssl.SSLError):
+        raise Refused("cannot load the development TLS certificate, key or CA") from None
+    return ["--certfile", cert, "--keyfile", key, "--forwarded-allow-ips", ""], context
+
+
+def _https_ready(config: Config, context: ssl.SSLContext) -> bool:
+    origin = urlsplit(config.origin)
+    connection = http.client.HTTPSConnection(origin.netloc, context=context, timeout=3)
+    try:
+        connection.request("GET", "/login")
+        return connection.getresponse().status == 200
+    except ssl.SSLCertVerificationError as exc:
+        raise Failed(
+            f"development HTTPS certificate verification failed ({exc.verify_message})"
+        ) from None
+    except (OSError, http.client.HTTPException):
         return False
+    finally:
+        connection.close()
 
 
 def _redis_ready(port: int) -> bool:
@@ -465,11 +590,14 @@ def _launch(argv: list[str], *, cwd: Path, env: dict[str, str], log: Path) -> in
 def setup(args: argparse.Namespace) -> int:
     config = Config(args.env_file, args.production_env)
     worktree = _checked_worktree(args.worktree, config)
-    _check_database(config)
+    _tls_settings(config)
+    _managed_redis_port(config)
+    _check_database(config, allow_unclaimed=True)
     _check_state_dir(config, worktree)
     with _exclusive(config, "setup"):
         if _live_process(config, "app"):
             raise Refused("development is running; stop it before selecting a worktree")
+        _check_database(config, claim=True)
         _install_dependencies(config, worktree, args.installer)
         _prepare_database(config, worktree)
         selection = {
@@ -499,16 +627,18 @@ def start(args: argparse.Namespace) -> int:
             raise Refused("dependencies changed since setup; run setup again for this worktree")
         redis_port = _managed_redis_port(config)
         port = int(config.values["PORT"])
-        for busy_port in (port, redis_port):
-            if _port_in_use(busy_port):
-                raise Refused(f"port {busy_port} is already in use on this host")
+        tls_args, context = _tls_settings(config)
+        _check_database(config)
+        _stop_process(config, "redis")  # a leftover from an interrupted start
+        bind = urlsplit(config.origin).netloc
+        _check_bind(bind.rsplit(":", 1)[0], port)
+        _check_bind("127.0.0.1", redis_port)
         redis_server = shutil.which("redis-server")
         if redis_server is None:
             raise Failed("redis-server is not installed")
         control = _control_dir(config)
 
         basics = {name: os.environ[name] for name in INHERITED_VARIABLES if name in os.environ}
-        _stop_process(config, "redis")  # a leftover from an interrupted start
         redis_pid = _launch(
             [
                 redis_server,
@@ -540,31 +670,43 @@ def start(args: argparse.Namespace) -> int:
         label = _describe_worktree(worktree)
         logger.info("Starting development app from %s", label)
         # Only the branch and commit reach the page; the path stays local.
-        app_pid = _launch(
-            [str(python), *_gunicorn_args(f"127.0.0.1:{port}")],
-            cwd=worktree,
-            env=config.process_env(USE_SQLA_READS="1", DEV_WORKTREE_LABEL=_revision(worktree)),
-            log=control / "app.log",
-        )
-        _record_process(config, "app", app_pid)
-        deadline = time.monotonic() + args.timeout
-        while not _http_ready(config.local_url):
-            if time.monotonic() > deadline or not _live_process(config, "app"):
-                _stop_process(config, "app")
-                _stop_process(config, "redis")
-                raise Failed(f"development app did not become ready; see {control / 'app.log'}")
-            time.sleep(0.5)
+        try:
+            app_pid = _launch(
+                [str(python), *_gunicorn_args(bind), *tls_args],
+                cwd=worktree,
+                env=config.process_env(USE_SQLA_READS="1", DEV_WORKTREE_LABEL=_revision(worktree)),
+                log=control / "app.log",
+            )
+            _record_process(config, "app", app_pid)
+            deadline = time.monotonic() + args.timeout
+            while not _https_ready(config, context):
+                if time.monotonic() > deadline or not _live_process(config, "app"):
+                    raise Failed(
+                        f"development HTTPS did not become ready; see {control / 'app.log'}"
+                    )
+                time.sleep(0.5)
+        except (Exception, KeyboardInterrupt):
+            _stop_process(config, "app")
+            _stop_process(config, "redis")
+            raise
     print(f"Development running: {label}")
-    print(f"Local: {config.local_url}  Public: {PUBLIC_URL}")
+    print(f"HTTPS: {config.origin}")
     return OK
 
 
 def _wipe_database(config: Config) -> None:
     from sqlalchemy import text
+    from sqlalchemy.exc import SQLAlchemyError
 
-    with _database_engine(config).begin() as conn:
-        conn.execute(text("DROP SCHEMA public CASCADE"))
-        conn.execute(text("CREATE SCHEMA public"))
+    try:
+        with _database_engine(config).begin() as conn:
+            _verify_database(conn, config)
+            conn.execute(text("DROP SCHEMA public CASCADE"))
+            conn.execute(text("CREATE SCHEMA public"))
+    except SQLAlchemyError as exc:
+        raise Failed(
+            f"cannot reset the local development database ({type(exc).__name__})"
+        ) from None
 
 
 def _wipe_state(config: Config) -> None:
@@ -582,6 +724,10 @@ def reset(args: argparse.Namespace) -> int:
         raise Refused("reset deletes all development data and files; repeat with --yes")
     config = Config(args.env_file, args.production_env)
     _check_state_dir(config)
+    for name in TLS_PATH_SETTINGS:
+        value = config.values.get(name)
+        if value and Path(value).resolve().is_relative_to(config.state_dir):
+            raise Refused(f"{name} must be outside DEV_STATE_DIR before reset")
     with _exclusive(config, "reset"):
         if _live_process(config, "app") or _live_process(config, "redis"):
             raise Refused("development is running; stop it before reset")
@@ -591,7 +737,6 @@ def reset(args: argparse.Namespace) -> int:
         worktree = _checked_worktree(selected, config)
         if not (config.state_dir / "venv" / "bin" / "python").exists():
             raise Refused("development dependencies are missing; run setup again")
-        _check_database(config)
         logger.info("Deleting development database objects and state files")
         _wipe_database(config)
         _wipe_state(config)
@@ -634,10 +779,16 @@ def status(args: argparse.Namespace) -> int:
     if app_pid is None and redis_pid is None:
         print("State: stopped")
         return NOT_RUNNING
-    healthy = app_pid is not None and redis_pid is not None and _http_ready(config.local_url)
+    _, context = _tls_settings(config)
+    healthy = (
+        app_pid is not None
+        and redis_pid is not None
+        and _https_ready(config, context)
+        and _redis_ready(_managed_redis_port(config))
+    )
     print(f"State: {'running' if healthy else 'unhealthy'}")
     print(f"App pid: {app_pid or 'not running'}; Redis pid: {redis_pid or 'not running'}")
-    print(f"Local: {config.local_url}  Public: {PUBLIC_URL}")
+    print(f"HTTPS: {config.origin}")
     return OK if healthy else FAILED
 
 
@@ -645,11 +796,20 @@ def run(args: argparse.Namespace) -> int:
     """Run the development app of this checkout in the foreground (no lifecycle)."""
     config = Config(args.env_file, args.production_env)
     env = config.process_env()
-    bind = f"127.0.0.1:{env['PORT']}"
-    logger.info("Starting development app from %s on http://%s", ROOT, bind)
-    os.chdir(ROOT)
-    argv = [sys.executable, *_gunicorn_args(bind)]
-    os.execve(sys.executable, argv, env)
+    _managed_redis_port(config)
+    tls_args = _tls_settings(config)[0] if env.get("DEV_TLS_CERT") else []
+    bind = urlsplit(config.origin).netloc
+    logger.info("Starting development app from %s on %s", ROOT, config.origin)
+    _check_state_dir(config, ROOT)
+    with _exclusive(config, "run") as lock:
+        if _live_process(config, "app") or _live_process(config, "redis"):
+            raise Refused("development is running; stop it before starting a foreground app")
+        _check_database(config, claim=True)
+        os.chdir(ROOT)
+        # Gunicorn inherits the state lock until the foreground process exits.
+        os.set_inheritable(lock.fileno(), True)
+        argv = [sys.executable, *_gunicorn_args(bind), *tls_args]
+        os.execve(sys.executable, argv, env)
     return OK  # pragma: no cover - execve does not return
 
 
@@ -679,7 +839,7 @@ def _parser() -> argparse.ArgumentParser:
             sub.add_argument("--env-file", type=Path, required=True)
         else:
             sub.add_argument("--env-file", type=Path, default=DEFAULT_ENV_FILE)
-        sub.add_argument("--production-env", type=Path, default=DEFAULT_PRODUCTION_ENV)
+        sub.add_argument("--production-env", type=Path, help="optional local overlap reference")
         return sub
 
     setup_parser = command("setup", "select a worktree and prepare its dependencies and data")
@@ -712,6 +872,10 @@ HANDLERS = {
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="[dev] %(message)s")
+    # Use URL defaults consistently in the launcher and its child processes.
+    for name in tuple(os.environ):
+        if name.startswith("PG"):
+            del os.environ[name]
     try:
         return HANDLERS[args.command](args)
     except Refused as refused:

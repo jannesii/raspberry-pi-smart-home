@@ -1,127 +1,152 @@
 # Development environment
 
-One on-demand development instance can run beside production on the Pi
-([ADR 0004](../adr/0004-isolate-development-effects-from-household-operation.md)).
-It runs one selected feature worktree with its own dependencies, PostgreSQL
-database and role, Redis server, configuration and writable files, and is
-browsed at `https://dev.jannenkoti.com` through the existing Cloudflare Tunnel.
+Run one selected desktop checkout or worktree at
+`https://192.168.1.100:5557` ([ADR 0005](../adr/0005-operate-pi-production-from-desktop-development.md)).
+The desktop runs native PostgreSQL, an on-demand private Redis and one
+Eventlet Gunicorn worker. Dependencies, writable files and synthetic data
+belong to development. The production Pi can be offline.
+
+## Desktop setup
+
+Install Python 3.11+, Git, native PostgreSQL, `redis-server` and a tool for
+issuing a local TLS certificate. The commands below use fish. Set `repo` to
+the absolute path of this checkout if it differs.
+
+```fish
+set repo /home/jannesi/Nextcloud/Personal/Coding/raspberry-pi-smart-home/server
+python -m venv "$repo/.venv"
+"$repo/.venv/bin/python" -m pip install -r "$repo/requirements.txt"
+install -d -m 700 ~/.config/jannenkoti-dev ~/.local/state/jannenkoti-dev
+```
+
+1. **PostgreSQL.** Initialize the desktop cluster if needed. On the Arch desktop,
+   the first command below applies to an empty `/var/lib/postgres/data` only.
+   Keep PostgreSQL listening on loopback. Run the provisioning SQL once and use
+   the password prompt to set a fresh password for `jannenkoti_dev`.
+
+   ```fish
+   sudo -u postgres initdb -D /var/lib/postgres/data --auth-local=peer --auth-host=scram-sha-256
+   sudo systemctl start postgresql
+   sudo -u postgres psql -X -d postgres -f - < "$repo/docs/operations/development-host/postgresql.sql"
+   sudo -u postgres psql -X -d postgres -c '\password jannenkoti_dev'
+   ```
+
+2. **TLS.** Use a local CA and a server certificate with `192.168.1.100` in its
+   IP subject alternative name. For example, with `mkcert` installed, use a CA
+   dedicated to development. The commissioned desktop already has its own CA
+   and server certificate in `~/.config/jannenkoti-dev`.
+
+   ```fish
+   set -l certdir "$HOME/.config/jannenkoti-dev"
+   env CAROOT="$certdir/mkcert" mkcert -install
+   env CAROOT="$certdir/mkcert" mkcert -cert-file "$certdir/server.pem" -key-file "$certdir/server.key" 192.168.1.100
+   chmod 600 "$certdir/server.key"
+   ```
+
+   For this example use `$certdir/mkcert/rootCA.pem` as the CA file. Import the
+   public CA certificate into the desktop browser's trust store if it uses a
+   separate store. Install and trust the same public CA on the phone. On
+   iPhone, enable full trust for the installed root under **Settings → General
+   → About → Certificate Trust Settings**. Transfer only the public root
+   certificate. Keep the CA private key and the server key on the desktop.
+   [mkcert mobile trust instructions](https://github.com/FiloSottile/mkcert#mobile-devices)
+   and [Apple certificate trust instructions](https://support.apple.com/en-us/102390)
+   cover the phone setup.
+
+3. **Configuration.** Copy the example once and set its absolute paths, dedicated
+   database password, new session secret and dedicated development login
+   password. Use a URL-safe database password or percent-encode it in
+   `DATABASE_URL`. Use the local CA public certificate for `DEV_TLS_CA`.
+
+   ```fish
+   install -m 600 "$repo/docs/operations/development-host/dev.env.example" ~/.config/jannenkoti-dev/dev.env
+   ```
+
+4. **LAN access.** If the desktop firewall blocks inbound access, allow TCP
+   5557 to `192.168.1.100` only from the home subnet. Bind PostgreSQL and
+   Redis to loopback. Use the LAN address directly from a phone on the same
+   network. Keep the development port off public tunnels and router
+   forwarding rules.
 
 ## Daily use
 
-Run from any checkout; the selected worktree is what runs:
+Run the launcher from any directory. A fish function can wrap the absolute
+launcher path. Use the same launcher to select a different checkout or worktree
+after stopping the running instance.
 
-```bash
-dev() { ~/Code/server/.venv/bin/python ~/Code/server-worktrees/<any>/scripts/dev.py "$@"; }
-dev setup --worktree ~/Code/server-worktrees/<feature>   # select, install, migrate, sample data
-dev start          # background app on 127.0.0.1:5557 plus its own Redis
-dev status         # worktree, branch @ commit, state, URLs
+```fish
+function dev
+    set -l launcher /home/jannesi/Nextcloud/Personal/Coding/raspberry-pi-smart-home/server
+    "$launcher/.venv/bin/python" "$launcher/scripts/dev.py" $argv
+end
+
+dev setup --worktree /home/jannesi/Nextcloud/Personal/Coding/raspberry-pi-smart-home/server
+dev start
+dev status
 dev stop
-dev reset --yes    # stopped instance only: back to the sample state
+dev reset --yes
 ```
 
-Every command reads `~/.config/jannenkoti-dev/dev.env` unless `--env-file` is
-given, and `/home/jannesi/Code/server/jannenkoti.env` only to detect shared
-targets (`--production-env`). Commands print setting names and paths, never
-values.
+- **setup** selects a Git checkout or worktree, installs its requirements into
+  `$DEV_STATE_DIR/venv`, applies migrations and seeds the sample data. Setup
+  retains existing development data and reuses dependencies while requirements
+  are unchanged. It binds the database to that state directory, which must be
+  outside the selected checkout. Use a separate development database for a
+  different state directory.
+- **start** runs the selected checkout, including uncommitted edits, and waits
+  for a certificate-verified HTTPS response. It starts its own loopback Redis
+  with persistence off. Stop and start to load Python edits. Run setup again
+  after changing requirements or migrations. Logs are in
+  `$DEV_STATE_DIR/instance/` as `app.log`, `redis.log` and `setup.log`.
+- **status** reports the selection, revision, running state and HTTPS address.
+  The browser banner shows the revision captured at startup.
+- **stop** signals only the app and Redis processes recorded by the launcher.
+- **reset --yes** requires a stopped instance and a marked local database
+  owned by an unprivileged development role. It recreates the development
+  `public` schema for the registered state directory and deletes its writable files while keeping
+  `venv/`, `instance/` and the development state marker. It then migrates
+  and reseeds. Redis starts empty.
+
+All commands default to `~/.config/jannenkoti-dev/dev.env`. Use `--env-file`
+for a different development configuration. An explicitly supplied
+`--production-env` adds overlap checks using a local reference file. Desktop
+operation needs only the development file. Keep both configuration and TLS
+files outside the checkout and the reset directory. `run --env-file FILE`
+is the foreground app-only entry point used for isolated checks with
+pre-existing dependencies and Redis. Use `start` for everyday LAN development.
 
 | Exit | Meaning |
 | --- | --- |
-| `0` | Done; for `status`, running and answering |
-| `1` | Operation failed (`status`: running but unhealthy); see the named log |
-| `2` | Refused: unsafe, ambiguous or missing target; nothing was changed |
-| `3` | `status`: not running |
-| `4` | Another `setup`/`start`/`stop`/`reset` is in progress |
+| `0` | Done. For status, the development app and Redis answer. |
+| `1` | Operation failed or the running instance is unhealthy. |
+| `2` | The command refused the configuration or target. |
+| `3` | Status found no running instance. |
+| `4` | A lifecycle operation holds the lock. |
 
-- **setup** refuses the production checkout, non-worktrees and worktrees that
-  predate this contract (no `app/environment.py` or
-  `app/development_sample.py`); merge the development environment branch into
-  older feature branches first. It installs the worktree's `requirements.txt`
-  into `$DEV_STATE_DIR/venv` (skipped while the file is unchanged), applies
-  migrations and adds the sample data. It keeps existing development data.
-- **start** refuses a second instance, a busy port or dependencies changed
-  since setup. It runs a private `redis-server` (no persistence) on the
-  `REDIS_URL` port, then one Eventlet Gunicorn worker, and waits for `/login`.
-  Logs: `$DEV_STATE_DIR/instance/app.log`, `redis.log`, `setup.log`.
-- **stop** signals only processes `start` recorded (matched by PID and start
-  time), so it never stops production.
-- **reset** needs `--yes` and a stopped instance. It drops and recreates the
-  development database's `public` schema, deletes `$DEV_STATE_DIR` contents
-  except `venv/` and `instance/`, migrates and reseeds. Redis is never
-  persisted, so nothing queued earlier can be replayed.
-- `scripts/restart.sh` and `restart-no-log.sh` restart production and refuse
-  to run from any checkout except `/home/jannesi/Code/server`, and refuse
-  everywhere once production runs from a release
-  ([release guide](releases.md#failure-and-recovery)).
+## Browser access and sample data
 
-`run --env-file FILE` still runs the app of the checkout that contains the
-script in the foreground, without the lifecycle (Ctrl+C stops it).
+Sign in at `https://192.168.1.100:5557` with the dedicated development login.
+Setup and reset seed that login as Root-Admin and three synthetic sensor
+locations named `Kehitys …`. The sticky **Kehitysympäristö** banner shows the
+branch and commit, and tab titles start with `[DEV]`.
 
-## Sample data
-
-Setup and reset create the `WEB_USERNAME` login as Root-Admin and three
-synthetic sensor locations named `Kehitys …` with fixed values
-([`app/development_sample.py`](../../app/development_sample.py)). Production
-accounts, schedules and data are never copied. Add a fixture there only when a
-feature needs one, and keep it idempotent because setup runs it again.
-
-## Browser access
-
-Pages show a sticky **Kehitysympäristö** banner with the branch and commit, and
-tab titles start with `[DEV]`. Development uses its own cookies
-(`jannenkoti_dev_session`, `jannenkoti_dev_remember`, both `Secure` and
-`HttpOnly`) because browsers share cookies between ports of one host. Socket.IO
-accepts `https://dev.jannenkoti.com` and `http://127.0.0.1:$PORT` /
-`http://localhost:$PORT` unless `ALLOWED_WS_ORIGINS` is set. Authentication,
-Root-Admin checks, CSRF and the explicit API-key device exemptions are the same
-as in production; the hostname is internet-reachable, so use a strong
-development password.
-
-## Provisioning (owner, once)
-
-Nothing here is applied automatically. Review each step first.
-
-1. PostgreSQL: review and run
-   [`development-host/postgresql.sql`](development-host/postgresql.sql) as the
-   PostgreSQL superuser with a new password. It creates the `jannenkoti_dev`
-   role and database, adds the marker comment that setup and reset require, and
-   prints how many production tables the role can read (expect `0`).
-2. Configuration: `mkdir -p ~/.config/jannenkoti-dev ~/.local/state/jannenkoti-dev`,
-   copy [`development-host/dev.env.example`](development-host/dev.env.example)
-   to `~/.config/jannenkoti-dev/dev.env`, `chmod 600` it and replace every
-   `CHANGE_ME` with values that differ from production.
-3. Redis: no host service is needed; `start` runs development's own server on
-   the `REDIS_URL` port (`6380` in the example).
-4. Tunnel: the owner reports an existing ingress
-   `dev.jannenkoti.com → http://localhost:5557` and its CNAME. Revalidate
-   rather than recreate it: confirm the rule in the tunnel's active
-   configuration (for example `cloudflared tunnel ingress rule
-   https://dev.jannenkoti.com`), then `dev start` and open
-   `https://dev.jannenkoti.com` on a computer and on the phone, log in, and
-   check the banner. Record that result as commissioning evidence; automated
-   tests do not reach the tunnel.
-
-No systemd unit is needed: the instance runs on demand until `dev stop` or a
-reboot.
-
-## Required development settings
+The distinct development session and remember cookies use `Secure` and
+`HttpOnly`. Root-Admin, authentication, CSRF and API-key checks still apply.
+Socket.IO accepts the configured development HTTPS origin. The authenticated
+car-heater capture page allows same-origin camera access over HTTPS. The
+browser still controls camera permission.
 
 | Setting | Requirement |
 | --- | --- |
-| `DATABASE_URL` | The provisioned development database and role. Must not use the production database or role. |
-| `REDIS_URL` | `redis://127.0.0.1:<port>` on a free port, never production's (`localhost:6379` when production sets none). `start` runs this server. A different `/N` database alone is not isolation: Pub/Sub ignores database numbers. |
-| `RATE_LIMIT_STORAGE_URI` | Optional. Defaults to `REDIS_URL` and has the same Redis restriction. |
-| `DEV_STATE_DIR` | Existing absolute directory; empty for the first setup, which marks it |
-| `DB_PATH`, `VILLENKOTI_DB_PATH` | Inside `DEV_STATE_DIR` and not the production paths. KFactor test-mode output also goes to `DEV_STATE_DIR`. |
-| `SECRET_KEY`, `WEB_PASSWORD` | Different from production |
-| `WEB_USERNAME` | The dedicated development login, seeded as Root-Admin |
-| `PORT` | Optional, default `5557` (the tunnel target); must not be `5555` or `5556` |
-| `USE_SQLA_READS` | Forced to `1` by setup, reset and `start` |
-
-Unix-socket directories, this host's name and its LAN addresses count as
-`localhost` when comparing servers with production. When a setting is missing
-or ambiguous, commands exit `2` and list setting names, never values. The app
-makes the same checks when `APP_ENV=development` is started without the tool,
-and never reads a checkout's `jannenkoti.env` in development.
+| `DATABASE_URL` | A local `postgresql+psycopg` URL using a loopback IP or absolute Unix socket directory. The database must have the development marker and a dedicated unprivileged owner. |
+| `REDIS_URL` | A free loopback port for the private Redis, such as `redis://127.0.0.1:6380/0`. |
+| `RATE_LIMIT_STORAGE_URI` | Optional. Defaults to the private `REDIS_URL`. `memory://` is also supported. |
+| `DEV_STATE_DIR` | An existing absolute directory, empty on first setup. |
+| `DB_PATH`, `VILLENKOTI_DB_PATH` | Absolute file paths under `DEV_STATE_DIR`. KFactor test-mode output also goes there. |
+| `SECRET_KEY`, `WEB_USERNAME`, `WEB_PASSWORD` | Dedicated development values. |
+| `DEV_BIND_HOST`, `PORT` | Defaults are `192.168.1.100` and `5557`. Use an assigned private IPv4 address with a matching certificate. |
+| `DEV_TLS_CERT`, `DEV_TLS_KEY`, `DEV_TLS_CA` | Absolute PEM paths for the server certificate, private key and public CA certificate. Use mode `600` for the key. |
+| `USE_SQLA_READS` | Forced to `1` by setup, reset and start. |
 
 ## Effects in development
 
@@ -148,14 +173,13 @@ limits all use `REDIS_URL`.
 
 ## Verification
 
-[`tests/test_development_launch.py`](../../tests/test_development_launch.py)
-covers the startup contract and
-[`tests/test_development_lifecycle.py`](../../tests/test_development_lifecycle.py)
-the commands, invoked from outside the selected worktree, against disposable
-PostgreSQL, Redis servers, a stand-in production environment and a substitute
-dependency installer. Without those binaries the cases are skipped; the
-browser flow is skipped without Playwright. The real `pip` installation path,
-the tunnel and phone access are checked during commissioning.
+The [lifecycle tests](../../tests/test_development_lifecycle.py) run the
+operator commands from outside the selected checkout against disposable
+PostgreSQL and Redis. The Chromium flow uses a disposable trusted CA and
+checks login, secure cookies, the development indicator, Socket.IO origins
+and the car-heater capture preview with a synthetic camera. See the
+[desktop commissioning record](development-host/commissioning.md) for LAN
+verification and outstanding device checks.
 
 ## Selected announcement acceptance
 
@@ -191,9 +215,9 @@ the candidate's existing capability store; capabilities expire after at most two
 minutes and are revoked when the candidate ends the attempt. Invalid/expired
 capabilities and all management paths return 404. It does not use browser cookies
 and suppresses URL access logging because capabilities are bearer credentials.
-Keep its port off the tunnel and router forwarding rules.
+Keep its port off router forwarding rules.
 
-Browser login stays at `https://dev.jannenkoti.com`. A successful browser preview
+Browser login stays at `https://192.168.1.100:5557`. A successful browser preview
 or HTTPS request does not establish that a speaker can fetch LAN audio, play it,
 use an appropriate volume, or restore music. Those remain explicitly authorized
 owner checks in the announcement feature's commissioning guide.

@@ -30,6 +30,20 @@ def write_env(path: Path, values: dict[str, str]) -> Path:
     return path
 
 
+def provision_test_database(socket_dir: Path, database: str):
+    import psycopg
+    from psycopg import sql
+
+    with psycopg.connect(dbname="postgres", host=str(socket_dir), autocommit=True) as conn:
+        identifier = sql.Identifier(database)
+        conn.execute(sql.SQL("CREATE ROLE {} LOGIN").format(identifier))
+        conn.execute(sql.SQL("CREATE DATABASE {} OWNER {}").format(identifier, identifier))
+        conn.execute(
+            sql.SQL("COMMENT ON DATABASE {} IS 'jannenkoti development'").format(identifier)
+        )
+    return f"postgresql+psycopg://{database}@/{database}?host={socket_dir}"
+
+
 @pytest.fixture
 def stand_in_production(tmp_path):
     """Production-like configuration that development must never reuse."""
@@ -293,13 +307,12 @@ def running_dev(tmp_path_factory, postgres_socket_dir, redis_pair, capture_serve
     }
     production_env = write_env(work / "production.env", production_values)
 
-    for database in ("jannenkoti", "jannenkoti_dev"):
-        subprocess.run(
-            ["createdb", "-h", str(postgres_socket_dir), database],
-            check=True,
-            capture_output=True,
-        )
-    dev_url = f"postgresql+psycopg:///jannenkoti_dev?host={postgres_socket_dir}"
+    subprocess.run(
+        ["createdb", "-h", str(postgres_socket_dir), "jannenkoti"],
+        check=True,
+        capture_output=True,
+    )
+    dev_url = provision_test_database(postgres_socket_dir, "jannenkoti_dev")
     migrate_env = {k: v for k, v in os.environ.items() if k not in ("DATABASE_URL",)}
     migrated = subprocess.run(
         [sys.executable, "-m", "alembic", "-c", "alembic.ini.example", "upgrade", "head"],
@@ -401,17 +414,22 @@ def running_dev(tmp_path_factory, postgres_socket_dir, redis_pair, capture_serve
 
 
 class Browser:
-    """A requests session that keeps Secure cookies over the local plain-HTTP bind."""
+    """Requests with a trusted CA, or cookie handling for the foreground HTTP fixture."""
 
-    def __init__(self, base_url: str):
+    def __init__(self, base_url: str, *, ca: Path | None = None):
         self.base_url = base_url
         self.session = requests.Session()
+        self.ca = ca
+        if ca is not None:
+            self.session.verify = str(ca)
+            self.session.headers["Referer"] = f"{base_url}/"
 
     def request(self, method: str, path: str, **kwargs) -> requests.Response:
         kwargs.setdefault("timeout", 15)
         response = self.session.request(method, f"{self.base_url}{path}", **kwargs)
-        for cookie in self.session.cookies:
-            cookie.secure = False
+        if self.ca is None:
+            for cookie in self.session.cookies:
+                cookie.secure = False
         return response
 
     def csrf_token(self, path: str = "/login") -> str:

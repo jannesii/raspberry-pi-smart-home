@@ -23,6 +23,7 @@ from test_development_launch import (  # noqa: F401 - pytest fixtures
     Browser,
     free_port,
     postgres_socket_dir,
+    provision_test_database,
     redis_pair,
     write_env,
 )
@@ -52,7 +53,9 @@ def make_worktree(path: Path, *, contract: bool = True) -> Path:
         # Code from before the development contract existed.
         (path / "app").mkdir()
         (path / "app" / "__init__.py").write_text("")
-    (path / "migrations").symlink_to(ROOT / "migrations")
+    shutil.copytree(
+        ROOT / "migrations", path / "migrations", ignore=shutil.ignore_patterns("__pycache__")
+    )
     for name in ("run.py", "alembic.ini.example", "requirements.txt"):
         shutil.copy(ROOT / name, path / name)
     git("init", "-q", "-b", "feat/sample", cwd=path)
@@ -101,7 +104,67 @@ def provision_database(socket_dir: Path, name: str, *, mark: bool = True) -> Non
 
 
 @pytest.fixture(scope="module")
-def environment(tmp_path_factory, postgres_socket_dir, redis_pair, installer):  # noqa: F811
+def tls(tmp_path_factory):
+    if not shutil.which("openssl"):
+        pytest.skip("OpenSSL unavailable")
+    work = tmp_path_factory.mktemp("dev-tls")
+
+    def openssl(*args):
+        subprocess.run(["openssl", *args], cwd=work, check=True, capture_output=True)
+
+    openssl(
+        "req",
+        "-x509",
+        "-newkey",
+        "rsa:2048",
+        "-noenc",
+        "-days",
+        "2",
+        "-subj",
+        "/CN=Disposable Dev CA",
+        "-keyout",
+        "ca.key",
+        "-out",
+        "ca.pem",
+        "-addext",
+        "keyUsage=critical,keyCertSign,cRLSign",
+    )
+    openssl(
+        "req",
+        "-newkey",
+        "rsa:2048",
+        "-noenc",
+        "-subj",
+        "/CN=127.0.0.1",
+        "-keyout",
+        "server.key",
+        "-out",
+        "server.csr",
+    )
+    (work / "extensions").write_text(
+        "subjectAltName=IP:127.0.0.1\nextendedKeyUsage=serverAuth\nauthorityKeyIdentifier=keyid\n"
+    )
+    openssl(
+        "x509",
+        "-req",
+        "-in",
+        "server.csr",
+        "-CA",
+        "ca.pem",
+        "-CAkey",
+        "ca.key",
+        "-days",
+        "2",
+        "-extfile",
+        "extensions",
+        "-out",
+        "server.pem",
+    )
+    return work
+
+
+@pytest.fixture(scope="module")
+def environment(tmp_path_factory, postgres_socket_dir, redis_pair, installer, tls):  # noqa: F811
     """A provisioned development configuration beside a stand-in production."""
     work = tmp_path_factory.mktemp("lifecycle")
     production_checkout = work / "production"
@@ -120,11 +183,24 @@ def environment(tmp_path_factory, postgres_socket_dir, redis_pair, installer):  
     }
     production_env = write_env(production_checkout / "jannenkoti.env", production_values)
 
-    provision_database(postgres_socket_dir, "jannenkoti_dev")
+    subprocess.run(
+        [
+            "psql",
+            "-h",
+            str(postgres_socket_dir),
+            "-d",
+            "postgres",
+            "-X",
+            "-f",
+            str(ROOT / "docs/operations/development-host/postgresql.sql"),
+        ],
+        check=True,
+        capture_output=True,
+    )
     state = work / "dev-state"
     state.mkdir()
     values = {
-        "DATABASE_URL": f"postgresql+psycopg:///jannenkoti_dev?host={postgres_socket_dir}",
+        "DATABASE_URL": f"postgresql+psycopg://jannenkoti_dev@/jannenkoti_dev?host={postgres_socket_dir}",
         "REDIS_URL": f"redis://127.0.0.1:{free_port()}/0",
         "DEV_STATE_DIR": str(state),
         "DB_PATH": str(state / "legacy.db"),
@@ -133,6 +209,10 @@ def environment(tmp_path_factory, postgres_socket_dir, redis_pair, installer):  
         "WEB_USERNAME": "dev-tester",
         "WEB_PASSWORD": "development-password",
         "PORT": str(free_port()),
+        "DEV_BIND_HOST": "127.0.0.1",
+        "DEV_TLS_CERT": str(tls / "server.pem"),
+        "DEV_TLS_KEY": str(tls / "server.key"),
+        "DEV_TLS_CA": str(tls / "ca.pem"),
     }
     env_file = write_env(work / "dev.env", values)
     elsewhere = work / "elsewhere"
@@ -149,7 +229,8 @@ def environment(tmp_path_factory, postgres_socket_dir, redis_pair, installer):  
         "postgres": postgres_socket_dir,
         "installer": installer,
         "elsewhere": elsewhere,
-        "url": f"http://127.0.0.1:{values['PORT']}",
+        "url": f"https://127.0.0.1:{values['PORT']}",
+        "ca": tls / "ca.pem",
     }
 
 
@@ -161,13 +242,18 @@ def dev(environment, command: str, *args: str, timeout: float = 240, env_file=No
         command,
         "--env-file",
         str(env_file or environment["env_file"]),
-        "--production-env",
-        str(environment["production_env"]),
     ]
+    if environment["production_env"] is not None:
+        argv += ["--production-env", str(environment["production_env"])]
     if command == "setup":
         argv += ["--installer", str(environment["installer"]["path"])]
     # Production values in the caller's shell must not leak into development.
-    caller = {**os.environ, **environment["production_values"], "APP_ENV": "production"}
+    caller = {
+        **os.environ,
+        **environment["production_values"],
+        "APP_ENV": "production",
+        "PGPORT": "1",
+    }
     result = subprocess.run(
         [*argv, *args],
         cwd=environment["elsewhere"],
@@ -179,6 +265,17 @@ def dev(environment, command: str, *args: str, timeout: float = 240, env_file=No
     for secret in (*PRODUCTION_SECRETS, "development-password"):
         assert secret not in result.stdout + result.stderr, command
     return result
+
+
+def test_setup_refuses_postgresql_host_overrides(environment, worktree):
+    values = {
+        **environment["values"],
+        "DATABASE_URL": "postgresql+psycopg://test@127.0.0.1/development?hostaddr=192.0.2.1",
+    }
+    env_file = write_env(environment["work"] / "host-override.env", values)
+    result = dev(environment, "setup", "--worktree", str(worktree), env_file=env_file)
+    assert result.returncode == 2
+    assert "local PostgreSQL" in result.stderr
 
 
 def installer_calls(environment) -> list[str]:
@@ -247,7 +344,8 @@ SAMPLE = (
 
 
 def test_setup_prepares_dependencies_schema_and_sample_data(environment, worktree):
-    result = dev(environment, "setup", "--worktree", str(worktree))
+    (worktree / "jannenkoti.env").write_text("PGPORT=1\n")
+    result = dev({**environment, "production_env": None}, "setup", "--worktree", str(worktree))
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert str(worktree) in result.stdout
@@ -270,9 +368,16 @@ def test_setup_refuses_ambiguous_development_targets(environment, worktree):
     for name, change in (
         (
             "database",
-            {"DATABASE_URL": environment["values"]["DATABASE_URL"].replace("_dev", "_unmarked")},
+            {
+                "DATABASE_URL": environment["values"]["DATABASE_URL"].replace(
+                    "/jannenkoti_dev?", "/jannenkoti_unmarked?"
+                )
+            },
         ),
-        ("state", {}),
+        (
+            "state",
+            {"DATABASE_URL": provision_test_database(environment["postgres"], "ambiguous_state")},
+        ),
     ):
         state = environment["work"] / f"ambiguous-{name}"
         state.mkdir()
@@ -307,7 +412,7 @@ def selected(environment, worktree):
 
 
 def log_in(environment) -> Browser:
-    browser = Browser(environment["url"])
+    browser = Browser(environment["url"], ca=environment["ca"])
     values = environment["values"]
     response = browser.login(values["WEB_USERNAME"], values["WEB_PASSWORD"])
     assert response.status_code == 302, response.text[:500]
@@ -342,12 +447,13 @@ def test_start_status_stop_manage_one_persistent_instance(environment, selected,
     for fact in ("development", "stopped", str(selected), "feat/sample"):
         assert fact in stopped.stdout, fact
 
-    started = dev(environment, "start")
+    (selected / "run.py").write_text((selected / "run.py").read_text() + "\n# Development edit\n")
+    started = dev({**environment, "production_env": None}, "start", "--timeout", "15")
     assert started.returncode == 0, started.stdout + started.stderr
     assert str(selected) in started.stdout
     status = dev(environment, "status")
     assert status.returncode == 0, status.stdout + status.stderr
-    for fact in ("running", "feat/sample", environment["url"], "https://dev.jannenkoti.com"):
+    for fact in ("running", "feat/sample", "uncommitted changes", environment["url"]):
         assert fact in status.stdout, fact
 
     add_user(log_in(environment), "dev-persisted")
@@ -357,7 +463,7 @@ def test_start_status_stop_manage_one_persistent_instance(environment, selected,
 
     assert dev(environment, "stop").returncode == 0
     with pytest.raises(requests.ConnectionError):
-        requests.get(f"{environment['url']}/login", timeout=2)
+        requests.get(f"{environment['url']}/login", timeout=2, verify=environment["ca"])
     assert dev(environment, "status").returncode == 3
     assert dev(environment, "stop").returncode == 0  # stopping again is harmless
 
@@ -376,6 +482,7 @@ def test_lifecycle_operations_do_not_interleave(environment, worktree):
     state.mkdir()
     values = {
         **environment["values"],
+        "DATABASE_URL": provision_test_database(environment["postgres"], "busy_dev"),
         "DEV_STATE_DIR": str(state),
         "DB_PATH": str(state / "legacy.db"),
         "VILLENKOTI_DB_PATH": str(state / "villenkoti.db"),
@@ -463,6 +570,11 @@ def test_reset_refuses_production_and_ambiguous_targets(environment, selected):
     assert result.returncode == 2
     assert "production database" in result.stderr
 
+    previous_comment = psql(
+        environment["postgres"],
+        "jannenkoti_dev",
+        "SELECT shobj_description(oid, 'pg_database') FROM pg_database WHERE datname = current_database()",
+    )
     psql(environment["postgres"], "jannenkoti_dev", "COMMENT ON DATABASE jannenkoti_dev IS NULL")
     try:
         result = dev(environment, "reset", "--yes")
@@ -470,13 +582,48 @@ def test_reset_refuses_production_and_ambiguous_targets(environment, selected):
         psql(
             environment["postgres"],
             "jannenkoti_dev",
-            f"COMMENT ON DATABASE jannenkoti_dev IS '{DEV_MARKER_COMMENT}'",
+            f"COMMENT ON DATABASE jannenkoti_dev IS '{previous_comment}'",
         )
     assert result.returncode == 2
     assert "not marked" in result.stderr
 
     assert usernames(environment) == before
     assert_production_untouched(environment)
+
+
+def test_second_state_directory_cannot_claim_a_selected_database(environment, selected):
+    state = environment["work"] / "other-state"
+    state.mkdir()
+    alternate = write_env(
+        environment["work"] / "other.env",
+        {
+            **environment["values"],
+            "DEV_STATE_DIR": str(state),
+            "DB_PATH": str(state / "legacy.db"),
+            "VILLENKOTI_DB_PATH": str(state / "villenkoti.db"),
+        },
+    )
+    result = dev(environment, "setup", "--worktree", str(selected), env_file=alternate)
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "another DEV_STATE_DIR" in result.stderr
+    assert list(state.iterdir()) == []
+    assert "dev-tester" in usernames(environment)
+
+
+def test_reset_preserves_tls_files_placed_in_state(environment, selected):
+    key = environment["state"] / "alternate.key"
+    key.touch()
+    alternate = write_env(
+        environment["work"] / "tls-in-state.env",
+        {**environment["values"], "DEV_TLS_KEY": str(key)},
+    )
+    try:
+        result = dev(environment, "reset", "--yes", env_file=alternate)
+        assert result.returncode == 2, result.stdout + result.stderr
+        assert "DEV_TLS_KEY" in result.stderr
+        assert key.exists()
+    finally:
+        key.unlink(missing_ok=True)
 
 
 @pytest.fixture(scope="module")
@@ -493,7 +640,7 @@ def set_cookies(response: requests.Response) -> dict[str, str]:
 
 
 def test_development_is_marked_and_uses_its_own_browser_session(environment, started):
-    anonymous = Browser(started)
+    anonymous = Browser(started, ca=environment["ca"])
     login_page = anonymous.request("GET", "/login")
     assert "Kehitysympäristö" in login_page.text
     assert "feat/sample" in login_page.text
@@ -528,7 +675,7 @@ def test_development_is_marked_and_uses_its_own_browser_session(environment, sta
 
 
 def test_development_keeps_authentication_csrf_and_device_api_rules(environment, started):
-    anonymous = Browser(started)
+    anonymous = Browser(started, ca=environment["ca"])
     assert "/login" in anonymous.request(
         "GET", "/settings/users", allow_redirects=False
     ).headers.get("Location", "")
@@ -543,7 +690,7 @@ def test_development_keeps_authentication_csrf_and_device_api_rules(environment,
     assert missing_csrf.status_code == 400
     add_user(owner, "dev-viewer")
 
-    viewer = Browser(started)
+    viewer = Browser(started, ca=environment["ca"])
     # The JSON login has its own rate-limit budget; the form login's is spent.
     signed_in = viewer.request(
         "POST", "/login_api", json={"username": "dev-viewer", "password": "synthetic-pass"}
@@ -552,14 +699,15 @@ def test_development_keeps_authentication_csrf_and_device_api_rules(environment,
     root_only = viewer.request("GET", "/settings/network_bypass", allow_redirects=False)
     assert root_only.status_code == 302
 
-    # Socket.IO accepts the development origins, not production's.
+    # Socket.IO accepts the exact development origin.
     def handshake(origin: str) -> int:
         return anonymous.request(
             "GET", "/socket.io/?EIO=4&transport=polling", headers={"Origin": origin}
         ).status_code
 
-    assert handshake("https://dev.jannenkoti.com") == 200
     assert handshake(started) == 200
+    assert handshake("https://dev.jannenkoti.com") == 400
+    assert handshake(started.replace("https:", "http:")) == 400
     assert handshake("https://jannenkoti.com") == 400
 
 
@@ -590,8 +738,32 @@ def test_production_restart_helpers_refuse_other_checkouts(tmp_path, helper):
     assert not calls.exists()
 
 
-def test_development_indicator_and_navigation_in_a_browser(environment, started):
+def test_development_indicator_and_navigation_in_a_browser(environment, started, tmp_path):
     pytest.importorskip("playwright")
+    if not shutil.which("certutil"):
+        pytest.skip("NSS certutil unavailable")
+    # Chromium versions use either the legacy or XDG NSS database on Linux.
+    nss = tmp_path / ".pki" / "nssdb"
+    nss.mkdir(parents=True)
+    xdg_pki = tmp_path / ".local" / "share" / "pki"
+    xdg_pki.parent.mkdir(parents=True)
+    xdg_pki.symlink_to(nss.parent, target_is_directory=True)
+    subprocess.run(["certutil", "-N", "-d", f"sql:{nss}", "--empty-password"], check=True)
+    subprocess.run(
+        [
+            "certutil",
+            "-A",
+            "-d",
+            f"sql:{nss}",
+            "-n",
+            "Disposable Dev CA",
+            "-t",
+            "C,,",
+            "-i",
+            str(environment["ca"]),
+        ],
+        check=True,
+    )
     # Restart for a fresh login rate-limit budget.
     assert dev(environment, "stop").returncode == 0
     assert dev(environment, "start").returncode == 0
@@ -604,6 +776,13 @@ def test_development_indicator_and_navigation_in_a_browser(environment, started)
             values["WEB_USERNAME"],
             values["WEB_PASSWORD"],
         ],
+        env={
+            **os.environ,
+            "HOME": str(tmp_path),
+            "XDG_DATA_HOME": str(xdg_pki.parent),
+            "PLAYWRIGHT_BROWSERS_PATH": str(Path.home() / ".cache" / "ms-playwright"),
+            "NODE_EXTRA_CA_CERTS": str(environment["ca"]),
+        },
         capture_output=True,
         text=True,
         timeout=120,

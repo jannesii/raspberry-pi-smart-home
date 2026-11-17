@@ -11,6 +11,7 @@ import pytest
 from test_development_launch import (  # noqa: F401
     free_port,
     postgres_socket_dir,
+    provision_test_database,
     redis_pair,
     write_env,
 )
@@ -35,7 +36,7 @@ def operator(tmp_path, request):
     state.mkdir()
     (state / ".jannenkoti-development").write_text("test state")
     values = {
-        "DATABASE_URL": f"postgresql+psycopg:///acceptance?host={pg_socket}",
+        "DATABASE_URL": provision_test_database(pg_socket, tmp_path.name[:50]),
         "REDIS_URL": isolated_redis["development"][2],
         "DEV_STATE_DIR": str(state),
         "DB_PATH": str(state / "legacy.db"),
