@@ -203,11 +203,39 @@ disabled by default. Endpoint definitions live in [app/blueprints/api/](app/blue
 From the repository root, using the virtual environment created above:
 
 ```bash
-.venv/bin/pytest -q
+.venv/bin/python scripts/test.py --tmp-dir /tmp
 .venv/bin/ruff check app tests run.py esp32_ws
 .venv/bin/ruff format --check app tests run.py esp32_ws
 .venv/bin/pre-commit run --config .pre-commit-config.yaml --all-files
 ```
+
+The full-suite runner collects the selected tests once and distributes every
+case across up to six independent pytest processes (capped by CPU count).
+It preserves the normal Eventlet bootstrap; pytest-xdist workers can stall
+when the app patches their already-running native threads. No additional
+parallel-test dependency is needed. All browser viewports and disposable
+PostgreSQL cases remain included. Any collection or worker failure produces
+a nonzero exit status; the runner does not mark known failures as expected.
+
+Use `--workers 2` on a smaller machine, or `--workers 1` for a serial run.
+The command above puts disposable databases in `/tmp`, which is RAM-backed
+on the EndeavourOS desktop. Avoid putting these temporary files in the
+Nextcloud checkout or a disk-backed cache: repeated database creation is
+much slower there. Override the parent with `--tmp-dir PATH` when needed.
+The printed results directory retains collection output, each worker's test
+list, log and JUnit XML, and a `run.json` containing wall time and exit codes;
+`--output-dir PATH` selects a new directory explicitly. Ctrl+C interrupts
+workers and allows pytest to tear down its fixtures.
+
+For a focused check, ordinary pytest avoids full-suite orchestration:
+
+```bash
+.venv/bin/pytest -q tests/test_auth.py
+# The parallel runner also accepts paths, node IDs, -k and -m selections:
+.venv/bin/python scripts/test.py --tmp-dir /tmp tests/test_auth.py
+```
+
+Running `.venv/bin/pytest -q` directly still runs the whole suite serially.
 
 Tests use SQLite through SQLAlchemy Core. The sensor-location tests also start
 a disposable PostgreSQL cluster on a private Unix socket when `initdb` and
