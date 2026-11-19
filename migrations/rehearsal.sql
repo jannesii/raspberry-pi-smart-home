@@ -1,8 +1,8 @@
--- Synthetic release-rehearsal state at the production baseline (20261021_0019).
+-- Synthetic release-rehearsal state compatible with the production baseline.
 -- Trusted candidate code, never production data. Rehearsal seeds this into an
 -- empty disposable database, dumps/restores it, migrates both copies to the
 -- candidate head and runs rehearsal-verify.sql against each.
--- The 0020-0027 announcement migrations only add tables, so these rows check
+-- The additive announcement and heater-notification migrations use these rows to check
 -- that existing data and identity sequences survive the upgrade untouched.
 
 INSERT INTO users (username, password_hash, is_admin, is_root_admin)

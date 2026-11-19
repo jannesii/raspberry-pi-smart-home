@@ -21,8 +21,7 @@ ExecStart=/home/jannesi/jannenkoti-releases/current/venv/bin/gunicorn \
     --worker-connections 1000 \
     --bind localhost:5555 \
     --timeout 120 \
-    --max-requests 1000 \
-    --max-requests-jitter 100 \
+    --max-requests 0 \
     run:app
 Restart=always
 

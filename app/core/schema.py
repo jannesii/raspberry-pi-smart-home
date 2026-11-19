@@ -1051,6 +1051,19 @@ announcement_spotify = Table(
     CheckConstraint("id = 1", name="ck_announcement_spotify_singleton"),
 )
 
+# Durable problem notifications; claim before sending to avoid blind replay.
+car_heater_notification = Table(
+    "car_heater_notification",
+    metadata,
+    Column("event_key", Text, primary_key=True),
+    Column("message", Text, nullable=False),
+    Column("created_at", Text, nullable=False),
+    Column("next_attempt_at", Text, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("attempts", Integer, nullable=False),
+    Index("ix_car_heater_notification_pending", "status", "next_attempt_at"),
+)
+
 # Identity-only deletion tombstones: no reminder text, account or configuration.
 announcement_consumed = Table(
     "announcement_consumed",

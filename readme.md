@@ -410,6 +410,16 @@ See [setup and physical acceptance](docs/operations/bounded-car-heater.md) befor
 owner-controlled deployment/flashing in #12. Review the permanent session to see
 request, relay, actual draw and shutdown milestones; outcomes remain independent.
 
+Car-heater problem notifications use the existing `ALERT_WEBHOOK_URL`, without
+waiting for the ordinary alert batch. They cover restart interruption, unexpected
+early OFF, unconfirmed start/stop, lost device status or heating-power evidence,
+and departure heating that is delayed or never starts. Recovery of status/power
+and a previously unconfirmed OFF also send a follow-up. Apply migration
+`20261119_0028` for the durable notification queue; see
+[notification behavior and limits](docs/operations/bounded-car-heater.md#interruption-notifications).
+Problem alerts mention `@everyone`; recovery messages are quiet. Routine starts,
+normal finishes and driver cancellation do not send messages.
+
 ### Comfort heating and Settings
 
 **Heating → Comfort heating** (collapsed by default) keeps cabin air near a
