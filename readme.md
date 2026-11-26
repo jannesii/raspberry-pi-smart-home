@@ -193,6 +193,10 @@ recovered with `scripts/release.py`; see the
 [release guide](docs/operations/releases.md). Preparation does not deploy, and
 deployment briefly stops the app and gateway. Migrations are not deployed yet.
 
+Inspect production through the dedicated read-only PostgreSQL login over SSH,
+either in VS Code or with the bounded `scripts/db_query.py` command; see
+[read-only browsing and queries](docs/operations/database.md#read-only-browsing-and-queries).
+
 Browser mutations use session authentication and CSRF protection. YNAB,
 medicine, and network-bypass operations require Root-Admin. Device HTTP APIs
 accept `Authorization: Bearer <token>` or `X-API-Key`; query-string keys are
