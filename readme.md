@@ -196,7 +196,9 @@ deployment briefly stops the app and gateway; rehearsed migrations run during
 deployment after a pre-migration backup.
 
 From the desktop, [scripts/ops.py](scripts/ops.py) shows production health and
-recent logs through the `raspi` SSH alias; see
+recent logs through the `raspi` SSH alias, and transfers, prepares, accepts,
+deploys and recovers exact committed revisions with the Pi's release process
+without a prior GitHub push; see
 [desktop operations](docs/operations/desktop-operations.md) for its commands.
 Inspect production data through the dedicated read-only PostgreSQL login over SSH,
 either in VS Code or with the bounded `scripts/db_query.py` command; see

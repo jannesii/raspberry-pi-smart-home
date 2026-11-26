@@ -5,8 +5,9 @@ Production runs on the Pi (`192.168.1.50`) from the release layout in
 ([ADR 0005](../adr/0005-operate-pi-production-from-desktop-development.md)).
 [scripts/ops.py](../../scripts/ops.py) is the desktop entry point for production:
 it reaches the Pi through the `raspi` SSH alias and needs no production
-credentials on the desktop. It currently provides status and logs; database
-queries use [scripts/db_query.py](database.md#query-command).
+credentials on the desktop. It shows status and logs, and releases exact
+committed revisions through the Pi's existing [release process](releases.md);
+database queries use [scripts/db_query.py](database.md#query-command).
 
 ## Setup
 
@@ -22,7 +23,7 @@ ssh -o BatchMode=yes raspi true
 Save a fish function so the command is available everywhere:
 
 ```fish
-function jk-ops --description 'Inspect Pi production'
+function jk-ops --description 'Operate Pi production'
     python3 /home/jannesi/Nextcloud/Personal/Coding/raspberry-pi-smart-home/scripts/ops.py $argv
 end
 funcsave jk-ops
@@ -62,22 +63,92 @@ finished operations from `operations.log` and an unfinished operation from
 `operation.json`. Candidate preparation logs stay in
 `releases/<candidate>/logs/` on the Pi.
 
+## Releasing a desktop commit
+
+Releases follow the [release guide](releases.md): preparation never changes the
+running release, acceptance is the owner's statement bound to the candidate's
+identities, and only `deploy` and `recover` stop and start the services. From
+the desktop:
+
+```fish
+cd /home/jannesi/Nextcloud/Personal/Coding/raspberry-pi-smart-home
+jk-ops prepare main                 # or a tag, commit, or --source <worktree>
+jk-ops candidate                    # all candidates and the running releases
+jk-ops candidate <candidate>        # evidence and what still blocks deployment
+jk-ops accept <candidate> --scope feature --note 'what you checked in development'
+jk-ops deploy <candidate>           # maintenance window, then status
+jk-ops recover                      # back to the previous release, then status
+```
+
+`prepare` resolves the revision in the selected checkout (default: the current
+directory) and refuses, before contacting the Pi, uncommitted changes to tracked
+files, unknown or ambiguous names and revisions that track `*.env` or
+`alembic.ini` files. It then pushes exactly that commit, and only the Git objects
+the Pi lacks, over SSH into `transfer/` in the release root, a repository without
+a checkout that checks every received object. No remote such as GitHub is
+fetched from or published to, and the Pi needs no GitHub credentials. The Pi
+checks that the transferred commit and tree are the desktop's before the running
+release's `release.py prepare` exports the commit, installs its dependencies on
+the Pi and runs the checks. Afterwards the candidate's recorded revision is
+compared with the desktop commit, and the remaining steps are listed.
+`--device-acceptance` and `--replace` are passed to `release.py prepare`.
+
+A failed or dropped transfer prepares nothing. A failed or interrupted
+preparation leaves an inspectable, never deployable candidate. Neither touches
+the running release; prepare the revision again once fixed.
+
+`accept` shows the candidate's revision and checks and records acceptance only
+after you type the candidate name on your own terminal; without a terminal it
+refuses. Record it only after observing that revision yourself, for a device
+scope on the real device. An agent cannot accept on the owner's behalf.
+
+A migration-bearing candidate needs its rehearsal on two empty disposable
+PostgreSQL databases on the Pi, provisioned as the
+[release guide](releases.md#migration-rehearsal-and-backup) describes; the
+environment files are paths on the Pi:
+
+```fish
+jk-ops rehearse <candidate> --disposable-env /path/on/pi/rehearsal.env --restore-env /path/on/pi/restore-check.env
+```
+
+`deploy` refuses before any downtime when the candidate is not deployable:
+missing, failed or stale checks or acceptance, unknown migration needs, a
+missing or outdated rehearsal, or an incompatible database schema. Otherwise it
+runs `release.py deploy` with its pre-migration backup, coordinated stop and
+start of the app and gateway, and readiness wait. It then shows `status`, which
+must report both processes on the candidate's revision and the database `ok`.
+After a failure it prints the next steps. Database restoration is never offered:
+it discards later writes and remains a separate owner decision, run with
+`release.py restore` on the Pi
+([explicit database restoration](releases.md#explicit-database-restoration)).
+
+`prepare`, `rehearse`, `deploy` and `recover` run as jobs in their own session
+on the Pi, with output in `jobs/` under the release root (kept 30 days). The
+desktop follows the output; Ctrl-C or a lost connection only stops watching,
+and a deployment never stops halfway. Check how it ended with
+`jk-ops logs release` and `jk-ops status`.
+
 | Exit | Meaning |
 | --- | --- |
 | `0` | Done; for `status`, production is healthy |
-| `1` | Not healthy, health unknown, or the logs could not be read |
-| `2` | Refused arguments; nothing was contacted |
+| `1` | Failed, not healthy, health unknown, or the logs could not be read; for `deploy`, compatible previous code was recovered |
+| `2` | Refused before any change to production (by `ops.py` before contacting the Pi, or by `release.py` there) |
 | `3` | The Pi is unreachable over SSH, or the account cannot read the journal |
+| `4` | Production is not verified ready; follow the printed guidance |
+| `5` | Another release operation holds the release root |
+| `130` | Stopped watching; the operation continues on the Pi |
 
 ## Boundaries
 
-Inspection only reads. Units are queried with an unprivileged
+`status`, `logs` and `candidate` only read. Units are queried with an unprivileged
 `systemctl is-active` and the health endpoints with `GET`. Nothing restarts a
 service, deploys code, takes the release lock or writes to the database.
 `release.py status` also re-evaluates retained candidates, which hashes their
 files and, for rehearsed candidates, reads the production schema revision on the
-Pi; `ops.py` shows only the production part. Restarts,
-deployments and recovery stay with `release.py` on the Pi
+Pi; `ops.py status` shows only the production part. Release commands change
+the Pi only through the running release's `release.py`, holding its lock; the
+desktop sends no production credentials and none are needed. Restarts and
+database restoration stay with `release.py` on the Pi
 ([releases](releases.md)). The command prints no environment or credentials. Log
 lines are the services' own journal output.
 
@@ -94,7 +165,22 @@ the command as a subprocess from outside the checkout. A stand-in `ssh` records
 its options and runs the script locally. Stand-in `systemctl`, `journalctl` and
 `id`, a temporary release root and local health servers replace the Pi. It
 covers healthy, mismatched, stopped, unreachable, missing and unreadable states,
-bounded and followed logs, and journal permission failures and hints. The
-stand-in `ssh` runs scripts with `sh`, not through fish. The real read-only
-check against the Pi is recorded in
-[the commissioning record](desktop-operations-commissioning-2026-11-26.md).
+bounded and followed logs, and journal permission failures and hints.
+[tests/test_desktop_deployment.py](../../tests/test_desktop_deployment.py)
+releases through the same stand-in `ssh`, which also serves `git push`, on the
+deployment tests' world: a temporary release root whose running release
+carries this repository's `release.py`, disposable PostgreSQL and a recording
+service manager running stand-in units. The desktop checkout has no reachable
+remote. It covers exact transfer and preparation, a push cut off midway, a
+Pi-side identity mismatch, interrupted preparation, unready production
+settings, refusals before contact, terminal-only acceptance, stale evidence, a
+missing rehearsal, a rehearsed migration deployed after its backup, deployment,
+readiness failure with recovery, explicit recovery, Ctrl-C while watching and a
+connection lost during the maintenance window. Backup failures and restoration
+are covered by the release tests. The stand-in `ssh` runs scripts and
+`git-receive-pack` with `sh`, not through fish. The real read-only check against the
+Pi is recorded in
+[the commissioning record](desktop-operations-commissioning-2026-11-26.md);
+the real transfer and preparation are recorded separately in
+[their commissioning record](desktop-release-commissioning.md). A production
+release is not an automated test: it needs the owner's acceptance and decision.

@@ -24,6 +24,8 @@ backups/                production database backups (never pruned)
 operation.json          the latest deploy, recover or restart, step by step
 operations.log          one JSON line per finished operation
 .lock                   held while an operation changes the root
+transfer/               commits pushed from the desktop (a Git repository, no checkout)
+jobs/                   output of desktop-started operations (kept 30 days)
 ```
 
 Production configuration (`jannenkoti.env`) and persistent state stay outside
@@ -32,6 +34,13 @@ ignored files are never copied, and a revision that tracks a `*.env` or
 `alembic.ini` file fails preparation.
 
 ## Preparing a candidate
+
+From the desktop, `ops.py prepare <revision>` transfers an exact commit to
+`transfer/` over SSH and runs this preparation on the Pi, without pushing to
+GitHub first; `candidate`, `accept`, `rehearse`, `deploy` and `recover` run the
+other commands below. See
+[releasing a desktop commit](desktop-operations.md#releasing-a-desktop-commit).
+On the Pi itself:
 
 ```bash
 export JANNENKOTI_RELEASE_ROOT=/home/jannesi/jannenkoti-releases
