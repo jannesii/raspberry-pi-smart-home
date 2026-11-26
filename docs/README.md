@@ -11,6 +11,7 @@ that are useful beyond the code itself.
 | [Database operations](operations/database.md) | Schema changes, legacy imports, read-only browsing and queries | Schema, Alembic environment, migration mixin, `scripts/db_query.py` |
 | [Development environment](operations/development-environment.md) | Development lifecycle, provisioning and isolation | `app/environment.py`, `scripts/dev.py`, service initialization |
 | [Release preparation](operations/releases.md) | Exact verified release candidates | `scripts/release.py` |
+| [Desktop operations](operations/desktop-operations.md) | Production status and logs from the desktop | `scripts/ops.py` |
 | [YNAB review](features/ynab.md) | Setup, review workflow, and test mode | YNAB service, API, and browser UI |
 | [Decision records](adr/) | Durable decisions and their reasons | The code and docs each decision governs |
 
