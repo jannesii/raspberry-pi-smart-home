@@ -44,9 +44,9 @@ configuration and builds.
 ## Repository layout
 
 The repository root contains the Flask app, ESP32 gateway and both firmware
-projects directly. On this host it is `/home/jannesi/Code/server`; existing
-service paths stay the same. Fresh clones do not have a surrounding `server/`
-subdirectory.
+projects directly. The desktop checkout is
+`/home/jannesi/Nextcloud/Personal/Coding/raspberry-pi-smart-home`.
+The Pi's production configuration uses `/home/jannesi/Code/server`.
 
 The root was narrowed from `/home/jannesi/Code` without rewriting history.
 Older commits retain the previous layout. Sibling projects and other files in

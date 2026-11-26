@@ -1,6 +1,8 @@
 # Development dependencies
 # Install: pip install -r requirements-dev.txt
 
+-r requirements.txt
+
 # Linting & formatting
 ruff>=0.8.0
 
