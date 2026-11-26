@@ -9,16 +9,24 @@ the Pi offline. Public browser access requires the Pi and its tunnel.
 
 ## Desktop setup
 
-Install Python 3.11+, Git, native PostgreSQL, `redis-server` and a tool for
-issuing a local TLS certificate. The commands below use fish. Set `repo` to
-the absolute path of this checkout if it differs.
+Install `uv`, Git, native PostgreSQL, `redis-server` and a tool for issuing a
+local TLS certificate. The commands below use fish and Python 3.13 for new
+desktop environments. Set `repo` to the absolute path of this checkout if it
+differs.
 
 ```fish
-set repo /home/jannesi/Nextcloud/Personal/Coding/raspberry-pi-smart-home/server
-python -m venv "$repo/.venv"
-"$repo/.venv/bin/python" -m pip install -r "$repo/requirements.txt"
+set repo /home/jannesi/Nextcloud/Personal/Coding/raspberry-pi-smart-home
+if not test -e "$repo/.venv"
+    uv venv --python 3.13 --seed "$repo/.venv"
+end
+uv pip install --python "$repo/.venv/bin/python" -r "$repo/requirements-dev.txt"
 install -d -m 700 ~/.config/jannenkoti-dev ~/.local/state/jannenkoti-dev
 ```
+
+Rerunning these commands reuses an existing `.venv`. If its Python fails to
+import `encodings` or you need to change Python versions, move `.venv` aside
+before rerunning setup. Creating a virtual environment over an existing one
+with another Python can leave its executable and standard library out of sync.
 
 1. **PostgreSQL.** Initialize the desktop cluster if needed. On the Arch desktop,
    the first command below applies to an empty `/var/lib/postgres/data` only.
@@ -72,6 +80,16 @@ install -d -m 700 ~/.config/jannenkoti-dev ~/.local/state/jannenkoti-dev
    development and production login pages. The development app must be running
    to serve the public hostname. Use a dedicated development password.
 
+## After moving the checkout
+
+Move any copied `.venv` aside and run the setup commands above to create it
+at the new path.
+If you use the Git hook, [install it again](../../readme.md#development) from
+the relocated checkout so it uses the new interpreter. Update any saved
+`dev` function, stop the instance if it is running, and run
+`dev setup --worktree` with the new absolute path. Setup keeps the existing
+development database, TLS files and state directory.
+
 ## Daily use
 
 Run the launcher from any directory. A fish function can wrap the absolute
@@ -80,11 +98,11 @@ after stopping the running instance.
 
 ```fish
 function dev
-    set -l launcher /home/jannesi/Nextcloud/Personal/Coding/raspberry-pi-smart-home/server
+    set -l launcher /home/jannesi/Nextcloud/Personal/Coding/raspberry-pi-smart-home
     "$launcher/.venv/bin/python" "$launcher/scripts/dev.py" $argv
 end
 
-dev setup --worktree /home/jannesi/Nextcloud/Personal/Coding/raspberry-pi-smart-home/server
+dev setup --worktree /home/jannesi/Nextcloud/Personal/Coding/raspberry-pi-smart-home
 dev start
 dev status
 dev stop

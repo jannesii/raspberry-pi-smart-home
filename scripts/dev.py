@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Manage the one isolated development instance on this host.
 
-    .venv/bin/python scripts/dev.py setup --worktree ~/Code/server-worktrees/feature
+    .venv/bin/python scripts/dev.py setup --worktree /absolute/path/to/worktree
     .venv/bin/python scripts/dev.py start | status | stop
     .venv/bin/python scripts/dev.py reset --yes
     .venv/bin/python scripts/dev.py run --env-file ~/.config/jannenkoti-dev/dev.env

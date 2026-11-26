@@ -58,7 +58,7 @@ only the relevant section of [feature contracts](docs/development/feature-contra
 
 ## Validation and delivery
 
-Run commands from the `server/` directory (this file’s directory):
+Run commands from the repository root:
 
 ```sh
 .venv/bin/pytest -q tests/test_relevant_feature.py
