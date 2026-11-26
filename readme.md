@@ -46,7 +46,8 @@ configuration and builds.
 The repository root contains the Flask app, ESP32 gateway and both firmware
 projects directly. The desktop checkout is
 `/home/jannesi/Nextcloud/Personal/Coding/raspberry-pi-smart-home`.
-The Pi's production configuration uses `/home/jannesi/Code/server`.
+On the Pi, production runs from releases under `/home/jannesi/jannenkoti-releases`;
+its configuration stays in `/home/jannesi/Code/server/jannenkoti.env`.
 
 The root was narrowed from `/home/jannesi/Code` without rewriting history.
 Older commits retain the previous layout. Sibling projects and other files in
@@ -191,9 +192,13 @@ Production releases are prepared as exact committed candidates with their own
 dependencies and verification evidence, then explicitly deployed, checked and
 recovered with `scripts/release.py`; see the
 [release guide](docs/operations/releases.md). Preparation does not deploy, and
-deployment briefly stops the app and gateway. Migrations are not deployed yet.
+deployment briefly stops the app and gateway; rehearsed migrations run during
+deployment after a pre-migration backup.
 
-Inspect production through the dedicated read-only PostgreSQL login over SSH,
+From the desktop, [scripts/ops.py](scripts/ops.py) shows production health and
+recent logs through the `raspi` SSH alias; see
+[desktop operations](docs/operations/desktop-operations.md) for its commands.
+Inspect production data through the dedicated read-only PostgreSQL login over SSH,
 either in VS Code or with the bounded `scripts/db_query.py` command; see
 [read-only browsing and queries](docs/operations/database.md#read-only-browsing-and-queries).
 

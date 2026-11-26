@@ -170,7 +170,9 @@ backup and is never part of code recovery.
 
 To diagnose, read `operation.json` in the release root (steps, readiness
 problems, guidance), run `status --live`, and read
-`journalctl -u jannenkoti.service -u esp32_ws.service -n 200`.
+`journalctl -u jannenkoti.service -u esp32_ws.service -n 200`. From the desktop,
+the `status`, `logs release` and `logs services` commands of
+[desktop operations](desktop-operations.md) show the same.
 
 Only `deploy`, `recover` and `restart` stop or start production services, and
 only one release operation runs at a time. The legacy `scripts/restart.sh` and
@@ -179,34 +181,23 @@ only one release operation runs at a time. The legacy `scripts/restart.sh` and
 checkout, or once `current` exists, they refuse (exit `2`) and point to
 `release.py restart`. Development commands never restart production.
 
-## First cutover (owner-authorized)
+## Production units
 
-Production still runs from `/home/jannesi/Code/server` with its `.venv`. The
-release-layout units are in
+The cutover to the release layout is complete: production runs from
+`/home/jannesi/jannenkoti-releases/current` (first release deployed before
+2026-11-15). The installed units match
 [`systemd/jannenkoti.service.example`](systemd/jannenkoti.service.example) and
-[`systemd/esp32_ws.service.example`](systemd/esp32_ws.service.example): both
-run from `current`, keep the app's single Eventlet worker and the gateway's
-sync worker with 16 threads, and keep using the existing environment files
-outside the release. Nothing here has been installed. When you decide to switch:
+[`systemd/esp32_ws.service.example`](systemd/esp32_ws.service.example). Both run
+from `current`, keep the app's single Eventlet worker and the gateway's sync
+worker with 16 threads, and use the environment files outside the release. The
+old checkout `/home/jannesi/Code/server` remains only as the location of
+`jannenkoti.env` (the `--production-env` default) and of KFactor test-mode
+output. Persistent state (`DB_PATH`, `VILLENKOTI_DB_PATH`) stays outside
+`releases/`.
 
-1. Prepare and accept a schema-compatible candidate; `status <candidate>` must
-   say deployable. Its `requirements.txt` must include the gateway's
-   dependencies (`flask-sock`).
-2. Check persistent state lives outside the release: `DB_PATH` and
-   `VILLENKOTI_DB_PATH` must be absolute paths outside `releases/`. KFactor
-   test-mode output keeps its absolute path in the old checkout.
-3. Save the legacy units: copy `/etc/systemd/system/jannenkoti.service` and the
-   file that `/etc/systemd/system/esp32_ws.service` links to (in the production
-   checkout) somewhere outside both checkouts.
-4. Install the two example units as `/etc/systemd/system/jannenkoti.service`
-   and `/etc/systemd/system/esp32_ws.service` (replace the symlink), keep the
-   `jannenkoti.service.d` drop-in, and run `sudo systemctl daemon-reload`.
-   The running services keep their old code until they are stopped.
-5. Run `release.py deploy <candidate>` and confirm `status --live`.
-
-If that first deployment fails, there is no previous release: reinstall the
-saved legacy units, run `sudo systemctl daemon-reload` and restart both
-services from the production checkout.
+From the desktop, check production and read app, gateway and release-operation
+logs with `scripts/ops.py` through `raspi`; see
+[desktop operations](desktop-operations.md) for setup and commands.
 
 ## Cleanup
 

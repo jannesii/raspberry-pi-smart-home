@@ -49,7 +49,8 @@ logger = logging.getLogger("release")
 
 RELEASE_ROOT_VAR = "JANNENKOTI_RELEASE_ROOT"
 DEFAULT_PRODUCTION_ENV = Path("/home/jannesi/Code/server/jannenkoti.env")
-# Production still runs from this checkout until the first release is deployed.
+# Production ran from this checkout before the first release; it is the migration
+# reference only for a release root without a current release.
 LEGACY_PRODUCTION_CODE = Path("/home/jannesi/Code/server")
 DEFAULT_KEEP = 3
 
