@@ -49,11 +49,11 @@ def controller(temp_db):
         stmt = stmt.on_conflict_do_nothing()
         conn.execute(stmt)
 
-        # Insert timelapse_conf singleton (ignore if exists)
-        stmt = sqlite_insert(timelapse_conf).values(
-            id=1, image_delay=30, temphum_delay=60, status_delay=15
-        )
-        stmt = stmt.on_conflict_do_nothing()
+        # Set the timelapse_conf singleton these tests expect, even when the
+        # Controller's legacy initialisation already inserted its defaults.
+        values = {"image_delay": 30, "temphum_delay": 60, "status_delay": 15}
+        stmt = sqlite_insert(timelapse_conf).values(id=1, **values)
+        stmt = stmt.on_conflict_do_update(index_elements=["id"], set_=values)
         conn.execute(stmt)
 
     yield ctrl

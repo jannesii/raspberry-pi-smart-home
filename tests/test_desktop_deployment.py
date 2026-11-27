@@ -269,6 +269,9 @@ def test_a_failing_desktop_suite_records_no_pass(desk):
     assert result.returncode == 1
     assert "1 failed" in result.stderr
     assert not saved_pass(desk, revision).exists()
+    kept = saved_pass(desk, revision).with_name(f"{revision}-failed")
+    assert "test_regression" in (kept / "worker-1.log").read_text()
+    assert str(kept) in result.stderr
 
 
 def test_a_virtualenv_missing_a_pin_is_refused_before_running_the_suite(desk):
@@ -572,6 +575,8 @@ def test_acceptance_is_recorded_only_after_the_owner_confirms_on_a_terminal(desk
 
     assert status == 0, output
     assert f"revision {revision}" in output
+    # The prompt names exactly what to type, not the scope.
+    assert f"Record feature acceptance of {candidate}? Type {candidate} to confirm:" in output
     acceptance = candidate_record(desk, revision)["acceptance"]["feature"]
     assert acceptance["note"] == "heater page checked in development"
     report = json.loads(ops(desk, "candidate", candidate, "--json").stdout)
