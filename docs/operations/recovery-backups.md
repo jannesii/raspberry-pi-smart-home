@@ -80,24 +80,30 @@ streamed from the source straight into `gpg`, never staged.
 ## Retention and status
 
 After each **successful** backup, `create` keeps the newest backup of each of
-the 14 most recent days (in the Pi's time zone, Europe/Helsinki) and removes
-older ones from `daily/`. It removes nothing else: unrecognized names in
+the 14 most recent days that have one, counted in Europe/Helsinki whatever the
+process's time zone, and removes older ones from `daily/`. An on-demand backup
+therefore replaces that day's 03:15 backup in retention. It removes nothing else: unrecognized names in
 `daily/`, `incomplete/` leftovers and anything outside the backup root are left
-alone. A failed attempt prunes nothing.
+alone. A failed attempt prunes nothing. If pruning itself fails, the new
+backup still counts as the latest success, the attempt records `prune_error`,
+`status` reports it and `create` exits `1`.
 
 `status.json` is the metadata later status integration reads:
 
 ```json
 {
   "last_attempt": {"id": "...", "started_at": "...", "finished_at": "...",
-                    "result": "success|failed", "error": "...", "pruned": []},
+                    "result": "running|success|failed", "error": "...",
+                    "pruned": [], "prune_error": "..."},
   "last_success": {"id": "...", "finished_at": "...", "path": "...",
                     "size": 0, "sha256": "..."}
 }
 ```
 
-A failed attempt replaces only `last_attempt`; `last_success` keeps naming the
-previous complete backup. Errors name the failing step (dump, a missing file,
+An attempt is recorded as `running` when it starts. A failed attempt replaces
+only `last_attempt`; `last_success` keeps naming the previous complete backup.
+An attempt killed outright (`SIGKILL`, power loss) stays `running`; `status`
+reports it as not finished once no backup holds the lock. Errors name the failing step (dump, a missing file,
 encryption) without credentials or data.
 
 ```fish
@@ -105,8 +111,9 @@ ssh raspi /home/jannesi/jannenkoti-releases/current/venv/bin/python /home/jannes
 ssh raspi /home/jannesi/jannenkoti-releases/current/venv/bin/python /home/jannesi/jannenkoti-releases/current/code/scripts/recovery_backup.py status --json
 ```
 
-`status` is healthy only when the latest attempt succeeded and the latest
-success is at most 36 hours old.
+`status` is healthy only when the latest attempt succeeded (or is still
+running) and the latest success is at most 36 hours old. An unreadable record
+is reported as a problem.
 
 | Exit | Meaning |
 | --- | --- |
@@ -218,10 +225,11 @@ host. Run it on the desktop, which holds the private key.
    "$repo/.venv/bin/python" "$repo/scripts/recovery_backup.py" restore /home/jannesi/jannenkoti-recovery/20261128T011500Z --target-env /home/jannesi/.config/jannenkoti-ops/restore.env --restore-dir /home/jannesi/jannenkoti-recovery/restored-20261128
    ```
 
-The command refuses (exit `2`, nothing changed) unless the target file sets
-`RECOVERY_RESTORE_TARGET=isolated`, the URL is PostgreSQL on a loopback
-address or Unix socket, the database name starts with `recovery_test_` and is
-not the backed-up database, and the restore directory is new or empty. It also
+The command refuses (exit `2`, nothing changed, nothing decrypted) unless the
+target file sets `RECOVERY_RESTORE_TARGET=isolated`, the URL is PostgreSQL on a
+loopback address or Unix socket, the database name starts with
+`recovery_test_` and is not the backed-up database recorded in `backup.json`,
+and the restore directory is new or empty. It also
 refuses a backup without a complete record or whose ciphertext does not match
 its recorded SHA-256, such as an interrupted copy. It then decrypts with your
 GnuPG keyring (`--gnupg-home` selects another), checks every part's checksum,
@@ -236,9 +244,12 @@ which keeps household effects disabled, and point `DATABASE_URL`, `DB_PATH` and
 `VILLENKOTI_DB_PATH` at the restored copies. To browse the restored data in the
 app, start development with a copy of your development env file whose values
 are replaced by those overrides; never use the restored production
-`jannenkoti.env` itself on the desktop, because it enables real integrations.
-On failure the command removes the restore directory and leaves the target
-database for you to drop.
+`jannenkoti.env` or `esp32_ws.env` itself on the desktop, because they enable
+real integrations and the production device key. Nothing in the restore
+starts the app or gateway, so the overrides are the guard for a deliberate
+start. On failure the command removes what it restored (a directory you
+created beforehand is kept, emptied) and leaves the target database for you
+to drop.
 
 The restored data and files include all production secrets. When finished:
 
@@ -270,9 +281,12 @@ Automated tests cannot do these; record them separately when done:
 command as a subprocess with synthetic PostgreSQL rows on a disposable cluster,
 SQLite files, configuration files and a throwaway GnuPG key. It encrypts,
 decrypts and restores them, checking recovered rows, binary data, the Alembic
-revision and required files. It covers failed dumps, encryption and missing
-required files preserving the last success, killed attempts' staging, truncated
-copies, retention across 16 days and same-day backups, stale status, refused
+revision and required files. It covers a missing database, a failing `pg_dump`, an
+unreadable key, `gpg` dying mid-stream and missing required files, each
+preserving the last success without plaintext left behind; `SIGTERM` cleanup
+and a `SIGKILL`ed attempt reported as not finished; killed attempts' staging;
+truncated copies; unreadable status records; Helsinki retention days under
+another process time zone; retention across 16 days and same-day backups, stale status, refused
 production, remote, unmarked and nonempty targets, a missing private key, the
 development-mode overrides and the timer schedule (with `systemd-analyze
 calendar` when available). The real units, key and Pi state are commissioned

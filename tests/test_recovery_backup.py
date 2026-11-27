@@ -559,3 +559,156 @@ def test_backup_service_runs_the_current_release_command_once_privately():
     ]
     # The defaults the unit relies on are the documented production locations.
     assert (ROOT / "docs/operations/production-host/recovery-files.txt").is_file()
+
+
+def stand_in(world, name: str, script: str) -> dict[str, str]:
+    """Put an executable ``name`` first on PATH; returns the env for ``create``."""
+    directory = world["tmp"] / "stand-ins"
+    directory.mkdir(exist_ok=True)
+    path = directory / name
+    path.write_text("#!/bin/sh\n" + script)
+    path.chmod(0o755)
+    return {"PATH": f"{directory}:{os.environ['PATH']}"}
+
+
+def test_failed_pg_dump_and_mid_stream_encryption_leave_no_backup_or_plaintext(world):
+    assert create(world).returncode == 0
+    [first] = completed(world)
+
+    failing_dump = stand_in(
+        world,
+        "pg_dump",
+        'for a; do case "$prev" in --file) printf partial > "$a";; esac; prev="$a"; done\nexit 1\n',
+    )
+    result = create(world, env=failing_dump)
+    assert result.returncode == 1
+    assert "database dump failed" in result.stderr
+    assert completed(world) == [first]
+    assert plaintext_left(world) == []
+
+    real_gpg = shutil.which("gpg")
+    shutil.rmtree(world["tmp"] / "stand-ins")
+    failing_gpg = stand_in(
+        world,
+        "gpg",
+        'case " $* " in *" --encrypt "*)\n'
+        '  for a; do case "$prev" in --output) head -c 100 > "$a";; esac; prev="$a"; done\n'
+        "  exit 2;;\nesac\n"
+        f'exec {real_gpg} "$@"\n',
+    )
+    result = create(world, env=failing_gpg)
+    assert result.returncode == 1
+    assert "encryption failed" in result.stderr
+    assert completed(world) == [first]
+    assert plaintext_left(world) == []
+    code, summary = status(world)
+    assert code == 1
+    assert summary["last_success"]["id"] == first.name
+
+
+def start_slow_backup(world):
+    started = world["tmp"] / "dump-started"
+    env = stand_in(world, "pg_dump", f'touch "{started}"\nexec sleep 60\n')
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "create",
+            "--backup-root",
+            str(world["root"]),
+            "--production-env",
+            str(world["production_env"]),
+            "--manifest",
+            str(world["manifest"]),
+            "--recipient",
+            str(world["keys"]["public"]),
+        ],
+        env={"PATH": env["PATH"], "HOME": str(world["tmp"]), "TZ": "UTC"},
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    import time
+
+    deadline = time.monotonic() + 30
+    while not started.exists():
+        assert process.poll() is None, process.communicate()
+        assert time.monotonic() < deadline
+        time.sleep(0.05)
+    return process
+
+
+def test_sigterm_removes_staging_and_records_an_interrupted_attempt(world):
+    import signal
+
+    process = start_slow_backup(world)
+    assert status(world)[1]["last_attempt"]["result"] == "running"
+    process.send_signal(signal.SIGTERM)
+    process.communicate(timeout=30)
+    assert process.returncode == 1
+    assert completed(world) == []
+    assert plaintext_left(world) == []
+    assert not any((world["root"] / "incomplete").iterdir())
+    code, summary = status(world)
+    assert code == 1
+    assert summary["last_attempt"]["result"] == "failed"
+    assert summary["last_attempt"]["error"] == "interrupted"
+
+
+def test_hard_killed_attempt_is_reported_as_not_finished(world):
+    assert create(world).returncode == 0
+    process = start_slow_backup(world)
+    process.kill()
+    process.communicate(timeout=30)
+
+    code, summary = status(world)
+    assert code == 1
+    assert any("did not finish" in problem for problem in summary["problems"])
+    assert summary["last_success"]["id"] == completed(world)[0].name
+
+
+def test_status_with_unreadable_metadata_reports_a_problem_not_a_traceback(world):
+    world["root"].mkdir()
+    (world["root"] / "status.json").write_text('{"last_success": {"finished_at": "soon"}}')
+    result = command(world, "status", "--backup-root", str(world["root"]))
+    assert result.returncode == 1
+    assert "Traceback" not in result.stderr
+    assert "unreadable" in result.stdout
+
+
+def test_retention_days_are_helsinki_days_whatever_the_process_time_zone(world):
+    from datetime import UTC, datetime, timedelta
+
+    today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    # 22:30 UTC is already the next day in Helsinki (UTC+2/+3); noon UTC is not.
+    late = fake_completed(world, today - timedelta(days=3) + timedelta(hours=22, minutes=30))
+    noon = fake_completed(world, today - timedelta(days=2) + timedelta(hours=12))
+
+    assert create(world).returncode == 0  # the command runs with TZ=UTC
+    names = {path.name for path in completed(world)}
+    assert noon in names
+    assert late not in names
+
+
+def test_failed_restore_keeps_a_restore_directory_the_owner_created(world, tmp_path_factory):
+    assert create(world).returncode == 0
+    [backup] = completed(world)
+    empty_home = Path(tmp_path_factory.mktemp("nokey2"))
+    empty_home.chmod(0o700)
+    restore_dir = world["tmp"] / "prepared"
+    restore_dir.mkdir()
+
+    result = command(
+        world,
+        "restore",
+        str(backup),
+        "--target-env",
+        str(restore_target(world)),
+        "--restore-dir",
+        str(restore_dir),
+        "--gnupg-home",
+        str(empty_home),
+    )
+    assert result.returncode == 1
+    assert restore_dir.is_dir()
+    assert list(restore_dir.iterdir()) == []

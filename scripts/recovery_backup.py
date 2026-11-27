@@ -52,6 +52,7 @@ import tempfile
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
+from zoneinfo import ZoneInfo
 
 DEFAULT_BACKUP_ROOT = "/home/jannesi/jannenkoti-backups"
 DEFAULT_PRODUCTION_ENV = "/home/jannesi/Code/server/jannenkoti.env"
@@ -66,6 +67,9 @@ DUMP_TIMEOUT = 1800
 SQLITE_SETTINGS = ("DB_PATH", "VILLENKOTI_DB_PATH")
 RESTORE_PREFIX = "recovery_test_"
 BACKUP_ID = re.compile(r"^\d{8}T\d{6}Z$")
+ID_FORMAT = "%Y%m%dT%H%M%SZ"  # UTC start time, matching BACKUP_ID
+# Retention days follow the schedule's zone, not the process's TZ.
+RETENTION_ZONE = ZoneInfo("Europe/Helsinki")
 ARTIFACT, RECORD = "backup.tar.gpg", "backup.json"
 
 OK, FAILED, REFUSED, BUSY = 0, 1, 2, 3
@@ -80,7 +84,7 @@ class Refused(Exception):
 
 
 class Busy(Exception):
-    pass
+    """Another backup operation holds the backup root."""
 
 
 def now() -> datetime:
@@ -115,6 +119,18 @@ def private_dir(path: Path) -> Path:
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
     path.chmod(0o700)
     return path
+
+
+def lock_held(root: Path) -> bool:
+    """Whether a running ``create`` holds the backup root (status never waits)."""
+    try:
+        with (root / ".lock").open("a") as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return True
+    except OSError:
+        return False
+    return False
 
 
 @contextlib.contextmanager
@@ -189,6 +205,21 @@ def quote_identifier(name: str) -> str:
     return '"' + name.replace('"', '""') + '"'
 
 
+def table_count(conn, name: str) -> int:
+    from sqlalchemy import text
+
+    schema, _, table = name.partition(".")
+    return conn.execute(
+        text(f"SELECT count(*) FROM {quote_identifier(schema)}.{quote_identifier(table)}")
+    ).scalar_one()
+
+
+def alembic_revision(conn) -> list[str]:
+    from sqlalchemy import text
+
+    return sorted(conn.execute(text("SELECT version_num FROM alembic_version")).scalars())
+
+
 def dump_database(url: str, target: Path) -> dict:
     """Dump with ``pg_dump`` inside one exported snapshot, counting rows in it.
 
@@ -217,18 +248,10 @@ def dump_database(url: str, target: Path) -> dict:
                 )
             ).all()
             counts = {
-                f"{schema}.{table}": conn.execute(
-                    text(
-                        f"SELECT count(*) FROM {quote_identifier(schema)}.{quote_identifier(table)}"
-                    )
-                ).scalar_one()
+                f"{schema}.{table}": table_count(conn, f"{schema}.{table}")
                 for schema, table in tables
             }
-            alembic = None
-            if "public.alembic_version" in counts:
-                alembic = sorted(
-                    conn.execute(text("SELECT version_num FROM alembic_version")).scalars()
-                )
+            alembic = alembic_revision(conn) if "public.alembic_version" in counts else None
             db.run(
                 ["pg_dump", "--format=custom", f"--snapshot={snapshot}", "--file", str(target)],
                 url=url,
@@ -371,14 +394,14 @@ def completed_backups(root: Path) -> list[Path]:
 
 
 def backup_time(path: Path) -> datetime:
-    return datetime.strptime(path.name, "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
+    return datetime.strptime(path.name, ID_FORMAT).replace(tzinfo=UTC)
 
 
 def prune(root: Path) -> list[str]:
-    """Keep the newest backup of each of the most recent ``RETAIN_DAYS`` local days."""
+    """Keep the newest backup of each of the most recent ``RETAIN_DAYS`` Helsinki days."""
     kept_days: dict[object, Path] = {}
     for backup in sorted(completed_backups(root), reverse=True):
-        day = backup_time(backup).astimezone().date()
+        day = backup_time(backup).astimezone(RETENTION_ZONE).date()
         if day not in kept_days and len(kept_days) < RETAIN_DAYS:
             kept_days[day] = backup
     keep = set(kept_days.values())
@@ -478,6 +501,7 @@ def build_backup(args, work: Path, identifier: str, started: datetime) -> dict:
         "sha256": sha256_file(artifact),
         "database": {
             "database": database["database"],
+            "identity": database["identity"],
             "alembic": database["alembic"],
             "tables": len(database["tables"]),
         },
@@ -501,12 +525,14 @@ def command_create(args) -> int:
 
         started = now()
         # Names have one-second resolution; never reuse a completed backup's name.
-        while (daily / started.strftime("%Y%m%dT%H%M%SZ")).exists():
+        while (daily / started.strftime(ID_FORMAT)).exists():
             time.sleep(0.2)
             started = now()
-        identifier = started.strftime("%Y%m%dT%H%M%SZ")
+        identifier = started.strftime(ID_FORMAT)
         work = private_dir(incomplete / identifier)
         attempt = {"id": identifier, "started_at": stamp(started)}
+        # Visible while running, and afterwards if the process is killed outright.
+        record_attempt(root, attempt | {"result": "running"}, None)
         try:
             record = build_backup(args, work, identifier, started)
             write_json(work / RECORD, record)
@@ -524,16 +550,24 @@ def command_create(args) -> int:
                 reason = "interrupted"
             else:
                 reason = f"unexpected {type(exc).__name__}"
-            record_attempt(
-                root,
-                attempt | {"finished_at": stamp(now()), "result": "failed", "error": reason},
-                None,
-            )
+            try:
+                record_attempt(
+                    root,
+                    attempt | {"finished_at": stamp(now()), "result": "failed", "error": reason},
+                    None,
+                )
+            except OSError as record_error:
+                print(f"Recording the failed attempt also failed: {record_error}", file=sys.stderr)
             if isinstance(exc, Failure):
                 print(f"Backup {identifier} failed: {reason}", file=sys.stderr)
                 return FAILED
             raise
-        removed = prune(root)
+        prune_error = None
+        try:
+            removed = prune(root)
+        except OSError as exc:
+            # The backup itself is complete; report retention separately.
+            removed, prune_error = [], f"pruning failed: {exc.strerror or type(exc).__name__}"
         success = {
             "id": identifier,
             "finished_at": record["finished_at"],
@@ -544,12 +578,16 @@ def command_create(args) -> int:
         record_attempt(
             root,
             attempt
-            | {"finished_at": record["finished_at"], "result": "success", "pruned": removed},
+            | {"finished_at": record["finished_at"], "result": "success", "pruned": removed}
+            | ({"prune_error": prune_error} if prune_error else {}),
             success,
         )
     print(f"Backup {identifier} complete: {daily / identifier} ({record['size']} bytes)")
     if removed:
         print(f"Pruned {len(removed)} older backup(s): {', '.join(removed)}")
+    if prune_error:
+        print(f"Backup retention needs attention: {prune_error}", file=sys.stderr)
+        return FAILED
     return OK
 
 
@@ -565,13 +603,22 @@ def command_status(args) -> int:
     if not success:
         problems.append("no successful backup recorded")
     else:
-        age = now() - datetime.fromisoformat(success["finished_at"])
-        if age > STALE_AFTER:
-            problems.append(
-                f"latest successful backup is older than {STALE_AFTER.days * 24 + STALE_AFTER.seconds // 3600} hours"
-            )
-    if attempt and attempt.get("result") != "success":
+        try:
+            age = now() - datetime.fromisoformat(success["finished_at"])
+        except (KeyError, TypeError, ValueError):
+            problems.append("latest success record is unreadable")
+        else:
+            if age > STALE_AFTER:
+                hours = STALE_AFTER // timedelta(hours=1)
+                problems.append(f"latest successful backup is older than {hours} hours")
+    result = attempt.get("result") if isinstance(attempt, dict) else None
+    if result == "running":
+        if not lock_held(root):
+            problems.append(f"latest attempt {attempt.get('id')} did not finish (killed?)")
+    elif attempt and result != "success":
         problems.append(f"latest attempt {attempt.get('id')} failed: {attempt.get('error')}")
+    elif attempt and attempt.get("prune_error"):
+        problems.append(attempt["prune_error"])
     summary = {
         "healthy": not problems,
         "problems": problems,
@@ -584,10 +631,10 @@ def command_status(args) -> int:
         print(json.dumps(summary, indent=2, sort_keys=True))
     else:
         print(f"Backups: {'healthy' if not problems else 'attention'}")
-        if success:
-            print(f"Latest success: {success['id']} ({summary['age_hours']} h ago)")
+        if success and age is not None:
+            print(f"Latest success: {success.get('id')} ({summary['age_hours']} h ago)")
         if attempt:
-            print(f"Latest attempt: {attempt['id']} {attempt.get('result')}")
+            print(f"Latest attempt: {attempt.get('id')} {result}")
         print(f"Completed backups retained: {len(summary['completed'])}")
         for problem in problems:
             print(f"Problem: {problem}")
@@ -632,41 +679,36 @@ def decrypt(artifact: Path, destination: Path, home: str | None) -> None:
     command = ["gpg", "--batch", "--quiet", "--decrypt", str(artifact)]
     if home:
         command[1:1] = ["--homedir", home]
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     try:
         safe_extract(process.stdout, destination)
-    except tarfile.TarError:
+    except BaseException as exc:
         process.kill()
-        process.wait()
-        raise Failure("decryption failed: is the recovery private key available?") from None
+        if isinstance(exc, tarfile.TarError):
+            raise Failure("decryption failed: is the recovery private key available?") from None
+        raise
     finally:
         process.stdout.close()
-        process.wait(timeout=DUMP_TIMEOUT)
+        try:
+            process.wait(timeout=60)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
     if process.returncode:
         raise Failure("decryption failed: is the recovery private key available?")
 
 
 def verify_restored_database(url: str, expected: dict) -> None:
     import release_database as db
-    from sqlalchemy import text
 
     try:
         with db.connection(url).connect() as conn:
             for name, count in expected["tables"].items():
-                schema, _, table = name.partition(".")
-                actual = conn.execute(
-                    text(
-                        f"SELECT count(*) FROM {quote_identifier(schema)}.{quote_identifier(table)}"
-                    )
-                ).scalar_one()
+                actual = table_count(conn, name)
                 if actual != count:
                     raise Failure(f"restored {name} has {actual} rows, backup recorded {count}")
-            if expected["alembic"] is not None:
-                revision = sorted(
-                    conn.execute(text("SELECT version_num FROM alembic_version")).scalars()
-                )
-                if revision != expected["alembic"]:
-                    raise Failure("restored Alembic revision differs from the backup")
+            if expected["alembic"] is not None and alembic_revision(conn) != expected["alembic"]:
+                raise Failure("restored Alembic revision differs from the backup")
     except Failure:
         raise
     except Exception as exc:
@@ -689,7 +731,13 @@ def command_restore(args) -> int:
     if sha256_file(artifact) != record.get("sha256"):
         raise Refused(f"{artifact} does not match its record: incomplete or corrupted copy")
     url = restore_url(Path(args.target_env))
-    if restore_dir.exists() and (not restore_dir.is_dir() or any(restore_dir.iterdir())):
+    source = record.get("database") or {}
+    if db.identity(url) == source.get("identity") or make_url(url).database == source.get(
+        "database"
+    ):
+        raise Refused("restore target is the backed-up production database")
+    existed = restore_dir.exists()
+    if existed and (not restore_dir.is_dir() or any(restore_dir.iterdir())):
         raise Refused(f"restore directory {restore_dir} must be new or empty")
 
     private_dir(restore_dir)
@@ -698,11 +746,6 @@ def command_restore(args) -> int:
         decrypt(artifact, staging, args.gnupg_home)
         manifest = json.loads((staging / "manifest.json").read_text())
         expected = manifest["database"]
-        if (
-            db.identity(url) == expected["identity"]
-            or make_url(url).database == expected["database"]
-        ):
-            raise Refused("restore target is the backed-up production database")
         parts = [expected] + manifest["sqlite"] + manifest["files"]
         for part in parts:
             path = staging / part["part"]
@@ -745,7 +788,15 @@ def command_restore(args) -> int:
                 + "\n"
             )
     except BaseException:
-        shutil.rmtree(restore_dir, ignore_errors=True)
+        # Restored data is sensitive: remove it, but keep a directory the owner made.
+        if existed:
+            for child in restore_dir.iterdir():
+                if child.is_dir() and not child.is_symlink():
+                    shutil.rmtree(child, ignore_errors=True)
+                else:
+                    child.unlink(missing_ok=True)
+        else:
+            shutil.rmtree(restore_dir, ignore_errors=True)
         raise
     finally:
         shutil.rmtree(staging, ignore_errors=True)
