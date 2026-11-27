@@ -90,8 +90,11 @@ def desk(world):  # noqa: F811
     """The deployment world plus a desktop checkout, a stand-in ssh and a first release."""
     source = world["source"]
     (source / "scripts").mkdir()
-    for name in ("release.py", "release_database.py"):
+    for name in ("release.py", "release_database.py", "test.py"):
         shutil.copy(ROOT / "scripts" / name, source / "scripts" / name)
+    # The checkout's own virtualenv runs the desktop suite: this interpreter's.
+    (source / ".venv").symlink_to(Path(sys.prefix))
+    (source / ".gitignore").write_text("*.env\n.venv\n")
     # An executable migration history, as in the release migration tests.
     (source / "migrations" / "env.py").write_text(MIGRATION_ENV)
     for code in (source, world["production"]):
@@ -126,6 +129,7 @@ def ops_env(desk) -> dict[str, str]:
         PYTHONDONTWRITEBYTECODE="1",
         GIT_CONFIG_GLOBAL=os.devnull,
         GIT_CONFIG_NOSYSTEM="1",
+        XDG_STATE_HOME=str(desk["controls"] / "state"),
     )
     return env
 
@@ -139,6 +143,8 @@ def ops_command(desk, *args: str) -> list[str]:
         "--production-env",
         str(desk["production_env"]),
     ]
+    if command == "check":  # desktop only: no Pi stand-ins
+        stand_ins = []
     if command == "prepare":
         stand_ins += ["--installer", str(desk["installer"])]
     if command in ("deploy", "recover"):
@@ -214,6 +220,127 @@ def assert_running_release_unchanged(desk, services_before: list[str]) -> None:
     assert systemctl_calls(desk) == services_before
 
 
+def saved_pass(desk, revision: str) -> Path:
+    return desk["controls"] / "state" / "jannenkoti-ops" / "checks" / f"{revision}.json"
+
+
+def test_check_records_a_full_desktop_pass_for_the_exact_commit(desk):
+    (desk["source"] / "tests" / "test_grouped.py").write_text(
+        "import pytest\n\n\nclass TestGrouped:\n"
+        "    def test_runs(self):\n        assert True\n\n"
+        "    @pytest.mark.skip(reason='needs a browser')\n"
+        "    def test_needs_browser(self):\n        pass\n\n"
+        "    @pytest.mark.xfail(reason='known gap')\n"
+        "    def test_known_gap(self):\n        assert False\n"
+    )
+    revision = commit_change(desk, "checked")
+    # Uncommitted edits in the checkout cannot reach the run: it tests an export.
+    (desk["source"] / "tests" / "test_local_only.py").write_text(
+        "def test_x():\n    assert False\n"
+    )
+
+    result = ops(desk, "check", "main", "--source", str(desk["source"]))
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    record = json.loads(saved_pass(desk, revision).read_text())
+    assert record["kind"] == "jannenkoti-desktop-tests"
+    assert record["commit"] == revision
+    assert record["tree"] == git(desk["source"], "rev-parse", "HEAD^{tree}")
+    assert record["complete"] is True
+    assert (record["collected"], record["failed"], record["errors"]) == (4, 0, 0)
+    assert record["skipped_tests"] == ["tests/test_grouped.py::TestGrouped::test_needs_browser"]
+    assert record["python"] == ".".join(map(str, sys.version_info[:3]))
+    # One worker per CPU by default; never more workers than tests.
+    assert record["workers"] == min(os.cpu_count(), 4)
+    assert record["pins"] == []
+    assert saved_pass(desk, revision).stat().st_mode & 0o777 == 0o600
+    assert f"Desktop pass for {revision}" in result.stdout
+    assert ssh_calls(desk) == []
+
+
+def test_a_failing_desktop_suite_records_no_pass(desk):
+    (desk["source"] / "tests" / "test_candidate.py").write_text(
+        "def test_regression():\n    assert False\n"
+    )
+    revision = commit_all(desk["source"], "broken")
+
+    result = ops(desk, "check", "main", "--source", str(desk["source"]))
+
+    assert result.returncode == 1
+    assert "1 failed" in result.stderr
+    assert not saved_pass(desk, revision).exists()
+
+
+def test_a_virtualenv_missing_a_pin_is_refused_before_running_the_suite(desk):
+    (desk["source"] / "requirements.txt").write_text("pytest\nruff\nnot-installed-anywhere==1.0\n")
+    revision = commit_all(desk["source"], "new pin")
+
+    result = ops(desk, "check", "main", "--source", str(desk["source"]))
+
+    assert result.returncode == 2
+    assert "not-installed-anywhere==1.0" in result.stderr
+    assert "pip install -r requirements.txt" in result.stderr
+    assert "Collected" not in result.stdout
+    assert not saved_pass(desk, revision).exists()
+
+
+def test_prepare_sends_the_desktop_pass_and_reuses_a_saved_one(desk):
+    revision = commit_change(desk, "reused")
+    checked = ops(desk, "check", "main", "--source", str(desk["source"]), "--workers", "1")
+    assert checked.returncode == 0, checked.stdout + checked.stderr
+    assert json.loads(saved_pass(desk, revision).read_text())["workers"] == 1
+
+    result = ops(desk, "prepare", "main", "--source", str(desk["source"]))
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert f"Using the saved desktop pass for {revision}" in result.stdout
+    assert "Collected" not in result.stdout
+    tests = candidate_record(desk, revision)["checks"]["tests"]
+    assert tests["status"] == "passed" and tests["source"] == "desktop"
+
+
+def test_an_older_pi_release_tool_prepares_with_its_own_suite_run(desk):
+    revision = commit_change(desk, "bootstrap")
+    tool = desk["root"] / "current" / "code" / "scripts" / "release.py"
+    real = tool.with_name("release-real.py")
+    tool.rename(real)
+    # The release before ADR 0006: no --desktop-tests option.
+    tool.write_text(
+        "import runpy, sys\n"
+        f"open({str(desk['controls'] / 'old-tool.log')!r}, 'a').write(' '.join(sys.argv) + '\\n')\n"
+        "if '--desktop-tests' in sys.argv:\n"
+        "    sys.exit('release.py: error: unrecognized arguments: --desktop-tests')\n"
+        "if sys.argv[1:3] == ['prepare', '--help']:\n"
+        "    print('usage: release.py prepare [-h] [--source SOURCE] revision')\n"
+        "    sys.exit(0)\n"
+        f"sys.argv[0] = {str(real)!r}\n"
+        f"runpy.run_path({str(real)!r}, run_name='__main__')\n"
+    )
+
+    result = ops(desk, "prepare", "main", "--source", str(desk["source"]))
+
+    assert "predates desktop test passes" in result.stdout
+    assert "Collected" not in result.stdout
+    assert not saved_pass(desk, revision).exists()
+    calls = (desk["controls"] / "old-tool.log").read_text()
+    assert f"prepare {revision}" in calls and "--desktop-tests" not in calls
+    assert candidate_record(desk, revision)["revision"] == revision
+
+
+def test_an_unanswered_capability_question_stops_before_any_transfer(desk):
+    commit_change(desk, "unanswered")
+    tool = desk["root"] / "current" / "code" / "scripts" / "release.py"
+    tool.rename(tool.with_name("release-real.py"))
+    tool.write_text("import sys\nsys.exit('release.py: cannot start')\n")
+
+    result = ops(desk, "prepare", "main", "--source", str(desk["source"]))
+
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert "could not ask the Pi's release.py what it accepts" in result.stderr
+    assert "runs the full suite itself" not in result.stdout
+    assert not (desk["root"] / "transfer").exists()
+
+
 def test_prepares_the_exact_desktop_commit_on_the_pi_without_github(desk):
     revision = commit_change(desk, "transferred")
     services_before = systemctl_calls(desk)
@@ -225,6 +352,8 @@ def test_prepares_the_exact_desktop_commit_on_the_pi_without_github(desk):
     assert record["state"] == "prepared"
     assert record["revision"] == revision
     assert record["checks"]["tests"]["status"] == "passed"
+    assert record["checks"]["tests"]["source"] == "desktop"
+    assert "Collected 1 tests" in result.stdout
     assert record["tree"] == git(desk["source"], "rev-parse", "HEAD^{tree}")
     # Preparation leaves the running release and services alone.
     assert_running_release_unchanged(desk, services_before)

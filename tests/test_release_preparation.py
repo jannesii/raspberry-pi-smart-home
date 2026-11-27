@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -185,7 +186,57 @@ def release(world, *args: str, timeout: float = 180, popen: bool = False):
     return subprocess.run(command, env=env, capture_output=True, text=True, timeout=timeout)
 
 
-def prepare(world, revision: str = "main", *extra: str, **kwargs):
+def desktop_pass(source: Path, revision: str = "main", **overrides) -> dict:
+    """A passing desktop full-suite record for ``revision``, as ``ops.py check`` writes it."""
+    commit = git(source, "rev-parse", "--verify", f"{revision}^{{commit}}")
+    requirements = git(source, "show", f"{commit}:requirements.txt")
+    pins = sorted(
+        re.sub(r"[-_.]+", "-", name.strip()).lower() + "==" + version.strip()
+        for name, version in (
+            line.split("#")[0].split("==", 1) for line in requirements.splitlines() if "==" in line
+        )
+    )
+    record = {
+        "kind": "jannenkoti-desktop-tests",
+        "version": 1,
+        "commit": commit,
+        "tree": git(source, "rev-parse", f"{commit}^{{tree}}"),
+        "at": "2026-11-27T18:00:00.000+00:00",
+        "python": ".".join(map(str, sys.version_info[:3])),
+        "pins": pins,
+        "complete": True,
+        "workers": 12,
+        "collected": 1056,
+        "failed": 0,
+        "errors": 0,
+        "skipped": 2,
+        "skipped_tests": ["tests/test_a.py::test_needs_browser", "tests/test_b.py::test_x"],
+        "exit_code": 0,
+        "wall_seconds": 206.4,
+    }
+    record.update(overrides)
+    return record
+
+
+def desktop_pass_file(directory: Path, record: dict) -> Path:
+    path = (
+        directory
+        / f"desktop-tests-{record['commit'][:12]}-{len(list(directory.glob('desktop-tests-*')))}.json"
+    )
+    path.write_text(json.dumps(record))
+    return path
+
+
+def prepare(world, revision: str = "main", *extra: str, desktop=True, **kwargs):
+    """Prepare ``revision``; ``desktop`` is True (a passing desktop run), a record, or None."""
+    if desktop is True:
+        try:
+            desktop = desktop_pass(world["source"], revision)
+        except subprocess.CalledProcessError:
+            desktop = None  # a revision preparation must refuse anyway
+    supplied = (
+        ["--desktop-tests", str(desktop_pass_file(world["controls"], desktop))] if desktop else []
+    )
     return release(
         world,
         "prepare",
@@ -194,6 +245,7 @@ def prepare(world, revision: str = "main", *extra: str, **kwargs):
         str(world["source"]),
         "--installer",
         str(world["installer"]),
+        *supplied,
         *extra,
         **kwargs,
     )
@@ -225,6 +277,9 @@ def test_prepares_the_exact_committed_revision_without_touching_production(world
     assert report["requested"] == first
     assert report["state"] == "prepared"
     assert report["checks"]["tests"]["status"] == "passed"
+    assert report["checks"]["tests"]["summary"].startswith("desktop: 1056 tests, 2 skipped")
+    python = ".".join(map(str, sys.version_info[:3]))
+    assert f"Python {python} (Pi {python})" in report["checks"]["tests"]["summary"]
     assert report["checks"]["lint"]["status"] == "passed"
     code = Path(report["code_dir"])
     assert code.is_relative_to(world["root"])
@@ -306,19 +361,67 @@ def test_failed_dependency_installation_is_not_a_deployable_release(world):
     assert_production_untouched(world)
 
 
-def test_failed_check_blocks_deployment(world):
+def test_the_pi_never_runs_the_suite_and_relies_on_the_desktop_pass(world):
+    # A suite that would fail on the Pi: only the desktop's recorded run counts.
     (world["source"] / "tests" / "test_candidate.py").write_text(
         "def test_regression():\n    assert False\n"
     )
-    revision = commit_all(world["source"], "broken")
+    revision = commit_all(world["source"], "suite fails if run on the Pi")
 
     result = prepare(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    report = status(world, revision[:12])
+    assert report["checks"]["tests"]["status"] == "passed"
+    assert report["checks"]["lint"]["status"] == "passed"
+    logs = Path(report["code_dir"]).parent / "logs"
+    assert (logs / "lint.log").exists() and not (logs / "tests.log").exists()
+    assert_production_untouched(world)
+
+
+def test_without_a_desktop_pass_the_suite_gate_blocks_deployment(world):
+    revision = git(world["source"], "rev-parse", "HEAD")
+
+    result = prepare(world, desktop=None)
 
     assert result.returncode == 1
     report = status(world, revision[:12])
     assert report["state"] == "prepared"
-    assert report["checks"]["tests"]["status"] == "failed"
-    assert "1 failed" in report["checks"]["tests"]["summary"]
+    assert report["checks"]["tests"]["status"] == "missing"
+    assert report["checks"]["lint"]["status"] == "passed"
+    assert "required check tests is missing" in report["blockers"]
+    assert_production_untouched(world)
+
+
+@pytest.mark.parametrize(
+    ("override", "reason"),
+    [
+        ({"commit": "0" * 40}, "commit"),
+        ({"tree": "0" * 40}, "tree"),
+        ({"pins": ["pytest==0.0.1"]}, "requirement pins"),
+        (
+            {"python": f"{sys.version_info.major}.{sys.version_info.minor + 1}.0"},
+            f"Python {sys.version_info.major}.{sys.version_info.minor + 1}.0",
+        ),
+        ({"failed": None}, "counts are unreadable"),
+        ({"failed": 1, "exit_code": 1}, "1 failed"),
+        ({"errors": 2, "exit_code": 1}, "2 errors"),
+        ({"complete": False}, "not a complete run"),
+        ({"collected": 0}, "no tests"),
+        ({"kind": "something-else"}, "not a desktop test record"),
+    ],
+)
+def test_a_desktop_pass_that_does_not_fit_the_candidate_is_rejected(world, override, reason):
+    revision = git(world["source"], "rev-parse", "HEAD")
+
+    result = prepare(world, desktop=desktop_pass(world["source"], **override))
+
+    assert result.returncode == 1
+    report = status(world, revision[:12])
+    tests = report["checks"]["tests"]
+    assert tests["status"] == "failed"
+    assert tests["summary"].startswith("desktop pass rejected:")
+    assert reason in tests["summary"]
     assert "required check tests is failed" in report["blockers"]
     assert_production_untouched(world)
 

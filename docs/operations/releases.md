@@ -44,7 +44,8 @@ On the Pi itself:
 
 ```bash
 export JANNENKOTI_RELEASE_ROOT=/home/jannesi/jannenkoti-releases
-.venv/bin/python scripts/release.py prepare main --source ~/Code/server-worktrees/feature
+.venv/bin/python scripts/release.py prepare main --source ~/Code/server-worktrees/feature \
+  --desktop-tests /path/to/desktop-pass.json
 ```
 
 The command:
@@ -58,10 +59,19 @@ The command:
    is not rebuilt unless you pass `--replace`, which discards its evidence.
 3. Records the code identity (hash of the exported files) and dependency
    identity (hash of the installed `name==version` list in `dependencies.txt`).
-4. Runs the required checks with the candidate's own dependencies:
-   `ruff check` and the full `pytest` suite. Output is in `logs/`; skips are
-   listed there and in the check summary, and do not count as passes of the
-   skipped cases.
+4. Runs `ruff check` with the candidate's own dependencies (output in
+   `logs/`) and records the full-suite gate from the desktop pass given as
+   `--desktop-tests`; it never runs the suite on the Pi
+   ([ADR 0006](../adr/0006-run-the-release-test-suite-on-the-desktop.md)).
+   The pass is accepted only when its commit and tree are the candidate's, it
+   was a complete run with no failures or errors, its requirement pins equal the
+   candidate's `requirements.txt` pins, and its Python major.minor version equals
+   the candidate venv's. It is then bound to the candidate's identities like any
+   other evidence. A rejected pass is recorded as `failed` with its reasons, and
+   no pass as `missing`; both block deployment. The summary shows the desktop
+   and Pi Python versions and the number of skipped tests, which do not count
+   as passes of the skipped cases. `ops.py prepare` supplies the pass (see
+   [desktop operations](desktop-operations.md#releasing-a-desktop-commit)).
 5. Checks readiness before any downtime: every pinned requirement is
    installed, and the production environment file (`--production-env`, default
    `/home/jannesi/Code/server/jannenkoti.env`) has `DATABASE_URL` (PostgreSQL),
@@ -218,8 +228,9 @@ their `releases/<candidate>` directory after checking `status`.
 
 ### Test files in /tmp
 
-Preparation runs the full suite on the Pi, whose `/tmp` is a RAM-backed tmpfs
-capped at half the memory (4 GiB). The suite keeps only its latest run, and in
+A release whose running `release.py` predates desktop passes still runs the
+full suite on the Pi, whose `/tmp` is a RAM-backed tmpfs capped at half the
+memory (4 GiB). The suite keeps only its latest run, and in
 it only failed tests' files (`[tool.pytest.ini_options]` in `pyproject.toml`).
 [`production-host/jannenkoti-tests.tmpfiles.conf`](production-host/jannenkoti-tests.tmpfiles.conf)
 lets the daily `systemd-tmpfiles-clean.timer` remove test directories unused
@@ -236,15 +247,16 @@ ssh raspi sudo systemd-tmpfiles --clean /etc/tmpfiles.d/jannenkoti-tests.conf
 [`tests/test_release_preparation.py`](../../tests/test_release_preparation.py)
 runs preparation against temporary Git checkouts, a temporary release root and
 a stand-in production environment, with a stand-in dependency installer (no
-network) and a recording `systemctl`.
+network), a recording `systemctl` and synthetic desktop passes: accepted,
+rejected for each mismatch and missing, with a candidate suite that would fail
+if the Pi ran it.
 [`tests/test_release_deployment.py`](../../tests/test_release_deployment.py)
 deploys, recovers and restarts temporary releases against disposable PostgreSQL
 with a recording service manager that runs each candidate's stand-in app and
 gateway as isolated processes from `current`.
 [`tests/test_release_health.py`](../../tests/test_release_health.py) covers the
-real app and gateway health endpoints. The real `pip` installation, a full suite
-inside a real candidate, the real units and `systemctl` are exercised only by an
-actual release.
+real app and gateway health endpoints. The real `pip` installation, the real
+units and `systemctl` are exercised only by an actual release.
 
 
 ## Migration rehearsal and backup

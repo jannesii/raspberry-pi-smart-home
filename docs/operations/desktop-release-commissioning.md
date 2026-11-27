@@ -71,6 +71,20 @@ ssh raspi git -C /home/jannesi/jannenkoti-releases/transfer remote
   before; neither run started near that time.
 - `transfer/` has no remote; its refs are the two transferred candidates.
 
+## Run 3: 2026-11-27, `22b0c87a7b02` with `--keep 10`
+
+- The owner stopped the desktop while it was watching. The detached job on the
+  Pi carried on and finished, as designed.
+- Lint passed; tests passed: 1003 passed, 53 skipped in 12 min 20 s. `/tmp` was
+  at 2% used afterwards, so the retention settings and tmpfiles rule held.
+- Remaining blockers: owner feature acceptance and the missing production
+  migration `20261119_0028` (see run 1).
+- The owner then decided that the full suite runs on the desktop
+  ([ADR 0006](../adr/0006-run-the-release-test-suite-on-the-desktop.md)).
+
 ## Still to record
 
-- A preparation whose required checks pass on the Pi after these fixes.
+- The bootstrap release: the release that introduces desktop passes is prepared
+  once by the running release's `release.py`, with the suite on the Pi.
+- A later preparation that sends a desktop pass, with its `tests` check recorded
+  as `passed` from the desktop and no suite run on the Pi.

@@ -26,7 +26,7 @@ import uuid
 from pathlib import Path
 
 import pytest
-from test_release_preparation import commit_all, git
+from test_release_preparation import commit_all, desktop_pass, desktop_pass_file, git
 
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE = ROOT / "scripts" / "release.py"
@@ -374,6 +374,12 @@ def release(world, *args: str, timeout: float = 240, popen: bool = False, readin
         "--production-env",
         str(world["production_env"]),
     ]
+    if args[0] == "prepare" and "--desktop-tests" not in args:
+        # The full suite runs on the desktop; Pi preparation gets its recorded pass.
+        source = Path(args[args.index("--source") + 1])
+        with contextlib.suppress(subprocess.CalledProcessError):
+            record = desktop_pass(source, args[1])
+            command += ["--desktop-tests", str(desktop_pass_file(world["controls"], record))]
     if not (world["root"] / "current").exists() and args[0] in ("prepare", "status", "deploy"):
         command += ["--production-code", str(world["production"])]
     if args[0] in ("deploy", "recover", "restart") or "--live" in args:

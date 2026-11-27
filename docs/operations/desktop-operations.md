@@ -72,6 +72,7 @@ the desktop:
 
 ```fish
 cd /home/jannesi/Nextcloud/Personal/Coding/raspberry-pi-smart-home
+jk-ops check main                   # optional: the full suite now, saved as a pass
 jk-ops prepare main                 # or a tag, commit, or --source <worktree>
 jk-ops candidate                    # all candidates and the running releases
 jk-ops candidate <candidate>        # evidence and what still blocks deployment
@@ -80,16 +81,33 @@ jk-ops deploy <candidate>           # maintenance window, then status
 jk-ops recover                      # back to the previous release, then status
 ```
 
+The full suite runs on the desktop, not on the Pi
+([ADR 0006](../adr/0006-run-the-release-test-suite-on-the-desktop.md)).
+`check` runs `scripts/test.py` on a fresh export of the exact commit, so
+uncommitted and untracked files cannot affect it, with the selected checkout's
+`.venv` and one worker per CPU (`--workers N` overrides). It refuses before
+running when that `.venv` lacks any exact pin of the commit's
+`requirements.txt`, and prints the `pip install` command that fixes it. A
+complete run with no failures or errors is saved as a pass in
+`~/.local/state/jannenkoti-ops/checks/<commit>.json` with the commit, tree,
+pins, Python version, worker count, test counts and skipped tests; a failing run
+saves nothing. Passes do not expire.
+
 `prepare` resolves the revision in the selected checkout (default: the current
-directory) and refuses, before contacting the Pi, uncommitted changes to tracked
+directory) and refuses, before any transfer, uncommitted changes to tracked
 files, unknown or ambiguous names and revisions that track `*.env` or
-`alembic.ini` files. It then pushes exactly that commit, and only the Git objects
+`alembic.ini` files. It asks the Pi's running `release.py` whether it accepts
+desktop passes, then reuses a saved pass for the commit or runs `check` first;
+without a pass nothing is transferred. A running release that predates desktop
+passes runs the full suite on the Pi instead, which `prepare` reports; that
+happens once, for the release that introduces them. It then pushes exactly that commit, and only the Git objects
 the Pi lacks, over SSH into `transfer/` in the release root, a repository without
 a checkout that checks every received object. No remote such as GitHub is
 fetched from or published to, and the Pi needs no GitHub credentials. The Pi
 checks that the transferred commit and tree are the desktop's before the running
 release's `release.py prepare` exports the commit, installs its dependencies on
-the Pi and runs the checks. Afterwards the candidate's recorded revision is
+the Pi, runs lint and readiness checks, and verifies and records the desktop
+pass. Afterwards the candidate's recorded revision is
 compared with the desktop commit, and the remaining steps are listed.
 `--device-acceptance` and `--replace` are passed to `release.py prepare`.
 
@@ -171,7 +189,10 @@ releases through the same stand-in `ssh`, which also serves `git push`, on the
 deployment tests' world: a temporary release root whose running release
 carries this repository's `release.py`, disposable PostgreSQL and a recording
 service manager running stand-in units. The desktop checkout has no reachable
-remote. It covers exact transfer and preparation, a push cut off midway, a
+remote, and its `.venv` is this interpreter's. It covers desktop passes
+recorded from an export, failing suites and unmatched pins, a saved pass reused
+by `prepare`, an older Pi tool that runs its own suite, exact transfer and
+preparation, a push cut off midway, a
 Pi-side identity mismatch, interrupted preparation, unready production
 settings, refusals before contact, terminal-only acceptance, stale evidence, a
 missing rehearsal, a rehearsed migration deployed after its backup, deployment,

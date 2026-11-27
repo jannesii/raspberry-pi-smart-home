@@ -3,6 +3,7 @@
 
     ops.py status [--json]
     ops.py logs app|gateway|services|release [-n LINES] [--since TIME] [--follow]
+    ops.py check <revision> [--source CHECKOUT] [--workers N]
     ops.py prepare <revision> [--source CHECKOUT] [--device-acceptance] [--replace]
     ops.py candidate [<candidate>] [--json]
     ops.py accept <candidate> --scope feature|device --note TEXT
@@ -18,11 +19,14 @@ state is never healthy. ``logs`` prints recent journal lines of the app, the
 gateway or both, or recent release operations, with bounded size. Inspection
 only reads.
 
-``prepare`` pushes exactly one committed revision of a desktop checkout, and
+``check`` runs the full suite on the desktop for an export of one commit, with
+the checkout's ``.venv`` matching every pin, and saves a pass; the release suite
+never runs on the Pi (docs/adr/0006). ``prepare`` reuses or runs that check,
+then pushes exactly one committed revision of a desktop checkout, and
 only the Git objects the Pi lacks, over SSH into the Pi's transfer repository;
 GitHub is never involved. The Pi verifies the commit and tree before the running
-release's own ``release.py prepare`` exports it, installs its dependencies and
-runs the checks. The other release commands run that same tool: ``accept``
+release's own ``release.py prepare`` exports it, installs its dependencies, runs
+lint and readiness checks and verifies the pass. The other release commands run that same tool: ``accept``
 records what the owner observed and only after confirmation on the owner's
 terminal, and ``deploy``, ``recover`` and ``rehearse`` run as detached jobs on
 the Pi, so a lost connection or Ctrl-C only stops watching. ``deploy`` and
@@ -49,9 +53,13 @@ import re
 import shlex
 import subprocess
 import sys
+import tarfile
+import tempfile
 import threading
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
+from xml.etree import ElementTree
 
 DEFAULT_HOST = "raspi"
 DEFAULT_RELEASE_ROOT = "/home/jannesi/jannenkoti-releases"
@@ -614,6 +622,7 @@ mkdir -p "$jobs" && chmod 700 "$jobs" || exit {no_jobs}
 find "$jobs" -type f -mtime +30 -exec rm -f {{}} + 2>/dev/null
 job="$jobs/$(date -u +%Y%m%dT%H%M%SZ)-$operation-$$"
 : >"$job.log" || exit {no_jobs}
+{prelude}
 set -- "$python" "$tool" {arguments} --release-root "$root"
 PYTHONUNBUFFERED=1 setsid -f sh -c '
 job=$1; shift
@@ -769,13 +778,20 @@ def run_job(
     values: dict[str, str] | None = None,
     verify: bool = False,
     source: bool = False,
+    desktop_tests: dict | None = None,
 ) -> int:
     """Run one release.py operation on the Pi as a detached job and follow it."""
     fragment = shlex.join(arguments) + (' --source "$root/transfer"' if source else "")
+    prelude = ""
+    if desktop_tests is not None:
+        values = {**(values or {}), "desktop_tests": json.dumps(desktop_tests)}
+        prelude = """printf '%s\\n' "$desktop_tests" >"$job.tests.json" || exit {no_jobs}"""
+        fragment += ' --desktop-tests "$job.tests.json"'
     body = script_body(
         JOB_SCRIPT,
         verify=script_body(VERIFY_SCRIPT).strip() if verify else "",
         arguments=fragment,
+        prelude=script_body(prelude) if prelude else "",
     )
     script = remote_script(
         {"root": args.release_root, "operation": operation, **(values or {})}, body
@@ -832,11 +848,253 @@ def release_outcome(status: int, operation: str) -> int:
     return UNHEALTHY
 
 
+# --- Desktop test pass -------------------------------------------------------------
+
+# The release full suite runs here, not on the Pi (docs/adr/0006). A pass is saved
+# per commit and sent with the transfer; the Pi verifies it against the candidate.
+DESKTOP_TESTS_KIND = "jannenkoti-desktop-tests"
+# Mirrors release.py's pinned_requirements: the exact pins a pass must match.
+PIN = re.compile(r"([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*==\s*([^\s;,]+)$")
+VENV_PROBE = (
+    "import importlib.metadata as m, json, re, sys\n"
+    "names = {}\n"
+    "for d in m.distributions():\n"
+    "    if d.metadata['Name']:\n"
+    "        names[re.sub(r'[-_.]+', '-', d.metadata['Name']).lower()] = d.version\n"
+    "print(json.dumps({'python': '.'.join(map(str, sys.version_info[:3])), 'installed': names}))\n"
+)
+
+
+def pinned_requirements(text: str) -> list[str]:
+    pins = []
+    for raw in text.splitlines():
+        match = PIN.match(raw.split("#", 1)[0].strip())
+        if match:
+            pins.append(re.sub(r"[-_.]+", "-", match.group(1)).lower() + "==" + match.group(2))
+    return sorted(pins)
+
+
+def checks_dir() -> Path:
+    state = os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")
+    return Path(state) / "jannenkoti-ops" / "checks"
+
+
+def saved_pass(commit: str, tree: str) -> dict | None:
+    try:
+        record = json.loads((checks_dir() / f"{commit}.json").read_text())
+    except (OSError, ValueError):
+        return None
+    is_pass = isinstance(record, dict) and record.get("kind") == DESKTOP_TESTS_KIND
+    same = is_pass and (record.get("commit"), record.get("tree")) == (commit, tree)
+    return record if same else None
+
+
+def save_pass(record: dict) -> Path:
+    directory = checks_dir()
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    path = directory / f"{record['commit']}.json"
+    temporary = directory / f".{record['commit']}.json.tmp"
+    temporary.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
+    temporary.chmod(0o600)
+    os.replace(temporary, path)
+    return path
+
+
+def checkout_python(checkout: Path, pins: list[str]) -> tuple[Path, str]:
+    """The checkout's own virtualenv Python and version, refusing any unmatched pin."""
+    python = checkout / ".venv" / "bin" / "python"
+    install = (
+        f"cd {shlex.quote(str(checkout))}; .venv/bin/python -m pip install -r requirements.txt"
+    )
+    if not python.exists():
+        raise Refused(f"{checkout} has no .venv; create it and run: {install}")
+    try:
+        probe = subprocess.run(
+            [str(python), "-I", "-c", VENV_PROBE],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+        found = json.loads(probe.stdout)
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        raise Refused(f"the virtualenv Python {python} does not run") from None
+    installed = found["installed"]
+    unmatched = [pin for pin in pins if installed.get(pin.split("==")[0]) != pin.split("==")[1]]
+    if unmatched:
+        raise Refused(
+            f"{checkout}/.venv does not match the commit's pins ({', '.join(unmatched[:5])}"
+            f"{', …' if len(unmatched) > 5 else ''}); run: {install}"
+        )
+    return python, found["python"]
+
+
+def export_commit(checkout: Path, commit: str, destination: Path) -> None:
+    with tempfile.TemporaryFile() as archive:
+        if subprocess.run(
+            ["git", "-C", str(checkout), "archive", "--format=tar", commit],
+            stdout=archive,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        ).returncode:
+            raise Refused(f"git archive of {commit} failed")
+        archive.seek(0)
+        destination.mkdir()
+        with tarfile.open(fileobj=archive) as tar:
+            tar.extractall(destination, filter="data")
+
+
+def node_id(code: Path, classname: str, name: str) -> str:
+    """The pytest node ID of a JUnit test case, with any test class kept apart."""
+    parts = classname.split(".")
+    for split in range(len(parts), 0, -1):
+        module = "/".join(parts[:split]) + ".py"
+        if (code / module).is_file():
+            return "::".join([module, *parts[split:], name])
+    return f"{classname}::{name}"
+
+
+def junit_results(results: Path, code: Path) -> dict:
+    """Totals and skipped node IDs of readable worker reports; unreadable ones don't count."""
+    totals = {"tests": 0, "failures": 0, "errors": 0, "skipped": 0}
+    skipped, reports = [], 0
+    for xml in sorted(results.glob("worker-*.xml")):
+        try:
+            suites = list(ElementTree.parse(xml).iter("testsuite"))
+        except (ElementTree.ParseError, OSError):
+            continue  # a killed worker's partial report: the run is incomplete
+        reports += 1
+        for suite in suites:
+            for key in totals:
+                totals[key] += int(suite.get(key, 0))
+            for case in suite.iter("testcase"):
+                marker = case.find("skipped")
+                if marker is not None and marker.get("type") != "pytest.xfail":
+                    skipped.append(node_id(code, case.get("classname") or "", case.get("name")))
+    return {**totals, "reports": reports, "skipped_tests": sorted(skipped)}
+
+
+def run_desktop_check(
+    args: argparse.Namespace, checkout: Path, commit: str, tree: str
+) -> dict | None:
+    """Run the full suite on an export of ``commit``; save and return a pass."""
+    requirements = local_git(checkout, "show", f"{commit}:requirements.txt")
+    pins = pinned_requirements(requirements.stdout if requirements.returncode == 0 else "")
+    python, version = checkout_python(checkout, pins)
+    workers = args.workers or os.cpu_count() or 1
+    print(f"Running the full suite for {commit} on an export, {workers} workers", flush=True)
+    with tempfile.TemporaryDirectory(prefix="jannenkoti-check-") as temporary:
+        work = Path(temporary)
+        code, results = work / "code", work / "results"
+        export_commit(checkout, commit, code)
+        if not (code / "scripts" / "test.py").is_file():
+            raise Refused(f"commit {commit} has no scripts/test.py to run the suite with")
+        env = {
+            name: value
+            for name, value in os.environ.items()
+            if not name.startswith(("JANNENKOTI_", "DATABASE_URL", "USE_SQLA_READS"))
+        }
+        started = datetime.now(UTC).isoformat(timespec="milliseconds")
+        try:
+            run = subprocess.run(
+                [
+                    str(python),
+                    "scripts/test.py",
+                    "--workers",
+                    str(workers),
+                    "--output-dir",
+                    str(results),
+                    "--tmp-dir",
+                    str(work),
+                ],
+                cwd=code,
+                env={**env, "PYTHONDONTWRITEBYTECODE": "1"},
+                check=False,
+            )
+        except KeyboardInterrupt:
+            note("The desktop suite was interrupted; no pass was recorded.")
+            raise
+        try:
+            summary = json.loads((results / "run.json").read_text())
+        except (OSError, ValueError):
+            summary = {}
+        counts = junit_results(results, code)
+    collected = summary.get("collected", 0)
+    workers_run = len(summary.get("workers") or [])
+    record = {
+        "kind": DESKTOP_TESTS_KIND,
+        "version": 1,
+        "commit": commit,
+        "tree": tree,
+        "at": started,
+        "python": version,
+        "pins": pins,
+        "complete": run.returncode == 0
+        and collected > 0
+        and counts["reports"] == workers_run
+        and counts["tests"] == collected,
+        "workers": workers_run,
+        "collected": collected,
+        "failed": counts["failures"],
+        "errors": counts["errors"],
+        "skipped": counts["skipped"],
+        "skipped_tests": counts["skipped_tests"],
+        "exit_code": run.returncode,
+        "wall_seconds": summary.get("wall_seconds"),
+    }
+    if not record["complete"] or record["failed"] or record["errors"]:
+        note(
+            f"No desktop pass for {commit}: {record['failed']} failed, {record['errors']} errors, "
+            f"{collected} collected, exit status {run.returncode}"
+        )
+        return None
+    path = save_pass(record)
+    print(
+        f"Desktop pass for {commit}: {collected} tests, {record['skipped']} skipped, "
+        f"Python {version}; saved {path}",
+        flush=True,
+    )
+    return record
+
+
+def command_check(args: argparse.Namespace) -> int:
+    checkout, commit, tree = resolve_candidate(args.source.absolute(), args.revision)
+    return OK if run_desktop_check(args, checkout, commit, tree) else UNHEALTHY
+
+
+def desktop_tests_supported(args: argparse.Namespace) -> bool:
+    """Whether the Pi's running release.py accepts a desktop pass (ADR 0006)."""
+    result = run_tool(args, ["prepare", "--help"])
+    if result.returncode != OK or result.truncated:
+        # Fail closed: only a help text that answered decides "older tool".
+        if result.returncode in BEFORE_RELEASE_TOOL:
+            release_outcome(result.returncode, "preparation")
+        reason = last_line(result.stderr, f"exit status {result.returncode}")
+        raise Unreachable(f"could not ask the Pi's release.py what it accepts ({reason})")
+    return b"--desktop-tests" in result.stdout
+
+
 def command_prepare(args: argparse.Namespace) -> int:
     checkout, commit, tree = resolve_candidate(args.source.absolute(), args.revision)
     candidate = commit[:12]
-    print(f"{args.revision} is {commit} in {checkout}")
-    print(f"Transferring it to {args.host} ...")
+    print(f"{args.revision} is {commit} in {checkout}", flush=True)
+    desktop_tests = None
+    if desktop_tests_supported(args):
+        desktop_tests = saved_pass(commit, tree)
+        if desktop_tests is not None:
+            print(f"Using the saved desktop pass for {commit}", flush=True)
+        else:
+            desktop_tests = run_desktop_check(args, checkout, commit, tree)
+            if desktop_tests is None:
+                note("Nothing was transferred; the running release is unchanged.")
+                return UNHEALTHY
+    else:
+        print(
+            f"The running release.py on {args.host} predates desktop test passes; "
+            "it runs the full suite itself this once (docs/adr/0006).",
+            flush=True,
+        )
+    print(f"Transferring it to {args.host} ...", flush=True)
     try:
         transfer(args, checkout, commit)
     except TransferFailed as exc:
@@ -857,6 +1115,7 @@ def command_prepare(args: argparse.Namespace) -> int:
         values={"revision": commit, "tree": tree},
         verify=True,
         source=True,
+        desktop_tests=desktop_tests,
     )
     outcome = release_outcome(status, "preparation")
     if outcome == INTERRUPTED:
@@ -1121,18 +1380,23 @@ def parse_arguments(argv: list[str] | None) -> argparse.Namespace:
     )
     logs_parser.set_defaults(handler=command_logs)
 
-    prepare_parser = commands.add_parser(
-        "prepare",
-        parents=[common],
-        help="transfer an exact committed revision to the Pi and prepare it there",
-    )
-    prepare_parser.add_argument("revision", help="branch, tag or commit of the desktop checkout")
-    prepare_parser.add_argument(
+    desktop = argparse.ArgumentParser(add_help=False)
+    desktop.add_argument(
         "--source",
         type=Path,
         default=Path.cwd(),
         help="desktop checkout or worktree (default: the current directory)",
     )
+    desktop.add_argument(
+        "--workers", type=bounded(1, 64), help="desktop suite workers (default: CPU count)"
+    )
+
+    prepare_parser = commands.add_parser(
+        "prepare",
+        parents=[common, desktop],
+        help="transfer an exact committed revision to the Pi and prepare it there",
+    )
+    prepare_parser.add_argument("revision", help="branch, tag or commit of the desktop checkout")
     prepare_parser.add_argument(
         "--device-acceptance", action="store_true", help="require real-device acceptance too"
     )
@@ -1142,6 +1406,14 @@ def parse_arguments(argv: list[str] | None) -> argparse.Namespace:
     prepare_parser.add_argument("--keep", type=bounded(1, 50), help="candidates to retain")
     prepare_parser.add_argument("--installer", type=absolute_path, help=argparse.SUPPRESS)
     prepare_parser.set_defaults(handler=command_prepare)
+
+    check_parser = commands.add_parser(
+        "check",
+        parents=[desktop],
+        help="run the full suite on the desktop for an exact commit and save the pass",
+    )
+    check_parser.add_argument("revision", help="branch, tag or commit of the desktop checkout")
+    check_parser.set_defaults(handler=command_check)
 
     candidate_parser = commands.add_parser(
         "candidate", parents=[common], help="prepared candidates, their evidence and blockers"
@@ -1191,6 +1463,8 @@ def main(argv: list[str] | None = None) -> int:
     except Unreachable as exc:
         print(str(exc), file=sys.stderr)
         return UNREACHABLE
+    except KeyboardInterrupt:
+        return INTERRUPTED
 
 
 if __name__ == "__main__":
