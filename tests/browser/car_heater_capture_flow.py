@@ -7,6 +7,7 @@ in for the phone camera; actual iPhone lens/wake-lock behaviour is commissioning
 import json
 import re
 import sys
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -37,6 +38,30 @@ ULTRA_WIDE = """
   };
 })();
 """
+
+
+_SAVES_IN_FLIGHT: dict = {}
+
+
+def tracked(page):
+    """Track the page's in-flight uploads and record saves (PUT and POST)."""
+    pending = _SAVES_IN_FLIGHT.setdefault(page, set())
+    page.on("request", lambda r: r.method in ("PUT", "POST") and pending.add(r))
+    page.on("requestfinished", lambda r: pending.discard(r))
+    page.on("requestfailed", lambda r: pending.discard(r))
+    return page
+
+
+def advance(page, milliseconds):
+    """Run the fake clock forward once the page's saves have answered.
+
+    Their AbortSignal timeouts use the fake clock too: advancing while a save is
+    still in flight, as happens under heavy parallel test load, would abort it.
+    """
+    deadline = time.monotonic() + 30
+    while _SAVES_IN_FLIGHT.get(page) and time.monotonic() < deadline:
+        page.wait_for_timeout(50)
+    page.clock.run_for(milliseconds)
 
 
 def api(context, origin, path, method="GET", token=None, body=None):
@@ -77,7 +102,7 @@ def hide(page, hidden):
 
 
 def observe_upload_retry_interrupt_finish(context, origin, viewport):
-    page = context.new_page()
+    page = tracked(context.new_page())
     page.set_viewport_size(viewport)
     session_id, token = new_session(context, page, origin)
     run = api(context, origin, "/api/car_heater/bounded", "POST", token, {"duration_minutes": 60})
@@ -115,12 +140,12 @@ def observe_upload_retry_interrupt_finish(context, origin, viewport):
     expect(page.locator("#captureState")).to_have_text("OBSERVATION RUNNING")
     assert api(context, origin, "/api/car_heater/sessions/" + session_id)["outcome"] is None
 
-    page.clock.run_for(10 * MINUTE)
+    advance(page, 10 * MINUTE)
     expect(summary).to_have_text("3 saved")
 
     # Hidden page: no capture, and no catch-up photos for the slots it missed.
     hide(page, True)
-    page.clock.run_for(25 * MINUTE)
+    advance(page, 25 * MINUTE)
     hide(page, False)
     expect(page.get_by_role("alert")).to_contain_text("Page visible again")
     expect(summary).to_have_text("3 saved · 2 missed")
@@ -242,7 +267,7 @@ def camera_choice_permission_and_withdrawal(context, origin):
     expect(fallback.get_by_role("button", name="Start observation", exact=True)).to_be_enabled()
     fallback.close()
 
-    ultra = context.new_page()
+    ultra = tracked(context.new_page())
     ultra.add_init_script(ULTRA_WIDE % "'ultra-works'")
     ultra.clock.install(time=START)
     ultra.goto(capture)
@@ -261,7 +286,7 @@ def camera_choice_permission_and_withdrawal(context, origin):
     )
     expect(ultra.locator("#captureState")).to_have_text("OBSERVATION PAUSED")
     expect(ultra.get_by_role("alert")).to_contain_text("Camera stopped")
-    ultra.clock.run_for(13 * MINUTE)
+    advance(ultra, 13 * MINUTE)
     expect(ultra.locator("#captureSummary")).to_have_text("1 saved · 1 missed")
     expect(ultra.locator("#captureLog")).to_contain_text("missed (camera unavailable)")
     saved = api(context, origin, "/api/car_heater/sessions/" + session_id)["photos"]
