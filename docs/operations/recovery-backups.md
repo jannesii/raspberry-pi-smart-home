@@ -22,7 +22,7 @@ unaffected.
 
 | Resource | Method | Why |
 | --- | --- | --- |
-| PostgreSQL (`DATABASE_URL` in `jannenkoti.env`) | `pg_dump --format=custom` inside one exported repeatable-read snapshot, with exact per-table row counts and the Alembic revision taken in the same snapshot | All application data, including car-heater photos and encrypted Spotify tokens |
+| PostgreSQL (`DATABASE_URL` in `jannenkoti.env`) | `pg_dump --format=custom` inside one exported repeatable-read snapshot, with exact per-table row counts (by table scan, like the dump, never through an index) and the Alembic revision taken in the same snapshot | All application data, including car-heater photos and encrypted Spotify tokens |
 | SQLite `DB_PATH` (`/opt/jannenkoti/jannenkoti.db`) and `VILLENKOTI_DB_PATH` (`/opt/jannenkoti/villenkoti.db`) | SQLite online backup API, then `PRAGMA integrity_check` on the copy | Bootstrap still opens `DB_PATH`; legacy and Villenkoti data |
 | Files in [recovery-files.txt](production-host/recovery-files.txt) | Read whole, checksummed | Application and gateway environment files (all secrets, including the Spotify token key), installed units and drop-ins, Cloudflare Tunnel configuration and credentials, tmpfiles rule, kFactor test output, the recipient public key |
 
@@ -265,7 +265,8 @@ administrator, after a separate owner decision, and put the files back from
 
 ## Commissioning
 
-Automated tests cannot do these; record them separately when done:
+Automated tests cannot do these. The first commissioning is recorded in
+[recovery-backups-commissioning-2026-11-27.md](recovery-backups-commissioning-2026-11-27.md).
 
 1. Generate the key pair and install the public key on the Pi.
 2. Owner: store the private key and its passphrase in 1Password.
@@ -287,7 +288,7 @@ preserving the last success without plaintext left behind; `SIGTERM` cleanup
 and a `SIGKILL`ed attempt reported as not finished; killed attempts' staging;
 truncated copies; unreadable status records; Helsinki retention days under
 another process time zone; retention across 16 days and same-day backups, stale status, refused
-production, remote, unmarked and nonempty targets, a missing private key, the
+production, remote, unmarked and nonempty targets, row counts that ignore stale index entries, a missing private key, the
 development-mode overrides and the timer schedule (with `systemd-analyze
 calendar` when available). The real units, key and Pi state are commissioned
 as above.

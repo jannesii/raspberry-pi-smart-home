@@ -712,3 +712,39 @@ def test_failed_restore_keeps_a_restore_directory_the_owner_created(world, tmp_p
     assert result.returncode == 1
     assert restore_dir.is_dir()
     assert list(restore_dir.iterdir()) == []
+
+
+def test_recorded_row_counts_match_the_dumped_rows_even_with_stale_indexes(world):
+    """Production had index entries that no longer matched their rows.
+
+    The recorded counts must describe exactly what pg_dump copies (every row in
+    the table), never what an index happens to list, or restores of a correct
+    backup fail verification.
+    """
+    socket, database = world["socket"], world["production"]
+    # Make the index miss rows: while it is not ready, inserts skip it.
+    psql(
+        socket,
+        database,
+        "UPDATE pg_index SET indisready = false "
+        "WHERE indexrelid = 'sensor_locations_pkey'::regclass",
+    )
+    psql(socket, database, "INSERT INTO sensor_locations (name) VALUES ('Vintti'), ('Kellari')")
+    psql(
+        socket,
+        database,
+        "UPDATE pg_index SET indisready = true WHERE indexrelid = 'sensor_locations_pkey'::regclass",
+    )
+    # Steer every planner choice towards indexes, as a large table would.
+    psql(socket, "postgres", f"ALTER DATABASE {database} SET enable_seqscan = off")
+    assert psql(socket, database, "SELECT count(*) FROM sensor_locations") == "3"
+
+    assert create(world).returncode == 0
+    [backup] = completed(world)
+    target = restore_target(world)
+    result = restore(world, backup, target, world["tmp"] / "restored")
+    assert result.returncode == 0, result.stderr
+    assert (
+        psql(world["socket"], target_database(target), "SELECT count(*) FROM sensor_locations")
+        == "5"
+    )
