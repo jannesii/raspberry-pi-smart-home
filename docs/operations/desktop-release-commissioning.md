@@ -82,9 +82,26 @@ ssh raspi git -C /home/jannesi/jannenkoti-releases/transfer remote
 - The owner then decided that the full suite runs on the desktop
   ([ADR 0006](../adr/0006-run-the-release-test-suite-on-the-desktop.md)).
 
+****## Run 4: 2026-11-27, bootstrap release `7b52cbaa04e1`
+
+The release that introduces desktop passes, prepared once by the running
+release's `release.py`. Its tree equals `main` at `f158174`, after #59 (the
+production fix with migration `20261119_0028`) and #60 were merged.
+
+- `prepare` asked the Pi's `release.py` whether it accepts desktop passes, and
+  reported that it predates them; no desktop check ran.
+- The Pi verified commit `7b52cbaa04e1f45df7b7302cf502f26ffff8040d` and tree
+  `035aadf1…`. Lint passed; the Pi's suite passed: 1046 passed, 53 skipped in
+  13 min.
+- Migrations: none required, so the `20261119_0028` blocker is gone. The only
+  remaining blocker is owner feature acceptance.
+- Production stayed healthy on `80fcf23461c5` with unchanged PIDs (app 1019071,
+  gateway 571050); `/tmp` at 2%. The app's nightly 02:00 restart comes from a
+  legacy root cron entry (see the bounded car-heater notes in the readme).
+
 ## Still to record
 
-- The bootstrap release: the release that introduces desktop passes is prepared
-  once by the running release's `release.py`, with the suite on the Pi.
-- A later preparation that sends a desktop pass, with its `tests` check recorded
-  as `passed` from the desktop and no suite run on the Pi.
+- The owner's acceptance and deployment of `7b52cbaa04e1`, recorded with that
+  release.
+- The first preparation after it that sends a desktop pass, with its `tests`
+  check recorded as `passed` from the desktop and no suite run on the Pi.
