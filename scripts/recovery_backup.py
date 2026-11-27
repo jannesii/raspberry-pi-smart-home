@@ -348,15 +348,21 @@ def encrypt_archive(output: Path, recipient: Path, home: Path, write) -> None:
     try:
         with tarfile.open(fileobj=process.stdin, mode="w|") as archive:
             write(archive)
-        process.stdin.close()
     except BrokenPipeError:
-        pass
+        pass  # gpg exited early; its exit status says why
+    except BaseException:
+        process.kill()  # never let gpg finish a truncated archive
+        raise
     finally:
+        # Close and wait directly: communicate() flushes stdin first, which
+        # raises on an already-closed pipe in some Python 3.13 releases.
+        with contextlib.suppress(BrokenPipeError):
+            process.stdin.close()
         try:
-            process.communicate(timeout=DUMP_TIMEOUT)
+            process.wait(timeout=DUMP_TIMEOUT)
         except subprocess.TimeoutExpired:
             process.kill()
-            process.communicate()
+            process.wait()
             raise Failure("encryption timed out") from None
     if process.returncode or not output.is_file() or not output.stat().st_size:
         raise Failure("encryption failed")
