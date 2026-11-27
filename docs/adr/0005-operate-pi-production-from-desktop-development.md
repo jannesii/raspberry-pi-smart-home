@@ -20,6 +20,8 @@ downtime remains acceptable; automatic deployment, zero-downtime infrastructure
 and a deployment dashboard remain outside the initial scope.
 Transfer the exact committed candidate directly over SSH so deployment does not
 depend on first pushing it to GitHub.
+[ADR 0006](0006-run-the-release-test-suite-on-the-desktop.md) refines the
+preserved checks: the full suite runs on the desktop rather than on the Pi.
 
 Routine production database browsing and agent queries will use dedicated
 read-only access through SSH, separate from the application's credentials.

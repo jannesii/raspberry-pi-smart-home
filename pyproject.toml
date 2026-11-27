@@ -66,3 +66,13 @@ quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
+
+# =============================================================================
+# Pytest
+# =============================================================================
+[tool.pytest.ini_options]
+# Release preparation runs the suite on the Pi, whose /tmp is a 4 GiB tmpfs;
+# keeping every test's files from three runs fills it. Keep only the latest
+# run, and only the directories of failed tests for inspection.
+tmp_path_retention_count = 1
+tmp_path_retention_policy = "failed"

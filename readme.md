@@ -196,7 +196,9 @@ deployment briefly stops the app and gateway; rehearsed migrations run during
 deployment after a pre-migration backup.
 
 From the desktop, [scripts/ops.py](scripts/ops.py) shows production health and
-recent logs through the `raspi` SSH alias; see
+recent logs through the `raspi` SSH alias, runs a release's full test suite on
+the desktop, and transfers, prepares, accepts, deploys and recovers exact
+committed revisions with the Pi's release process without a prior GitHub push; see
 [desktop operations](docs/operations/desktop-operations.md) for its commands.
 Inspect production data through the dedicated read-only PostgreSQL login over SSH,
 either in VS Code or with the bounded `scripts/db_query.py` command; see
@@ -446,6 +448,16 @@ bounded heating. Both transports preserve the same session identity and deadline
 See [setup and physical acceptance](docs/operations/bounded-car-heater.md) before
 owner-controlled deployment/flashing in #12. Review the permanent session to see
 request, relay, actual draw and shutdown milestones; outcomes remain independent.
+
+Car-heater problem notifications use the existing `ALERT_WEBHOOK_URL`, without
+waiting for the ordinary alert batch. They cover restart interruption, unexpected
+early OFF, unconfirmed start/stop, lost device status or heating-power evidence,
+and departure heating that is delayed or never starts. Recovery of status/power
+and a previously unconfirmed OFF also send a follow-up. Apply migration
+`20261119_0028` for the durable notification queue; see
+[notification behavior and limits](docs/operations/bounded-car-heater.md#interruption-notifications).
+Problem alerts mention `@everyone`; recovery messages are quiet. Routine starts,
+normal finishes and driver cancellation do not send messages.
 
 ### Comfort heating and Settings
 

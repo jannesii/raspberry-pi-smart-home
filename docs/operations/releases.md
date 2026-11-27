@@ -9,6 +9,17 @@ migrates the production database, restarts a service or switches the running
 release. Candidates with database migrations require an exact, successful
 PostgreSQL rehearsal and a restricted backup before deployment.
 
+The main application unit must keep request-count recycling disabled
+(`--max-requests 0`), as in the checked-in example. Its sole worker owns heating
+and other background services; recycling it interrupts active heating through
+restart recovery. This setting does not disable crash recovery by systemd.
+Changing the example does not change an installed unit: review/install the unit
+and reload systemd as part of an authorized maintenance window. A running worker
+keeps its old options until the service restarts. Also inspect host scheduling:
+a legacy root cron entry may restart `jannenkoti.service` at 02:00 every day.
+Removing request-count recycling does not disable that separate job; remove it
+only with the owner's approval, while preserving unrelated scheduled tasks.
+
 ## Release root
 
 Every command needs an explicit release root: `--release-root DIR` or
@@ -24,6 +35,8 @@ backups/                production database backups (never pruned)
 operation.json          the latest deploy, recover or restart, step by step
 operations.log          one JSON line per finished operation
 .lock                   held while an operation changes the root
+transfer/               commits pushed from the desktop (a Git repository, no checkout)
+jobs/                   output of desktop-started operations (kept 30 days)
 ```
 
 Production configuration (`jannenkoti.env`) and persistent state stay outside
@@ -33,9 +46,17 @@ ignored files are never copied, and a revision that tracks a `*.env` or
 
 ## Preparing a candidate
 
+From the desktop, `ops.py prepare <revision>` transfers an exact commit to
+`transfer/` over SSH and runs this preparation on the Pi, without pushing to
+GitHub first; `candidate`, `accept`, `rehearse`, `deploy` and `recover` run the
+other commands below. See
+[releasing a desktop commit](desktop-operations.md#releasing-a-desktop-commit).
+On the Pi itself:
+
 ```bash
 export JANNENKOTI_RELEASE_ROOT=/home/jannesi/jannenkoti-releases
-.venv/bin/python scripts/release.py prepare main --source ~/Code/server-worktrees/feature
+.venv/bin/python scripts/release.py prepare main --source ~/Code/server-worktrees/feature \
+  --desktop-tests /path/to/desktop-pass.json
 ```
 
 The command:
@@ -49,10 +70,19 @@ The command:
    is not rebuilt unless you pass `--replace`, which discards its evidence.
 3. Records the code identity (hash of the exported files) and dependency
    identity (hash of the installed `name==version` list in `dependencies.txt`).
-4. Runs the required checks with the candidate's own dependencies:
-   `ruff check` and the full `pytest` suite. Output is in `logs/`; skips are
-   listed there and in the check summary, and do not count as passes of the
-   skipped cases.
+4. Runs `ruff check` with the candidate's own dependencies (output in
+   `logs/`) and records the full-suite gate from the desktop pass given as
+   `--desktop-tests`; it never runs the suite on the Pi
+   ([ADR 0006](../adr/0006-run-the-release-test-suite-on-the-desktop.md)).
+   The pass is accepted only when its commit and tree are the candidate's, it
+   was a complete run with no failures or errors, its requirement pins equal the
+   candidate's `requirements.txt` pins, and its Python major.minor version equals
+   the candidate venv's. It is then bound to the candidate's identities like any
+   other evidence. A rejected pass is recorded as `failed` with its reasons, and
+   no pass as `missing`; both block deployment. The summary shows the desktop
+   and Pi Python versions and the number of skipped tests, which do not count
+   as passes of the skipped cases. `ops.py prepare` supplies the pass (see
+   [desktop operations](desktop-operations.md#releasing-a-desktop-commit)).
 5. Checks readiness before any downtime: every pinned requirement is
    installed, and the production environment file (`--production-env`, default
    `/home/jannesi/Code/server/jannenkoti.env`) has `DATABASE_URL` (PostgreSQL),
@@ -207,20 +237,37 @@ Each successful preparation keeps the newest three candidates (`--keep N`).
 record. To reclaim more space, remove failed candidates with `prune` or delete
 their `releases/<candidate>` directory after checking `status`.
 
+### Test files in /tmp
+
+A release whose running `release.py` predates desktop passes still runs the
+full suite on the Pi, whose `/tmp` is a RAM-backed tmpfs capped at half the
+memory (4 GiB). The suite keeps only its latest run, and in
+it only failed tests' files (`[tool.pytest.ini_options]` in `pyproject.toml`).
+[`production-host/jannenkoti-tests.tmpfiles.conf`](production-host/jannenkoti-tests.tmpfiles.conf)
+lets the daily `systemd-tmpfiles-clean.timer` remove test directories unused
+for a day rather than ten. It is installed on the Pi (2026-11-27); to install
+it again:
+
+```fish
+ssh raspi sudo install -m 644 /dev/stdin /etc/tmpfiles.d/jannenkoti-tests.conf < /home/jannesi/Nextcloud/Personal/Coding/raspberry-pi-smart-home/docs/operations/production-host/jannenkoti-tests.tmpfiles.conf
+ssh raspi sudo systemd-tmpfiles --clean /etc/tmpfiles.d/jannenkoti-tests.conf
+```
+
 ## Verification
 
 [`tests/test_release_preparation.py`](../../tests/test_release_preparation.py)
 runs preparation against temporary Git checkouts, a temporary release root and
 a stand-in production environment, with a stand-in dependency installer (no
-network) and a recording `systemctl`.
+network), a recording `systemctl` and synthetic desktop passes: accepted,
+rejected for each mismatch and missing, with a candidate suite that would fail
+if the Pi ran it.
 [`tests/test_release_deployment.py`](../../tests/test_release_deployment.py)
 deploys, recovers and restarts temporary releases against disposable PostgreSQL
 with a recording service manager that runs each candidate's stand-in app and
 gateway as isolated processes from `current`.
 [`tests/test_release_health.py`](../../tests/test_release_health.py) covers the
-real app and gateway health endpoints. The real `pip` installation, a full suite
-inside a real candidate, the real units and `systemctl` are exercised only by an
-actual release.
+real app and gateway health endpoints. The real `pip` installation, the real
+units and `systemctl` are exercised only by an actual release.
 
 
 ## Migration rehearsal and backup

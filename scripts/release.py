@@ -12,8 +12,10 @@
     .venv/bin/python scripts/release.py prune [--keep N] --release-root DIR
 
 Preparation exports one committed revision into its own release directory,
-installs its dependencies into a separate virtualenv there, runs the required
-checks with them and records the evidence. It never migrates the production
+installs its dependencies into a separate virtualenv there, runs lint with them
+and records the evidence. The full suite is never run here: its gate is a
+desktop pass for the exact commit, given as ``--desktop-tests FILE`` and verified
+against the candidate (docs/adr/0006). It never migrates the production
 database, restarts services or switches the running release, and it never copies
 production configuration or state into the candidate.
 
@@ -67,12 +69,11 @@ DEFAULT_APP_URL = "http://127.0.0.1:5555"
 DEFAULT_GATEWAY_URL = "http://127.0.0.1:5556"
 DEFAULT_READINESS_TIMEOUT = 60.0
 
-# The full suite is always required: on one Pi it is cheaper than deciding
-# per release whether a change touches shared behavior.
-REQUIRED_CHECKS = {
-    "lint": ["-m", "ruff", "check", "--no-cache", "."],
-    "tests": ["-m", "pytest", "-q", "-rs", "-p", "no:cacheprovider"],
-}
+# Both are always required. Lint runs here with the candidate's dependencies; the
+# full suite runs on the desktop and arrives as a recorded pass (ADR 0006).
+REQUIRED_CHECKS = ("lint", "tests")
+PI_CHECKS = {"lint": ["-m", "ruff", "check", "--no-cache", "."]}
+DESKTOP_TESTS_KIND = "jannenkoti-desktop-tests"
 ACCEPTANCE_SCOPES = ("feature", "device")
 REQUIRED_PRODUCTION_SETTINGS = (
     "DATABASE_URL",
@@ -341,6 +342,128 @@ def migration_heads(code: Path) -> set[str] | None:
         if down:
             parents.update(re.findall(r"""["']([^"']+)["']""", down.group(1)))
     return revisions - parents
+
+
+# --- Desktop test pass -------------------------------------------------------
+
+
+def pinned_requirements(code: Path) -> list[str]:
+    """The exact ``name==version`` pins of the candidate's requirements.txt."""
+    try:
+        lines = (code / "requirements.txt").read_text().splitlines()
+    except OSError:
+        return []
+    pins = []
+    for raw in lines:
+        line = raw.split("#", 1)[0].strip()
+        match = re.match(r"([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*==\s*([^\s;,]+)$", line)
+        if match:
+            pins.append(re.sub(r"[-_.]+", "-", match.group(1)).lower() + "==" + match.group(2))
+    return sorted(pins)
+
+
+def _python_version(venv: Path) -> str | None:
+    try:
+        result = subprocess.run(
+            [
+                str(venv / "bin" / "python"),
+                "-I",
+                "-c",
+                "import sys; print(*sys.version_info[:3], sep='.')",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return result.stdout.strip() or None
+
+
+def desktop_tests_problems(
+    record: object, revision: str, tree: str, code: Path, pi_python: str | None
+) -> list[str]:
+    """Why a desktop pass does not establish the suite gate for this candidate."""
+    if not isinstance(record, dict) or record.get("kind") != DESKTOP_TESTS_KIND:
+        return ["not a desktop test record"]
+    problems = []
+    if record.get("commit") != revision:
+        problems.append(f"it is for commit {record.get('commit')}, not {revision}")
+    if record.get("tree") != tree:
+        problems.append(f"its tree {record.get('tree')} is not the candidate's {tree}")
+    if record.get("complete") is not True:
+        problems.append("it is not a complete run of the suite")
+    collected = record.get("collected")
+    if not isinstance(collected, int) or collected <= 0:
+        problems.append("it ran no tests")
+    failed, errors = record.get("failed"), record.get("errors")
+    if not isinstance(failed, int) or not isinstance(errors, int):
+        problems.append("its failure and error counts are unreadable")
+    else:
+        if failed:
+            problems.append(f"{failed} failed")
+        if errors:
+            problems.append(f"{errors} errors")
+    if record.get("exit_code") != 0 and failed == 0 and errors == 0:
+        problems.append(f"the run exited with status {record.get('exit_code')}")
+    if sorted(record.get("pins") or []) != pinned_requirements(code):
+        problems.append("its requirement pins differ from the candidate's requirements.txt")
+    desktop = str(record.get("python") or "")
+    pi = pi_python
+    if pi is None:
+        problems.append("the candidate's Python version is unknown")
+    elif desktop.split(".")[:2] != pi.split(".")[:2]:
+        wanted = ".".join(pi.split(".")[:2])
+        problems.append(
+            f"it ran on Python {desktop or 'unknown'}, the candidate uses Python {wanted}"
+        )
+    return problems
+
+
+def desktop_tests_evidence(
+    path: Path | None, revision: str, tree: str, code: Path, venv: Path
+) -> dict | None:
+    """The ``tests`` check from a desktop pass file; None when no pass was given."""
+    if path is None:
+        return None
+    try:
+        record = json.loads(path.read_text())
+    except (OSError, ValueError):
+        record = None
+    pi_python = _python_version(venv)
+    problems = desktop_tests_problems(record, revision, tree, code, pi_python)
+    if problems:
+        logger.warning("Desktop test pass rejected: %s", "; ".join(problems))
+        return {"status": "failed", "summary": "desktop pass rejected: " + "; ".join(problems)}
+    logger.info("Desktop test pass accepted for %s", revision)
+    return {
+        "status": "passed",
+        "source": "desktop",
+        "summary": (
+            f"desktop: {record['collected']} tests, {record.get('skipped', 0)} skipped, "
+            f"Python {record.get('python')} (Pi {pi_python}), "
+            f"{record.get('workers')} workers, {record.get('wall_seconds')}s"
+        ),
+        "desktop": {
+            **{
+                key: record.get(key)
+                for key in (
+                    "at",
+                    "python",
+                    "pins",
+                    "workers",
+                    "collected",
+                    "failed",
+                    "errors",
+                    "skipped",
+                    "skipped_tests",
+                    "wall_seconds",
+                )
+            },
+            "pi_python": pi_python,
+        },
+    }
 
 
 # --- Evaluation --------------------------------------------------------------
@@ -676,7 +799,10 @@ def command_prepare(args: argparse.Namespace) -> int:
             record["code_identity"] = identities["code"]
             record["dependency_identity"] = identities["dependencies"]
             record["tree"] = _git(source, "rev-parse", f"{revision}^{{tree}}").stdout.strip()
-            for name, check in REQUIRED_CHECKS.items():
+            tests = desktop_tests_evidence(args.desktop_tests, revision, record["tree"], code, venv)
+            if tests is not None:
+                record["checks"]["tests"] = {**tests, "at": _now(), **identities}
+            for name, check in PI_CHECKS.items():
                 log = logs / f"{name}.log"
                 logger.info("Running required check %s", name)
                 status = _run_logged([str(venv / "bin" / "python"), *check], log, code, 3600)
@@ -1551,6 +1677,11 @@ def main(argv: list[str] | None = None) -> int:
     prepare_parser.add_argument("--source", type=Path, default=Path.cwd())
     prepare_parser.add_argument("--installer", type=Path, help=argparse.SUPPRESS)
     prepare_parser.add_argument("--device-acceptance", action="store_true")
+    prepare_parser.add_argument(
+        "--desktop-tests",
+        type=Path,
+        help="the desktop's full-suite pass for this commit (ops.py check writes it)",
+    )
     prepare_parser.add_argument("--replace", action="store_true")
     prepare_parser.add_argument("--keep", type=int, default=DEFAULT_KEEP)
     prepare_parser.set_defaults(handler=command_prepare)

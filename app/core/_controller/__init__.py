@@ -8,6 +8,7 @@ from .auth import AuthMixin
 from .car_heater import CarHeaterMixin
 from .car_heater_installation import CarHeaterInstallationMixin
 from .car_heater_kfactor import CarHeaterKFactorMixin
+from .car_heater_notifications import CarHeaterNotificationMixin
 from .car_heater_ready_by import CarHeaterReadyByMixin
 from .car_heater_sensors import CarHeaterSensorMixin
 from .car_heater_sessions import CarHeaterSessionMixin
@@ -31,6 +32,7 @@ __all__ = [
     "CarHeaterInstallationMixin",
     "CarHeaterKFactorMixin",
     "CarHeaterMixin",
+    "CarHeaterNotificationMixin",
     "CarHeaterReadyByMixin",
     "CarHeaterSensorMixin",
     "CarHeaterSessionMixin",

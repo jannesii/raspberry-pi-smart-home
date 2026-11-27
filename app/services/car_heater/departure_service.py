@@ -11,6 +11,8 @@ from threading import RLock
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
+from .notifications import queue_problem
+
 HELSINKI = ZoneInfo("Europe/Helsinki")
 logger = logging.getLogger(__name__)
 
@@ -235,8 +237,23 @@ class DepartureService:
         self._plan["status"] = status
         self._plan["events"].append({"kind": status, "at": iso(self._clock()), "reason": reason})
         self._ctrl.save_departure_plan(self._plan)
+        if status == "expired":
+            self._notify_problem(
+                "departure_expired",
+                "Departure heating never started before its original finish. The plan has expired and will not start automatically.",
+            )
         logger.debug(
             "Departure session=%s status=%s reason=%s", self._plan["session_id"], status, reason
+        )
+
+    def _notify_problem(self, key, message):
+        return queue_problem(
+            self._ctrl,
+            self._plan["session_id"],
+            key,
+            message,
+            now=self._clock(),
+            finish=datetime.fromisoformat(self._plan["finish_at"]).timestamp(),
         )
 
     def tick(self):
@@ -257,6 +274,19 @@ class DepartureService:
                 run = self._heater.get_bounded_session()
                 if not run or run["session_id"] != plan["session_id"]:
                     run = self._ctrl.get_car_heater_execution(plan["session_id"])
+                if (
+                    run
+                    and run["phase"] == "heating"
+                    and plan["status"] == "running"
+                    and plan.get("late_start_seconds", 0) >= 60
+                    and not plan.get("late_start_notified")
+                    and self._notify_problem(
+                        "departure_start_recovery",
+                        "Relay ON is now confirmed after a delayed departure start. The original finish is unchanged, so preheating time is shorter than planned.",
+                    )
+                ):
+                    plan["late_start_notified"] = True
+                    self._ctrl.save_departure_plan(plan)
                 if run and run["phase"] == "stopped":
                     reason = next(
                         (
@@ -280,6 +310,11 @@ class DepartureService:
                 return
             if now < datetime.fromisoformat(plan["planned_start_at"]).timestamp():
                 return
+            if now >= datetime.fromisoformat(plan["planned_start_at"]).timestamp() + 60:
+                self._notify_problem(
+                    "departure_delayed",
+                    "Departure heating has been unable to start for at least 60 seconds. Heating is not confirmed. The original finish will not be extended.",
+                )
             try:
                 # Persisted execution prevents ON replay if the server dies
                 # before the plan's running milestone is written.

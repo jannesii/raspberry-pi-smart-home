@@ -386,6 +386,20 @@ def init_services(app: Flask) -> dict[str, Any]:
     except Exception:
         logger.exception("Failed to initialize departure planner; scheduling unavailable")
 
+    # Webhook timeouts must never delay heater OFF retries.
+    try:
+        _skip_in_development("Car-heater notifications")
+        from .car_heater.notifications import HeaterNotificationService
+
+        heater_notifications = HeaterNotificationService(app.ctrl)
+        heater_notifications.start()
+        app.heater_notifications = heater_notifications
+        services["heater_notifications"] = heater_notifications
+    except _DisabledInDevelopment:
+        pass
+    except Exception:
+        logger.exception("Failed to initialize car-heater notifications")
+
     # --- ESP32 Redis bridge (for WebSocket service communication) ---
     try:
         from .esp32_redis_bridge import init_esp32_redis_bridge
