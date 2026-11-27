@@ -138,6 +138,55 @@ health and exports. See the readme's
 retained function. The emulated browser checks do not establish iPhone camera,
 lens or wake-lock behaviour; check those on the phone during commissioning.
 
+## Interruption notifications
+
+The app sends immediate problem messages to the configured `ALERT_WEBHOOK_URL`.
+The ordinary `ALERT_WEBHOOK_BATCH_SECONDS` delay does not apply. Messages include
+the session ID, detection time and original heating finish in Europe/Helsinki.
+They cover bounded manual, departure and fixed-window sessions:
+
+- A server restart interrupts an unfinished execution; OFF is requested and ON
+  never resumes automatically. Delivery begins after the server returns.
+- A correlated relay report confirms OFF before the original finish. A five-second
+  tolerance avoids warning for the device timer's intentional early cutoff.
+- ON remains unconfirmed for 30 seconds, a control command fails, or OFF remains
+  unconfirmed for 30 seconds. Failed OFF and missing OFF evidence explicitly warn
+  that the relay may still be ON. Existing OFF retries continue unchanged.
+- Correlated known relay status is absent for 60 seconds during heating. This
+  reports **unknown**, never a proven interruption or OFF. Status returning sends
+  a recovery message.
+- Fresh relay reports say ON but power above 5 W is not confirmed for 60 seconds
+  (low or missing measurements). A subsequent measured draw sends a recovery.
+- A departure cannot start for 60 seconds after its scheduled start, or its
+  original finish passes without a start. A delayed start later confirmed ON sends
+  a follow-up. The original finish is never extended.
+
+Normal starts, normal finishes and driver cancellation stay quiet. A prolonged
+unconfirmed OFF still warns even when the driver requested the stop. Once that
+OFF is confirmed, a follow-up reports the device evidence. Notification failure
+does not change ON/OFF decisions or extend the session. Discord requests run
+separately from heater control, so webhook timeouts cannot hold its command lock.
+Legacy comfort/Ready-by/calibration modes are outside this bounded-session alert
+coverage; their pre-existing alerts remain unchanged.
+
+Migration `20261119_0028` adds the durable notification queue. Alerts are deduplicated
+per session/event, with separate episodes for lost status or power and recovery.
+A separate sender checks the queue every two seconds, with a five-second webhook
+timeout. A certainly unsent request or explicit rate limit gets up to three
+attempts, respecting Discord's retry delay and at least 60 seconds between tries.
+A missing webhook leaves the message pending. An ambiguous request (including a
+sender interrupted by restart) is recorded as unknown and is not automatically
+resent, because Discord might already have accepted it. Rejected requests remain
+recorded. Delivery outcomes are logged without webhook URLs or credentials.
+Discord acceptance proves receipt by Discord, not phone delivery or readership.
+Problem alerts mention `@everyone`; recovery messages never mention anyone.
+Discord channel/device notification settings still control phone delivery.
+Development does not post to the production webhook.
+
+The server cannot notify while the whole Pi or its network is unavailable. An
+independent external monitor would be needed for immediate host-outage alerts.
+These messages do not replace the relay's local timer and electrical protections.
+
 ## Isolated checks
 
 From the repository root:

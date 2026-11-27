@@ -25,7 +25,25 @@ BEGIN
         RAISE EXCEPTION 'rehearsal medicine purchase lost or changed';
     END IF;
 
-    -- The new announcement tables start empty.
+    -- Notification delivery starts empty and supports durable event deduplication.
+    IF (SELECT count(*) FROM car_heater_notification) <> 0 THEN
+        RAISE EXCEPTION 'heater notifications are not empty after migration';
+    END IF;
+    INSERT INTO car_heater_notification
+        (event_key, message, created_at, next_attempt_at, status, attempts)
+    VALUES ('rehearsal:restart', 'Synthetic interruption',
+        '2026-11-19T07:14:49+00:00', '2026-11-19T07:14:49+00:00', 'pending', 0);
+    INSERT INTO car_heater_notification
+        (event_key, message, created_at, next_attempt_at, status, attempts)
+    VALUES ('rehearsal:restart', 'Duplicate',
+        '2026-11-19T07:14:49+00:00', '2026-11-19T07:14:49+00:00', 'pending', 0)
+    ON CONFLICT (event_key) DO NOTHING;
+    IF (SELECT count(*) FROM car_heater_notification) <> 1 THEN
+        RAISE EXCEPTION 'heater notification event deduplication failed';
+    END IF;
+    DELETE FROM car_heater_notification WHERE event_key = 'rehearsal:restart';
+
+    -- The existing announcement tables start empty.
     IF (SELECT count(*) FROM announcement_schedule) + (SELECT count(*) FROM announcement_occurrence)
        + (SELECT count(*) FROM announcement_attempt) + (SELECT count(*) FROM announcement_speaker_test)
        + (SELECT count(*) FROM announcement_spotify) <> 0 THEN

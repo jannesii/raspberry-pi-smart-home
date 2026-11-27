@@ -9,6 +9,17 @@ migrates the production database, restarts a service or switches the running
 release. Candidates with database migrations require an exact, successful
 PostgreSQL rehearsal and a restricted backup before deployment.
 
+The main application unit must keep request-count recycling disabled
+(`--max-requests 0`), as in the checked-in example. Its sole worker owns heating
+and other background services; recycling it interrupts active heating through
+restart recovery. This setting does not disable crash recovery by systemd.
+Changing the example does not change an installed unit: review/install the unit
+and reload systemd as part of an authorized maintenance window. A running worker
+keeps its old options until the service restarts. Also inspect host scheduling:
+a legacy root cron entry may restart `jannenkoti.service` at 02:00 every day.
+Removing request-count recycling does not disable that separate job; remove it
+only with the owner's approval, while preserving unrelated scheduled tasks.
+
 ## Release root
 
 Every command needs an explicit release root: `--release-root DIR` or

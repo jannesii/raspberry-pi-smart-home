@@ -4,6 +4,8 @@ import copy
 import math
 from datetime import UTC, datetime
 
+from .notifications import queue_problem
+
 
 class BoundedHeatingMixin:
     def _init_bounded(self):
@@ -17,8 +19,17 @@ class BoundedHeatingMixin:
         self._bounded_capability = None
         self._bounded_seen_at = 0.0
         self._capability_seen_at = 0.0
+        self._no_power_since = None
         # Recovery never retransmits ON; request OFF with the original identity.
         if self._bounded:
+            if (
+                self._bounded["phase"] in ("starting", "heating")
+                and self._clock() < self._bounded["finish_at"]
+            ):
+                self._notify_bounded(
+                    "server_restart",
+                    "Heating interrupted by a server restart. OFF is being requested; relay shutdown is not yet confirmed. Heating will not automatically resume.",
+                )
             self._bounded["relay_on"] = None
             self._request_bounded_off("server_restart")
 
@@ -135,6 +146,8 @@ class BoundedHeatingMixin:
                     },
                 )
             )
+            self._bounded_seen_at = 0.0
+            self._no_power_since = None
             self._bounded = {
                 "session_id": attempt.id,
                 "issued_at": math.floor(now),
@@ -179,6 +192,33 @@ class BoundedHeatingMixin:
         )
         self._controller.save_car_heater_execution(self._bounded)
 
+    def _notify_bounded(self, key, message):
+        run = self._bounded
+        return queue_problem(
+            self._controller,
+            run["session_id"],
+            key,
+            message,
+            now=self._clock(),
+            finish=run["finish_at"],
+        )
+
+    def _bounded_problem(self, key, active, message):
+        """One warning per episode and one recovery; persist episode identity."""
+        run = self._bounded
+        problems = run.get("notification_problems", {})
+        previous = problems.get(key, {"active": False, "episode": 0})
+        if previous["active"] == active:
+            return
+        episode = previous["episode"] + int(active)
+        if not self._notify_bounded(
+            f"{key}:{episode}:{'problem' if active else 'recovery'}", message
+        ):
+            return
+        problems[key] = {"active": active, "episode": episode}
+        run["notification_problems"] = problems
+        self._controller.save_car_heater_execution(run)
+
     def _bounded_command(self, action, reason):
         run = self._bounded
         return {
@@ -194,6 +234,11 @@ class BoundedHeatingMixin:
         }
 
     def _request_bounded_off(self, reason):
+        if reason in ("execution_failed", "mode_suspension_failed"):
+            self._notify_bounded(
+                reason,
+                "Heating could not continue because a control operation failed. OFF is being requested; relay shutdown is not yet confirmed.",
+            )
         self._bounded["phase"] = "stopping"
         self._bounded["off_state"] = "pending"
         self._bounded["relay_on"] = None
@@ -216,6 +261,61 @@ class BoundedHeatingMixin:
 
     def tick_bounded(self):
         with self._lock:
+            run = self._bounded
+            now = self._clock()
+            if run and run["phase"] in ("starting", "heating") and now < run["finish_at"]:
+                seen = self._bounded_seen_at or run["issued_at"]
+                stale = now - seen >= 60
+                self._bounded_problem(
+                    "status_lost",
+                    stale,
+                    "Device status has been unavailable for at least 60 seconds. Heating and relay state are unknown; the original device-local finish still applies."
+                    if stale
+                    else "Device status is available again. The original heating finish is unchanged.",
+                )
+                if not stale and run.get("relay_on") is True:
+                    power = run.get("power_w")
+                    if power is None or power <= 5:
+                        if self._no_power_since is None:
+                            self._no_power_since = now
+                        if now - self._no_power_since >= 60:
+                            self._bounded_problem(
+                                "no_power",
+                                True,
+                                "The relay reports ON, but heating power above 5 W has not been confirmed for at least 60 seconds (low or missing measurements). Check the heater supply and power telemetry.",
+                            )
+                    elif power is not None and power > 5:
+                        self._no_power_since = None
+                        self._bounded_problem(
+                            "no_power",
+                            False,
+                            "Heating power is observed again. The original heating finish is unchanged.",
+                        )
+                    else:
+                        self._no_power_since = None
+                else:
+                    self._no_power_since = None
+            if (
+                run
+                and run["phase"] == "starting"
+                and now >= run["issued_at"] + 30
+                and now < run["finish_at"]
+            ):
+                self._notify_bounded(
+                    "start_unconfirmed",
+                    "Heating did not confirm a start within 30 seconds. OFF is being requested; heating will not automatically resume.",
+                )
+            if run and run["phase"] == "stopping":
+                requested = next(
+                    (m["at"] for m in reversed(run["milestones"]) if m["kind"] == "off_requested"),
+                    now,
+                )
+                if now - requested >= 30:
+                    self._bounded_problem(
+                        "off_unconfirmed",
+                        True,
+                        "OFF has not been confirmed for at least 30 seconds. OFF retries continue; the relay may still be ON. Check the device.",
+                    )
             if (
                 self._bounded
                 and self._bounded["phase"] not in ("stopped", "stopping")
@@ -256,14 +356,24 @@ class BoundedHeatingMixin:
             run = self._bounded
             if not run or run["phase"] == "stopped" or cap.get("session_id") != run["session_id"]:
                 return
-            self._bounded_seen_at = self._clock()
             relay = cap.get("relay_on")
             if not isinstance(relay, bool):
                 run["relay_on"] = None
                 run["power_w"] = None
                 self._controller.save_car_heater_execution(run)
                 return
+            self._bounded_seen_at = self._clock()
             previous = run["relay_on"]
+            if (
+                relay is False
+                and run["phase"] in ("starting", "heating")
+                and self._clock() < run["finish_at"] - 5
+                and (run["phase"] == "heating" or cap.get("phase") == "stopped")
+            ):
+                self._notify_bounded(
+                    "early_off",
+                    "Heating stopped before its original finish. The relay reports OFF. Heating will not automatically resume.",
+                )
             run["relay_on"] = relay
             if previous != relay:
                 self._milestone("relay_on" if relay else "relay_off", cap.get("reason"))
@@ -291,6 +401,9 @@ class BoundedHeatingMixin:
                     run["phase"] = "heating"
                     self._commands = [c for c in self._commands if c.get("action") != "turn_on"]
             elif cap.get("phase") == "stopped":
+                self._bounded_problem(
+                    "off_unconfirmed", False, "Relay OFF is now confirmed by the device."
+                )
                 run["phase"] = "stopped"
                 run["off_state"] = "confirmed"
                 self._milestone("off_confirmed", cap.get("reason"))
@@ -313,6 +426,11 @@ class BoundedHeatingMixin:
                 success=result.get("success") is True,
             )
             if result.get("success") is not True:
+                if result.get("action") == "turn_off":
+                    self._notify_bounded(
+                        "off_failed",
+                        "The device reported a failed OFF command. Relay shutdown is not confirmed; OFF retries continue.",
+                    )
                 if result.get("action") != "turn_off":
                     self._request_bounded_off("execution_failed")
                 run["off_state"] = "failed_or_unknown"

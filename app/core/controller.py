@@ -8,6 +8,7 @@ from ._controller import (
     CarHeaterInstallationMixin,
     CarHeaterKFactorMixin,
     CarHeaterMixin,
+    CarHeaterNotificationMixin,
     CarHeaterReadyByMixin,
     CarHeaterSensorMixin,
     CarHeaterSessionMixin,
@@ -26,6 +27,7 @@ from ._controller import (
 
 class Controller(
     ControllerBase,
+    CarHeaterNotificationMixin,
     ACMixin,
     AnnouncementFallbackMixin,
     AnnouncementMixin,
