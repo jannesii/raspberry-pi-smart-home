@@ -205,6 +205,23 @@ def quote_identifier(name: str) -> str:
     return '"' + name.replace('"', '""') + '"'
 
 
+def scan_tables_directly(conn) -> None:
+    """Make this transaction's counts read every table row, never an index.
+
+    ``pg_dump`` copies table rows directly, so counts must too: an index with
+    stale entries (seen in production) would otherwise disagree with the dump.
+    """
+    from sqlalchemy import text
+
+    for setting, value in (
+        ("enable_seqscan", "on"),
+        ("enable_indexscan", "off"),
+        ("enable_indexonlyscan", "off"),
+        ("enable_bitmapscan", "off"),
+    ):
+        conn.execute(text(f"SET LOCAL {setting} = {value}"))
+
+
 def table_count(conn, name: str) -> int:
     from sqlalchemy import text
 
@@ -238,6 +255,7 @@ def dump_database(url: str, target: Path) -> dict:
         ):
             conn.execute(text("SET TRANSACTION READ ONLY"))
             snapshot = conn.execute(text("SELECT pg_export_snapshot()")).scalar_one()
+            scan_tables_directly(conn)
             tables = conn.execute(
                 text(
                     "SELECT n.nspname, c.relname FROM pg_class c "
@@ -708,7 +726,8 @@ def verify_restored_database(url: str, expected: dict) -> None:
     import release_database as db
 
     try:
-        with db.connection(url).connect() as conn:
+        with db.connection(url).connect() as conn, conn.begin():
+            scan_tables_directly(conn)
             for name, count in expected["tables"].items():
                 actual = table_count(conn, name)
                 if actual != count:
