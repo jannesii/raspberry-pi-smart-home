@@ -1,8 +1,9 @@
 # Off-Pi backup collection: commissioning, 2026-11-27
 
 Commissioning of [desktop collection and coverage](recovery-backups.md#off-pi-copies-on-the-desktop)
-for issue #56. The owner ran the first collection; the coding agent installed
-the timer and checked the results. Nothing was written to the Pi.
+for issue #56. The owner ran the first collection and the restore, entering the
+key passphrase. The coding agent installed the timer and checked the results.
+Nothing was written to the Pi.
 
 ## First collection
 
@@ -32,13 +33,28 @@ the timer and checked the results. Nothing was written to the Pi.
   1Password SSH agent without a terminal and reported `Desktop copies are up
   to date` (exit `0`).
 
+## Verified restore of the collected copy
+
+The desktop copy `/home/jannesi/jannenkoti-backups/daily/20261127T195923Z` was
+restored into the empty local database `recovery_test_20261127` (owned by the
+development role, loopback) and a new restore directory:
+
+- `verified: 56 tables, 4208031 rows, Alembic ['20261119_0028'], 2 SQLite
+  file(s), 16 file(s) with matching checksums`; exit `0`. That is the same
+  result as the restore of this backup on the Pi side.
+- The first attempt was refused before anything was decrypted: the target
+  file held a wrong password for the development role (`cannot establish
+  disposable database is empty`). It left no restore directory. The target file
+  was rewritten from the development environment's credentials.
+- The restore directory was mode 0700 and `isolated-overrides.env` mode 0600,
+  with `APP_ENV=development` and `DB_PATH`/`VILLENKOTI_DB_PATH` pointing at the
+  restored copies. Both SQLite copies passed `PRAGMA integrity_check`.
+  Nothing was written to original paths, and the app was not started.
+- The owner drops the restore database and removes the restored files and the
+  target file afterwards, because they hold production secrets.
+
 ## Still open
 
-- **Isolated restore of the collected copy.** Decryption needs the owner's
-  passphrase. Restore `/home/jannesi/jannenkoti-backups/daily/20261127T195923Z`
-  as in [isolated restore](recovery-backups.md#isolated-restore), then add the
-  `verified:` line here. The Pi-side restore of this same backup was already
-  verified (56 tables, 4,208,031 rows).
 - After the merge: confirm in the journal that an hourly run succeeds from the
   main checkout, and check that coverage after the 03:15 backup shows the new
   copy.
