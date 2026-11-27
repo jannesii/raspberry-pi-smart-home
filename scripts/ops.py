@@ -602,6 +602,9 @@ echo "Verified $revision (tree $tree) on the Pi"
 
 # The operation runs in its own session with its output in a job log, so a lost
 # SSH connection or Ctrl-C on the desktop never interrupts a deployment halfway.
+# ``setsid -f`` forks it from a foreground command: a background ``&`` job of a
+# non-interactive shell would start, and leave everything it runs (such as the
+# candidate's checks), with SIGINT and SIGQUIT ignored.
 JOB_SCRIPT = """
 {require_root}
 {require_tool}
@@ -612,14 +615,22 @@ find "$jobs" -type f -mtime +30 -exec rm -f {{}} + 2>/dev/null
 job="$jobs/$(date -u +%Y%m%dT%H%M%SZ)-$operation-$$"
 : >"$job.log" || exit {no_jobs}
 set -- "$python" "$tool" {arguments} --release-root "$root"
-PYTHONUNBUFFERED=1 setsid -w sh -c '
+PYTHONUNBUFFERED=1 setsid -f sh -c '
 job=$1; shift
+echo $$ >"$job.pid"
 "$@" >>"$job.log" 2>&1 </dev/null
 echo $? >"$job.tmp" && mv "$job.tmp" "$job.status"
-' sh "$job" "$@" </dev/null >/dev/null 2>&1 &
-pid=$!
+' sh "$job" "$@" </dev/null >/dev/null 2>&1 || exit {no_jobs}
+waited=0
+while [ ! -s "$job.pid" ] && [ "$waited" -lt 100 ]; do
+  sleep 0.1
+  waited=$((waited + 1))
+done
+pid=$(cat "$job.pid" 2>/dev/null)
 echo "[ops] $operation runs on the Pi as $job.log; it continues if this connection ends"
-tail -n +1 -f --pid="$pid" "$job.log"
+if [ -n "$pid" ]; then
+  tail -n +1 -f --pid="$pid" "$job.log"
+fi
 if [ -f "$job.status" ]; then
   exit "$(cat "$job.status")"
 fi
@@ -730,7 +741,8 @@ def push_failure(stderr: str, status: int) -> str:
         for line in stderr.splitlines()
         if line.strip() and not line.strip().startswith(GIT_BOILERPLATE)
     ]
-    return "; ".join(lines[-3:]) or f"git push exited with status {status}"
+    # The first lines name the cause (such as ssh's own error); git's follow-ups repeat.
+    return "; ".join(list(dict.fromkeys(lines))[:4]) or f"git push exited with status {status}"
 
 
 class TransferFailed(Exception):

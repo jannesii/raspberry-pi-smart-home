@@ -239,6 +239,27 @@ def test_prepares_the_exact_desktop_commit_on_the_pi_without_github(desk):
     assert all("BatchMode=yes" in call for call in calls)
 
 
+def test_operations_on_the_pi_handle_interrupts_like_a_terminal_run(desk):
+    """A detached job must not leave Ctrl-C ignored for what it runs, such as the checks."""
+    commit_change(desk, "signals")
+    controls = desk["controls"]
+    installer = controls / "recording-installer"
+    installer.write_text(
+        f'#!/bin/sh\ngrep "^SigIgn:" /proc/self/status > "{controls}/installer-signals"\n'
+        f'exec "{desk["installer"]}" "$@"\n'
+    )
+    installer.chmod(0o755)
+
+    result = ops(
+        desk, "prepare", "main", "--source", str(desk["source"]), "--installer", str(installer)
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    ignored = int((controls / "installer-signals").read_text().split()[1], 16)
+    assert not ignored & (1 << (signal.SIGINT - 1)), "SIGINT is ignored"
+    assert not ignored & (1 << (signal.SIGQUIT - 1)), "SIGQUIT is ignored"
+
+
 def test_a_dropped_transfer_prepares_nothing_and_keeps_the_running_release(desk):
     revision = commit_change(desk, "dropped")
     services_before = systemctl_calls(desk)
