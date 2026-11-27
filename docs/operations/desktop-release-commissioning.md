@@ -99,9 +99,31 @@ production fix with migration `20261119_0028`) and #60 were merged.
   gateway 571050); `/tmp` at 2%. The app's nightly 02:00 restart comes from a
   legacy root cron entry (see the bounded car-heater notes in the readme).
 
-## Still to record
+## Deployment of the bootstrap release: 2026-11-27
 
-- The owner's acceptance and deployment of `7b52cbaa04e1`, recorded with that
-  release.
-- The first preparation after it that sends a desktop pass, with its `tests`
-  check recorded as `passed` from the desktop and no suite run on the Pi.
+- The owner recorded feature acceptance of `7b52cbaa04e1` ("checked the desktop
+  release commands and car-heater notifications in development") and deployed
+  it with `ops.py deploy`.
+- The maintenance window took 2.6 s (18:33:27.8 to 18:33:30.4 UTC). `status`:
+  healthy, current `7b52cbaa04e1`, previous `80fcf23461c5`, both processes on the
+  new revision and the database `ok`.
+
+## Run 5: 2026-11-27, first desktop pass, `56582a250bec`
+
+The first preparation with the full-suite gate on the desktop
+([ADR 0006](../adr/0006-run-the-release-test-suite-on-the-desktop.md)).
+
+- The first `ops.py check` of `main` (`f158174`) found three defects before any
+  pass was saved. Test databases nested under the check's export exceeded the
+  107-character Unix socket limit. A timelapse test depended on test order. A
+  browser capture flow advanced its fake clock while a save was in flight. All
+  three were fixed in `56582a250bec`, and failed runs now keep their logs.
+- `ops.py check` with 12 workers: 1099 tests, 3 skipped, 142 s, Python 3.13.15.
+- `ops.py prepare` asked the running `release.py`, which accepts desktop passes,
+  reused the saved pass and transferred the commit. The Pi verified commit and
+  tree, accepted the pass (Pi Python 3.13.5) and ran only lint and readiness
+  checks: no `tests.log`. The Pi side took 36 s, against 13 min with its own
+  suite run.
+- The only blocker is owner feature acceptance; this commissioning candidate
+  was not deployed. Production stayed on `7b52cbaa04e1`, healthy, with the
+  processes started by the deployment; `/tmp` at 2%.
