@@ -216,6 +216,21 @@ Each successful preparation keeps the newest three candidates (`--keep N`).
 record. To reclaim more space, remove failed candidates with `prune` or delete
 their `releases/<candidate>` directory after checking `status`.
 
+### Test files in /tmp
+
+Preparation runs the full suite on the Pi, whose `/tmp` is a RAM-backed tmpfs
+capped at half the memory (4 GiB). The suite keeps only its latest run, and in
+it only failed tests' files (`[tool.pytest.ini_options]` in `pyproject.toml`).
+[`production-host/jannenkoti-tests.tmpfiles.conf`](production-host/jannenkoti-tests.tmpfiles.conf)
+lets the daily `systemd-tmpfiles-clean.timer` remove test directories unused
+for a day rather than ten. It is installed on the Pi (2026-11-27); to install
+it again:
+
+```fish
+ssh raspi sudo install -m 644 /dev/stdin /etc/tmpfiles.d/jannenkoti-tests.conf < /home/jannesi/Nextcloud/Personal/Coding/raspberry-pi-smart-home/docs/operations/production-host/jannenkoti-tests.tmpfiles.conf
+ssh raspi sudo systemd-tmpfiles --clean /etc/tmpfiles.d/jannenkoti-tests.conf
+```
+
 ## Verification
 
 [`tests/test_release_preparation.py`](../../tests/test_release_preparation.py)
