@@ -56,7 +56,7 @@ def disposable_url(environment: Path, production: str) -> str:
     return parsed.update_query_dict({"host": str(canonical)}).render_as_string(hide_password=False)
 
 
-def run(command: list[str], *, url: str, cwd: Path | None = None) -> None:
+def run(command: list[str], *, url: str, cwd: Path | None = None, timeout: float = 180) -> None:
     parsed = make_url(url)
     env = {
         "PATH": os.environ.get("PATH", ""),
@@ -72,7 +72,7 @@ def run(command: list[str], *, url: str, cwd: Path | None = None) -> None:
         "PYTHONDONTWRITEBYTECODE": "1",
     }
     try:
-        result = subprocess.run(command, cwd=cwd, env=env, capture_output=True, timeout=180)
+        result = subprocess.run(command, cwd=cwd, env=env, capture_output=True, timeout=timeout)
     except (OSError, subprocess.TimeoutExpired):
         raise DatabaseFailure(f"{Path(command[0]).name} unavailable or timed out") from None
     if result.returncode:

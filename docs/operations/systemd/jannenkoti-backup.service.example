@@ -1,0 +1,28 @@
+# Daily encrypted recovery backup (installed as /etc/systemd/system/jannenkoti-backup.service).
+# Started by jannenkoti-backup.timer; see docs/operations/recovery-backups.md.
+#
+# Runs the backup command of the running release with its own dependencies, so
+# a deployment updates it. The defaults it uses are the production locations:
+# backup root /home/jannesi/jannenkoti-backups, environment
+# /home/jannesi/Code/server/jannenkoti.env, the release's recovery-files.txt
+# manifest and the public key ~/.config/jannenkoti-backup/recovery-public.asc.
+[Unit]
+Description=Jannenkoti encrypted recovery backup
+After=postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=oneshot
+User=jannesi
+Group=jannesi
+UMask=0077
+WorkingDirectory=/home/jannesi
+Environment="PATH=/home/jannesi/jannenkoti-releases/current/venv/bin:/usr/bin:/bin"
+ExecStart=/home/jannesi/jannenkoti-releases/current/venv/bin/python \
+    /home/jannesi/jannenkoti-releases/current/code/scripts/recovery_backup.py create
+# Never compete with the app for CPU or the SD card.
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=yes
+PrivateTmp=yes
+TimeoutStartSec=1h
