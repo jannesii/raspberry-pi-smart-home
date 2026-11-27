@@ -1,0 +1,14 @@
+# Hourly collection of Pi recovery backups while the desktop is on (a systemd
+# *user* timer, installed as ~/.config/systemd/user/jannenkoti-backup-collect.timer).
+# OnStartupSec catches up a few minutes after login, once the network and the
+# SSH agent are available; the hourly runs then keep the copies current.
+[Unit]
+Description=Hourly copy of Jannenkoti recovery backups from the Pi
+
+[Timer]
+OnStartupSec=5min
+OnCalendar=hourly
+Unit=jannenkoti-backup-collect.service
+
+[Install]
+WantedBy=timers.target

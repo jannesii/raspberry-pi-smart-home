@@ -142,6 +142,11 @@ def ops_command(desk, *args: str) -> list[str]:
         str(desk["root"]),
         "--production-env",
         str(desk["production_env"]),
+        # Never the real backup roots: status also reports recovery coverage.
+        "--backup-root",
+        str(desk["controls"] / "pi-backups"),
+        "--copy-root",
+        str(desk["controls"] / "backup-copies"),
     ]
     if command == "check":  # desktop only: no Pi stand-ins
         stand_ins = []

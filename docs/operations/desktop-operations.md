@@ -44,6 +44,8 @@ jk-ops logs gateway -n 300          # esp32_ws.service
 jk-ops logs services --since '1 hour ago'   # both units, interleaved
 jk-ops logs app --follow            # keep printing new lines; Ctrl-C ends
 jk-ops logs release -n 5            # the latest release operations and their steps
+jk-ops backups                      # recovery coverage: Pi backup and desktop copy
+jk-ops collect                      # copy new Pi backups now (the timer does it hourly)
 ```
 
 `status` runs the current release's own `release.py status --live --json` on the
@@ -55,6 +57,13 @@ database connectivity check. Production is **healthy** only when both units are
 active, both health checks answer HTTP 200 with the current release's revision,
 and the database and gateway report `ok` and `healthy`. Anything missing or
 unreadable is listed as a problem and is never reported as healthy.
+
+`status` then shows **Recovery backups**: the Pi's latest backup, the
+desktop's newest verified copy, the last collection and whether coverage is
+fresh, read from the Pi in the same SSH call. That section does not change the
+exit status, which stays production health; `backups` reports it alone and
+exits on it. Collection, coverage and the desktop timer are described in
+[recovery backups](recovery-backups.md#off-pi-copies-on-the-desktop).
 
 `logs` reads at most `--lines` journal lines (1 to 5000) and prints at most
 `--max-bytes` (default 1 MiB), reporting a cut on stderr. `--since` takes any
@@ -153,12 +162,13 @@ and a deployment never stops halfway. Check how it ended with
 | `2` | Refused before any change to production (by `ops.py` before contacting the Pi, or by `release.py` there) |
 | `3` | The Pi is unreachable over SSH, or the account cannot read the journal |
 | `4` | Production is not verified ready; follow the printed guidance |
-| `5` | Another release operation holds the release root |
+| `5` | Another release operation holds the release root, or another collection the copy root |
 | `130` | Stopped watching; the operation continues on the Pi |
 
 ## Boundaries
 
-`status`, `logs` and `candidate` only read. Units are queried with an unprivileged
+`status`, `logs`, `candidate` and `backups` only read. `collect` only reads the
+Pi and writes only the desktop's copy root. Units are queried with an unprivileged
 `systemctl is-active` and the health endpoints with `GET`. Nothing restarts a
 service, deploys code, takes the release lock or writes to the database.
 `release.py status` also re-evaluates retained candidates, which hashes their

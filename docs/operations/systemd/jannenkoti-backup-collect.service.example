@@ -1,0 +1,19 @@
+# Desktop collection of Pi recovery backups (a systemd *user* unit, installed as
+# ~/.config/systemd/user/jannenkoti-backup-collect.service on the desktop).
+# Started by jannenkoti-backup-collect.timer; see docs/operations/recovery-backups.md.
+#
+# Copies completed encrypted backups from the Pi over the `raspi` SSH alias into
+# ~/jannenkoti-backups; it only reads the Pi. The SSH key must be usable without
+# a prompt (here the 1Password SSH agent, while 1Password is unlocked). A failed
+# run is recorded and reported by `ops.py backups`; the next run catches up.
+[Unit]
+Description=Copy Jannenkoti recovery backups from the Pi
+
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/usr/bin/python3 \
+    /home/jannesi/Nextcloud/Personal/Coding/raspberry-pi-smart-home/scripts/ops.py collect
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=1h
