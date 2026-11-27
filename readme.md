@@ -206,10 +206,14 @@ either in VS Code or with the bounded `scripts/db_query.py` command; see
 
 The Pi takes an encrypted recovery backup of PostgreSQL, the SQLite files and
 the configuration, secrets and persistent files production needs, daily at
-03:15 Europe/Helsinki, and keeps 14 daily copies. Only the desktop can decrypt
-them, and `scripts/recovery_backup.py restore` proves a backup by restoring it
-into isolated targets; see [recovery backups](docs/operations/recovery-backups.md)
-for the manifest, key recovery, schedule installation and restore procedure.
+03:15 Europe/Helsinki, and keeps 14 daily copies. The desktop copies them
+hourly while it is on (`scripts/ops.py collect`, keeping the same 14 days), and
+`ops.py backups` and `ops.py status` report the latest Pi backup, the newest
+desktop copy and anything failed or older than 36 hours. Only the desktop can
+decrypt them, and `scripts/recovery_backup.py restore` proves a backup by
+restoring it into isolated targets. With a recent desktop copy, a lost Pi costs
+about a day of writes; see [recovery backups](docs/operations/recovery-backups.md)
+for the manifest, key recovery, schedules, coverage and restore procedure.
 
 Browser mutations use session authentication and CSRF protection. YNAB,
 medicine, and network-bypass operations require Root-Admin. Device HTTP APIs

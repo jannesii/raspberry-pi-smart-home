@@ -199,6 +199,11 @@ class Pi:
         stand_ins = [
             "--release-root",
             str(self.root),
+            # Never the real backup roots: status also reports recovery coverage.
+            "--backup-root",
+            str(self.controls / "pi-backups"),
+            "--copy-root",
+            str(self.controls / "backup-copies"),
             "--service-manager",
             str(self.bin / "systemctl"),
             "--app-url",
@@ -246,6 +251,8 @@ def test_status_reports_the_running_releases_and_their_health_through_raspi(pi):
     assert f"gateway       revision {CURRENT_REVISION}, status healthy" in out
     assert f"{APP_UNIT} active" in out and f"{GATEWAY_UNIT} active" in out
     assert "healthy       yes" in out
+    # No backups exist here: coverage needs attention, production stays healthy.
+    assert "Recovery backups" in out and "coverage      attention" in out
     (call,) = [json.loads(line) for line in pi.calls("ssh")]
     assert "BatchMode=yes" in call
     # The Pi's login shell is fish: the remote command is a fixed POSIX entry point.

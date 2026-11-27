@@ -9,14 +9,25 @@ with a public key; only the desktop holds the private key, and the owner keeps
 a recovery copy of it in 1Password. Restoration goes into isolated targets only
 and is verified against what the backup recorded.
 
-These are daily recovery points, not replication: expect to lose up to about a
-day of writes. Copies stay on the Pi until off-Pi collection runs, so an SD
-card failure can still lose them. The release pre-migration backups described
-in [releases](releases.md#migration-rehearsal-and-backup) are separate and
+The desktop copies completed backups off the Pi hourly while it is on, so
+losing the Pi or its SD card does not lose every recovery copy
+([off-Pi copies](#off-pi-copies-on-the-desktop)).
+
+**Loss target.** These are daily recovery points, not replication or
+point-in-time recovery. When the desktop holds a recent copy, recovering from
+it loses about a day of writes at most: everything since the newest backup
+(03:15 each night). That holds only while the off-Pi copy is recent. If the
+desktop is off or cannot reach the Pi, its newest copy ages while the Pi keeps
+backing up on schedule: a Pi lost after the desktop was off for three days
+costs about four days of writes, or everything if the desktop never copied
+anything. Coverage reports say so once the newest copy holds a backup older
+than 36 hours. The release pre-migration backups described in
+[releases](releases.md#migration-rehearsal-and-backup) are separate and
 unaffected.
 
 [scripts/recovery_backup.py](../../scripts/recovery_backup.py) implements
-`create`, `status` and `restore`.
+`create`, `status` and `restore`; [scripts/ops.py](../../scripts/ops.py)
+implements the desktop's `collect` and `backups`.
 
 ## Recovery manifest
 
@@ -153,11 +164,33 @@ the Pi.
    shred -u /home/jannesi/jannenkoti-recovery-private.asc
    ```
 
-To recover on a new desktop, download the document from 1Password and import
-it with `gpg --import`, entering the passphrase. `backup.json` records the
-recipient fingerprint, so you can check a backup was made for this key.
-Replacing the key: install the new public key on the Pi; older backups still
-need the old private key until they age out of retention.
+`backup.json` records the recipient fingerprint, so you can check a backup was
+made for this key. Replacing the key: install the new public key on the Pi;
+older backups still need the old private key until they age out of retention.
+
+### Retrieving the key from 1Password
+
+When the desktop or its GnuPG keyring is lost, the 1Password recovery copy is
+the only way to decrypt any backup. On the new or rebuilt desktop:
+
+1. In 1Password, open the item that holds the recovery key (the private key
+   document `jannenkoti-recovery-private.asc` and its passphrase). Download the
+   document to `/home/jannesi/jannenkoti-recovery-private.asc`.
+2. Import it, entering the passphrase from the same item when GnuPG asks, then
+   delete the downloaded file:
+
+   ```fish
+   gpg --import /home/jannesi/jannenkoti-recovery-private.asc
+   shred -u /home/jannesi/jannenkoti-recovery-private.asc
+   gpg --list-secret-keys --with-colons 'Jannenkoti recovery backup' | grep '^fpr' | head -1
+   ```
+
+3. Compare the fingerprint with `encryption.recipient_fingerprint` in a
+   backup's `backup.json`. The first key's fingerprint is recorded in the
+   [commissioning record](recovery-backups-commissioning-2026-11-27.md).
+
+Then restore as below, from the desktop's copies if the desktop survived, or
+from the Pi's `daily/` if only the desktop was lost.
 
 ## Installing the schedule
 
@@ -190,13 +223,117 @@ Backups use their own lock and root, independent of release operations and
 their pre-migration backups. A second backup started while one runs exits `3`
 without changing anything.
 
+## Off-Pi copies on the desktop
+
+`ops.py collect` copies the Pi's completed backups to the desktop over SSH
+through the `raspi` alias. It only reads the Pi: it never takes the Pi's backup
+lock, writes there or changes its schedule, so the Pi backs up at 03:15 whether
+or not the desktop is on. The desktop copy root `/home/jannesi/jannenkoti-backups`
+(mode 0700, `--copy-root` selects another) mirrors the Pi's layout:
+
+```text
+daily/<id>/backup.tar.gpg   a verified copy of the Pi's encrypted archive (mode 0600)
+daily/<id>/backup.json      the Pi's record of that backup, unchanged
+daily/<id>/copy.json        when and from where it was copied
+incomplete/<id>/            a copy in progress; never a backup
+status.json                 last_attempt and last_success of collection runs
+runs.log                    one JSON line per collection run
+.lock                       held while a collection runs
+```
+
+A copy directory is a complete backup for `recovery_backup.py restore`.
+
+Each run:
+
+1. Lists the Pi's `daily/` backups with a complete record. Attempts in the Pi's
+   `incomplete/`, directories without a record and records not marked
+   `complete` are never copied.
+2. Selects what the retention policy keeps across the Pi's backups and the
+   desktop's copies and the desktop lacks: the newest backup of each of the 14
+   most recent Europe/Helsinki days. After an absence it therefore catches up
+   on every retained day, newest first, and never copies a backup only to prune
+   it.
+3. Streams each artifact into `incomplete/<id>/`, checks its size and SHA-256
+   against the Pi's record, and only then renames it into `daily/`. A cut
+   connection, a timeout or a mismatch publishes nothing and removes the partial
+   copy; one left by a hard kill is removed at the next run. A lost connection
+   stops the run; a mismatch skips that backup and continues with the others.
+4. Applies the same 14-day retention to the desktop's copies. It removes
+   nothing else from the copy root.
+
+A run that copied or checked everything records `success`; any failure records
+`failed` with the reason, and the copies already made stay valid.
+
+| Exit | Meaning |
+| --- | --- |
+| `0` | Every selected backup is copied, or none was needed |
+| `1` | A backup could not be copied or verified, or the Pi's backup root is missing |
+| `3` | The Pi was unreachable, or the connection was lost while copying |
+| `5` | Another collection holds the copy root |
+
+### Installing the desktop timer
+
+The units are systemd *user* units:
+[jannenkoti-backup-collect.service.example](systemd/jannenkoti-backup-collect.service.example)
+and [jannenkoti-backup-collect.timer.example](systemd/jannenkoti-backup-collect.timer.example).
+The timer runs a collection 5 minutes after the user session starts, which is
+the catch-up after the desktop was off, and then every hour. The service runs
+`ops.py collect` from the main desktop checkout with the system `python3`.
+
+```fish
+set -l repo /home/jannesi/Nextcloud/Personal/Coding/raspberry-pi-smart-home
+mkdir -p /home/jannesi/.config/systemd/user
+cp "$repo/docs/operations/systemd/jannenkoti-backup-collect.service.example" /home/jannesi/.config/systemd/user/jannenkoti-backup-collect.service
+cp "$repo/docs/operations/systemd/jannenkoti-backup-collect.timer.example" /home/jannesi/.config/systemd/user/jannenkoti-backup-collect.timer
+systemctl --user daemon-reload
+systemctl --user enable --now jannenkoti-backup-collect.timer
+systemctl --user start jannenkoti-backup-collect.service
+journalctl --user -u jannenkoti-backup-collect.service -n 20
+```
+
+The unit uses the same SSH configuration as your terminal. With the 1Password
+SSH agent, collection works while 1Password is unlocked and has authorized the
+key for `ssh`. A run while it is locked fails as unreachable, is recorded and
+reported, and a later hourly run catches up. User timers run only while you
+are logged in, so the desktop being on is not enough on its own.
+
+### Coverage
+
+```fish
+jk-ops backups          # Pi backup, desktop copy, collection, problems
+jk-ops backups --json
+jk-ops status           # production health, then the same recovery section
+```
+
+`backups` asks the Pi's own `recovery_backup.py status` for the latest Pi
+backup and attempt, and reads the desktop's copies and collection record
+locally. Coverage is **fresh** only when all of these hold:
+
+- the Pi reports healthy: its latest attempt succeeded and its latest success
+  is at most 36 hours old;
+- the desktop's newest copy matches its record (size and SHA-256 are checked
+  again) and its **backup** is at most 36 hours old. A copy's age is the age of
+  the backup it holds, not when it was copied, so copying an old backup today
+  still reports old coverage;
+- the latest collection run succeeded, or is still running.
+
+A damaged or partial copy is reported and skipped, and the next older verified
+copy counts instead. An unreachable Pi is reported as unknown Pi status, never
+as fresh, while the desktop's own copies are still shown. `backups` exits `0`
+for fresh coverage, `1` for anything needing attention and `3` when the Pi was
+unreachable. `status` shows the same section, but its exit status stays
+production health, because `deploy` and `recover` finish with it.
+
 ## Isolated restore
 
 Restoring never targets production and never starts the application. It is
 how a backup is proven usable, and the first step of a real recovery onto a new
 host. Run it on the desktop, which holds the private key.
 
-1. Copy a completed backup directory from the Pi (both files):
+1. Choose a backup. Normally that is a desktop copy, which `collect` already
+   verified; `jk-ops backups` names the newest. Restore straight from
+   `/home/jannesi/jannenkoti-backups/daily/<id>`. Without a desktop copy, copy
+   a completed backup directory from the Pi (both files):
 
    ```fish
    mkdir -p -m 700 /home/jannesi/jannenkoti-recovery
@@ -222,7 +359,7 @@ host. Run it on the desktop, which holds the private key.
 
    ```fish
    set -l repo /home/jannesi/Nextcloud/Personal/Coding/raspberry-pi-smart-home
-   "$repo/.venv/bin/python" "$repo/scripts/recovery_backup.py" restore /home/jannesi/jannenkoti-recovery/20261128T011500Z --target-env /home/jannesi/.config/jannenkoti-ops/restore.env --restore-dir /home/jannesi/jannenkoti-recovery/restored-20261128
+   "$repo/.venv/bin/python" "$repo/scripts/recovery_backup.py" restore /home/jannesi/jannenkoti-backups/daily/20261128T011500Z --target-env /home/jannesi/.config/jannenkoti-ops/restore.env --restore-dir /home/jannesi/jannenkoti-recovery/restored-20261128
    ```
 
 The command refuses (exit `2`, nothing changed, nothing decrypted) unless the
@@ -275,6 +412,8 @@ Automated tests cannot do these. The first commissioning is recorded in
 5. Copy that backup to the desktop and run an isolated restore; confirm
    `verified` and a plausible row total. Drop the database afterwards.
 6. Next morning, confirm the 03:15 run in `status` and the journal.
+7. Install the desktop timer, run one collection and check `jk-ops backups`
+   reports fresh coverage. Restore the collected copy as above.
 
 ## Verification
 
@@ -290,5 +429,16 @@ truncated copies; unreadable status records; Helsinki retention days under
 another process time zone; retention across 16 days and same-day backups, stale status, refused
 production, remote, unmarked and nonempty targets, row counts that ignore stale index entries, a missing private key, the
 development-mode overrides and the timer schedule (with `systemd-analyze
-calendar` when available). The real units, key and Pi state are commissioned
-as above.
+calendar` when available).
+
+[tests/test_backup_collection.py](../../tests/test_backup_collection.py)
+drives `ops.py collect`, `backups` and `status` as subprocesses through a
+stand-in `ssh` that runs the remote scripts locally and can refuse connections
+or cut a transfer off midway. One test creates a real encrypted backup,
+collects it, checks that the Pi side is unchanged, and restores the desktop copy
+into an isolated database. Others cover catch-up after the Pi was unreachable,
+interrupted and killed copies, skipped incomplete, unfinished and corrupted
+source backups, 14-day retention of desktop copies, a fresh transfer of a stale
+backup, a damaged copy, a failed Pi attempt, `status` integration, an
+unreachable Pi, a busy copy root and the desktop timer. The real units, key,
+Pi state and SSH agent are commissioned as above.

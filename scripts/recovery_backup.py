@@ -421,17 +421,24 @@ def backup_time(path: Path) -> datetime:
     return datetime.strptime(path.name, ID_FORMAT).replace(tzinfo=UTC)
 
 
+def retained(names) -> set[str]:
+    """The backup names the policy keeps: the newest of each of the most recent
+    ``RETAIN_DAYS`` Helsinki days that have one. The desktop's copies follow the
+    same policy (``ops.py collect``)."""
+    kept_days: dict[object, str] = {}
+    for name in sorted(set(names), reverse=True):
+        day = backup_time(Path(name)).astimezone(RETENTION_ZONE).date()
+        if day not in kept_days and len(kept_days) < RETAIN_DAYS:
+            kept_days[day] = name
+    return set(kept_days.values())
+
+
 def prune(root: Path) -> list[str]:
     """Keep the newest backup of each of the most recent ``RETAIN_DAYS`` Helsinki days."""
-    kept_days: dict[object, Path] = {}
-    for backup in sorted(completed_backups(root), reverse=True):
-        day = backup_time(backup).astimezone(RETENTION_ZONE).date()
-        if day not in kept_days and len(kept_days) < RETAIN_DAYS:
-            kept_days[day] = backup
-    keep = set(kept_days.values())
+    keep = retained(backup.name for backup in completed_backups(root))
     removed = []
     for backup in completed_backups(root):
-        if backup not in keep:
+        if backup.name not in keep:
             shutil.rmtree(backup)
             removed.append(backup.name)
     return removed

@@ -10,6 +10,8 @@
     ops.py rehearse <candidate> --disposable-env PI_FILE --restore-env PI_FILE
     ops.py deploy <candidate>
     ops.py recover
+    ops.py collect
+    ops.py backups [--json]
 
 ``status`` reports the current and previous releases, the last release
 operation, both units, and the app's and gateway's health and running revisions,
@@ -33,15 +35,24 @@ the Pi, so a lost connection or Ctrl-C only stops watching. ``deploy`` and
 ``recover`` finish with ``status``. Database restoration is not offered here: it
 is a separate owner decision (docs/operations/releases.md).
 
+``collect`` (hourly from the desktop's user timer) copies the Pi's completed
+encrypted recovery backups that the desktop lacks into the desktop's copy root,
+verifying each against its record before publishing it, and keeps the same 14
+daily copies as the Pi. It only reads the Pi. ``backups`` reports recovery
+coverage: the Pi's latest backup, the desktop's newest verified copy, the last
+collection and anything failed or older than 36 hours; ``status`` shows the same
+beside production health (docs/operations/recovery-backups.md).
+
 The command needs only the standard library and works from any directory. Each
 command runs one fixed POSIX ``sh`` script over SSH, so the Pi's login shell
 does not matter; the one exception is ``git push``, whose single quoted
 ``git-receive-pack '<path>'`` command the login shell runs.
 
-Exit status: 0 done (status: healthy), 1 failed, not healthy or unknown,
-2 refused before any change, 3 production unreachable or access denied,
-4 production not verified ready (follow the guidance), 5 another release
-operation is running, 130 stopped watching (the operation continues).
+Exit status: 0 done (status: healthy; backups: coverage fresh), 1 failed,
+not healthy or unknown, 2 refused before any change, 3 production unreachable
+or access denied, 4 production not verified ready (follow the guidance),
+5 another release operation or collection is running, 130 stopped watching
+(the operation continues).
 """
 
 from __future__ import annotations
@@ -58,9 +69,11 @@ import tarfile
 import tempfile
 import threading
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from xml.etree import ElementTree
+
+import recovery_backup as backup_policy
 
 DEFAULT_HOST = "raspi"
 DEFAULT_RELEASE_ROOT = "/home/jannesi/jannenkoti-releases"
@@ -81,6 +94,7 @@ INTERRUPTED = 130
 # Exit statuses of the remote scripts below; ssh itself reserves 255.
 NO_RELEASE_ROOT, NO_CURRENT_RELEASE, NO_JOURNAL_ACCESS, NO_JOURNAL = 10, 11, 12, 13
 NO_TRANSFER, IDENTITY_MISMATCH, JOB_LOST, NO_JOBS = 14, 15, 16, 17
+NO_BACKUP_ROOT, NO_BACKUP_TOOL, BACKUP_GONE = 18, 19, 20
 RECORD_SEPARATOR = "\x1e"
 
 
@@ -229,6 +243,47 @@ class Pi:
             raise self._failure(stderr)
         return process.returncode, stderr
 
+    def download(self, script: str, destination: Path, *, timeout: float) -> tuple[int, str]:
+        """Run ``script`` with its stdout written to the new file ``destination``.
+
+        For backup artifacts too large to hold in memory. A lost connection
+        raises :class:`Unreachable`; the caller decides whether the file is whole.
+        """
+        descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "wb") as output:
+            process = self._start(script, output)
+            errors = bytearray()
+
+            def drain():
+                assert process.stderr is not None
+                for chunk in iter(lambda: process.stderr.read(4096), b""):
+                    errors.extend(chunk)
+                    del errors[:-16384]
+
+            reader = threading.Thread(target=drain, daemon=True)
+            reader.start()
+            try:
+                process.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+                raise Unreachable(
+                    f"copying from production through {self.host} took over {timeout:g}s"
+                ) from None
+            except BaseException:
+                process.kill()
+                process.wait()
+                raise
+            finally:
+                reader.join(5)
+                process.stderr.close()
+            output.flush()
+            os.fsync(output.fileno())
+        stderr = errors.decode(errors="replace")
+        if process.returncode == 255:
+            raise self._failure(stderr)
+        return process.returncode, stderr
+
     def attached(self, script: str) -> int:
         """Run ``script`` with its stdout and stderr going straight to ours.
 
@@ -274,6 +329,8 @@ def script_body(template: str, **values: str) -> str:
         mismatch=IDENTITY_MISMATCH,
         job_lost=JOB_LOST,
         no_jobs=NO_JOBS,
+        no_backups=NO_BACKUP_ROOT,
+        gone=BACKUP_GONE,
         **values,
     )
 
@@ -300,11 +357,20 @@ fi
 
 PROBES = (("app", "database", "ok"), ("gateway", "status", "healthy"))
 
-STATUS_SCRIPT = """
+# Production status, then the Pi's backup status after a record separator.
+STATUS_SCRIPT = (
+    """
 {require_root}
 {require_tool}
-exec "$python" "$tool" status --live --json --release-root "$root" {options}
+"$python" "$tool" status --live --json --release-root "$root" {options}
+release_status=$?
+printf '\\036\\n'
 """
+    + "{backup_status}"
+    + """
+exit "$release_status"
+"""
+)
 
 
 def status_script(args: argparse.Namespace) -> str:
@@ -313,8 +379,12 @@ def status_script(args: argparse.Namespace) -> str:
         options += ["--app-url", args.app_url]
     if args.gateway_url:
         options += ["--gateway-url", args.gateway_url]
-    body = script_body(STATUS_SCRIPT, options=shlex.join(options))
-    return remote_script({"root": args.release_root}, body)
+    body = script_body(
+        STATUS_SCRIPT,
+        options=shlex.join(options),
+        backup_status=BACKUP_STATUS_PART.format().strip(),
+    )
+    return remote_script({"root": args.release_root, "backups": args.backup_root}, body)
 
 
 def assess(payload: dict) -> list[str]:
@@ -398,13 +468,23 @@ def command_status(args: argparse.Namespace) -> int:
         return report_unknown(args, str(exc), UNREACHABLE)
     if result.returncode in (NO_RELEASE_ROOT, NO_CURRENT_RELEASE):
         return report_unknown(args, last_line(result.stderr, "no current release"), UNHEALTHY)
+    release_part, separator, backup_part = result.stdout.partition(
+        RECORD_SEPARATOR.encode() + b"\n"
+    )
+    recovery = coverage(
+        args,
+        backup_part.decode(errors="replace"),
+        None if separator else "its backup status was not reported",
+    )
     try:
-        payload = json.loads(result.stdout)
+        payload = json.loads(release_part)
         if not isinstance(payload, dict) or result.truncated:
             raise ValueError
     except ValueError:
         reason = last_line(result.stderr, f"exit status {result.returncode}")
-        return report_unknown(args, f"release status was not readable ({reason})", UNHEALTHY)
+        return report_unknown(
+            args, f"release status was not readable ({reason})", UNHEALTHY, recovery
+        )
     problems = assess(payload)
     if args.json:
         summary = {
@@ -414,25 +494,37 @@ def command_status(args: argparse.Namespace) -> int:
             "problems": problems,
             "production": payload.get("production"),
             "live": payload.get("live"),
+            "recovery": recovery,
         }
         print(json.dumps(summary, indent=2, sort_keys=True))
     else:
         print_status(args.host, payload, problems)
+        print_coverage(recovery)
+    # Recovery coverage is reported, but the exit status is production health:
+    # deploy and recover finish with this check (``backups`` exits on coverage).
     return UNHEALTHY if problems else OK
 
 
-def report_unknown(args: argparse.Namespace, reason: str, status: int) -> int:
+def report_unknown(
+    args: argparse.Namespace, reason: str, status: int, recovery: dict | None = None
+) -> int:
+    if recovery is None:
+        # Without a status from the Pi, its backups are unknown too; the
+        # desktop's own copies are still reported.
+        recovery = coverage(args, "", reason)
     if args.json:
         summary = {
             "host": args.host,
             "reachable": status != UNREACHABLE,
             "healthy": False,
             "problems": [reason],
+            "recovery": recovery,
         }
         print(json.dumps(summary, indent=2, sort_keys=True))
     else:
         print(f"Production on {args.host}: health unknown", file=sys.stderr)
         print(f"  {reason}", file=sys.stderr)
+        print_coverage(recovery)
     return status
 
 
@@ -1283,6 +1375,408 @@ def command_rehearse(args: argparse.Namespace) -> int:
     return release_outcome(run_job(args, "rehearsal", arguments), "rehearsal")
 
 
+# --- Recovery backups ------------------------------------------------------------
+
+# The Pi's backup root (recovery_backup.py's default) and the desktop's copies.
+DEFAULT_BACKUP_ROOT = backup_policy.DEFAULT_BACKUP_ROOT
+DEFAULT_COPY_ROOT = str(Path.home() / "jannenkoti-backups")
+COPY_RECORD = "copy.json"
+BACKUP_LIST_TIMEOUT = 60.0
+BACKUP_COPY_TIMEOUT = 1800.0
+SHA256 = re.compile(r"^[0-9a-f]{64}$")
+
+BACKUP_LIST_SCRIPT = """
+if [ ! -d "$backups" ]; then
+  echo "no backup root at $backups on the Pi" >&2
+  exit {no_backups}
+fi
+for record in "$backups"/daily/*/backup.json; do
+  [ -f "$record" ] || continue
+  basename "$(dirname "$record")"
+  cat "$record"
+  printf '\\n\\036\\n'
+done
+"""
+
+BACKUP_COPY_SCRIPT = """
+artifact="$backups/daily/$name/backup.tar.gpg"
+if [ ! -f "$artifact" ]; then
+  echo "backup $name is no longer on the Pi" >&2
+  exit {gone}
+fi
+exec cat "$artifact"
+"""
+
+# The running release's own status command judges the Pi's backups.
+BACKUP_STATUS_PART = """
+backup_tool="$root/current/code/scripts/recovery_backup.py"
+if [ -x "$root/current/venv/bin/python" ] && [ -f "$backup_tool" ]; then
+  "$root/current/venv/bin/python" "$backup_tool" status --json --backup-root "$backups"
+else
+  echo '{{"unavailable": "the current release has no recovery backup command"}}'
+fi
+"""
+
+BACKUP_STATUS_SCRIPT = (
+    """
+{require_root}
+"""
+    + BACKUP_STATUS_PART
+)
+
+
+class CollectionFailed(Exception):
+    """Collection could not finish; the message is safe to show and record."""
+
+
+def stamp(moment: datetime) -> str:
+    return moment.isoformat(timespec="seconds")
+
+
+def hours_since(value: object, moment: datetime) -> float | None:
+    try:
+        then = datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    if then.tzinfo is None:
+        return None
+    return round((moment - then).total_seconds() / 3600, 1)
+
+
+STALE_HOURS = backup_policy.STALE_AFTER / timedelta(hours=1)
+
+
+def pi_backup_listing(pi: Pi, backups: str) -> dict[str, dict]:
+    """The Pi's completed backups by name, with their records."""
+    script = remote_script({"backups": backups}, script_body(BACKUP_LIST_SCRIPT))
+    result = pi.run(script, timeout=BACKUP_LIST_TIMEOUT, max_output=4 * 1024 * 1024)
+    if result.returncode == NO_BACKUP_ROOT:
+        raise CollectionFailed(last_line(result.stderr, "no backup root on the Pi"))
+    if result.returncode != OK or result.truncated:
+        reason = last_line(result.stderr, f"exit status {result.returncode}")
+        raise CollectionFailed(f"listing the Pi's backups failed: {reason}")
+    found = {}
+    for chunk in result.stdout.decode(errors="replace").split(RECORD_SEPARATOR + "\n"):
+        name, _, text = chunk.strip().partition("\n")
+        if not name:
+            continue
+        try:
+            record = json.loads(text)
+        except ValueError:
+            record = None
+        if (
+            backup_policy.BACKUP_ID.match(name)
+            and isinstance(record, dict)
+            and record.get("status") == "complete"
+            and record.get("id") == name
+            and SHA256.match(str(record.get("sha256")))
+            and isinstance(record.get("size"), int)
+            and record["size"] > 0
+        ):
+            found[name] = record
+        else:
+            note(f"Skipped Pi backup {printable_name(name)}: no complete record")
+    return found
+
+
+def printable_name(name: str) -> str:
+    return name if name.isprintable() and len(name) <= 64 else repr(name[:64])
+
+
+def copy_backup(pi: Pi, args: argparse.Namespace, root: Path, name: str, record: dict) -> bool:
+    """Copy one backup, publishing it in ``daily/`` only once verified.
+
+    Returns False when the Pi pruned it first; raises on any other failure.
+    """
+    work = backup_policy.private_dir(root / "incomplete" / name)
+    try:
+        script = remote_script(
+            {"backups": args.backup_root, "name": name},
+            script_body(BACKUP_COPY_SCRIPT),
+        )
+        artifact = work / backup_policy.ARTIFACT
+        status, stderr = pi.download(script, artifact, timeout=BACKUP_COPY_TIMEOUT)
+        if status == BACKUP_GONE:
+            note(f"Backup {name} was pruned on the Pi before it was copied")
+            return False
+        if status != OK:
+            raise CollectionFailed(
+                f"copying {name} failed: {last_line(stderr, f'exit status {status}')}"
+            )
+        if (
+            artifact.stat().st_size != record["size"]
+            or backup_policy.sha256_file(artifact) != record["sha256"]
+        ):
+            raise CollectionFailed(f"the copy of {name} does not match its record")
+        backup_policy.write_json(work / backup_policy.RECORD, record)
+        backup_policy.write_json(
+            work / COPY_RECORD,
+            {
+                "copied_at": stamp(datetime.now(UTC)),
+                "source": f"{args.host}:{args.backup_root}/daily/{name}",
+            },
+        )
+        os.rename(work, root / "daily" / name)
+        descriptor = os.open(root / "daily", os.O_RDONLY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    return True
+
+
+def record_collection(root: Path, attempt: dict, success: bool) -> None:
+    status = backup_policy.read_status(root)
+    status["last_attempt"] = attempt
+    if success:
+        status["last_success"] = attempt
+    backup_policy.write_json(root / "status.json", status)
+    with (root / "runs.log").open("a") as log:
+        log.write(json.dumps(attempt, sort_keys=True) + "\n")
+
+
+def collect(args: argparse.Namespace, root: Path) -> dict:
+    """Copy what the retention policy keeps and the desktop lacks, newest first."""
+    pi = Pi(args.host)
+    available = pi_backup_listing(pi, args.backup_root)
+    held = {path.name for path in backup_policy.completed_backups(root)}
+    keep = backup_policy.retained(held | set(available))
+    copied, errors, lost = [], [], False
+    for name in sorted((keep & set(available)) - held, reverse=True):
+        try:
+            if copy_backup(pi, args, root, name, available[name]):
+                copied.append(name)
+                print(f"Copied backup {name} ({available[name]['size']} bytes)")
+        except CollectionFailed as exc:
+            errors.append(str(exc))
+            note(str(exc))
+        except Unreachable as exc:
+            errors.append(f"copying {name} failed: {exc}")
+            lost = True
+            break  # the connection is gone; the next run catches up
+    pruned = backup_policy.prune(root)
+    if pruned:
+        print(f"Pruned {len(pruned)} older copy(ies): {', '.join(pruned)}")
+    return {
+        "pi_backups": len(available),
+        "copied": copied,
+        "pruned": pruned,
+        "errors": errors,
+        "lost": lost,
+    }
+
+
+def command_collect(args: argparse.Namespace) -> int:
+    root = backup_policy.private_dir(Path(args.copy_root))
+    os.umask(0o077)
+    try:
+        with backup_policy.locked(root):
+            incomplete = backup_policy.private_dir(root / "incomplete")
+            backup_policy.private_dir(root / "daily")
+            # An interrupted copy is never a backup; remove it before starting.
+            for leftover in incomplete.iterdir():
+                shutil.rmtree(leftover, ignore_errors=True)
+                note(f"Removed interrupted copy {leftover.name}")
+            attempt = {"started_at": stamp(datetime.now(UTC))}
+            record_collection(root, attempt | {"result": "running"}, False)
+            outcome, error, result = OK, None, {}
+            try:
+                result = collect(args, root)
+            except Unreachable as exc:
+                outcome, error = UNREACHABLE, str(exc)
+            except CollectionFailed as exc:
+                outcome, error = UNHEALTHY, str(exc)
+            except BaseException as exc:
+                reason = (
+                    "interrupted"
+                    if isinstance(exc, KeyboardInterrupt | SystemExit)
+                    else f"unexpected {type(exc).__name__}"
+                )
+                record_collection(
+                    root,
+                    attempt
+                    | {
+                        "finished_at": stamp(datetime.now(UTC)),
+                        "result": "failed",
+                        "error": reason,
+                    },
+                    False,
+                )
+                raise
+            if result.get("errors"):
+                outcome = UNREACHABLE if result["lost"] else UNHEALTHY
+                error = "; ".join(result["errors"])
+            finished = attempt | result | {"finished_at": stamp(datetime.now(UTC))}
+            finished.pop("errors", None)
+            finished.pop("lost", None)
+            if error:
+                finished |= {"result": "failed", "error": error}
+            else:
+                finished["result"] = "success"
+            record_collection(root, finished, not error)
+    except backup_policy.Busy:
+        note("another collection is running")
+        return BUSY
+    if error:
+        note(f"Collection failed: {error}")
+    elif not result["copied"]:
+        print(f"Desktop copies are up to date ({result['pi_backups']} backup(s) on the Pi)")
+    return outcome
+
+
+def verified_copy(path: Path, moment: datetime) -> dict | None:
+    """The copy's summary when its artifact matches its record, otherwise None."""
+    try:
+        record = json.loads((path / backup_policy.RECORD).read_text())
+        artifact = path / backup_policy.ARTIFACT
+        if (
+            record.get("status") != "complete"
+            or artifact.stat().st_size != record.get("size")
+            or backup_policy.sha256_file(artifact) != record.get("sha256")
+        ):
+            return None
+    except (OSError, ValueError, AttributeError):
+        return None
+    try:
+        copied_at = json.loads((path / COPY_RECORD).read_text()).get("copied_at")
+    except (OSError, ValueError, AttributeError):
+        copied_at = None
+    age = hours_since(record.get("finished_at"), moment)
+    if age is None:
+        return None
+    return {
+        "id": path.name,
+        "backup_finished_at": record.get("finished_at"),
+        "age_hours": age,
+        "copied_at": copied_at,
+    }
+
+
+def desktop_coverage(root: Path, moment: datetime) -> tuple[dict, list[str]]:
+    """The desktop's newest verified copy and last collection, with problems.
+
+    A copy's age is its backup's age, never the time it was copied: a fresh
+    transfer of an old backup is still old recovery coverage.
+    """
+    problems = []
+    copies = backup_policy.completed_backups(root)
+    latest = None
+    for path in reversed(copies):
+        latest = verified_copy(path, moment)
+        if latest:
+            break
+        problems.append(f"desktop copy {path.name} is damaged or incomplete; not counted")
+    if latest is None:
+        problems.append("no verified desktop copy of a Pi backup")
+    elif latest["age_hours"] > STALE_HOURS:
+        problems.append(
+            f"newest desktop copy holds backup {latest['id']} from {latest['age_hours']} h ago,"
+            f" older than {STALE_HOURS:g} hours"
+        )
+    status = backup_policy.read_status(root)
+    attempt, success = status.get("last_attempt"), status.get("last_success")
+    if not isinstance(attempt, dict):
+        problems.append("no backup collection has run on this desktop")
+    elif attempt.get("result") == "running":
+        if not backup_policy.lock_held(root):
+            problems.append(f"collection started {attempt.get('started_at')} did not finish")
+    elif attempt.get("result") != "success":
+        problems.append(
+            f"latest collection at {attempt.get('started_at')} failed: {attempt.get('error')}"
+        )
+    return {
+        "root": str(root),
+        "latest_copy": latest,
+        "copies": len(copies),
+        "last_collection": attempt if isinstance(attempt, dict) else None,
+        "last_successful_collection": success if isinstance(success, dict) else None,
+    }, problems
+
+
+def parse_pi_backups(text: str, error: str | None) -> tuple[dict, list[str]]:
+    """The Pi's own backup status, or why it is unknown."""
+    if error is None:
+        try:
+            summary = json.loads(text)
+            if not isinstance(summary, dict):
+                raise ValueError
+        except ValueError:
+            error = "its backup status was not readable"
+        else:
+            if summary.get("unavailable"):
+                error = str(summary["unavailable"])
+            elif not isinstance(summary.get("problems"), list):
+                error = "its backup status was not readable"
+            else:
+                problems = [f"Pi: {problem}" for problem in summary["problems"]]
+                return {"known": True, **summary}, problems
+    return {"known": False, "error": error}, [f"Pi backup status unknown: {error}"]
+
+
+def coverage(args: argparse.Namespace, pi_text: str, pi_error: str | None) -> dict:
+    moment = datetime.now(UTC)
+    pi_view, problems = parse_pi_backups(pi_text, pi_error)
+    desktop, desktop_problems = desktop_coverage(Path(args.copy_root), moment)
+    problems += desktop_problems
+    return {"healthy": not problems, "problems": problems, "pi": pi_view, "desktop": desktop}
+
+
+def print_coverage(report: dict) -> None:
+    pi, desktop = report["pi"], report["desktop"]
+    print("Recovery backups")
+    if pi.get("known"):
+        success = pi.get("last_success") or {}
+        detail = (
+            f"{success.get('id')}, {pi.get('age_hours')} h ago" if success.get("id") else "none"
+        )
+    else:
+        detail = f"unknown ({pi.get('error')})"
+    print(f"  {'pi backup':<14}{detail}")
+    latest = desktop.get("latest_copy")
+    detail = (
+        f"{latest['id']}, backup {latest['age_hours']} h ago, copied {latest['copied_at']}"
+        if latest
+        else "none"
+    )
+    print(f"  {'desktop copy':<14}{detail}")
+    collection = desktop.get("last_collection")
+    detail = (
+        f"{collection.get('result')} {collection.get('finished_at') or collection.get('started_at')}"
+        if collection
+        else "never"
+    )
+    print(f"  {'collection':<14}{detail}")
+    print(f"  {'coverage':<14}{'fresh' if report['healthy'] else 'attention'}")
+    for problem in report["problems"]:
+        print(f"    - {problem}")
+
+
+def command_backups(args: argparse.Namespace) -> int:
+    pi = Pi(args.host)
+    outcome, text, error = OK, "", None
+    try:
+        script = remote_script(
+            {"root": args.release_root, "backups": args.backup_root},
+            script_body(BACKUP_STATUS_SCRIPT),
+        )
+        result = pi.run(script, timeout=BACKUP_LIST_TIMEOUT, max_output=1024 * 1024)
+        if result.returncode == NO_RELEASE_ROOT:
+            error = last_line(result.stderr, "no release root")
+        text = result.stdout.decode(errors="replace")
+    except Unreachable as exc:
+        outcome, error = UNREACHABLE, str(exc)
+    report = coverage(args, text, error)
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        print_coverage(report)
+    if outcome != OK:
+        return outcome
+    return OK if report["healthy"] else UNHEALTHY
+
+
 # --- Command line ----------------------------------------------------------------
 
 
@@ -1350,6 +1844,18 @@ def parse_arguments(argv: list[str] | None) -> argparse.Namespace:
         help=f"release root on the Pi (default {DEFAULT_RELEASE_ROOT})",
     )
     # Stand-ins for tests; production uses the release tool's own defaults.
+    common.add_argument(
+        "--backup-root",
+        type=absolute_path,
+        default=DEFAULT_BACKUP_ROOT,
+        help=f"recovery backup root on the Pi (default {DEFAULT_BACKUP_ROOT})",
+    )
+    common.add_argument(
+        "--copy-root",
+        type=Path,
+        default=Path(DEFAULT_COPY_ROOT),
+        help=f"the desktop's backup copies (default {DEFAULT_COPY_ROOT})",
+    )
     common.add_argument("--service-manager", help=argparse.SUPPRESS)
     common.add_argument("--app-url", help=argparse.SUPPRESS)
     common.add_argument("--gateway-url", help=argparse.SUPPRESS)
@@ -1461,6 +1967,17 @@ def parse_arguments(argv: list[str] | None) -> argparse.Namespace:
         "recover", parents=[common], help="return production to the previous release"
     )
     recover_parser.set_defaults(handler=command_recover)
+
+    collect_parser = commands.add_parser(
+        "collect", parents=[common], help="copy new encrypted Pi backups to this desktop"
+    )
+    collect_parser.set_defaults(handler=command_collect)
+
+    backups_parser = commands.add_parser(
+        "backups", parents=[common], help="recovery coverage: Pi backups and desktop copies"
+    )
+    backups_parser.add_argument("--json", action="store_true", help="print a JSON summary")
+    backups_parser.set_defaults(handler=command_backups)
     return parser.parse_args(argv)
 
 
