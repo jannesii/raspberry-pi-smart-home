@@ -1,0 +1,14 @@
+# Daily recovery backup schedule (installed as /etc/systemd/system/jannenkoti-backup.timer).
+# 03:15 in Helsinki whatever the system time zone; a run missed while the Pi
+# was off starts after boot (Persistent).
+[Unit]
+Description=Daily Jannenkoti recovery backup at 03:15 Europe/Helsinki
+
+[Timer]
+OnCalendar=*-*-* 03:15:00 Europe/Helsinki
+Persistent=true
+RandomizedDelaySec=0
+Unit=jannenkoti-backup.service
+
+[Install]
+WantedBy=timers.target

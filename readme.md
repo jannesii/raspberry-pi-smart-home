@@ -204,6 +204,13 @@ Inspect production data through the dedicated read-only PostgreSQL login over SS
 either in VS Code or with the bounded `scripts/db_query.py` command; see
 [read-only browsing and queries](docs/operations/database.md#read-only-browsing-and-queries).
 
+The Pi takes an encrypted recovery backup of PostgreSQL, the SQLite files and
+the configuration, secrets and persistent files production needs, daily at
+03:15 Europe/Helsinki, and keeps 14 daily copies. Only the desktop can decrypt
+them, and `scripts/recovery_backup.py restore` proves a backup by restoring it
+into isolated targets; see [recovery backups](docs/operations/recovery-backups.md)
+for the manifest, key recovery, schedule installation and restore procedure.
+
 Browser mutations use session authentication and CSRF protection. YNAB,
 medicine, and network-bypass operations require Root-Admin. Device HTTP APIs
 accept `Authorization: Bearer <token>` or `X-API-Key`; query-string keys are

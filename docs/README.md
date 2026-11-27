@@ -12,6 +12,7 @@ that are useful beyond the code itself.
 | [Development environment](operations/development-environment.md) | Development lifecycle, provisioning and isolation | `app/environment.py`, `scripts/dev.py`, service initialization |
 | [Release preparation](operations/releases.md) | Exact verified release candidates | `scripts/release.py` |
 | [Desktop operations](operations/desktop-operations.md) | Production status, logs and exact-commit releases from the desktop | `scripts/ops.py` |
+| [Recovery backups](operations/recovery-backups.md) | Daily encrypted Pi backups, key recovery and isolated restore | `scripts/recovery_backup.py`, the recovery manifest, backup units |
 | [YNAB review](features/ynab.md) | Setup, review workflow, and test mode | YNAB service, API, and browser UI |
 | [Decision records](adr/) | Durable decisions and their reasons | The code and docs each decision governs |
 

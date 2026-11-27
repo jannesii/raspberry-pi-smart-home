@@ -31,7 +31,7 @@ it must be outside any Git checkout):
 releases/<candidate>/   one candidate: code/, venv/, logs/, release.json, dependencies.txt
 current -> releases/…   the running release (set by deployment, never by preparation)
 previous -> releases/…  the release kept for code recovery
-backups/                production database backups (never pruned)
+backups/                pre-migration database backups (never pruned)
 operation.json          the latest deploy, recover or restart, step by step
 operations.log          one JSON line per finished operation
 .lock                   held while an operation changes the root
@@ -40,7 +40,9 @@ jobs/                   output of desktop-started operations (kept 30 days)
 ```
 
 Production configuration (`jannenkoti.env`) and persistent state stay outside
-`releases/`. A candidate is `git archive` of one commit, so untracked and
+`releases/`. Daily encrypted recovery backups live in their own root,
+`/home/jannesi/jannenkoti-backups`, and their retention never prunes
+`backups/` here; see [recovery backups](recovery-backups.md). A candidate is `git archive` of one commit, so untracked and
 ignored files are never copied, and a revision that tracks a `*.env` or
 `alembic.ini` file fails preparation.
 

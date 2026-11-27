@@ -1,0 +1,34 @@
+# Files of the Pi recovery manifest (docs/operations/recovery-backups.md).
+#
+# PostgreSQL (DATABASE_URL) and the SQLite files named by DB_PATH and
+# VILLENKOTI_DB_PATH come from the production environment file; list only
+# other files here. "required" entries must exist and be readable, or the
+# backup fails; "optional" ones are recorded as absent. A directory includes
+# its regular files recursively; symbolic links are recorded as skipped.
+
+# Application configuration and secrets
+required /home/jannesi/Code/server/jannenkoti.env
+required /home/jannesi/Code/server/esp32_ws/esp32_ws.env
+
+# Installed service units and drop-ins
+required /etc/systemd/system/jannenkoti.service
+required /etc/systemd/system/esp32_ws.service
+optional /etc/systemd/system/jannenkoti.service.d
+optional /etc/systemd/system/jannenkoti-backup.service
+optional /etc/systemd/system/jannenkoti-backup.timer
+
+# Public access: Cloudflare Tunnel configuration and credentials
+required /etc/cloudflared/config.yml
+optional /etc/cloudflared/jannenkoti-dev-ca.pem
+optional /etc/systemd/system/cloudflared.service
+optional /etc/systemd/system/cloudflared.service.d
+required /home/jannesi/.cloudflared
+
+# Host scheduling for the test tmpfs cleanup
+optional /etc/tmpfiles.d/jannenkoti-tests.conf
+
+# Car-heater kFactor test-mode output, when present
+optional /home/jannesi/Code/server/app/services/car_heater/car_heater_kfactor_test_results.jsonl
+
+# The backup's own recipient key, so the archive names the key that opens it
+required /home/jannesi/.config/jannenkoti-backup/recovery-public.asc
