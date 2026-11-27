@@ -418,6 +418,8 @@ Automated tests cannot do these. The first commissioning is recorded in
 6. Next morning, confirm the 03:15 run in `status` and the journal.
 7. Install the desktop timer, run one collection and check `jk-ops backups`
    reports fresh coverage. Restore the collected copy as above.
+   Recorded in
+   [backup-collection-commissioning-2026-11-27.md](backup-collection-commissioning-2026-11-27.md).
 
 ## Verification
 
