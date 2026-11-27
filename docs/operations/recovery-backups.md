@@ -265,7 +265,8 @@ administrator, after a separate owner decision, and put the files back from
 
 ## Commissioning
 
-Automated tests cannot do these; record them separately when done:
+Automated tests cannot do these. The first commissioning is recorded in
+[recovery-backups-commissioning-2026-11-27.md](recovery-backups-commissioning-2026-11-27.md).
 
 1. Generate the key pair and install the public key on the Pi.
 2. Owner: store the private key and its passphrase in 1Password.
