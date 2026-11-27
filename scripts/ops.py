@@ -1404,7 +1404,7 @@ if [ ! -f "$artifact" ]; then
   echo "backup $name is no longer on the Pi" >&2
   exit {gone}
 fi
-exec cat "$artifact"
+exec head -c "$size" "$artifact"
 """
 
 # The running release's own status command judges the Pi's backups.
@@ -1429,8 +1429,7 @@ class CollectionFailed(Exception):
     """Collection could not finish; the message is safe to show and record."""
 
 
-def stamp(moment: datetime) -> str:
-    return moment.isoformat(timespec="seconds")
+stamp = backup_policy.stamp
 
 
 def hours_since(value: object, moment: datetime) -> float | None:
@@ -1491,7 +1490,7 @@ def copy_backup(pi: Pi, args: argparse.Namespace, root: Path, name: str, record:
     work = backup_policy.private_dir(root / "incomplete" / name)
     try:
         script = remote_script(
-            {"backups": args.backup_root, "name": name},
+            {"backups": args.backup_root, "name": name, "size": str(record["size"])},
             script_body(BACKUP_COPY_SCRIPT),
         )
         artifact = work / backup_policy.ARTIFACT
@@ -1516,7 +1515,10 @@ def copy_backup(pi: Pi, args: argparse.Namespace, root: Path, name: str, record:
                 "source": f"{args.host}:{args.backup_root}/daily/{name}",
             },
         )
-        os.rename(work, root / "daily" / name)
+        published = root / "daily" / name
+        if published.exists():  # a damaged copy, replaced only by a verified one
+            shutil.rmtree(published)
+        os.rename(work, published)
         descriptor = os.open(root / "daily", os.O_RDONLY)
         try:
             os.fsync(descriptor)
@@ -1528,20 +1530,20 @@ def copy_backup(pi: Pi, args: argparse.Namespace, root: Path, name: str, record:
 
 
 def record_collection(root: Path, attempt: dict, success: bool) -> None:
-    status = backup_policy.read_status(root)
-    status["last_attempt"] = attempt
-    if success:
-        status["last_success"] = attempt
-    backup_policy.write_json(root / "status.json", status)
-    with (root / "runs.log").open("a") as log:
-        log.write(json.dumps(attempt, sort_keys=True) + "\n")
+    backup_policy.record_attempt(root, attempt, attempt if success else None)
 
 
 def collect(args: argparse.Namespace, root: Path) -> dict:
     """Copy what the retention policy keeps and the desktop lacks, newest first."""
     pi = Pi(args.host)
     available = pi_backup_listing(pi, args.backup_root)
-    held = {path.name for path in backup_policy.completed_backups(root)}
+    # Only verified copies count as held, so a damaged one is copied again.
+    moment = datetime.now(UTC)
+    held = {
+        path.name
+        for path in backup_policy.completed_backups(root)
+        if verified_copy(path, moment) is not None
+    }
     keep = backup_policy.retained(held | set(available))
     copied, errors, lost = [], [], False
     for name in sorted((keep & set(available)) - held, reverse=True):
@@ -1686,6 +1688,10 @@ def desktop_coverage(root: Path, moment: datetime) -> tuple[dict, list[str]]:
         problems.append(
             f"latest collection at {attempt.get('started_at')} failed: {attempt.get('error')}"
         )
+    if isinstance(attempt, dict):
+        collected = hours_since((success or {}).get("finished_at"), moment)
+        if collected is None or collected > STALE_HOURS:
+            problems.append(f"no successful collection in the last {STALE_HOURS:g} hours")
     return {
         "root": str(root),
         "latest_copy": latest,

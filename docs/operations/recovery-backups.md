@@ -249,12 +249,15 @@ Each run:
    `incomplete/`, directories without a record and records not marked
    `complete` are never copied.
 2. Selects what the retention policy keeps across the Pi's backups and the
-   desktop's copies and the desktop lacks: the newest backup of each of the 14
+   desktop's copies and the desktop lacks as a verified copy (size and SHA-256
+   are checked again each run, so a damaged copy is copied afresh while the Pi
+   still has it): the newest backup of each of the 14
    most recent Europe/Helsinki days. After an absence it therefore catches up
    on every retained day, newest first, and never copies a backup only to prune
    it.
-3. Streams each artifact into `incomplete/<id>/`, checks its size and SHA-256
-   against the Pi's record, and only then renames it into `daily/`. A cut
+3. Streams each artifact, at most the size its record names, into
+   `incomplete/<id>/`, checks its size and SHA-256 against the Pi's record, and
+   only then renames it into `daily/`, replacing a damaged copy. A cut
    connection, a timeout or a mismatch publishes nothing and removes the partial
    copy; one left by a hard kill is removed at the next run. A lost connection
    stops the run; a mismatch skips that backup and continues with the others.
@@ -315,10 +318,11 @@ locally. Coverage is **fresh** only when all of these hold:
   again) and its **backup** is at most 36 hours old. A copy's age is the age of
   the backup it holds, not when it was copied, so copying an old backup today
   still reports old coverage;
-- the latest collection run succeeded, or is still running.
+- the latest collection run succeeded, or is still running, and a collection
+  succeeded within the last 36 hours.
 
 A damaged or partial copy is reported and skipped, and the next older verified
-copy counts instead. An unreachable Pi is reported as unknown Pi status, never
+copy counts instead until the next collection replaces it. An unreachable Pi is reported as unknown Pi status, never
 as fresh, while the desktop's own copies are still shown. `backups` exits `0`
 for fresh coverage, `1` for anything needing attention and `3` when the Pi was
 unreachable. `status` shows the same section, but its exit status stays
@@ -439,6 +443,7 @@ collects it, checks that the Pi side is unchanged, and restores the desktop copy
 into an isolated database. Others cover catch-up after the Pi was unreachable,
 interrupted and killed copies, skipped incomplete, unfinished and corrupted
 source backups, 14-day retention of desktop copies, a fresh transfer of a stale
-backup, a damaged copy, a failed Pi attempt, `status` integration, an
+backup, damaged and record-less copies reported and then replaced, a desktop
+that stopped collecting, a failed Pi attempt, `status` integration, an
 unreachable Pi, a busy copy root and the desktop timer. The real units, key,
 Pi state and SSH agent are commissioned as above.

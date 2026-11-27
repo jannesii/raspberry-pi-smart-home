@@ -122,7 +122,7 @@ def private_dir(path: Path) -> Path:
 
 
 def lock_held(root: Path) -> bool:
-    """Whether a running ``create`` holds the backup root (status never waits)."""
+    """Whether a running ``create`` (or desktop collection) holds the root; never waits."""
     try:
         with (root / ".lock").open("a") as handle:
             fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)

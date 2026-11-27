@@ -500,3 +500,36 @@ def test_the_pi_backup_schedule_does_not_depend_on_the_desktop():
         " ".join(values) for section in pi_service.values() for values in section.values()
     )
     assert "collect" not in dependencies and "desktop" not in dependencies.lower()
+
+
+def test_collection_replaces_a_damaged_copy_the_pi_still_has(desktop):
+    name = synthetic_backup(desktop.pi_backups, days_ago(0.1))
+    pi_succeeded(desktop.pi_backups, name)
+    assert desktop.ops("collect").returncode == 0
+    damaged = desktop.copies / "daily" / name / "backup.tar.gpg"
+    original = damaged.read_bytes()
+    damaged.write_bytes(original[:-1] + bytes([original[-1] ^ 1]))  # same size
+    recordless = synthetic_backup(desktop.pi_backups, days_ago(1))
+    (desktop.copies / "daily" / recordless).mkdir()  # a copy without its record
+
+    result = desktop.ops("collect")
+
+    assert result.returncode == 0, result.stderr
+    assert damaged.read_bytes() == original
+    assert (desktop.copies / "daily" / recordless / "backup.json").is_file()
+    assert desktop.report()[0] == 0
+
+
+def test_a_desktop_that_stopped_collecting_needs_attention(desktop):
+    name = synthetic_backup(desktop.pi_backups, days_ago(0.2))
+    pi_succeeded(desktop.pi_backups, name)
+    assert desktop.ops("collect").returncode == 0
+    status_path = desktop.copies / "status.json"
+    status = json.loads(status_path.read_text())
+    status["last_success"]["finished_at"] = days_ago(2).isoformat()
+    status_path.write_text(json.dumps(status))
+
+    code, report = desktop.report()
+
+    assert code == 1
+    assert "no successful collection in the last 36 hours" in report["problems"]
