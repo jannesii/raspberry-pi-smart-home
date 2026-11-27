@@ -51,6 +51,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -1004,8 +1005,11 @@ def run_desktop_check(
                     str(workers),
                     "--output-dir",
                     str(results),
+                    # Test databases go under the system temp directory, as in an
+                    # ordinary run: nested under ``work``, PostgreSQL socket paths
+                    # exceed the 107-character Unix socket limit.
                     "--tmp-dir",
-                    str(work),
+                    tempfile.gettempdir(),
                 ],
                 cwd=code,
                 env={**env, "PYTHONDONTWRITEBYTECODE": "1"},
@@ -1019,6 +1023,12 @@ def run_desktop_check(
         except (OSError, ValueError):
             summary = {}
         counts = junit_results(results, code)
+        # Keep the latest failed run's logs; the export itself is discarded.
+        kept = checks_dir() / f"{commit}-failed"
+        if results.is_dir():
+            shutil.rmtree(kept, ignore_errors=True)
+            kept.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            shutil.copytree(results, kept)
     collected = summary.get("collected", 0)
     workers_run = len(summary.get("workers") or [])
     record = {
@@ -1047,6 +1057,7 @@ def run_desktop_check(
             f"No desktop pass for {commit}: {record['failed']} failed, {record['errors']} errors, "
             f"{collected} collected, exit status {run.returncode}"
         )
+        note(f"Worker logs and JUnit reports: {kept}")
         return None
     path = save_pass(record)
     print(
@@ -1199,8 +1210,8 @@ def command_accept(args: argparse.Namespace) -> int:
     print(f"  {args.scope} acceptance note: {args.note}")
     try:
         answer = input(
-            f"Record that you observed this candidate ({args.scope})? "
-            "Type the candidate name to confirm: "
+            f"Record {args.scope} acceptance of {args.candidate}? "
+            f"Type {args.candidate} to confirm: "
         )
     except EOFError:
         answer = ""
